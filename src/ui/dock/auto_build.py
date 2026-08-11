@@ -82,7 +82,6 @@ from .styles import (
     _INPUT_THEME_QSS,
     _MSG_GLYPHS,
     _PROGRESS_THIN_QSS,
-    _RECAP_CARD_QSS,
     _SLIDER_QSS,
     _SUBCARD_MARGINS,
     _btn_start_qss,
@@ -144,7 +143,7 @@ class DockAutoBuildMixin:
         upsell_layout.addWidget(self._auto_upsell_reset)
 
         # The whole card is served copy with the shipped lines as fallback. The
-        # offer it describes ("10,000 detections every month") is a commercial
+        # offer it describes ("5,000 detections every month") is a commercial
         # fact that can change any week, and until it can be corrected from the
         # server a change of offer makes the plugin lie until the next release.
         _upsell_sub = QLabel(dial_copy(
@@ -154,7 +153,7 @@ class DockAutoBuildMixin:
         upsell_layout.addWidget(_upsell_sub)
 
         for bullet_id, bullet in [
-            ("upsell.bullet_quota", tr("10,000 detections every month (~1,700 km²)")),
+            ("upsell.bullet_quota", tr("5,000 detections every month")),
             ("upsell.bullet_objects", tr("Every building, tree, or road as clean polygons")),
             ("upsell.bullet_cancel", tr("Cancel anytime; your exported layers stay yours")),
         ]:
@@ -163,11 +162,11 @@ class DockAutoBuildMixin:
             _lbl.setWordWrap(True)
             upsell_layout.addWidget(_lbl)
 
-        # Reassurance: even out of free detections, the local Manual mode never
-        # stops. Keeps the exhausted card from reading as a hard wall.
+        # Reassurance: even out of free detections, Semi-Auto never stops.
+        # Keeps the exhausted card from reading as a hard wall.
         _upsell_free = QLabel(dial_copy(
             "upsell.manual_free",
-            tr("Manual mode stays free and unlimited on your computer.")))
+            tr("Semi-Auto mode stays free and unlimited on your computer.")))
         _upsell_free.setStyleSheet("font-size: 11px; color: rgba(128,128,128,0.95);")
         _upsell_free.setWordWrap(True)
         upsell_layout.addWidget(_upsell_free)
@@ -314,35 +313,19 @@ class DockAutoBuildMixin:
         self.auto_start_caption = DismissibleHint(
             HINT_START_AUTO,
             tr("Draw a zone, name one kind of object, and get all of them in "
-               "one run. Use Manual mode to work one object at a time."),
+               "one run. Use Semi-Auto mode to work one object at a time."),
             tint=GREEN_TINT,
             show_glyph=False,  # a mode description, not a tip
         )
         _s1_layout.addWidget(self.auto_start_caption)
 
-        # Last-run value recap: a quiet one-line card shown on the Start page
-        # right after a successful Finish, so the value a run created stays
-        # visible ("137 building exported") instead of vanishing on the return
-        # to Start. Session only, no persistence, no close button (the next
-        # Finish replaces it; clicking Start hides it). Filled + shown by
-        # set_last_run_recap(); hidden by default and by clear_last_run_recap().
-        # Placement: directly UNDER the what-is-this-mode
-        # caption, so the reading order is Start action, what the mode does,
-        # then what the last run produced; when the caption is dismissed Qt
-        # collapses it and the recap sits right under the Start button. Living
-        # inside step 0 also keeps it off the mid-flow steps for free.
-        self.auto_last_run_recap = QLabel()
-        self.auto_last_run_recap.setWordWrap(True)
-        # Rich text: the layer name is a link back to the layer (same treatment
-        # as the Manual recap). It is not a web address, so external opening
-        # stays off and the dock resolves the href itself (_on_auto_recap_link).
-        # Everything from the project is escaped in auto_recap.py.
-        self.auto_last_run_recap.setTextFormat(Qt.TextFormat.RichText)
-        self.auto_last_run_recap.setOpenExternalLinks(False)
-        self.auto_last_run_recap.linkActivated.connect(self._on_auto_recap_link)
-        self.auto_last_run_recap.setStyleSheet(_RECAP_CARD_QSS)
-        self.auto_last_run_recap.setVisible(False)
-        _s1_layout.addWidget(self.auto_last_run_recap)
+        # A last-run recap card lived here and was removed on 2026-08-11. It
+        # said "Last run: 69 building in Building 4 (11 Aug) · 14 credits" and
+        # sat on the Start page for the rest of the session. The saved layer is
+        # in the legend and the balance is on the footer ring, so it repeated
+        # two things the user could already see, on the one screen that should
+        # be about the next run. The success line below still names the layer
+        # right after a Finish, which is the moment that needed an answer.
 
         # Post-export success line: after Finish the flow returns here and the
         # run status is wiped, so without this the user never learns WHERE the
@@ -649,16 +632,21 @@ class DockAutoBuildMixin:
         # denser blue callout giving the gesture (click points, double-click to
         # close). The button says the tool is live; this line says how to trace.
         # This is the "in-between" feedback that the click started a draw
-        # action, and it closes with the same small x as every other tip (the
-        # armed button itself keeps saying the tool is live). Its two wordings,
-        # example and exclude, carry one hint id each. Same gate reason as the
-        # prompt tip: the next armed draw writes this line.
+        # action. Its two wordings, example and exclude, carry one hint id
+        # each. Same gate reason as the prompt tip: the next armed draw writes
+        # this line.
+        #
+        # No close button. It is the ONLY statement of the gesture anywhere on
+        # screen, so closing it once left every later arming explaining
+        # nothing, the same reason the Correct step's resting prompt is not
+        # dismissible either.
         self.auto_exemplar_armed_tip = DismissibleHint(
             HINT_EXEMPLAR_DRAW_BOX,
             tr("Click points around one object, then double-click to close."),
             tint=BLUE_TINT,
             show_glyph=False,  # the armed glyph, not the info lightbulb
             visibility_gate=lambda: False,
+            closable=False,
         )
         self.auto_exemplar_armed_tip.setVisible(False)
         _ex_edit_col.addWidget(self.auto_exemplar_armed_tip)
@@ -734,13 +722,16 @@ class DockAutoBuildMixin:
         # the muted-hint style. It sits ABOVE the slider so it never stacks with
         # the state hint under it (_refresh_auto_detail_hint), which says what
         # THIS level does to THIS object.
-        _detail_sub = QLabel(tr(
+        # Kept on self: an object whose useful band holds a single level has no
+        # choice to offer, so set_auto_detail_range hides this line with the
+        # slider rather than leaving a promise about a control that is gone.
+        self.auto_detail_sub = QLabel(tr(
             "More precision cuts the zone into more tiles and costs more"
             " credits."))
-        _detail_sub.setWordWrap(True)
-        _detail_sub.setStyleSheet(
+        self.auto_detail_sub.setWordWrap(True)
+        self.auto_detail_sub.setStyleSheet(
             "font-size: 11px; color: rgba(128, 128, 128, 0.95);")
-        _detail_outer.addWidget(_detail_sub)
+        _detail_outer.addWidget(self.auto_detail_sub)
         # Non-blocking tip shown right under the credit estimate when the next
         # Detect would repeat the last run exactly (same prompt, detail and
         # example count): that re-run returns the same masks and only spends
@@ -763,7 +754,11 @@ class DockAutoBuildMixin:
         # Slider row: plain "Less <-> More" ends (paired with the "Precision" title
         # above) replace the abstract grid numbers, and read simpler than the old
         # Coarse/Fine. The slider still drives the tile subdivision under the hood.
-        _slider_row = QHBoxLayout()
+        # The row lives in its own widget so the whole control can be hidden in
+        # one call: a band with a single useful level is not a slider the user
+        # should be dragging.
+        self.auto_detail_slider_row = QWidget()
+        _slider_row = QHBoxLayout(self.auto_detail_slider_row)
         _slider_row.setContentsMargins(0, 0, 0, 0)
         _slider_row.setSpacing(6)
         _coarse_lbl = QLabel(tr("Less"))
@@ -786,7 +781,7 @@ class DockAutoBuildMixin:
         _fine_lbl = QLabel(tr("More"))
         _fine_lbl.setStyleSheet("font-size: 10px; color: palette(text);")
         _slider_row.addWidget(_fine_lbl)
-        _detail_outer.addLayout(_slider_row)
+        _detail_outer.addWidget(self.auto_detail_slider_row)
         # One-line plain-language hint instead of a m/px figure. Starts on the
         # gated wording (slider disabled above); _apply_auto_detail_gate swaps
         # it once a prompt or an example exists.
@@ -1113,7 +1108,7 @@ class DockAutoBuildMixin:
         # results are still kept in review. Hidden by default; shown by
         # set_auto_exhausted_subscribe_visible.
         self.auto_exhausted_subscribe_link = QPushButton(
-            tr("Upgrade to Pro to finish this zone: 10,000 credits/month."))
+            tr("Upgrade to Pro to finish this zone: 5,000 credits/month."))
         self.auto_exhausted_subscribe_link.setStyleSheet(_BTN_LINK)
         self.auto_exhausted_subscribe_link.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_exhausted_subscribe_link.setVisible(False)

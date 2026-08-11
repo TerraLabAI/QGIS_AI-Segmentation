@@ -291,7 +291,8 @@ _UNAVAILABLE_DOMINANT_FRAC: float = 0.80
 logger = logging.getLogger(__name__)
 
 
-def decode_rle_to_mask(rle: str | dict, height: int, width: int) -> np.ndarray:
+def decode_rle_to_mask(rle: str | dict, height: int, width: int,
+                       strict: bool = False) -> np.ndarray:
     """Decode one mask RLE from the backend response to a boolean numpy array.
 
     RLE format: space-separated "offset count" pairs, offsets 1-based, row-major.
@@ -303,6 +304,15 @@ def decode_rle_to_mask(rle: str | dict, height: int, width: int) -> np.ndarray:
                 is received the function logs a warning and returns an empty mask.
         height: Tile height in pixels (the actual tile, not padded).
         width:  Tile width in pixels.
+        strict: Raise ValueError instead of answering with a mask the encoding
+                did not describe. That covers an unusable argument, a token
+                that is not a number, a dangling run token, an offset below 1,
+                a non-positive count and a run reaching past the end of the
+                mask. A caller that shows the answer to a user must set this:
+                an empty or half-set mask reads on screen as a modelling
+                result, so a changed encoding would never be reported. Off by
+                default, because a tile that legitimately carries nothing is
+                normal and must stay cheap.
 
     Returns:
         Boolean numpy array of shape (height, width). True = foreground.
@@ -312,6 +322,8 @@ def decode_rle_to_mask(rle: str | dict, height: int, width: int) -> np.ndarray:
     flat = np.zeros(height * width, dtype=bool)
 
     if isinstance(rle, dict):
+        if strict:
+            raise ValueError("mask encoding is not readable")
         logger.warning(
             "decode_rle_to_mask: received dict RLE (unsupported format); "
             "returning empty mask for tile %dx%d",
@@ -321,13 +333,20 @@ def decode_rle_to_mask(rle: str | dict, height: int, width: int) -> np.ndarray:
         return flat.reshape((height, width))
 
     if not isinstance(rle, str) or not rle.strip():
+        if strict:
+            raise ValueError("mask encoding is empty or not readable")
         return flat.reshape((height, width))
 
     tokens = rle.split()
     total = height * width
 
+    if strict and len(tokens) % 2:
+        raise ValueError("mask encoding ends on a run with no count")
+
     pairs = _rle_pairs(tokens)
     if pairs is None:
+        if strict:
+            raise ValueError("mask encoding carries a token that is not a number")
         # A token is not an integer: walk the pairs one by one so the log names
         # the bad pair instead of just counting it.
         _apply_rle_pairs_slow(flat, tokens, total)
@@ -336,6 +355,8 @@ def decode_rle_to_mask(rle: str | dict, height: int, width: int) -> np.ndarray:
         idx = offsets - 1
         bad = (idx < 0) | (counts <= 0)
         if bad.any():
+            if strict:
+                raise ValueError("mask encoding carries a malformed run")
             logger.warning(
                 "decode_rle_to_mask: %d malformed run pair(s) skipped "
                 "(offset below 1 or non-positive count)",
@@ -344,6 +365,8 @@ def decode_rle_to_mask(rle: str | dict, height: int, width: int) -> np.ndarray:
         ends = idx + counts
         over = ends > total
         if over.any():
+            if strict:
+                raise ValueError("mask encoding carries a run past the end of the mask")
             logger.warning(
                 "decode_rle_to_mask: %d run(s) exceed mask size %d; clipping",
                 int(over.sum()), total,

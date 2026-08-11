@@ -7,7 +7,7 @@ REGISTRY_VERSION together.
 """
 from __future__ import annotations
 
-REGISTRY_VERSION = 18
+REGISTRY_VERSION = 21
 
 # --- Lifecycle ------------------------------------------------------------
 PLUGIN_FIRST_OPEN = "plugin_first_open"
@@ -84,6 +84,11 @@ MANUAL_EXPORT_DONE = "manual_export_done"
 MANUAL_SESSION_SUMMARY = "manual_session_summary"
 # Confirmed discard of unsaved manual work; context = change_layer | stop.
 MANUAL_ABANDONED = "manual_abandoned"
+# Which AI answers a Semi-Auto click, and the answer to the notice that stands
+# before the first cloud one. Together they are whether the cloud engine is
+# being adopted, and how many people refuse it once they read what it sends.
+MANUAL_ENGINE_CHOSEN = "manual_engine_chosen"
+MANUAL_CLOUD_CONSENT = "manual_cloud_consent"
 
 # --- Monetization ---------------------------------------------------------
 PRO_UPSELL_VIEWED = "pro_upsell_viewed"
@@ -198,6 +203,8 @@ ALL_EVENTS = frozenset({
     MANUAL_EXPORT_DONE,
     MANUAL_SESSION_SUMMARY,
     MANUAL_ABANDONED,
+    MANUAL_ENGINE_CHOSEN,
+    MANUAL_CLOUD_CONSENT,
     PRO_UPSELL_VIEWED,
     PRO_UPSELL_CLICKED,
     FREE_TASTE_CONSUMED,
@@ -216,87 +223,99 @@ ALL_EVENTS = frozenset({
     PLUGIN_ERROR,
 })
 
-# Required non-session properties per event (session/universal props such as
-# product_id, plugin_version, os, device_hash are added by session props).
-# Mirrors the "required: true" fields of the vendored website registry subset.
+# Required non-session properties per event: exactly the props the registry
+# marks "required: true", minus the universal ones (product_id, source) and the
+# session props (plugin_version, os, device_hash and friends) that every event
+# carries anyway.
+#
+# This is a MIRROR, not a wish list. A prop the plugin always sends but the
+# registry marks optional does NOT belong here: listing it makes the table
+# disagree with the contract the relay validates against, and check_telemetry.py
+# fails the push in both directions. Every event in ALL_EVENTS must have an
+# entry, so a new event cannot ship with its properties unchecked.
 REQUIRED_PROPS: dict[str, tuple[str, ...]] = {
+    # --- Lifecycle --------------------------------------------------------
     PLUGIN_FIRST_OPEN: (),
     PLUGIN_OPENED: (),
     PLUGIN_ACTIVATED: (),
     MODE_SWITCHED: ("to_mode",),
     INSTALL_STARTED: (),
-    INSTALL_COMPLETED: ("duration_ms",),
-    INSTALL_FAILED: ("error_class",),
+    INSTALL_COMPLETED: (),
+    INSTALL_FAILED: (),
     INSTALL_CANCELLED: (),
-    MODEL_DOWNLOAD_COMPLETED: ("model",),
+    MODEL_DOWNLOAD_COMPLETED: (),
     PAIRING_STARTED: (),
     PAIRING_FAILED: ("error_code",),
     PAIRING_CANCELLED: (),
-    FIRST_GENERATION_MILESTONE: ("mode",),
-    AUTO_START_CLICKED: ("layer_kind",),
-    ZONE_DRAWN: ("vertices", "area_km2"),
+    FIRST_GENERATION_MILESTONE: (),
+    # --- Automatic funnel -------------------------------------------------
+    AUTO_START_CLICKED: (),
+    ZONE_DRAWN: (),
     AUTO_ZONE_TOO_LARGE: ("area_km2",),
-    AUTO_PROMPT_COMMITTED: ("prompt",),
+    AUTO_PROMPT_COMMITTED: (),
     AUTO_PROMPT_STEERED: (),
     AUTO_PROMPT_REWRITTEN: ("kind",),
     AUTO_PROMPT_HINT_SHOWN: ("kind",),
-    EXEMPLAR_ADDED: ("count_after",),
-    EXEMPLAR_REMOVED: ("count_after",),
-    DETAIL_CHANGED: ("detail", "tiles", "source"),
-    AUTO_DETECT_STARTED: (
-        "run_id", "tiles", "object_class", "detail", "est_credits", "is_free_tier",
-    ),
-    AUTO_DETECT_COMPLETED: (
-        "run_id", "duration_ms", "tiles_done", "instances_found", "zero_at_default",
-    ),
-    AUTO_DETECT_FAILED: ("run_id", "error_class"),
-    AUTO_DETECT_CANCELLED: ("run_id", "tiles_done"),
+    EXEMPLAR_ADDED: (),
+    EXEMPLAR_REMOVED: (),
+    DETAIL_CHANGED: (),
+    AUTO_DETECT_STARTED: ("run_id",),
+    AUTO_DETECT_COMPLETED: ("run_id",),
+    AUTO_DETECT_FAILED: ("run_id",),
+    AUTO_DETECT_CANCELLED: ("run_id",),
     CREDITS_EXHAUSTED: ("run_id",),
     AUTO_TILES_DEGRADED: ("run_id",),
-    AUTO_ZERO_RESULT: ("run_id", "object_class"),
+    AUTO_ZERO_RESULT: ("run_id",),
     AUTO_GATE_SCAN: ("run_id", "scans", "tiles_skipped"),
-    REVIEW_OPENED: ("run_id", "instances_found"),
-    REVIEW_CONFIDENCE_FINAL: ("run_id", "final_pct"),
+    # --- Review / refine --------------------------------------------------
+    REVIEW_OPENED: ("run_id",),
+    REVIEW_CONFIDENCE_FINAL: ("run_id",),
     REVIEW_ABANDONED: ("run_id",),
-    REVIEW_DISPLAY_MODE: ("mode",),
-    REVIEW_SHAPE_ADJUSTED: ("control",),
+    REVIEW_DISPLAY_MODE: (),
+    REVIEW_SHAPE_ADJUSTED: (),
     REFINE_IN_MANUAL_ENTERED: ("run_id",),
     REFINE_IN_MANUAL_BACK: ("run_id",),
-    AUTO_EXPORT_DONE: ("run_id", "exported_count"),
+    AUTO_EXPORT_DONE: ("run_id",),
     AUTO_RETRY_CLICKED: ("run_id",),
-    AUTO_EXIT_CLICKED: ("from_step",),
-    ZERO_ASSIST_CLICKED: ("kind",),
-    EXEMPLAR_NUDGE_SHOWN: ("run_id", "object_class"),
-    EXEMPLAR_NUDGE_CLICKED: ("run_id", "object_class"),
-    TUTORIAL_OPENED: ("source",),
+    AUTO_EXIT_CLICKED: (),
+    ZERO_ASSIST_CLICKED: (),
+    EXEMPLAR_NUDGE_SHOWN: (),
+    EXEMPLAR_NUDGE_CLICKED: (),
+    TUTORIAL_OPENED: (),
     REVIEW_CORRECT_BOX: ("run_id", "label", "outcome", "objects"),
     REVIEW_CORRECT_UNDO: ("run_id", "kind"),
     REVIEW_STEP: ("run_id", "step"),
     AUTO_EDIT_IN_QGIS: ("run_id", "outcome"),
-    SEGMENTATION_RUN: ("success",),
-    MANUAL_EXPORT_DONE: ("polygon_count",),
-    MANUAL_SESSION_SUMMARY: ("saves",),
+    # --- Manual -----------------------------------------------------------
+    # sample_rate carries the 1-in-N factor every count has to be multiplied by,
+    # so a batch without it cannot be read at all.
+    SEGMENTATION_RUN: ("success", "sample_rate"),
+    MANUAL_EXPORT_DONE: (),
+    MANUAL_SESSION_SUMMARY: (),
     MANUAL_ABANDONED: ("context",),
-    PRO_UPSELL_VIEWED: ("trigger",),
-    PRO_UPSELL_CLICKED: ("source",),
-    FREE_TASTE_CONSUMED: ("remaining",),
-    LOW_CREDIT_BANNER_VIEWED: ("remaining",),
-    DETECT_BLOCKED: ("reason",),
+    MANUAL_ENGINE_CHOSEN: ("engine",),
+    MANUAL_CLOUD_CONSENT: ("accepted",),
+    # --- Monetization -----------------------------------------------------
+    PRO_UPSELL_VIEWED: (),
+    PRO_UPSELL_CLICKED: (),
+    FREE_TASTE_CONSUMED: (),
+    LOW_CREDIT_BANNER_VIEWED: (),
+    DETECT_BLOCKED: (),
+    # --- Account dialog ---------------------------------------------------
     ACCOUNT_SIGNED_OUT: (),
     ACCOUNT_DASHBOARD_OPENED: (),
     TELEMETRY_OPT_CHANGED: ("enabled",),
-    LIBRARY_OPENED: ("tab",),
-    HISTORY_SYNCED: ("runs",),
-    HISTORY_RESTORED: ("run_id", "tiles", "objects"),
-    HISTORY_EXPORTED: ("format", "objects"),
-    HISTORY_FAVORITE_TOGGLED: ("run_id", "is_favorite"),
-    HISTORY_PAGE_LOADED: ("page",),
+    # --- Library / run history --------------------------------------------
+    LIBRARY_OPENED: (),
+    HISTORY_SYNCED: (),
+    HISTORY_RESTORED: ("run_id",),
+    HISTORY_EXPORTED: (),
+    HISTORY_FAVORITE_TOGGLED: ("run_id",),
+    HISTORY_PAGE_LOADED: (),
     HISTORY_RERUN: ("kind",),
+    # --- Errors -----------------------------------------------------------
     # error_code is the stable English exception class name (never a localized
-    # dialog title). Additive OPTIONAL props (present when the error-capture
-    # helper produced them, absent otherwise; server + registry treat them as
-    # optional): traceback_hash (short sha of the path-scrubbed traceback, for
-    # grouping recurrences of the same crash) and module (the source module the
-    # exception was caught in).
+    # dialog title). traceback_hash and module ride along when the error-capture
+    # helper produced them, and the registry keeps both optional.
     PLUGIN_ERROR: ("stage", "error_code"),
 }

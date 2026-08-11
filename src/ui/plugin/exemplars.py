@@ -127,6 +127,13 @@ class ExemplarsMixin:
         # inside the zone is kept UNCLIPPED; a mostly-outside straddler is
         # still clipped to its in-zone part; only a draw entirely outside the
         # zone is refused (nothing there can match inside).
+        # The zone holds the CRS it was drawn in, and the project can have left
+        # that CRS since. Everything below works in the ZONE's CRS: the clip
+        # tests this draw against the zone polygon, and the run reads every
+        # stored box back through the zone's CRS too. The canvas copy is kept
+        # for the rubber band and the reference card, which are screen work.
+        canvas_geom = geom
+        geom = self._exemplar_geom_in_zone_crs(geom)
         zone_poly = self._auto_zone_polygon
         if (zone_poly is not None and geom is not None and not geom.isEmpty()):
             try:
@@ -148,11 +155,15 @@ class ExemplarsMixin:
             self._restore_maptool_after_exemplar()
             return
         rect = geom.boundingBox()
-        thumb = self._capture_exemplar_thumbnail(rect, polygon=geom)
+        # Screen work reads the canvas, so it takes the canvas copy of whatever
+        # the clip above left: both grab pixels through the live map.
+        canvas_geom = self._exemplar_geom_in_canvas_crs(geom, canvas_geom)
+        thumb = self._capture_exemplar_thumbnail(
+            canvas_geom.boundingBox(), polygon=canvas_geom)
         eid = self._auto_exemplar_store.add(
             QgsRectangle(rect), label, thumbnail=thumb, polygon=geom)
         if eid is not None:
-            band = self._make_exemplar_band_poly(geom, label)
+            band = self._make_exemplar_band_poly(canvas_geom, label)
             if band is not None:
                 self._exemplar_bands[eid] = band
             self._refresh_exemplar_chips()
@@ -174,9 +185,68 @@ class ExemplarsMixin:
         # every detail change too, so the warning stays live instead of
         # sticking once the object is later drawn big enough.
         self._refresh_exemplar_size_warning()
+        # And the drawn size is a measurement of the object, so it can move the
+        # Precision band (auto_detail_window._exemplar_object_size_m). That band
+        # is set from the credit estimate, which nothing else here re-runs.
+        self._refresh_detail_band_after_exemplars()
         # A new example changes the run signature, so the identical-re-run note
         # must clear if it was showing.
         self._refresh_rerun_guard()
+
+    def _exemplar_canvas_crs_now(self):
+        """The canvas CRS at this moment, or None when it cannot be read."""
+        try:
+            return self.iface.mapCanvas().mapSettings().destinationCrs()
+        except (RuntimeError, AttributeError):
+            return None
+
+    def _exemplar_geom_converted(self, geom, source_crs, target_crs):
+        """``geom`` moved from ``source_crs`` to ``target_crs``.
+
+        Returns it untouched when either CRS is missing or invalid, when the
+        two are the same (the ordinary case: one comparison and no work), or
+        when the transform raises. Keeping a draw as it came in is what the
+        plugin did before, and refusing a legitimate example costs the user
+        more than the rare mismatch it would prevent.
+        """
+        try:
+            if (geom is None or source_crs is None or target_crs is None
+                    or not source_crs.isValid() or not target_crs.isValid()
+                    or source_crs == target_crs):
+                return geom
+            out = QgsGeometry(geom)
+            out.transform(QgsCoordinateTransform(
+                source_crs, target_crs, QgsProject.instance()))
+            return out
+        except Exception:  # noqa: BLE001 -- antimeridian, invalid CRS
+            return geom
+
+    def _exemplar_geom_in_zone_crs(self, geom):
+        """A draw made in the live canvas CRS, read in the zone's own CRS."""
+        return self._exemplar_geom_converted(
+            geom, self._exemplar_canvas_crs_now(),
+            getattr(self, "_auto_zone_crs", None))
+
+    def _exemplar_geom_in_canvas_crs(self, geom, fallback):
+        """An example held in the zone's CRS, back in the live canvas CRS.
+
+        ``fallback`` answers when no zone CRS was recorded, so the rubber band
+        and the reference card always have canvas numbers to work from.
+        """
+        zone_crs = getattr(self, "_auto_zone_crs", None)
+        if zone_crs is None:
+            return fallback
+        return self._exemplar_geom_converted(
+            geom, zone_crs, self._exemplar_canvas_crs_now())
+
+    def _refresh_detail_band_after_exemplars(self) -> None:
+        """Re-run the credit estimate so the Precision band picks up the drawn
+        examples. Guarded on its own: an example is stored either way, and a
+        hiccup in the estimate must not lose the draw the user just made."""
+        try:
+            self._update_credit_estimate()
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            pass
 
     @staticmethod
     def _geom_centroid_in(geom, zone_poly) -> bool:
@@ -250,9 +320,10 @@ class ExemplarsMixin:
             if any_valid and too_small:
                 # The message must not tell the user to "zoom finer" when the
                 # Detail slider is already at its useful maximum for this
-                # layer/zone: set_auto_detail_max already clamped the slider's
-                # maximum() to that cap (auto_zone._update_credit_estimate),
-                # so reading it here is free (no grid recompute).
+                # layer/zone/object: set_auto_detail_range already clamped the
+                # slider's maximum() to that band (auto_zone.
+                # _update_credit_estimate), so reading it here is free (no grid
+                # recompute).
                 at_max_detail = self._auto_detail_slider_at_max()
                 self.dock_widget.show_auto_exemplar_size_warning(at_max_detail=at_max_detail)
             else:
@@ -263,8 +334,8 @@ class ExemplarsMixin:
     def _auto_detail_slider_at_max(self) -> bool:
         """True when the Detail slider is already at its useful maximum, read
         straight off the slider's current maximum() (kept in sync with
-        `_max_useful_detail` by `set_auto_detail_max`) rather than recomputing
-        the grid. Fails open to False (the conservative "can zoom finer"
+        `_detail_window_for_object` by `set_auto_detail_range`) rather than
+        recomputing the grid. Fails open to False (the "can zoom finer"
         wording) on any widget hiccup."""
         try:
             slider = self.dock_widget.auto_detail_slider
@@ -341,6 +412,7 @@ class ExemplarsMixin:
         # The removed example may have been the one carrying the too-small
         # warning; re-check the remaining set (clears it once none are small).
         self._refresh_exemplar_size_warning()
+        self._refresh_detail_band_after_exemplars()
         try:
             from ...core import telemetry_run_events
             telemetry_run_events.track_exemplar_removed(count_after=self._auto_exemplar_store.count())
@@ -617,9 +689,14 @@ class ExemplarsMixin:
         ext_h = ext_maxy - ext_miny
         if ext_w <= 0 or ext_h <= 0:
             return []
-        g = QgsGeometry(poly)  # canvas CRS copy
+        g = QgsGeometry(poly)  # copy, in the CRS the example was stored in
         try:
-            canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+            # The zone's CRS, not the live canvas: an example is held in the
+            # CRS its zone was drawn in, and the project can have left that CRS
+            # since. Reading the canvas here put the ring on other ground.
+            canvas_crs = self._zone_source_crs(getattr(ex, "map_rect", None))
+            if canvas_crs is None:
+                return []
             # geo_bbox is the rendered zone in the run CRS, so the ring has to
             # land in that same CRS before it is divided into pixels.
             # The RUN's CRS, not one resolved from this exemplar's own box: a

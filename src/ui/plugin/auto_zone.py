@@ -23,6 +23,7 @@ from qgis.PyQt.QtGui import QColor
 
 from ...core.i18n import tr
 from ...core.qt_compat import PolygonGeometry, safe_disconnect
+from ...core.shape_edits import KIND_MERGE
 from ..canvas_palette import GRID_LINE, ZONE_FILL, ZONE_STROKE
 from ..shortcut_filter import ShortcutFilter
 from .shared import (
@@ -89,6 +90,9 @@ class AutoZoneMixin:
         self._zone_selection_tool.vertices_changed.connect(self._on_zone_vertices_changed)
         # Ctrl+Z / Backspace on the empty draw canvas leaves the draw step.
         self._zone_selection_tool.back_requested.connect(self._on_auto_exit_clicked)
+        # The user picking another QGIS tool mid-draw takes the dots with it.
+        self._zone_selection_tool.tool_deactivated.connect(
+            self._on_zone_tool_deactivated)
 
         # Hide overlay when project is replaced or cleared
         QgsProject.instance().cleared.connect(self._on_project_cleared_auto)
@@ -116,8 +120,16 @@ class AutoZoneMixin:
             safe_disconnect(tool, "zone_cleared", self._on_zone_cleared)
             safe_disconnect(tool, "vertices_changed", self._on_zone_vertices_changed)
             safe_disconnect(tool, "back_requested", self._on_auto_exit_clicked)
+            safe_disconnect(tool, "tool_deactivated", self._on_zone_tool_deactivated)
+            # reset() empties a rubber band but leaves the item on the scene, so
+            # the tool's three bands go with the tool.
+            try:
+                tool.remove_bands_from_canvas()
+            except (RuntimeError, AttributeError):
+                pass
             self._zone_selection_tool = None
 
+        self._remove_zone_shortcut_filter()
         self._clear_auto_canvas()
 
         # Was one try catching TypeError only, so a RuntimeError from a project
@@ -127,7 +139,7 @@ class AutoZoneMixin:
         safe_disconnect(proj, "cleared", self._on_project_cleared_auto)
         safe_disconnect(proj, "readProject", self._on_project_cleared_auto)
 
-        self._auto_zone = None
+        self._store_auto_zone(None)
         self._auto_zone_polygon = None
         self._tile_manager = None
         self._auto_run_ctx = None
@@ -198,6 +210,49 @@ class AutoZoneMixin:
             self.dock_widget.set_auto_zone_state("drawing")
             self.dock_widget.set_zone_draw_progress(0)
 
+    def _remove_zone_shortcut_filter(self) -> None:
+        """Take the shortcut filter off the three targets the zone draw armed.
+
+        The object is kept, not dropped: Manual re-installs the same one when
+        it arms its own tool. Only unload owns the filter's life.
+
+        One guard per target: a window torn down before us must not leave the
+        filter sitting on the canvas, where it would outlive the flow.
+        """
+        if self._shortcut_filter is None:
+            return
+        try:
+            self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
+        except (RuntimeError, AttributeError):
+            pass
+        try:
+            self.iface.mapCanvas().viewport().removeEventFilter(
+                self._shortcut_filter)
+        except (RuntimeError, AttributeError):
+            pass
+        try:
+            self.iface.mapCanvas().removeEventFilter(self._shortcut_filter)
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _on_zone_tool_deactivated(self) -> None:
+        """The canvas dropped the zone tool because the user picked another
+        QGIS tool. The in-progress points went with it, so the draw hint must
+        stop asking for the first point to close a shape that is gone.
+
+        Silent once a zone, a run or a review exists: those paths disarm the
+        tool themselves and own the dock state.
+        """
+        if (self._auto_zone is not None or self._auto_worker is not None
+                or self._auto_review is not None):
+            return
+        if not self.dock_widget:
+            return
+        try:
+            self.dock_widget.set_zone_draw_progress(0)
+        except (RuntimeError, AttributeError):
+            pass
+
     # ---- Re-run from the Recent detection history (library) -----------------
 
     def _on_history_rerun_requested(self, entry: dict) -> None:
@@ -249,6 +304,11 @@ class AutoZoneMixin:
         depends on the zone and the layer under it. So the levels are walked
         and the closest one wins. Silent on any failure: the seeded default is
         already a usable run.
+
+        Only the levels the slider currently offers are walked, so a stored run
+        made outside this object's useful band is NOT reproduced: it lands on
+        the nearest level inside it and bills differently. That is deliberate.
+        A run that fragmented its objects is not one to reproduce faithfully.
         """
         try:
             target = int(wanted or 0)
@@ -414,9 +474,12 @@ class AutoZoneMixin:
         if cap_area is not None:
             self._reject_zone_over_free_cap(cap_area)
             return
-        self._auto_zone_polygon = QgsGeometry(geom)  # canvas CRS
+        self._auto_zone_polygon = QgsGeometry(geom)
         rect = QgsRectangle(geom.boundingBox())
-        self._auto_zone = rect  # stored in canvas CRS
+        # Both are canvas CRS numbers from this moment, so the zone is stored
+        # with the CRS it was drawn in: the project can change CRS before
+        # Detect is pressed.
+        self._store_auto_zone(rect)
         # Zone set: the user is now picking prompt/settings, so this is a second
         # natural moment to ensure the backend is warm before Detect (debounced).
         self._maybe_warmup_auto()
@@ -592,7 +655,7 @@ class AutoZoneMixin:
         When the drawing tool is still active (Escape pressed mid-draw), the
         user stays in drawing mode: the next drag starts a fresh zone.
         """
-        self._auto_zone = None
+        self._store_auto_zone(None)
         self._auto_zone_polygon = None
         # Exemplars are positioned inside the old zone; a new zone invalidates
         # them, so every zone-bound canvas artifact goes with the zone.
@@ -676,17 +739,22 @@ class AutoZoneMixin:
         # needs a zone to be meaningful.
         if self.dock_widget:
             self.dock_widget.set_auto_detail_visible(self._auto_zone is not None)
-            # Cap the slider at the useful level so the cursor never moves in
-            # the void. Done before the grid compute so the estimate below
-            # reflects the (possibly) clamped detail value. The free-run cap
-            # NEVER shortens the slider: a free user keeps the full (Pro)
-            # travel and the dock gates Detect instead when the estimate
-            # exceeds the cap (see set_auto_credit_estimate), so the locked
-            # range is seen, not hidden.
+            # Give the slider the band that is worth offering for the object
+            # the user named, so the cursor never moves in the void and never
+            # into the range where a bigger object comes back in fragments.
+            # Done before the grid compute so the estimate below reflects the
+            # (possibly) clamped detail value. The free-run cap NEVER shortens
+            # the Pro travel: a free user keeps the full fine end and the dock
+            # gates Detect instead when the estimate exceeds the cap (see
+            # set_auto_credit_estimate), so the locked range is seen, not
+            # hidden.
             if self._auto_zone is not None:
                 zone_in_layer = self._reproject_zone_to_run_crs(self._auto_zone, layer)
-                self.dock_widget.set_auto_detail_max(
-                    self._max_useful_detail(layer, zone_in_layer))
+                machine_max = self._max_useful_detail(layer, zone_in_layer)
+                low, high = self._detail_window_for_object(
+                    layer, zone_in_layer, self._resolved_auto_object_class())
+                self.dock_widget.set_auto_detail_range(
+                    low, high, object_bound=high < machine_max)
                 self.dock_widget.set_auto_free_run_cap(self._free_run_tile_cap())
 
         grid = self._compute_auto_grid(layer)
@@ -723,6 +791,10 @@ class AutoZoneMixin:
         # zone-less path estimates the full raster for the overlay only.
         if self.dock_widget and self._auto_zone is not None:
             self.dock_widget.set_auto_credit_estimate(credit_count)
+            # A refusal for want of credits is judged against a balance that
+            # can be minutes old, so read it again before it stands (throttled;
+            # a fresh balance re-runs the gate on its own).
+            self._recheck_balance_if_underfunded()
             # Detail, layer, zone and post-zero returns all pass here, so this
             # is the single chokepoint that re-evaluates the identical-re-run
             # note against the current prompt/detail/example count.
@@ -737,9 +809,18 @@ class AutoZoneMixin:
                     ground_mupp = self._mupp_to_meters(layer, zone_in_layer, sized[2])
                     # Warning cutoff is a server dial (seed.gsd_warn_max_mupp,
                     # cache-only read); the constant is the generic fallback.
+                    # An object the server gave a tile-ground floor is read
+                    # through a fixed wide window, so while its tile clears
+                    # that floor the coarse view is the setting it asks for and
+                    # "raise the precision" would be advice to break the run.
                     from ...core.detection_policy import gsd_warn_max_mupp
+                    from ...core.tile_manager import TILE_SIZE
+                    floor_m = self._detail_window_profile(
+                        self._resolved_auto_object_class())[1]
+                    wide_view = (
+                        floor_m > 0 and TILE_SIZE * ground_mupp >= floor_m)
                     self.dock_widget.set_auto_detail_gsd_warning(
-                        ground_mupp >= gsd_warn_max_mupp(0.5))
+                        ground_mupp >= gsd_warn_max_mupp(0.5) and not wide_view)
                     # Object-aware slider guidance: same debounced chokepoint,
                     # so it tracks drags, prompt commits and zone redraws.
                     self._push_detail_feedback(layer, zone_in_layer, ground_mupp)
@@ -927,25 +1008,109 @@ class AutoZoneMixin:
             self._safe_remove_rubber_band(self._zone_grid_rubber_band)
             self._zone_grid_rubber_band = None
 
+    def _store_auto_zone(self, zone: QgsRectangle | None, crs=None) -> None:
+        """Set the Automatic zone, always beside the CRS it is expressed in.
+
+        The one way to set a zone, drawn or headless. A zone stored without its
+        CRS lets a later project CRS change read its numbers as new ones, and
+        the run would then tile, bill and clip ground nobody asked for.
+
+        ``crs`` names the CRS the numbers are in. The canvas answers when it is
+        left out, which is right for a draw; a caller that converted the zone
+        itself passes the CRS its conversion actually reached, because a failed
+        conversion leaves numbers the canvas cannot speak for.
+        """
+        if zone is None:
+            self._auto_zone = None
+            self._forget_zone_crs()
+            return
+        self._auto_zone = zone
+        self._record_zone_crs(zone, crs)
+
+    def _record_zone_crs(self, zone: QgsRectangle, crs=None) -> None:
+        """Keep the CRS the zone was drawn in, beside the zone itself.
+
+        The stored coordinates are canvas CRS numbers from the moment of the
+        draw. A user can change the project CRS before pressing Detect, and
+        reading the canvas CRS then would take those numbers for new ones and
+        tile, bill and clip ground nobody drew.
+        """
+        self._forget_zone_crs()
+        try:
+            if crs is None:
+                crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+        except (RuntimeError, AttributeError):
+            return
+        if crs is None or not crs.isValid():
+            return
+        self._auto_zone_crs = QgsCoordinateReferenceSystem(crs)
+        self._auto_zone_crs_rect = self._zone_rect_key(zone)
+
+    def _forget_zone_crs(self) -> None:
+        """Drop the recorded draw CRS, so the canvas answers again."""
+        self._auto_zone_crs = None
+        self._auto_zone_crs_rect = None
+
+    @staticmethod
+    def _zone_rect_key(rect: QgsRectangle) -> tuple[float, float, float, float]:
+        """The four numbers that tell one rectangle from another."""
+        return (rect.xMinimum(), rect.yMinimum(),
+                rect.xMaximum(), rect.yMaximum())
+
+    def _zone_source_crs(self, zone: QgsRectangle | None):
+        """The CRS ``zone`` is expressed in. None when unreadable.
+
+        While a zone is live, its recorded draw CRS answers for EVERY rectangle
+        these helpers are handed, not for the zone rectangle alone. One zone
+        session holds all its canvas drawings in one CRS: the zone, its polygon
+        and every example or exclude box, because the exemplar path converts a
+        draw made after a project CRS change back into the zone's CRS before it
+        stores it. Reading the live canvas instead would take those older
+        numbers for new ones and put a paid run's references on the wrong
+        ground, which is the same failure the zone itself is protected from.
+
+        With no zone, or once the stored zone stops being the one the CRS was
+        recorded for, the live canvas answers again.
+        """
+        try:
+            live = self.iface.mapCanvas().mapSettings().destinationCrs()
+        except (RuntimeError, AttributeError):
+            return None
+        recorded = getattr(self, "_auto_zone_crs", None)
+        rect = getattr(self, "_auto_zone_crs_rect", None)
+        stored = self._auto_zone
+        if (recorded is None or not recorded.isValid() or rect is None
+                or stored is None or zone is None):
+            return live
+        try:
+            return recorded if self._zone_rect_key(stored) == rect else live
+        except (RuntimeError, AttributeError):
+            return live
+
     def _zone_in_layer_crs(
         self, zone: QgsRectangle, layer: QgsRasterLayer
     ) -> QgsRectangle:
-        """Reproject a zone rectangle from canvas CRS to layer CRS.
+        """Reproject a rectangle from its own CRS to the layer CRS.
+
+        The recorded draw CRS covers the stored zone only; anything else is
+        read in the live canvas CRS.
 
         Returns the original zone if CRS are identical or either is invalid.
         Returns the original zone (graceful fallback) if the transform fails.
         """
         try:
-            canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+            zone_crs = self._zone_source_crs(zone)
             layer_crs = layer.crs()
         except (RuntimeError, AttributeError):
             return zone
 
-        if canvas_crs == layer_crs or not canvas_crs.isValid() or not layer_crs.isValid():
+        if zone_crs is None or zone_crs == layer_crs:
+            return zone
+        if not zone_crs.isValid() or not layer_crs.isValid():
             return zone
 
         try:
-            xform = QgsCoordinateTransform(canvas_crs, layer_crs, QgsProject.instance())
+            xform = QgsCoordinateTransform(zone_crs, layer_crs, QgsProject.instance())
             result = xform.transformBoundingBox(zone)
         except Exception:  # nosec B110 -- antimeridian, invalid CRS, etc.
             return zone
@@ -1039,10 +1204,13 @@ class AutoZoneMixin:
         Identical to the layer CRS for every layer whose axes already agree on
         the ground, so those runs are unchanged.
 
-        The CRS is resolved from the DRAWN ZONE, never from ``zone``, so an
-        exemplar box near the edge of a wide zone cannot land in a different
+        The TARGET CRS is resolved from the DRAWN ZONE, never from ``zone``, so
+        an exemplar box near the edge of a wide zone cannot land in a different
         projected zone from the run it belongs to, nor answer for the run when
         something later asks which CRS it is in.
+
+        The SOURCE CRS is per rectangle: the stored zone reads the CRS it was
+        drawn in, every other rectangle reads the live canvas.
 
         On any failure the run falls back to the layer CRS, and the resolved
         CRS falls back with it: half a run in one CRS and half in another is the
@@ -1056,10 +1224,11 @@ class AutoZoneMixin:
         try:
             if run_crs is None or run_crs == layer.crs():
                 return zone_in_layer
-            canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
-            source_crs = canvas_crs if canvas_crs.isValid() else layer.crs()
+            zone_crs = self._zone_source_crs(zone)
+            drawn_in = zone_crs is not None and zone_crs.isValid()
+            source_crs = zone_crs if drawn_in else layer.crs()
             xform = QgsCoordinateTransform(source_crs, run_crs, QgsProject.instance())
-            source_zone = zone if canvas_crs.isValid() else zone_in_layer
+            source_zone = zone if drawn_in else zone_in_layer
             result = xform.transformBoundingBox(source_zone)
             if result.width() <= 0 or result.height() <= 0:
                 raise ValueError("degenerate rectangle in the run CRS")
@@ -1107,19 +1276,28 @@ class AutoZoneMixin:
         detections do not use throws every one of them away."""
         if self._auto_zone_polygon is None:
             return None
-        geom = QgsGeometry(self._auto_zone_polygon)  # canvas CRS copy
+        geom = QgsGeometry(self._auto_zone_polygon)  # copy, in the drawn CRS
         try:
-            canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+            # The polygon and the zone rectangle are stored together, in the
+            # same CRS, so the rectangle answers for both. Reading it rather
+            # than the polygon's own box keeps the clip in the CRS the run
+            # resolves from that same rectangle.
+            zone_rect = self._auto_zone
+            if zone_rect is None:
+                zone_rect = geom.boundingBox()
+            zone_crs = self._zone_source_crs(zone_rect)
             target_crs = self._run_crs_for_layer(
-                layer, self._zone_in_layer_crs(geom.boundingBox(), layer))
+                layer, self._zone_in_layer_crs(zone_rect, layer))
             if target_crs is None:
                 target_crs = layer.crs()
         except (RuntimeError, AttributeError):
             return None
-        if canvas_crs == target_crs or not canvas_crs.isValid() or not target_crs.isValid():
+        if zone_crs is None or zone_crs == target_crs:
+            return geom
+        if not zone_crs.isValid() or not target_crs.isValid():
             return geom
         try:
-            xform = QgsCoordinateTransform(canvas_crs, target_crs, QgsProject.instance())
+            xform = QgsCoordinateTransform(zone_crs, target_crs, QgsProject.instance())
             geom.transform(xform)
         except Exception:  # nosec B110 -- antimeridian, invalid CRS, etc.
             return None
@@ -1225,9 +1403,17 @@ class AutoZoneMixin:
         canvas.installEventFilter(self._zone_escape_filter)
 
     def _remove_zone_delete_badge(self) -> None:
+        # Both filters are parented to the canvas and hold a bound method of the
+        # plugin controller, so dropping the Python reference alone leaves them
+        # alive as canvas children for the rest of the session, with the whole
+        # controller behind them. deleteLater ends them for good.
         if self._zone_escape_filter is not None:
             try:
                 self.iface.mapCanvas().removeEventFilter(self._zone_escape_filter)
+            except (RuntimeError, AttributeError):
+                pass
+            try:
+                self._zone_escape_filter.deleteLater()
             except (RuntimeError, AttributeError):
                 pass
             self._zone_escape_filter = None
@@ -1235,6 +1421,10 @@ class AutoZoneMixin:
             try:
                 self.iface.mapCanvas().viewport().removeEventFilter(
                     self._zone_badge_filter)
+            except (RuntimeError, AttributeError):
+                pass
+            try:
+                self._zone_badge_filter.deleteLater()
             except (RuntimeError, AttributeError):
                 pass
             self._zone_badge_filter = None
@@ -1284,7 +1474,22 @@ class AutoZoneMixin:
         if self._auto_worker is not None:
             self._on_auto_cancel_clicked()  # running: Escape = soft Cancel
             return True
+        if getattr(self, "_auto_finalize_state", None) is not None:
+            # Between the last tile and the review, with the "building the
+            # shapes" card up. The worker is gone and the review is not built
+            # yet, so Escape used to fall all the way through to the draw-step
+            # exit: that discarded the whole run, and its rescue export found
+            # no review to save, so a run the user had already paid for went
+            # with it. Swallow the key instead. This window is short, it is
+            # already announced on screen, and Cancel is not on offer in it.
+            return True
         if self._auto_review is not None:
+            # An armed Merge pick owns Escape first, which is what the shortcut
+            # list promises. Without this branch Escape cleared the selection
+            # and left the merge armed with its picks.
+            if getattr(self, "_shape_edit_mode", None) == KIND_MERGE:
+                self._on_shape_draw_cancelled()
+                return True
             # A manual edit session owns Escape before anything else: it drops
             # the line being traced, or ends the session. Without this branch
             # Escape fell through to the review exit and asked to save the whole
@@ -1461,6 +1666,7 @@ class AutoZoneMixin:
         self._refine_handoff_active = False
         self._refine_add_mode_active = False
         self._ai_add_install_pending = False
+        self._drop_cloud_correct_predictor()
         if self.dock_widget and getattr(self.dock_widget, "_refine_handoff", False):
             try:
                 from ..ai_segmentation_dockwidget import Mode
@@ -1471,7 +1677,7 @@ class AutoZoneMixin:
             self._teardown_manual_session()
         except Exception:
             pass  # nosec B110 -- teardown must never raise mid-signal
-        self._auto_zone = None
+        self._store_auto_zone(None)
         self._auto_zone_polygon = None
         self._clear_auto_canvas()
         if self.dock_widget:

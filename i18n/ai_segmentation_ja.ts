@@ -40,20 +40,12 @@
         <translation>名前が汎用的すぎます。ボックスを空にして例だけで検索するか、具体的なオブジェクト名を入力してください。</translation>
     </message>
     <message>
-        <source>Example match</source>
-        <translation>例による一致検索</translation>
-    </message>
-    <message>
         <source>Mark an object to find more like it.</source>
         <translation>オブジェクトを指定すると、似たものをさらに検出します。</translation>
     </message>
     <message>
         <source>Mark a false positive to drop things like it.</source>
         <translation>誤検出を指定すると、似たものを除外します。</translation>
-    </message>
-    <message>
-        <source>Finer detail finds smaller objects.</source>
-        <translation>詳細度を上げるほど小さなオブジェクトを検出できます。</translation>
     </message>
     <message>
         <source>Finish or exit the review to switch modes.</source>
@@ -94,10 +86,6 @@
     <message>
         <source>Accept the Terms and Privacy Policy to enable segmentation.</source>
         <translation>セグメンテーションを有効にするには利用規約とプライバシーポリシーに同意してください。</translation>
-    </message>
-    <message>
-        <source>An unexpected error occurred during export. Please check the logs.</source>
-        <translation>Export中に予期しないエラーが発生しました。ログを確認してください。</translation>
     </message>
     <message>
         <source>I agree to the &lt;a href=&quot;{terms}&quot;&gt;Terms&lt;/a&gt; and &lt;a href=&quot;{privacy}&quot;&gt;Privacy Policy&lt;/a&gt;</source>
@@ -202,20 +190,8 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>更新</translation>
     </message>
     <message>
-        <source>Dependencies ready</source>
-        <translation>依存関係の準備完了</translation>
-    </message>
-    <message>
         <source>Downloading AI model...</source>
         <translation>AIモデルをダウンロード中...</translation>
-    </message>
-    <message>
-        <source>Dependencies ready, model not downloaded</source>
-        <translation>依存関係は準備完了、モデルは未ダウンロード</translation>
-    </message>
-    <message>
-        <source>Dependencies ready, model download failed</source>
-        <translation>依存関係は準備完了、モデルのダウンロードに失敗</translation>
     </message>
     <message>
         <source>Cancel</source>
@@ -246,10 +222,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>検証失敗</translation>
     </message>
     <message>
-        <source>Virtual environment was created but verification failed:</source>
-        <translation>仮想環境は作成されましたが、検証に失敗しました:</translation>
-    </message>
-    <message>
         <source>Unknown error</source>
         <translation>不明なエラー</translation>
     </message>
@@ -260,10 +232,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     <message>
         <source>Update QGIS to 3.34+ for the latest AI model</source>
         <translation>最新のAIモデルを利用するにはQGISを3.34以上に更新してください</translation>
-    </message>
-    <message>
-        <source>Intel Mac: using SAM1 (compatible with PyTorch 2.2)</source>
-        <translation>Intel Mac: SAM1を使用中(PyTorch 2.2に対応)</translation>
     </message>
     <message>
         <source>Download Failed</source>
@@ -342,10 +310,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>輪郭</translation>
     </message>
     <message>
-        <source>Click on the element you want to segment:</source>
-        <translation>セグメント化したい要素をクリック:</translation>
-    </message>
-    <message>
         <source>Left-click to select</source>
         <translation>左クリックで選択</translation>
     </message>
@@ -362,16 +326,8 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>無効なレイヤ</translation>
     </message>
     <message>
-        <source>Layer extent contains invalid coordinates (NaN/Inf). Check the raster file.</source>
-        <translation>レイヤの範囲に無効な座標(NaN/Inf)が含まれています。ラスタファイルを確認してください。</translation>
-    </message>
-    <message>
         <source>Not Ready</source>
         <translation>準備未完了</translation>
-    </message>
-    <message>
-        <source>Please wait for the SAM model to load.</source>
-        <translation>SAMモデルの読み込みが完了するまでお待ちください。</translation>
     </message>
     <message>
         <source>Layer Creation Failed</source>
@@ -566,10 +522,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>分断された部分が検出されました。精度を高めるには、一度に1つの要素をセグメント化してください。</translation>
     </message>
     <message>
-        <source>No element detected at this point. Try clicking on a different area.</source>
-        <translation>この地点では要素が検出されませんでした。別の場所をクリックしてみてください。</translation>
-    </message>
-    <message>
         <source>Updating...</source>
         <translation>更新中...</translation>
     </message>
@@ -584,10 +536,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Loading AI model...</source>
         <translation>AIモデルを読み込み中...</translation>
-    </message>
-    <message>
-        <source>SAM model ready</source>
-        <translation>SAMモデルの準備完了</translation>
     </message>
     <message>
         <source>Ready</source>
@@ -738,10 +686,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>モード選択</translation>
     </message>
     <message>
-        <source>Choose between Manual (local) and Automatic (cloud) segmentation</source>
-        <translation>手動(ローカル)と自動(クラウド)のセグメンテーションから選択</translation>
-    </message>
-    <message>
         <source>Stop the active segmentation before switching modes.</source>
         <translation>モードを切り替える前に、実行中のセグメンテーションを停止してください。</translation>
     </message>
@@ -750,24 +694,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>モードを切り替える前に、実行中の検出をキャンセルしてください。</translation>
     </message>
     <message>
-        <source>Subscribe to keep detecting without limits:</source>
-        <translation>無制限に検出を続けるにはサブスクライブしてください:</translation>
-    </message>
-    <message>
-        <source>Subscribe to Pro</source>
-        <translation>Proにサブスクライブ</translation>
-    </message>
-    <message>
         <source>Cancel the running detection first</source>
         <translation>まず実行中の検出をキャンセルしてください</translation>
-    </message>
-    <message>
-        <source>Detail</source>
-        <translation>詳細度</translation>
-    </message>
-    <message>
-        <source>Higher detail splits the zone into more tiles. Each tile costs 1 credit and captures smaller objects.</source>
-        <translation>詳細度を上げるとゾーンがより多くのタイルに分割されます。タイルごとに1クレジットかかり、より小さなオブジェクトを捉えられます。</translation>
     </message>
     <message>
         <source>Zone too large - reduce the selection area</source>
@@ -848,14 +776,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>More</source>
         <translation>多い</translation>
-    </message>
-    <message>
-        <source>This area is large for this detail level. Raise detail or zoom in for sharper detections.</source>
-        <translation>この詳細度に対して範囲が広すぎます。詳細度を上げるか、より鮮明な検出のためにズームインしてください。</translation>
-    </message>
-    <message>
-        <source>This zone is too large for sharp detections, even at maximum detail. Draw a smaller zone for the best results.</source>
-        <translation>このゾーンは最大の詳細度でも検出精度が上がらないほど大きすぎます。最良の結果を得るには、より小さいゾーンを描いてください。</translation>
     </message>
     <message>
         <source>Available when detection finishes</source>
@@ -1026,20 +946,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>≈ {n} タイル = {n} クレジット</translation>
     </message>
     <message>
-        <source>Automatic mode scans your zone tile by tile. 1 tile = 1 credit, so this run costs about {n} credits. More detail splits the zone into more tiles, which costs more credits.</source>
-        <translation>自動モードはゾーンをタイルごとにスキャンします。1タイル = 1クレジットのため、この実行には約 {n} クレジットかかります。詳細度を上げるとゾーンがより多くのタイルに分割され、クレジット消費も増えます。</translation>
-    </message>
-    <message>
         <source>Draw your example inside the selected zone.</source>
         <translation>選択したゾーンの内側に例を描いてください。</translation>
-    </message>
-    <message>
-        <source>Share anonymous usage statistics</source>
-        <translation>匿名の利用統計を共有</translation>
-    </message>
-    <message>
-        <source>Helps us fix bugs faster. Never includes your data, layers or coordinates.</source>
-        <translation>バグ修正の高速化に役立ちます。データ、レイヤ、座標は一切含まれません。</translation>
     </message>
     <message>
         <source>{n} objects found</source>
@@ -1052,10 +960,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>0 shown at {pct}% - lower Confidence to reveal them</source>
         <translation>信頼度 {pct}% では0件 - 表示するには信頼度を下げてください</translation>
-    </message>
-    <message>
-        <source>Started at {pct}% - nothing scored above.</source>
-        <translation>{pct}% から開始 - これより上にスコアされたものはありません。</translation>
     </message>
     <message>
         <source>More objects</source>
@@ -1154,10 +1058,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>ビフォー/アフタープレビューつきの、すぐに使えるオブジェクトを閲覧します。</translation>
     </message>
     <message>
-        <source>Subscribe to finish this zone: 10,000 credits/month.</source>
-        <translation>このゾーンを完了するにはサブスクライブしてください: 月10,000クレジット。</translation>
-    </message>
-    <message>
         <source>Filter detections by confidence. Lower shows more (and noisier), higher keeps only the strongest. Free and instant.</source>
         <translation>信頼度で検出結果を絞り込みます。下げるとより多く(かつノイズも増えて)表示され、上げると信頼度の高いものだけが残ります。無料かつ即時反映です。</translation>
     </message>
@@ -1180,10 +1080,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>The Library has ready-to-use objects.</source>
         <translation>ライブラリにはすぐに使えるオブジェクトがあります。</translation>
-    </message>
-    <message>
-        <source>object</source>
-        <translation>オブジェクト</translation>
     </message>
     <message>
         <source>Older detection</source>
@@ -1290,20 +1186,12 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>参照...</translation>
     </message>
     <message>
-        <source>Your detections</source>
-        <translation>あなたの検出結果</translation>
-    </message>
-    <message>
         <source>Recent</source>
         <translation>最近</translation>
     </message>
     <message>
         <source>Favorites</source>
         <translation>お気に入り</translation>
-    </message>
-    <message>
-        <source>Templates</source>
-        <translation>テンプレート</translation>
     </message>
     <message>
         <source>Load older runs</source>
@@ -1406,10 +1294,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>手動</translation>
     </message>
     <message>
-        <source>Max detail for this zone - draw a larger zone for finer detail.</source>
-        <translation>このゾーンでの詳細度は上限です - より細かい詳細度を得るには、より大きなゾーンを描いてください。</translation>
-    </message>
-    <message>
         <source>OK</source>
         <translation>OK</translation>
     </message>
@@ -1482,10 +1366,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>開始(表示中のモードの「開始」ボタン)</translation>
     </message>
     <message>
-        <source>Start Manual AI Segmentation</source>
-        <translation>手動AI Segmentationを開始</translation>
-    </message>
-    <message>
         <source>The raster was removed. Your polygons were saved to a layer.</source>
         <translation>ラスタが削除されました。ポリゴンはレイヤに保存されました。</translation>
     </message>
@@ -1538,10 +1418,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>{n} 件中 {visible} 件を表示中</translation>
     </message>
     <message>
-        <source>Click an object on the map and the AI outlines it. You go one object at a time, checking and saving each polygon yourself.</source>
-        <translation>地図上のオブジェクトをクリックすると、AIがその輪郭を描きます。オブジェクトを1つずつ確認しながら、自分でポリゴンを保存していきます。</translation>
-    </message>
-    <message>
         <source>Show guidance tips again</source>
         <translation>ガイドのヒントを再表示</translation>
     </message>
@@ -1574,36 +1450,12 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>無料アカウント - ブラウザでの登録は15秒で完了します。</translation>
     </message>
     <message>
-        <source>Manual mode stays free and unlimited on your computer.</source>
-        <translation>手動モードはお使いのコンピュータ上で無料かつ無制限に利用できます。</translation>
-    </message>
-    <message>
-        <source>Finds every object of one kind in your zone - draw a zone, name the object, get all the polygons at once.</source>
-        <translation>ゾーン内の同じ種類のオブジェクトをすべて検出します - ゾーンを描き、オブジェクト名を入力すると、すべてのポリゴンを一度に取得できます。</translation>
-    </message>
-    <message>
-        <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;subscribe&lt;/a&gt; to segment areas of any size.</source>
-        <translation>より小さいゾーンを描くか、&lt;a href="{url}"&gt;サブスクライブ&lt;/a&gt;してどんな大きさの範囲もセグメント化してください。</translation>
-    </message>
-    <message>
-        <source>Running low: {n} free detections left. &lt;a href=&quot;{url}&quot;&gt;Subscribe&lt;/a&gt; to keep going.</source>
-        <translation>残りわずか: 無料検出 {n} 件。続けるには&lt;a href="{url}"&gt;サブスクライブ&lt;/a&gt;してください。</translation>
-    </message>
-    <message>
         <source>Then segment any imagery: point and click, or fully automatic.</source>
         <translation>その後、どんな画像もセグメント化できます: クリック操作、または完全自動で。</translation>
     </message>
     <message>
         <source>Waiting for your browser sign-in...</source>
         <translation>ブラウザでのサインインを待っています...</translation>
-    </message>
-    <message>
-        <source>New: Automatic mode finds every object in a zone at once.</source>
-        <translation>新機能: 自動モードでゾーン内のすべてのオブジェクトを一度に検出できます。</translation>
-    </message>
-    <message>
-        <source>Try Automatic</source>
-        <translation>自動モードを試す</translation>
     </message>
     <message>
         <source>Got it - hide this tip</source>
@@ -1618,8 +1470,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>0件 - 表示するには最小サイズフィルタを下げてください</translation>
     </message>
     <message>
-        <source>10,000 credits every month. Cancel anytime.</source>
-        <translation>月10,000クレジット。いつでもキャンセル可能です。</translation>
+        <source>5,000 credits every month. Cancel anytime.</source>
+        <translation>月5,000クレジット。いつでもキャンセル可能です。</translation>
     </message>
     <message>
         <source>A Component Failed to Load</source>
@@ -1644,10 +1496,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Any GeoTIFF, WMS or XYZ basemap.</source>
         <translation>GeoTIFF、WMS、XYZベースマップのいずれでも使用できます。</translation>
-    </message>
-    <message>
-        <source>At this detail {obj} is too small to spot - raise the detail.</source>
-        <translation>この詳細度では{obj}が小さすぎて見つけられません - 詳細度を上げてください。</translation>
     </message>
     <message>
         <source>Available once the current install or detection finishes.</source>
@@ -1696,10 +1544,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>地図上に描く</translation>
     </message>
     <message>
-        <source>Extra detail keeps helping {obj} in this zone.</source>
-        <translation>このゾーンでは{obj}に対して詳細度を上げるとさらに効果があります。</translation>
-    </message>
-    <message>
         <source>Free plan</source>
         <translation>無料プラン</translation>
     </message>
@@ -1728,40 +1572,12 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>アカウントを管理</translation>
     </message>
     <message>
-        <source>Manual Mode Not Supported</source>
-        <translation>手動モードはサポートされていません</translation>
-    </message>
-    <message>
-        <source>Manual mode installs local components that are not available for this Mac with this version of QGIS. Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
-        <translation>手動モードは、このMacとこのバージョンのQGISでは利用できないローカルコンポーネントをインストールします。代わりに、クラウド上で完全に動作しローカルインストールが不要な自動モードをご利用ください。</translation>
-    </message>
-    <message>
-        <source>Manual mode is not supported in this QGIS installation</source>
-        <translation>このQGISインストールでは手動モードはサポートされていません</translation>
-    </message>
-    <message>
-        <source>Manual mode needs to install local dependencies, which is not supported inside this sandboxed QGIS installation (Flatpak or Snap). Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
-        <translation>手動モードはローカルの依存関係のインストールが必要ですが、このサンドボックス化されたQGIS環境(FlatpakまたはSnap)ではサポートされていません。代わりに、クラウド上で完全に動作しローカルインストールが不要な自動モードをご利用ください。</translation>
-    </message>
-    <message>
-        <source>Name the object (or draw an example) first - Detail then tunes itself to it.</source>
-        <translation>まずオブジェクトの名前を入力する(または例を描く)と、詳細度が自動的に調整されます。</translation>
-    </message>
-    <message>
         <source>New here? Our 5-minute tutorial walks you through a full detection, step by step.</source>
         <translation>初めてですか?5分のチュートリアルで、検出の一連の流れをステップごとにご案内します。</translation>
     </message>
     <message>
         <source>Not Enough Disk Space</source>
         <translation>ディスク容量が不足しています</translation>
-    </message>
-    <message>
-        <source>Not enough credits: {n} tiles, only {left} left. Reduce the detail or zone, or subscribe.</source>
-        <translation>クレジットが不足しています: {n} タイルに対して残り {left} のみです。詳細度またはゾーンを縮小するか、サブスクライブしてください。</translation>
-    </message>
-    <message>
-        <source>Not enough credits: {n} tiles, only {left} left. Reduce the detail or zone.</source>
-        <translation>クレジットが不足しています: {n} タイルに対して残り {left} のみです。詳細度またはゾーンを縮小してください。</translation>
     </message>
     <message>
         <source>Online layer returned blank tiles for this area. The current zoom level may be outside the service's range, or this area has no coverage. Zoom to a level where the layer is visible on the map, then try again.</source>
@@ -1840,10 +1656,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>{obj}に通常必要な精度より高く、最も小さいものまで捉えます。</translation>
     </message>
     <message>
-        <source>Skipped {n} empty tiles (not charged).</source>
-        <translation>空のタイル {n} 件をスキップしました(課金なし)。</translation>
-    </message>
-    <message>
         <source>Small {obj} may be missed at this level.</source>
         <translation>このレベルでは小さな{obj}が見逃される可能性があります。</translation>
     </message>
@@ -1854,14 +1666,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     <message>
         <source>Something went wrong starting the detection. Please try again.</source>
         <translation>検出の開始中に問題が発生しました。再試行してください。</translation>
-    </message>
-    <message>
-        <source>Started at {pct}% - the usual sweet spot for this object type.</source>
-        <translation>{pct}% から開始 - このオブジェクトタイプに通常最適な値です。</translation>
-    </message>
-    <message>
-        <source>Started at {pct}% to fit this run's scores - raise to tighten.</source>
-        <translation>この実行のスコアに合わせて {pct}% から開始しました - 上げるとより厳しく絞り込めます。</translation>
     </message>
     <message>
         <source>Support code: {code}</source>
@@ -1890,10 +1694,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     <message>
         <source>There's a problem with your subscription. Your last payment may have failed. Open your account to update your payment method or review your plan.</source>
         <translation>サブスクリプションに問題があります。前回のお支払いが失敗した可能性があります。アカウントを開いて、お支払い方法の更新またはプランの確認を行ってください。</translation>
-    </message>
-    <message>
-        <source>This deletes the local AI model files, signs you out, and resets the plugin. Your account and credits are not affected. Manual mode will download the files again next time you use it.</source>
-        <translation>これによりローカルのAIモデルファイルが削除され、サインアウトしてプラグインがリセットされます。アカウントとクレジットには影響しません。次回手動モードを使用する際に、ファイルは再度ダウンロードされます。</translation>
     </message>
     <message>
         <source>This layer has no valid coordinate reference system. Set one in Layer Properties before detecting.</source>
@@ -1956,10 +1756,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>信頼度が低い</translation>
     </message>
     <message>
-        <source>upgrade to unlock it</source>
-        <translation>アップグレードすると利用できます</translation>
-    </message>
-    <message>
         <source>your object</source>
         <translation>あなたのオブジェクト</translation>
     </message>
@@ -1967,50 +1763,22 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <source>{n} found so far</source>
         <translation>これまでに {n} 件発見</translation>
     </message>
-    <message>
-        <source>{n} tiles could not be loaded from the layer server; results may be incomplete.</source>
-        <translation>レイヤサーバーから {n} 件のタイルを読み込めませんでした。結果が不完全な場合があります。</translation>
-    </message>
-    <message>
-        <source>{n} tiles had no imagery and were not analyzed (not charged). Check the imagery layer loads over this area, then run Detect again.</source>
-        <translation>{n} 件のタイルに画像がなく、解析されませんでした(課金なし)。この範囲で画像レイヤが読み込まれることを確認してから、再度検出を実行してください。</translation>
-    </message>
-    <message>
-        <source>{n} {object} saved to layer "{name}"</source>
-        <translation>{n} 件の{object}をレイヤ「{name}」に保存しました</translation>
-    </message>
-    <message>
-        <source>{used} credits used</source>
-        <translation>{used} クレジット使用</translation>
-    </message>
     <!-- v2.1.7 sync: append-to-layer export, singular forms, small-example guidance (2026-07-13) -->
     <message>
-        <source>1 credit ~ 0.17 km² at default detail.</source>
-        <translation>デフォルトの詳細度では 1クレジット ~ 0.17km² です。</translation>
+        <source>5,000 detections every month</source>
+        <translation>月5,000件の検出(約1,700km²)</translation>
     </message>
     <message>
-        <source>10,000 detections every month (~1,700 km²)</source>
-        <translation>月10,000件の検出(約1,700km²)</translation>
+        <source>This zone is {area} km². Free zones stop at {max} km².</source>
+        <translation>このゾーンは{area} km²です。無料のゾーンは{max} km²までです。</translation>
     </message>
     <message>
-        <source>Last run: {count} {object} exported · {area} km² · {used} credits used</source>
-        <translation>前回の実行: {object}を{count}件Export · {area} km² · {used} クレジット使用</translation>
+        <source>Pro has no size limit. Any area you draw, 5,000 tiles a month, maximum detail.</source>
+        <translation>Proはサイズの制限がありません。描いた範囲すべて、毎月5,000タイル、最大の精細さ。</translation>
     </message>
     <message>
-        <source>Last run: {count} {object} exported · {area} km² · {used} credits used, {left} left</source>
-        <translation>前回の実行: {object}を{count}件Export · {area} km² · {used} クレジット使用、残り {left}</translation>
-    </message>
-    <message>
-        <source>Last session: {count} polygon(s) exported · {area} km²</source>
-        <translation>前回のセッション: {count} 件のポリゴンをExport · {area} km²</translation>
-    </message>
-    <message>
-        <source>This zone is {area} km² - free trial zones go up to {max} km².</source>
-        <translation>このゾーンは {area} km² です - 無料トライアルのゾーンは最大 {max} km² までです。</translation>
-    </message>
-    <message>
-        <source>{area} km²</source>
-        <translation>{area} km²</translation>
+        <source>&lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt;, or make this zone smaller.</source>
+        <translation>&lt;a href=&quot;{url}&quot;&gt;Proにアップグレード&lt;/a&gt;するか、このゾーンを小さくしてください。</translation>
     </message>
     <message>
         <source>Sending to the AI...</source>
@@ -2077,14 +1845,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>オブジェクト名を解決しています</translation>
     </message>
     <message>
-        <source>This example is very small at the current detail level. Zoom the detail slider finer or draw a larger object.</source>
-        <translation>この例は現在の詳細レベルでは非常に小さいです。詳細スライダーを細かくするか、より大きなオブジェクトを描いてください。</translation>
-    </message>
-    <message>
-        <source>This example is very small even at the finest detail. Draw a larger object, or it may be too small to detect.</source>
-        <translation>この例は最も細かい詳細レベルでも非常に小さいです。より大きなオブジェクトを描いてください。小さすぎると検出できない場合があります。</translation>
-    </message>
-    <message>
         <source>Your free detections are used up</source>
         <translation>無料検出をすべて使い切りました</translation>
     </message>
@@ -2101,10 +1861,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>今回の修正1件</translation>
     </message>
     <message>
-        <source>1 detection removed</source>
-        <translation>検出 1件を削除</translation>
-    </message>
-    <message>
         <source>1 object</source>
         <translation>オブジェクト1件</translation>
     </message>
@@ -2115,14 +1871,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     <message>
         <source>1 result</source>
         <translation>結果1件</translation>
-    </message>
-    <message>
-        <source>A detection run was interrupted before its results were exported. {n} detection(s) were saved.</source>
-        <translation>結果をExportする前に、検出の実行が中断されました。{n} 件の検出結果が保存されました。</translation>
-    </message>
-    <message>
-        <source>A free run covers up to {cap} credits. Lower the detail or draw a smaller zone, or</source>
-        <translation>無料の実行は最大{cap}クレジットまでです。詳細度を下げるか、より小さいゾーンを描くか、または</translation>
     </message>
     <message>
         <source>A newer version of AI Segmentation is available with the latest fixes.</source>
@@ -2141,10 +1889,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>AI環境が破損しています</translation>
     </message>
     <message>
-        <source>AI and Manual are two ways to fix the same polygon.</source>
-        <translation>AIと手動は、同じポリゴンを修正する2つの方法です。</translation>
-    </message>
-    <message>
         <source>Add a missing polygon</source>
         <translation>見逃したポリゴンを追加</translation>
     </message>
@@ -2161,28 +1905,12 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>最良の結果を得るには、例をもう1つ追加してください。</translation>
     </message>
     <message>
-        <source>Add them to the project</source>
-        <translation>プロジェクトに追加</translation>
-    </message>
-    <message>
-        <source>Adding an object uses the free on-device AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and Add will arm automatically when it is ready.</source>
-        <translation>オブジェクトの追加には無料のローカルAIを使用しますが、まだインストールされていません。今すぐインストールしますか?(数分、バックグラウンドで実行されます)レビューはそのまま続けられます。準備が整うと、追加が自動的に有効になります。</translation>
-    </message>
-    <message>
         <source>Adding needs a one-time setup</source>
         <translation>追加には初回のみセットアップが必要です</translation>
     </message>
     <message>
         <source>Almost done - building the shapes...</source>
         <translation>もうすぐ完了 - 形状を生成中...</translation>
-    </message>
-    <message>
-        <source>Almost there: in step 1, name the object your examples show - words plus examples detect best.</source>
-        <translation>もう少しです: ステップ1で、例が示すオブジェクトに名前を付けてください - 単語と例を組み合わせると検出精度が最も高くなります</translation>
-    </message>
-    <message>
-        <source>Almost there: in step 2, outline one &quot;{word}&quot; on the map so the AI sees what yours look like.</source>
-        <translation>もう少しです: ステップ2で、地図上に「{word}」を1つ描いてください。そうすることで、見た目をAIに伝えられます。</translation>
     </message>
     <message>
         <source>Another QGIS window is installing the AI components. Wait for it to finish, then try again.</source>
@@ -2317,20 +2045,12 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>修正</translation>
     </message>
     <message>
-        <source>Correct the polygons</source>
-        <translation>ポリゴンを修正</translation>
-    </message>
-    <message>
         <source>Could not apply the new settings. Try a different value.</source>
         <translation>新しい設定を適用できませんでした。別の値を試してください。</translation>
     </message>
     <message>
         <source>Could not check the AI components. See the log for details.</source>
         <translation>AIコンポーネントを確認できませんでした。詳細はログを確認してください。</translation>
-    </message>
-    <message>
-        <source>Could not load the saved run. The file may have been moved or deleted.</source>
-        <translation>保存された実行を読み込めませんでした。ファイルが移動または削除された可能性があります。</translation>
     </message>
     <message>
         <source>Credits come back on {date}</source>
@@ -2369,18 +2089,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>密集した森林ですか?「Forest」は全体を1つの塊として扱い、「Tree」は個々の木を検出します。</translation>
     </message>
     <message>
-        <source>Detect with example only</source>
-        <translation>例のみで検出</translation>
-    </message>
-    <message>
-        <source>Detect with examples only</source>
-        <translation>例のみで検出</translation>
-    </message>
-    <message>
-        <source>Detect with text only</source>
-        <translation>テキストのみで検出</translation>
-    </message>
-    <message>
         <source>Detection stopped early after {done} tile(s). The objects already found are kept below.</source>
         <translation>{done} 件のタイル処理後に検出が早期停止しました。既に見つかったオブジェクトは以下に保持されています。</translation>
     </message>
@@ -2391,14 +2099,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     <message>
         <source>Distinct</source>
         <translation>個別色</translation>
-    </message>
-    <message>
-        <source>Drag a box around one look-alike to exclude.</source>
-        <translation>除外したい似ているものの周りにボックスをドラッグしてください。</translation>
-    </message>
-    <message>
-        <source>Drag a box around one object.</source>
-        <translation>オブジェクトの周りにボックスをドラッグしてください。</translation>
     </message>
     <message>
         <source>Drag a corner to move it. Click an edge to add one, right-click removes.</source>
@@ -2419,10 +2119,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     <message>
         <source>Draw a line right across the shape, then Finish.</source>
         <translation>形状を横切るように線を描き、完了してください。</translation>
-    </message>
-    <message>
-        <source>Draw an example of the object first (step 2).</source>
-        <translation>まずオブジェクトの例を描いてください(ステップ2)。</translation>
     </message>
     <message>
         <source>Draw an example, or type what to find.</source>
@@ -2511,14 +2207,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     <message>
         <source>How detections are coloured on the map (visual only): Normal fill, Outline, Confidence heatmap, or a distinct colour per object to tell them apart.</source>
         <translation>地図上での検出結果の色分け方法(表示のみ): 通常の塗りつぶし、輪郭、信頼度ヒートマップ、またはオブジェクトごとに色を変えて見分ける、から選べます。</translation>
-    </message>
-    <message>
-        <source>How many of each outline&apos;s points to keep, as a share. 100% keeps the class default; lower thins further, dropping the smallest detail first and keeping the corners and the surface. With Right angles on it runs first, so lowering it gives the squaring straight walls to work from.</source>
-        <translation>各輪郭で保持する点の割合です。100%ではそのクラスの既定値を維持し、下げるとさらに間引かれ、最も細かいディテールから先に削除されますが角と面の形は保たれます。「直角化」がオンのときはこちらが先に実行されるため、値を下げると直角化の元になるまっすぐな壁が得られます。</translation>
-    </message>
-    <message>
-        <source>How many of the outline&apos;s points to keep, as a share. 100% keeps the standard density; lower thins further, dropping the smallest detail first and keeping the corners and the surface. With Right angles on it runs first, so lowering it gives the squaring straight walls to work from.</source>
-        <translation>輪郭で保持する点の割合です。100%では標準の密度を維持し、下げるとさらに間引かれ、最も細かいディテールから先に削除されますが角と面の形は保たれます。「直角化」がオンのときはこちらが先に実行されるため、値を下げると直角化の元になるまっすぐな壁が得られます。</translation>
     </message>
     <message>
         <source>How many of this polygon&apos;s points to keep. The count in the title row follows it. It runs before Right angles, so lowering it gives the squaring straight walls instead of a staircase.</source>
@@ -2637,10 +2325,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>サインインサービスに接続できません。インターネット接続を確認してから、「接続」をクリックして再試行してください。</translation>
     </message>
     <message>
-        <source>No detection in this zone. Try a more specific object word, or a finer detail level.</source>
-        <translation>このゾーンに検出結果がありません。より具体的なオブジェクト名を試すか、詳細度を上げてください。</translation>
-    </message>
-    <message>
         <source>No detection under that click.</source>
         <translation>そのクリック位置に検出結果はありません。</translation>
     </message>
@@ -2655,10 +2339,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     <message>
         <source>Nothing changed. The line has to cross the outline twice, starting and ending outside the shape.</source>
         <translation>何も変更されませんでした。線は輪郭を2回横切り、形状の外側で始まって外側で終わる必要があります。</translation>
-    </message>
-    <message>
-        <source>Nothing cleared the confidence bar in this zone.</source>
-        <translation>このゾーンでは信頼度バーを超えるものがありませんでした。</translation>
     </message>
     <message>
         <source>Nothing was added. A polygon needs at least three corners.</source>
@@ -2683,10 +2363,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     <message>
         <source>One object per run - detecting &quot;{first}&quot; now. Run the other objects as separate detections.</source>
         <translation>1回の実行で扱えるオブジェクトは1つです - 現在「{first}」を検出中です。他のオブジェクトは別の検出として実行してください。</translation>
-    </message>
-    <message>
-        <source>Only this polygon. Every other one follows the Shapes step.</source>
-        <translation>このポリゴンのみです。他はすべて「形状」ステップの設定に従います。</translation>
     </message>
     <message>
         <source>Open the selected saved polygon for AI editing</source>
@@ -2745,16 +2421,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>QGISが一時的なレビューレイヤを有効化できませんでした。他の編集セッションを閉じてから、手動編集を再試行してください。</translation>
     </message>
     <message>
-        <source>QGIS could not open a browser. Open this address to finish signing in, then come back here:
-{}</source>
-        <translation>QGISがブラウザを開けませんでした。次のアドレスを開いてサインインを完了し、その後ここに戻ってきてください:
-{}</translation>
-    </message>
-    <message>
-        <source>QGIS could not open a browser. The sign-in address is copied to your clipboard: paste it into a browser to finish, then come back here.</source>
-        <translation>QGISがブラウザを開けませんでした。サインイン用のアドレスはクリップボードにコピーされています。ブラウザに貼り付けて完了し、その後ここに戻ってきてください。</translation>
-    </message>
-    <message>
         <source>QGIS could not save these edits. Fix the geometry and click Done again.</source>
         <translation>QGISがこれらの編集を保存できませんでした。ジオメトリを修正し、もう一度「完了」をクリックしてください。</translation>
     </message>
@@ -2777,10 +2443,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     <message>
         <source>Rebuilding shapes ({done} of {total})</source>
         <translation>形状を再構築中 ({done}/{total})</translation>
-    </message>
-    <message>
-        <source>Recovered {n} detection(s) to the layer {name}.</source>
-        <translation>{n} 件の検出結果をレイヤ「{name}」に復元しました。</translation>
     </message>
     <message>
         <source>Redraw edge</source>
@@ -2815,14 +2477,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>共有設定に戻す</translation>
     </message>
     <message>
-        <source>Reshape needs a one-time setup</source>
-        <translation>形状変更には初回のみセットアップが必要です</translation>
-    </message>
-    <message>
-        <source>Reshaping uses the free on-device AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and reshaping will open automatically when it is ready.</source>
-        <translation>形状変更には無料のローカルAIを使用しますが、まだインストールされていません。今すぐインストールしますか?(数分、バックグラウンドで実行されます)レビューはそのまま続けられます。準備が整うと、形状変更が自動的に開きます。</translation>
-    </message>
-    <message>
         <source>Right angles</source>
         <translation>直角化</translation>
     </message>
@@ -2847,40 +2501,12 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>このゾーンを再実行</translation>
     </message>
     <message>
-        <source>Running low: {n} free detections left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Subscribe&lt;/a&gt; to keep going.</source>
-        <translation>残りわずか: 無料検出 {n} 件、{date}に復活します。続けるには&lt;a href=&quot;{url}&quot;&gt;サブスクライブ&lt;/a&gt;してください。</translation>
-    </message>
-    <message>
-        <source>Same setup as your last run - the result will match. Add an example or change the detail for a different result.</source>
-        <translation>前回の実行と同じ設定です - 結果も同じになります。異なる結果を得るには、例を追加するか詳細度を変更してください。</translation>
-    </message>
-    <message>
         <source>Save</source>
         <translation>保存</translation>
     </message>
     <message>
         <source>Save the fix and go back to the review</source>
         <translation>修正を保存し、レビューに戻ります。</translation>
-    </message>
-    <message>
-        <source>Save this polygon and go back to picking.</source>
-        <translation>このポリゴンを保存し、選択に戻ります。</translation>
-    </message>
-    <message>
-        <source>Setting up the on-device AI in the background. You can keep reviewing; reshaping opens automatically when it is ready.</source>
-        <translation>バックグラウンドでローカルAIをセットアップしています。レビューはそのまま続けられます。準備が整うと、形状変更が自動的に開きます。</translation>
-    </message>
-    <message>
-        <source>Setting up the on-device AI in the background...</source>
-        <translation>バックグラウンドでローカルAIをセットアップ中...</translation>
-    </message>
-    <message>
-        <source>Settings for this polygon</source>
-        <translation>このポリゴンの設定</translation>
-    </message>
-    <message>
-        <source>Shadows getting detected instead of trees? Draw an &apos;Exclude a look-alike&apos; box on one shadow - the AI drops similar false positives.</source>
-        <translation>木の代わりに影が検出されていますか?影の1つに「似ているものを除外」のボックスを描くと、AIが似たような誤検出を除外します。</translation>
     </message>
     <message>
         <source>Shape updated. Keep editing, or click Save.</source>
@@ -2943,10 +2569,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>ローカルAIを停止中...</translation>
     </message>
     <message>
-        <source>Switch to AI to shape this polygon on its own.</source>
-        <translation>AIに切り替えると、このポリゴンの形状を自動で整えます。</translation>
-    </message>
-    <message>
         <source>That area does not touch the object you are editing, so nothing was added. Reshaping works on one object at a time.</source>
         <translation>その範囲は編集中のオブジェクトに接していないため、何も追加されませんでした。形状変更は一度に1つのオブジェクトに対してのみ行えます。</translation>
     </message>
@@ -2991,10 +2613,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>インストーラがヘルパープロセスを起動できませんでした(Pythonランチャーが破損しています)。「依存関係を再インストール」をクリックして、環境を最初から再構築してください。</translation>
     </message>
     <message>
-        <source>The pieces do not touch, so the result is one object in several parts.</source>
-        <translation>これらの部分は互いに接していないため、結果は複数の部分からなる1つのオブジェクトになります。</translation>
-    </message>
-    <message>
         <source>The removal could not start. You are signed out, but the downloaded AI data is still on this computer. Try again.</source>
         <translation>削除を開始できませんでした。サインアウトされましたが、ダウンロード済みのAIデータはこのコンピュータに残っています。再試行してください。</translation>
     </message>
@@ -3019,10 +2637,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>手作業で編集する前に、このポリゴンの点を間引きます。100%では輪郭はそのまま維持されます。</translation>
     </message>
     <message>
-        <source>This image has no position on the map, so Automatic cannot place what it finds. Give it one with the QGIS Georeferencer, or use Manual mode on it as is.</source>
-        <translation>この画像には地図上の位置情報がないため、自動モードは検出結果を配置できません。QGISの地理参照ツールで位置情報を付与するか、そのまま手動モードを使用してください。</translation>
-    </message>
-    <message>
         <source>This polygon</source>
         <translation>このポリゴン</translation>
     </message>
@@ -3033,14 +2647,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     <message>
         <source>This raster is rotated. Run Warp (Reproject) on it to straighten it before segmenting.</source>
         <translation>このラスタは回転しています。セグメント化する前に、ワープ(再投影)を実行して補正してください。</translation>
-    </message>
-    <message>
-        <source>This raster is rotated. Run Warp (Reproject) on it to straighten it first. Manual mode cannot read it either.</source>
-        <translation>このラスタは回転しています。まずワープ(再投影)を実行して補正してください。手動モードでもこれを読み込めません。</translation>
-    </message>
-    <message>
-        <source>This run costs more credits than a free run covers. Lower the detail or draw a smaller zone, or</source>
-        <translation>この実行に必要なクレジットは、無料の実行でカバーできる範囲を超えています。詳細度を下げるか、より小さいゾーンを描くか、または</translation>
     </message>
     <message>
         <source>This run did not keep where it looked, so it cannot be pointed at the same place. Draw the zone again.</source>
@@ -3057,10 +2663,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     <message>
         <source>Two references give the strongest detection. Draw a second to reach best quality.</source>
         <translation>参照画像が2つあると、検出精度が最も高くなります。2つ目を描いて最高品質にしましょう。</translation>
-    </message>
-    <message>
-        <source>Type a word for the object first (step 1).</source>
-        <translation>まずオブジェクトの単語を入力してください(ステップ1)。</translation>
     </message>
     <message>
         <source>Unavailable while Right angles is on. Turn it off to adjust this setting.</source>
@@ -3195,10 +2797,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>今回のセッションで{n} 件の形状を編集</translation>
     </message>
     <message>
-        <source>{n} shapes merged into one · Free</source>
-        <translation>{n} 件の形状を1つに結合 · 無料</translation>
-    </message>
-    <message>
         <source>{n} shapes picked. Press Enter to join.</source>
         <translation>{n} 件の形状を選択中です。Enterキーで結合してください。</translation>
     </message>
@@ -3220,12 +2818,8 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <!-- Correct step rework, install and precision wording (2026-07-30) -->
     <message>
-        <source>1 credit ~ 0.17 km² at default precision.</source>
-        <translation>デフォルトの詳細度では 1クレジット ~ 0.17km² です。</translation>
-    </message>
-    <message>
-        <source>10,000 credits a month.</source>
-        <translation>月10,000クレジット。</translation>
+        <source>5,000 credits a month.</source>
+        <translation>月5,000クレジット。</translation>
     </message>
     <message>
         <source>A free run covers up to {cap} credits. This one costs more.</source>
@@ -3240,14 +2834,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
         <translation>この詳細度では{obj}が小さすぎて見つけられません - 詳細度を上げてください。</translation>
     </message>
     <message>
-        <source>Automatic mode is ready. The on-device AI could not be installed, so Manual mode and the AI fix are off until it is. Everything else works.</source>
-        <translation>自動モードの準備ができました。ローカルAIをインストールできなかったため、インストールされるまで手動モードとAI修正は使用できません。それ以外はすべて使用できます。</translation>
-    </message>
-    <message>
-        <source>Automatic mode needs the AI environment, and it is missing or incomplete. Install the dependencies from the plugin panel, then run Detect again.</source>
-        <translation>自動モードにはAI環境が必要ですが、見つからないか不完全です。プラグインパネルから依存関係をインストールし、再度検出を実行してください。</translation>
-    </message>
-    <message>
         <source>Automatic mode scans your zone tile by tile. 1 tile = 1 credit, so this run costs about {n} credits. More precision splits the zone into more tiles, which costs more credits.</source>
         <translation>自動モードはゾーンをタイルごとにスキャンします。1タイル = 1クレジットのため、この実行には約 {n} クレジットかかります。詳細度を上げるとゾーンがより多くのタイルに分割され、クレジット消費も増えます。</translation>
     </message>
@@ -3258,10 +2844,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     <message>
         <source>Clean up this outline</source>
         <translation>この輪郭をクリーンに</translation>
-    </message>
-    <message>
-        <source>Click an object and the AI outlines it. You check and save each polygon yourself, one at a time. Use Automatic mode to get every object in a zone at once.</source>
-        <translation>オブジェクトをクリックすると、AIがその輪郭を描きます。ポリゴンは1つずつ自分で確認して保存します。ゾーン内のすべてのオブジェクトを一度に取得するには、自動モードを使用してください。</translation>
     </message>
     <message>
         <source>Click points around one look-alike, then double-click to close.</source>
@@ -3290,14 +2872,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     <message>
         <source>Downloads Blocked by Your Network</source>
         <translation>ネットワークによってダウンロードがブロックされています</translation>
-    </message>
-    <message>
-        <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to segment areas of any size.</source>
-        <translation>より小さいゾーンを描くか、&lt;a href=&quot;{url}&quot;&gt;Proにアップグレード&lt;/a&gt;してどんな大きさの範囲もセグメント化してください。</translation>
-    </message>
-    <message>
-        <source>Draw a zone, name one kind of object, and get all of them in one run. Use Manual mode to work one object at a time.</source>
-        <translation>ゾーンを描き、オブジェクトの種類を1つ指定すると、1回の実行ですべて取得できます。1つずつ作業するには、手動モードを使用してください。</translation>
     </message>
     <message>
         <source>Draw another example</source>
@@ -3338,14 +2912,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     <message>
         <source>Keep this shape. The polygon stays picked, so you can still adjust, merge or delete it.</source>
         <translation>この形状を保持します。ポリゴンは選択されたままなので、引き続き調整、結合、削除ができます。</translation>
-    </message>
-    <message>
-        <source>Last run: {n} {object}</source>
-        <translation>前回の実行: {n}件の{object}</translation>
-    </message>
-    <message>
-        <source>Last run: {n} {object} in {layer}</source>
-        <translation>前回の実行: {layer}に{n}件の{object}</translation>
     </message>
     <message>
         <source>Loading the imagery...</source>
@@ -3422,10 +2988,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     <message>
         <source>Same setup as your last run - the result will match. Add an example or change the precision for a different result.</source>
         <translation>前回の実行と同じ設定です - 結果も同じになります。異なる結果を得るには、例を追加するか詳細度を変更してください。</translation>
-    </message>
-    <message>
-        <source>Saved to {layer}</source>
-        <translation>{layer}に保存しました</translation>
     </message>
     <message>
         <source>Setting up the on-device AI. This runs once and takes a few minutes. The review waits here until it is done.</source>
@@ -3566,16 +3128,12 @@ It may have been moved or renamed, or the drive or network share it is on may be
         <translation>オブジェクトの単語を入力するか、例を描いてください。</translation>
     </message>
     <message>
-        <source>Upgrade to Pro to finish this zone: 10,000 credits/month.</source>
-        <translation>このゾーンを完了するにはProにアップグレードしてください: 月10,000クレジット。</translation>
+        <source>Upgrade to Pro to finish this zone: 5,000 credits/month.</source>
+        <translation>このゾーンを完了するにはProにアップグレードしてください: 月5,000クレジット。</translation>
     </message>
     <message>
         <source>Wait for the on-device AI to finish installing.</source>
         <translation>ローカルAIのインストールが完了するのを待ってください。</translation>
-    </message>
-    <message>
-        <source>{count} polygon(s) exported</source>
-        <translation>{count} 件のポリゴンをExportしました</translation>
     </message>
     <message>
         <source>{n} {object} saved</source>
@@ -3585,22 +3143,472 @@ It may have been moved or renamed, or the drive or network share it is on may be
         <source>{n} {object} saved to {layer}</source>
         <translation>{n} 件の{object}を{layer}に保存しました</translation>
     </message>
-    <message>
-        <source>{used} credits</source>
-        <translation>{used} クレジット</translation>
-    </message>
     <!-- Correct-step on-device AI setup, free-run cap wording, missing raster (2026-07-30) -->
     <message>
-        <source>or lower the detail to stay free.</source>
-        <translation>または詳細度を下げると無料のままです。</translation>
+        <source>5,000 objects every month</source>
+        <translation>毎月5,000オブジェクト</translation>
     </message>
     <message>
-        <source>This zone at this detail needs a subscription.</source>
-        <translation>この詳細度でこのゾーンを処理するにはサブスクリプションが必要です。</translation>
+        <source>A session is already running.</source>
+        <translation>セッションは既に実行中です。</translation>
     </message>
     <message>
-        <source>Subscribe</source>
-        <translation>サブスクライブ</translation>
+        <source>AI engine</source>
+        <translation>AIエンジン</translation>
+    </message>
+    <message>
+        <source>AI fixing is not reachable right now. Switched to editing by hand, which works offline.</source>
+        <translation>AI修正は現在利用できません。手作業での編集に切り替えました。オフラインでも動作します。</translation>
+    </message>
+    <message>
+        <source>AI ready</source>
+        <translation>AIの準備完了</translation>
+    </message>
+    <message>
+        <source>Add an object the AI missed. In AI, point at it and the model outlines it, free; in Manual, draw its corners.</source>
+        <translation>AIが見逃したオブジェクトを追加します。AIでは対象を指定するとモデルが無料で輪郭を描きます。手動では角を自分で描きます。</translation>
+    </message>
+    <message>
+        <source>Almost ready: the AI file did not download.</source>
+        <translation>もうすぐ準備完了: AIファイルのダウンロードに失敗しました。</translation>
+    </message>
+    <message>
+        <source>Almost ready: the AI file is still missing.</source>
+        <translation>もうすぐ準備完了: AIファイルがまだ見つかっていません。</translation>
+    </message>
+    <message>
+        <source>Answered on your computer this time. TerraLab could not be reached.</source>
+        <translation>今回はお使いのコンピュータで応答しました。TerraLabに接続できませんでした。</translation>
+    </message>
+    <message>
+        <source>As fine as {obj} benefits from - finer splits them into pieces.</source>
+        <translation>{obj}に適した詳細度です - これ以上細かくすると分割されてしまいます。</translation>
+    </message>
+    <message>
+        <source>Automatic mode is ready. The on-device AI could not be installed, so Semi-Auto mode and the AI fix are off until it is. Everything else works.</source>
+        <translation>自動モードは準備完了です。ローカルAIをインストールできなかったため、インストールが完了するまで半自動モードとAI修正は利用できません。それ以外の機能はすべて利用できます。</translation>
+    </message>
+    <message>
+        <source>Automatic mode needs a small one-time setup before it can read your imagery. It takes about a minute.</source>
+        <translation>自動モードには、画像を読み込む前に簡単な初回セットアップが必要です。約1分で完了します。</translation>
+    </message>
+    <message>
+        <source>Automatic mode ready</source>
+        <translation>自動モードの準備完了</translation>
+    </message>
+    <message>
+        <source>Categories</source>
+        <translation>カテゴリ</translation>
+    </message>
+    <message>
+        <source>Choose between Semi-Auto and Automatic segmentation</source>
+        <translation>半自動と自動のセグメンテーションから選択</translation>
+    </message>
+    <message>
+        <source>Choose where the AI runs: on TerraLab servers, or on your own computer</source>
+        <translation>AIの実行場所を選択: TerraLabのサーバー、またはお使いのコンピュータ</translation>
+    </message>
+    <message>
+        <source>Click the object you want to segment:</source>
+        <translation>セグメント化したいオブジェクトをクリック:</translation>
+    </message>
+    <message>
+        <source>Cloud AI</source>
+        <translation>Cloud AI</translation>
+    </message>
+    <message>
+        <source>Cloud AI needs your account, and it is signed out. Sign back in, or install the offline AI to work without one.</source>
+        <translation>Cloud AIにはアカウントが必要ですが、現在サインアウトされています。再度サインインするか、アカウントなしで使うにはオフラインAIをインストールしてください。</translation>
+    </message>
+    <message>
+        <source>How Cloud AI works</source>
+        <translation>Cloud AI のしくみ</translation>
+    </message>
+    <message>
+        <source>Continue with Cloud AI</source>
+        <translation>Cloud AIで続ける</translation>
+    </message>
+    <message>
+        <source>Delete this polygon and leave the manual edit. Anything you changed here and did not save goes with it. Undo brings the polygon back.</source>
+        <translation>このポリゴンを削除して手動編集を終了します。ここで変更して保存していない内容も失われます。元に戻すとポリゴンが復元されます。</translation>
+    </message>
+    <message>
+        <source>Downloading and setting it up takes &lt;b&gt;about {n} minutes&lt;/b&gt;, once.</source>
+        <translation>ダウンロードとセットアップには、初回のみ&lt;b&gt;約{n}分&lt;/b&gt;かかります。</translation>
+    </message>
+    <message>
+        <source>Draw a zone, name one kind of object, and get all of them in one run. Use Semi-Auto mode to work one object at a time.</source>
+        <translation>ゾーンを描き、オブジェクトの種類を1つ指定すると、1回の実行ですべて取得できます。1つずつ作業するには、半自動モードを使用してください。</translation>
+    </message>
+    <message>
+        <source>Each click sends a small square of the image to our servers in Europe, and the outline comes back.</source>
+        <translation>クリックするたびに、画像の小さな範囲がヨーロッパのサーバーに送信され、輪郭が返されます。</translation>
+    </message>
+    <message>
+        <source>Ends this session. Your saved polygons are kept.</source>
+        <translation>このセッションを終了します。保存済みのポリゴンは保持されます。</translation>
+    </message>
+    <message>
+        <source>Faster and more accurate</source>
+        <translation>より速く、より正確</translation>
+    </message>
+    <message>
+        <source>Featured</source>
+        <translation>おすすめ</translation>
+    </message>
+    <message>
+        <source>Free, works offline</source>
+        <translation>無料、オフラインで動作</translation>
+    </message>
+    <message>
+        <source>Install it now</source>
+        <translation>今すぐインストール</translation>
+    </message>
+    <message>
+        <source>Install the offline AI</source>
+        <translation>オフラインAIをインストール</translation>
+    </message>
+    <message>
+        <source>Installing the offline AI</source>
+        <translation>オフラインAIをインストール中</translation>
+    </message>
+    <message>
+        <source>Intel Mac: using the older AI model.</source>
+        <translation>Intel Mac: 旧バージョンのAIモデルを使用中。</translation>
+    </message>
+    <message>
+        <source>It needs &lt;b&gt;{gb} GB&lt;/b&gt; of free disk space.</source>
+        <translation>空きディスク容量が&lt;b&gt;{gb} GB&lt;/b&gt;必要です。</translation>
+    </message>
+    <message>
+        <source>My computer</source>
+        <translation>自分のコンピュータ</translation>
+    </message>
+    <message>
+        <source>My computer, free and unlimited</source>
+        <translation>自分のコンピュータ、無料かつ無制限</translation>
+    </message>
+    <message>
+        <source>My work</source>
+        <translation>マイワーク</translation>
+    </message>
+    <message>
+        <source>No credits left. Each object you save with Cloud AI costs one credit.</source>
+        <translation>クレジットが残っていません。Cloud AIで保存するオブジェクトは1件につき1クレジットかかります。</translation>
+    </message>
+    <message>
+        <source>No credits left. Each object you save with Cloud AI costs one credit. Switch to the offline AI to keep working for free, or upgrade from the panel.</source>
+        <translation>クレジットが残っていません。Cloud AIで保存するオブジェクトは1件につき1クレジットかかります。無料で作業を続けるにはオフラインAIに切り替えるか、パネルからアップグレードしてください。</translation>
+    </message>
+    <message>
+        <source>No credits left. This polygon stays on the map, and Export still works.</source>
+        <translation>クレジットが残っていません。このポリゴンは地図上に残り、Exportは引き続き使用できます。</translation>
+    </message>
+    <message>
+        <source>No credits left. This polygon stays on the map, but it cannot be saved.</source>
+        <translation>クレジットが残っていません。このポリゴンは地図上に残りますが、保存できません。</translation>
+    </message>
+    <message>
+        <source>No object found here. Try clicking somewhere else.</source>
+        <translation>ここにはオブジェクトが見つかりませんでした。別の場所をクリックしてみてください。</translation>
+    </message>
+    <message>
+        <source>Not now</source>
+        <translation>後で</translation>
+    </message>
+    <message>
+        <source>Your project and your files stay on your computer. One credit per object you save.</source>
+        <translation>プロジェクトやファイルはお使いのコンピュータに残ります。保存したオブジェクト1件につき1クレジットです。</translation>
+    </message>
+    <message>
+        <source>One precision level fits {obj} in a zone this size - draw a larger zone for a choice.</source>
+        <translation>このサイズのゾーンでは{obj}に合う詳細度は1つだけです - 選択肢を増やすには、より大きなゾーンを描いてください。</translation>
+    </message>
+    <message>
+        <source>One-time setup</source>
+        <translation>初回セットアップ</translation>
+    </message>
+    <message>
+        <source>Other detections</source>
+        <translation>その他の検出結果</translation>
+    </message>
+    <message>
+        <source>Pick a raster layer and accept the Terms to start.</source>
+        <translation>ラスタレイヤを選択し、利用規約に同意して開始してください。</translation>
+    </message>
+    <message>
+        <source>Preparing the install...</source>
+        <translation>インストールを準備中...</translation>
+    </message>
+    <message>
+        <source>Pro is active on this account. Your credits are ready.</source>
+        <translation>このアカウントではProが有効です。クレジットの準備ができています。</translation>
+    </message>
+    <message>
+        <source>Read the privacy policy</source>
+        <translation>プライバシーポリシーを読む</translation>
+    </message>
+    <message>
+        <source>Right-click a polygon on the map to delete it.</source>
+        <translation>地図上のポリゴンを右クリックすると削除できます。</translation>
+    </message>
+    <message>
+        <source>Running low: {n} credits left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>残りわずか: {n} クレジット、{date}に復活します。続けるには&lt;a href=&quot;{url}&quot;&gt;Proにアップグレード&lt;/a&gt;してください。</translation>
+    </message>
+    <message>
+        <source>Running low: {n} credits left. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>残りわずか: {n} クレジット。続けるには&lt;a href=&quot;{url}&quot;&gt;Proにアップグレード&lt;/a&gt;してください。</translation>
+    </message>
+    <message>
+        <source>Save a polygon first. Export writes every polygon you kept to a layer.</source>
+        <translation>まずポリゴンを保存してください。Exportは保持したすべてのポリゴンをレイヤに書き込みます。</translation>
+    </message>
+    <message>
+        <source>Saving object</source>
+        <translation>オブジェクトを保存中</translation>
+    </message>
+    <message>
+        <source>Semi-Auto</source>
+        <translation>半自動</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode installs local components that are not available for this Mac with this version of QGIS. Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
+        <translation>半自動モードは、このMacとこのバージョンのQGISでは利用できないローカルコンポーネントをインストールします。代わりに、クラウド上で完全に動作しローカルインストールが不要な自動モードをご利用ください。</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode is not supported</source>
+        <translation>半自動モードはサポートされていません</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode is not supported in this QGIS installation</source>
+        <translation>このQGIS環境では半自動モードはサポートされていません</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode needs to install local dependencies, which is not supported inside this sandboxed QGIS installation (Flatpak or Snap). Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
+        <translation>半自動モードはローカルの依存関係のインストールが必要ですが、このサンドボックス化されたQGIS環境(FlatpakまたはSnap)ではサポートされていません。代わりに、クラウド上で完全に動作しローカルインストールが不要な自動モードをご利用ください。</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode stays free and unlimited on your computer.</source>
+        <translation>半自動モードはお使いのコンピュータ上で無料かつ無制限に利用できます。</translation>
+    </message>
+    <message>
+        <source>Session ended</source>
+        <translation>セッション終了</translation>
+    </message>
+    <message>
+        <source>Set up now</source>
+        <translation>今すぐセットアップ</translation>
+    </message>
+    <message>
+        <source>Setting up on your computer {dot} &lt;b&gt;pick Cloud AI to start now&lt;/b&gt;</source>
+        <translation>お使いのコンピュータでセットアップ中 {dot} &lt;b&gt;今すぐ始めるにはCloud AIを選択&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Start Semi-Auto AI Segmentation</source>
+        <translation>半自動AI Segmentationを開始</translation>
+    </message>
+    <message>
+        <source>Stop and use my computer instead</source>
+        <translation>停止して自分のコンピュータを使用</translation>
+    </message>
+    <message>
+        <source>Stop the install</source>
+        <translation>インストールを停止</translation>
+    </message>
+    <message>
+        <source>The AI is still loading. Try again in a few seconds.</source>
+        <translation>AIを読み込み中です。数秒後に再試行してください。</translation>
+    </message>
+    <message>
+        <source>The AI was set up but could not start.</source>
+        <translation>AIのセットアップは完了しましたが、起動できませんでした。</translation>
+    </message>
+    <message>
+        <source>The click was cancelled.</source>
+        <translation>クリックがキャンセルされました。</translation>
+    </message>
+    <message>
+        <source>The install did not finish. Retry it, or pick Cloud AI.</source>
+        <translation>インストールが完了しませんでした。再試行するか、Cloud AIを選択してください。</translation>
+    </message>
+    <message>
+        <source>The model is unsure about this outline. Click again to correct it, or draw it by hand.</source>
+        <translation>モデルはこの輪郭に自信がありません。クリックして修正するか、手作業で描いてください。</translation>
+    </message>
+    <message>
+        <source>The offline AI</source>
+        <translation>オフラインAI</translation>
+    </message>
+    <message>
+        <source>The offline AI is not installed yet.</source>
+        <translation>オフラインAIはまだインストールされていません。</translation>
+    </message>
+    <message>
+        <source>The offline AI is still downloading.</source>
+        <translation>オフラインAIはまだダウンロード中です。</translation>
+    </message>
+    <message>
+        <source>The smaller model on your computer. No credits, no limit.</source>
+        <translation>お使いのコンピュータで動作する、より小さなモデルです。クレジットなし、上限なし。</translation>
+    </message>
+    <message>
+        <source>This deletes the local AI model files, signs you out, and resets the plugin. Your account and credits are not affected. Semi-Auto mode will download the files again next time you use it.</source>
+        <translation>これによりローカルのAIモデルファイルが削除され、サインアウトしてプラグインがリセットされます。アカウントとクレジットには影響しません。次回半自動モードを使用する際に、ファイルは再度ダウンロードされます。</translation>
+    </message>
+    <message>
+        <source>This drive has {free} GB free, under the {need} GB the install needs. Free some space, or use Cloud AI.</source>
+        <translation>このドライブの空き容量は{free} GBで、インストールに必要な{need} GBに届きません。空き容量を増やすか、Cloud AIを使用してください。</translation>
+    </message>
+    <message>
+        <source>This image has no position on the map, so Automatic cannot place what it finds. Give it one with the QGIS Georeferencer, or use Semi-Auto mode on it as is.</source>
+        <translation>この画像には地図上の位置情報がないため、自動モードは検出結果を配置できません。QGISの地理参照ツールで位置情報を付与するか、そのまま半自動モードを使用してください。</translation>
+    </message>
+    <message>
+        <source>This model rates every object the same, so filtering by confidence would show all of them or none. Use Size below, or fix objects in the next step.</source>
+        <translation>このモデルはすべてのオブジェクトを同じように評価するため、信頼度で絞り込むとすべて表示されるか何も表示されないかのどちらかになります。以下のサイズを使用するか、次のステップでオブジェクトを修正してください。</translation>
+    </message>
+    <message>
+        <source>This raster is rotated. Run Warp (Reproject) on it to straighten it first. Semi-Auto mode cannot read it either.</source>
+        <translation>このラスタは回転しています。まずワープ(再投影)を実行して補正してください。半自動モードでもこれを読み込めません。</translation>
+    </message>
+    <message>
+        <source>Use Cloud AI instead</source>
+        <translation>代わりにCloud AIを使用</translation>
+    </message>
+    <message>
+        <source>Use my computer instead</source>
+        <translation>代わりに自分のコンピュータを使用</translation>
+    </message>
+    <message>
+        <source>Where the segmentation runs:</source>
+        <translation>セグメンテーションの実行場所:</translation>
+    </message>
+    <message>
+        <source>You can close this window and keep working. The install carries on, and the panel shows how far it has got.</source>
+        <translation>このウィンドウを閉じても、そのまま作業を続けられます。インストールは継続し、パネルに進捗状況が表示されます。</translation>
+    </message>
+    <message>
+        <source>Your free credits come back on {date}.</source>
+        <translation>無料クレジットは{date}に復活します。</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;about 10 minutes to install&lt;/b&gt;</source>
+        <translation>すべてお使いのコンピュータ内に残ります {dot} &lt;b&gt;インストールに約10分&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;save as many as you like&lt;/b&gt;</source>
+        <translation>すべてお使いのコンピュータ内に残ります {dot} &lt;b&gt;好きなだけ保存できます&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;{gb} GB and about 10 minutes to install&lt;/b&gt;</source>
+        <translation>すべてお使いのコンピュータ内に残ります {dot} &lt;b&gt;{gb} GB、インストールに約10分&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>No setup on this computer {dot} &lt;b&gt;1 credit per object you save&lt;/b&gt;</source>
+        <translation>このコンピュータでのセットアップ不要 {dot} &lt;b&gt;保存したオブジェクト1件につき1クレジット&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>The offline AI answers your clicks on this computer. Your imagery stays here, and every click is free.</source>
+        <translation>オフラインAIは、このコンピュータ上でクリックに応答します。画像はここに残り、クリックはすべて無料です。</translation>
+    </message>
+    <message>
+        <source>This online layer returned no imagery for this area. Its server refused the request. Check the layer&apos;s URL in Layer Properties, or use another basemap.</source>
+        <translation>このオンラインレイヤはこの範囲の画像を返しませんでした。サーバーがリクエストを拒否しました。レイヤプロパティでレイヤのURLを確認するか、別のベースマップを使用してください。</translation>
+    </message>
+    <message>
+        <source>1 credit covers about 0.17 km² at default precision.</source>
+        <translation>デフォルトの詳細度では、1クレジットで約0.17km²をカバーします。</translation>
+    </message>
+    <message>
+        <source>Clear all {n}</source>
+        <translation>すべてクリア ({n}件)</translation>
+    </message>
+    <message>
+        <source>Could not check your AI Segmentation account. If this lasts, sign out and sign in again.</source>
+        <translation>AI Segmentationアカウントを確認できませんでした。この状態が続く場合は、サインアウトしてから再度サインインしてください。</translation>
+    </message>
+    <message>
+        <source>Could not load your account. Try again in a moment.</source>
+        <translation>アカウントを読み込めませんでした。しばらくしてから再試行してください。</translation>
+    </message>
+    <message>
+        <source>Could not reach TerraLab. Check your internet connection, then try again.</source>
+        <translation>TerraLabに接続できませんでした。インターネット接続を確認してから、再試行してください。</translation>
+    </message>
+    <message>
+        <source>Editing by hand could not open on this polygon on its own. Try again, or fix it with the AI.</source>
+        <translation>手作業での編集がこのポリゴンで自動的に起動できませんでした。再試行するか、AIで修正してください。</translation>
+    </message>
+    <message>
+        <source>It downloads first, and takes about 10 minutes.</source>
+        <translation>まずダウンロードが必要で、約10分かかります。</translation>
+    </message>
+    <message>
+        <source>It downloads first: {gb} GB and about 10 minutes.</source>
+        <translation>まずダウンロードが必要です: {gb} GB、約10分。</translation>
+    </message>
+    <message>
+        <source>Nothing in this category yet.</source>
+        <translation>このカテゴリにはまだ何もありません。</translation>
+    </message>
+    <message>
+        <source>One run covers up to {cap} tiles. This zone at this precision needs more. Draw a smaller zone, or lower the precision.</source>
+        <translation>1回の実行は最大{cap}タイルまでです。この詳細度でのこのゾーンには、それ以上のタイル数が必要です。より小さなゾーンを描くか、詳細度を下げてください。</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser. Open this address to finish signing in, then come back here. It works once:
+{}</source>
+        <translation>QGISがブラウザを開けませんでした。次のアドレスを開いてサインインを完了し、その後ここに戻ってきてください。これは1回のみ有効です:
+{}</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser. The sign-in address is copied to your clipboard: paste it into a browser to finish, then come back here. It works once.</source>
+        <translation>QGISがブラウザを開けませんでした。サインイン用のアドレスはクリップボードにコピーされています。ブラウザに貼り付けて完了し、その後ここに戻ってきてください。これは1回のみ有効です。</translation>
+    </message>
+    <message>
+        <source>Reading your logs...</source>
+        <translation>ログを読み込み中...</translation>
+    </message>
+    <message>
+        <source>Sign in again to fix with the AI. Switched to editing by hand, which needs no account.</source>
+        <translation>AIで修正するには、再度サインインしてください。手作業での編集に切り替えました。アカウントは不要です。</translation>
+    </message>
+    <message>
+        <source>The export did not finish. Your polygons are still on the map, so you can try again.</source>
+        <translation>Exportが完了しませんでした。ポリゴンはまだ地図上に残っているので、再試行できます。</translation>
+    </message>
+    <message>
+        <source>The install did not finish {dot} &lt;b&gt;retry it, or pick Cloud AI&lt;/b&gt;</source>
+        <translation>インストールが完了しませんでした {dot} &lt;b&gt;再試行するか、Cloud AIを選択&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>The polygons could not be put into the new layer, so nothing was saved. They are still on the map, so you can try again.</source>
+        <translation>ポリゴンを新しいレイヤに書き込めなかったため、何も保存されませんでした。まだ地図上に残っているので、再試行できます。</translation>
+    </message>
+    <message>
+        <source>This layer has no usable position on the map. Open it in QGIS and check its extent.</source>
+        <translation>このレイヤには地図上で使用できる位置情報がありません。QGISで開いて範囲を確認してください。</translation>
+    </message>
+    <message>
+        <source>This run found nothing. Add the object yourself below, or press Exit and run again with another word or a smaller zone.</source>
+        <translation>この実行では何も見つかりませんでした。以下でオブジェクトを自分で追加するか、「終了」を押して、別の単語やより小さなゾーンで再実行してください。</translation>
+    </message>
+    <message>
+        <source>This zone at this precision needs more tiles than one run covers. Draw a smaller zone, or lower the precision.</source>
+        <translation>この詳細度でのこのゾーンに必要なタイル数は、1回の実行でカバーできる範囲を超えています。より小さなゾーンを描くか、詳細度を下げてください。</translation>
+    </message>
+    <message>
+        <source>Undo every correction of this round at once. The count is in the label, so you can see what goes.</source>
+        <translation>今回の修正をすべて一度に元に戻します。件数はラベルに表示されるので、何が取り消されるか確認できます。</translation>
+    </message>
+    <message>
+        <source>You are out of credits, so the AI fix cannot answer. Switched to editing by hand, which is free.</source>
+        <translation>クレジットが残っていないため、AI修正は応答できません。手作業での編集に切り替えました。無料です。</translation>
+    </message>
+    <message>
+        <source>You are signed in on this computer, but QGIS cannot read your sign-in until you enter its master password.</source>
+        <translation>このコンピュータでサインイン済みですが、マスターパスワードを入力するまでQGISはサインイン情報を読み取れません。</translation>
     </message>
 </context>
 </TS>

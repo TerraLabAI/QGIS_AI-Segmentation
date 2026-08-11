@@ -60,6 +60,19 @@ AUTO_OBJECT_MIN_PX = 20
 # tile side each piece carries too little context to stitch. Client fallback
 # for the server policy's `seed.split_risk_tile_frac`.
 SPLIT_RISK_TILE_FRAC = 0.5
+# Share of a tile's ground side an object may take before the model starts
+# judging it from a fragment rather than seeing it whole. Bounds the FINE END
+# of the Precision slider, and nothing else.
+#
+# Deliberately its own value rather than a borrowed one. `max_object_tile_frac`
+# in the same policy reads as the same idea but does a different job: it
+# guards the seed, so moving it moves what a default run costs and returns.
+# `SPLIT_RISK_TILE_FRAC` marks a later point again, where the pieces stop being
+# stitchable, which is where the amber warning belongs. Three limits, three
+# numbers, so retuning one cannot move the other two by accident.
+#
+# Client fallback for the server policy's `seed.detail_max_object_tile_frac`.
+DETAIL_MAX_OBJECT_TILE_FRAC = 0.20
 # Native pixels an object's NARROW dimension must span before the coarse mask
 # grid may be requested for it: under this a half-cell boundary shift eats the
 # object's thin parts. Client fallback for the server policy's

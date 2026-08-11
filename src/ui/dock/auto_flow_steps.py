@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtWidgets import (
+    QAbstractItemView,
     QAbstractSpinBox,
     QApplication,
     QComboBox,
@@ -49,9 +50,7 @@ class DockAutoFlowStepsMixin:
         # it never lingers into this fresh run's steps (it is shown on the Start
         # step right after Finish, and belongs only to that just-finished run).
         self.set_auto_status("idle")
-        # Leaving step 0 for a fresh run retires the previous run's value recap
-        # and the post-export success line.
-        self.clear_last_run_recap()
+        # Leaving step 0 for a fresh run retires the post-export success line.
         self.clear_auto_export_success()
         try:
             from ...core import telemetry_run_events
@@ -175,6 +174,8 @@ class DockAutoFlowStepsMixin:
         )
         # The bottom-pinned first-steps guide banner shows on the Start step only.
         self._update_auto_tutorial_banner_visibility()
+        # Leaving or entering the flow changes which keys are ours to take.
+        self.refresh_auto_shortcut_arming()
         # The plugin reacts to step changes (e.g. arms the zone drawing tool
         # whenever the zone step opens without a zone set).
         self.auto_step_changed.emit(index)
@@ -309,6 +310,15 @@ class DockAutoFlowStepsMixin:
         a run; Escape has its own gate so it can soft-cancel one)."""
         return self._mode == Mode.AUTOMATIC and self._auto_started and not self._auto_run_active
 
+    def auto_flow_owns_keys(self) -> bool:
+        """True while the dock's Escape / Enter shortcuts have a job to do.
+
+        Read by ShortcutFilter: outside the Automatic flow those two window
+        shortcuts still match and still consume the key, so the armed session
+        has to take them back (Escape clears the selection or stops Manual,
+        Enter exports)."""
+        return self._mode == Mode.AUTOMATIC and self._auto_started
+
     def _on_auto_escape_shortcut(self) -> None:
         """Escape: delegate to the plugin's single dispatcher (_route_escape).
 
@@ -317,14 +327,48 @@ class DockAutoFlowStepsMixin:
         if self._mode == Mode.AUTOMATIC and self._auto_started:
             self.auto_escape_pressed.emit()
 
+    def _dock_combo_has_focus(self) -> bool:
+        """Whether a drop-down or a list owns the keyboard right now.
+
+        Those two answer keys themselves: a letter jumps to the item that
+        starts with it, and Enter takes the highlighted one. A shortcut takes
+        its key the moment it matches, whatever the handler decides next, so a
+        widget that wants the key has to be answered by standing the shortcut
+        down, never by returning from its handler.
+        """
+        try:
+            return isinstance(QApplication.focusWidget(),
+                              (QComboBox, QAbstractItemView))
+        except (RuntimeError, AttributeError):
+            return False
+
     def _on_auto_enter_shortcut(self) -> None:
         """Enter: delegate to the plugin's single dispatcher (_route_enter),
-        unless a text editor or spinbox has focus (its own returnPressed /
-        value-commit handles Enter, avoiding a double trigger)."""
+        unless a text editor or spinbox has focus.
+
+        A window shortcut MATCHES BEFORE the focused widget is offered the key,
+        so standing aside here is not enough: the field's own ``returnPressed``
+        never fires either, and the key is simply eaten. That silenced Enter in
+        the prompt box, which is the main way a run is started and which the
+        shortcuts dialog promises. So the field is told to commit from here.
+
+        A drop-down is the case that cannot be answered from here at all, so
+        the shortcut stands down for it instead (see
+        refresh_auto_shortcut_arming). The check below stays as the belt: the
+        arming runs from an event filter, and a machine where that filter never
+        installed would otherwise hand Enter to Detect from inside a list.
+        """
         if not self._is_auto_for_us():
             return
         fw = QApplication.focusWidget()
-        if isinstance(fw, (QLineEdit, QComboBox, QAbstractSpinBox)):
+        if isinstance(fw, QLineEdit):
+            fw.returnPressed.emit()
+            return
+        if isinstance(fw, QAbstractSpinBox):
+            fw.interpretText()
+            fw.editingFinished.emit()
+            return
+        if self._dock_combo_has_focus():
             return
         self.auto_enter_pressed.emit()
 
@@ -357,11 +401,88 @@ class DockAutoFlowStepsMixin:
             self.auto_correction_undo_requested.emit()
 
     def set_auto_shortcuts_enabled(self, enabled: bool) -> None:
-        """Toggle the Escape/Enter shortcuts. Disabled while an example box is
-        being drawn so the draw tool owns Escape (cancel) with no race."""
-        for sc in (self.auto_escape_shortcut, self.auto_enter_shortcut,
-                   self.auto_enter_shortcut_kp):
-            try:
-                sc.setEnabled(enabled)
-            except (RuntimeError, AttributeError):
-                pass
+        """Hand the dock's keys to an armed draw tool, or take them back.
+
+        Off while an example box is being drawn, so the draw tool owns Escape
+        (cancel) with no race, and off during a merge pick. It now covers the
+        two remove shortcuts as well: they used to stay armed through the very
+        states that silenced Escape and Enter, so Delete during a merge pick
+        removed the selected detection.
+
+        Undo is deliberately NOT in this list. The draws that turn this off
+        connect to that same shortcut for their own undo (the zone points, an
+        example box), so silencing it here would take the key away from the
+        tool it was routed to.
+        """
+        self._auto_shortcuts_master = bool(enabled)
+        self.refresh_auto_shortcut_arming()
+
+    def _auto_undo_shortcut_armed(self) -> bool:
+        """Whether Ctrl+Z is the plugin's to take.
+
+        Wider than the Correct step: the same shortcut carries the undo for
+        the zone draw and for an example box, both of which run before any
+        review exists. Narrower than the flow: while the QGIS editing bridge
+        or an AI fix session is up, Ctrl+Z belongs to QGIS's own undo stack,
+        and two enabled shortcuts on one key in one window make Qt fire
+        neither.
+        """
+        if not self.auto_flow_owns_keys():
+            return False
+        if bool(getattr(self, "_qgis_bridge_active_ui", False)):
+            return False
+        # The merge pick owns the map and the keyboard, and it is the one
+        # state that silences the other keys without routing this one: the
+        # zone draw and the example box both connect their own undo to this
+        # shortcut, which is why the master switch cannot carry it. Undoing a
+        # journal entry mid-pick moves the very polygons the pick is holding.
+        if bool(getattr(self, "_auto_correct_merge_armed", False)):
+            return False
+        return not bool(getattr(self, "_refine_handoff", False))
+
+    def refresh_auto_shortcut_arming(self) -> None:
+        """Enable each dock shortcut only while the plugin owns its key.
+
+        A window shortcut consumes its key as soon as it matches, so a gate
+        inside the handler never gives the key back to QGIS. Escape was eaten
+        across the whole window whenever the dock was open, Delete was taken
+        from the vertex tool the panel tells the user to press it for, and a
+        second enabled Ctrl+Z in one window makes Qt fire neither undo.
+        Enabled state is the only gate Qt reads before it takes the key.
+
+        Called on every step change and, through _ShortcutArmingFilter, on the
+        press itself: the states below are written from half the dock.
+
+        The Semi-Auto Start key (G) is armed from here too, for the same
+        reason and not because it belongs to the Automatic flow: it is scoped
+        to the dock and its children, so it fired while the layer drop-down
+        held focus and ate the letter the user typed to jump to a layer by
+        name. Enter stands down there as well, since a drop-down answers that
+        key itself.
+        """
+        master = bool(getattr(self, "_auto_shortcuts_master", True))
+        try:
+            typing_in_list = self._dock_combo_has_focus()
+            flow_keys = master and self.auto_flow_owns_keys()
+            remove_keys = master and self._is_auto_correct_shortcut_active()
+            undo_key = self._auto_undo_shortcut_armed()
+        except (RuntimeError, AttributeError):
+            return
+        armed = (
+            (("auto_escape_shortcut",), flow_keys),
+            (("auto_enter_shortcut", "auto_enter_shortcut_kp"),
+             flow_keys and not typing_in_list),
+            (("auto_correct_remove_delete_shortcut",
+              "auto_correct_remove_backspace_shortcut"), remove_keys),
+            (("auto_correct_undo_shortcut",), undo_key),
+            (("start_shortcut",), not typing_in_list),
+        )
+        for names, enabled in armed:
+            for name in names:
+                sc = getattr(self, name, None)
+                if sc is None:
+                    continue
+                try:
+                    sc.setEnabled(enabled)
+                except (RuntimeError, AttributeError):
+                    pass  # nosec B110 - a shortcut being torn down arms nothing

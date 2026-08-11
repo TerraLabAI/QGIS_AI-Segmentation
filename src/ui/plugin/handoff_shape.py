@@ -226,8 +226,13 @@ class HandoffShapeMixin:
             s = vertex_budget_settings()
             centre = geom.boundingBox().center()
             factor = self._manual_metres_per_unit(centre.x(), centre.y())
-            if factor <= 0:
-                factor = 1.0
+            # None means the ground dial cannot cross into this CRS. Standing
+            # in 1.0 would not fail safe, it would change the unit: a metre
+            # setting read as a raw CRS unit collapses every ring to its
+            # minimum. Hand back no settings, so the caller keeps its own
+            # pixel-safe path instead of thinning against the wrong distance.
+            if factor is None or factor <= 0:
+                return {}
             return {
                 "vertex_keep_fraction": keep_fraction,
                 "vertex_spacing": 0.0,

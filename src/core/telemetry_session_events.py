@@ -169,6 +169,25 @@ def track_manual_session_summary(saves: int, undos: int,
     })
 
 
+def track_manual_engine_chosen(engine: str, local_installed: bool = False,
+                               from_install_gate: bool = False) -> None:
+    """Which AI a Semi-Auto user picked. engine: "cloud" | "offline".
+
+    Unsampled and rare by nature: the card is answered once per install, plus
+    whenever somebody reopens it with Switch.
+    """
+    track(ev.MANUAL_ENGINE_CHOSEN, {
+        "engine": engine,
+        "local_installed": bool(local_installed),
+        "from_install_gate": bool(from_install_gate),
+    })
+
+
+def track_manual_cloud_consent(accepted: bool) -> None:
+    """The answer to the notice shown before any imagery leaves the machine."""
+    track(ev.MANUAL_CLOUD_CONSENT, {"accepted": bool(accepted)})
+
+
 def track_manual_abandoned(context: str, polygon_count: int) -> None:
     """Fire when the user CONFIRMS discarding unsaved manual work.
     context: "change_layer" | "stop"."""

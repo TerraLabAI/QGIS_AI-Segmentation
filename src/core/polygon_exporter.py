@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -20,6 +21,7 @@ from qgis.core import (  # noqa: E402
     QgsPolygon,
     QgsSpatialIndex,
 )
+from qgis.PyQt.QtCore import QMetaObject, QObject, pyqtSlot  # noqa: E402
 
 from .merger import IncrementalMerger  # noqa: E402,F401
 from .polygon_packing import pack_disjoint_crops  # noqa: E402
@@ -1312,9 +1314,16 @@ def apply_geometry_refinement(
         # / tendrils narrower than 2*open_dist vanish while the main shape keeps
         # its true size. buffer(-d) can empty a genuinely thin object; guard on
         # isEmpty so it is skipped, never destroyed.
+        #
+        # Same part-count refusal as the closing above and as despike's
+        # preserve_parts: on a multipart object the shrink can dissolve the
+        # smaller piece outright, and a piece the user merged by hand must
+        # never go without a word. Keeping a spike beats losing half an object.
         try:
+            before_parts = _geometry_part_count(g)
             r = g.buffer(-open_dist, 8).buffer(open_dist, 8)
-            if r is not None and not r.isEmpty():
+            if (r is not None and not r.isEmpty()
+                    and _geometry_part_count(r) >= before_parts):
                 g = r
         except Exception:  # noqa: BLE001 -- refine is best-effort  # nosec B110
             pass
@@ -1346,7 +1355,12 @@ def apply_geometry_refinement(
                 max_deviation=vertex_max_deviation,
                 max_deviation_fraction=vertex_max_deviation_fraction,
                 keep_fraction=vertex_keep_fraction,
-                dial_max_cap_fraction=dial_cap)
+                dial_max_cap_fraction=dial_cap,
+                # Same axis correction the regularizer below is given: without
+                # it a geographic CRS counts a degree of longitude and one of
+                # latitude as the same length, and the budget thins one axis
+                # against the wrong ground distance.
+                unit_aspect=unit_aspect)
             if r is not None and not r.isEmpty():
                 g = r
         except Exception:  # noqa: BLE001 -- refine is best-effort  # nosec B110
@@ -1399,6 +1413,11 @@ def apply_geometry_refinement(
             pass
     if expand_dist and expand_dist != 0.0:
         try:
+            # A contract eats a small part before it eats a big one, so it gets
+            # the same part-count refusal as the opening. A grow never drops a
+            # part, so it pays nothing for the check.
+            shrinking = expand_dist < 0.0
+            before_parts = _geometry_part_count(g) if shrinking else 0
             # With Right angles or the regularizer on, a round-join buffer would
             # re-round every corner just squared; a mitre join preserves them.
             r = (
@@ -1406,7 +1425,9 @@ def apply_geometry_refinement(
                 if (ortho or regularize)
                 else g.buffer(expand_dist, 8)
             )
-            if r is not None and not r.isEmpty():
+            if (r is not None and not r.isEmpty()
+                    and (not shrinking
+                         or _geometry_part_count(r) >= before_parts)):
                 g = r
         except Exception:  # noqa: BLE001  # nosec B110
             pass
@@ -1613,10 +1634,14 @@ def shape_polygon_geometry(
         # Trim spikes: morphological opening (shrink then grow back) that drops
         # thin attached fringe narrower than 2*open_dist. The same op as the
         # Automatic review's Trim spikes; guarded on isEmpty so a genuinely thin
-        # object is skipped, never destroyed.
+        # object is skipped, never destroyed, and on the part count so the
+        # shrink cannot dissolve the smaller half of a merge the user made by
+        # hand. Same refusal as apply_geometry_refinement, the twin tail.
         if open_dist and open_dist > 0.0:
+            before_parts = _geometry_part_count(g)
             r = g.buffer(-open_dist, 8).buffer(open_dist, 8)
-            if r is not None and not r.isEmpty():
+            if (r is not None and not r.isEmpty()
+                    and _geometry_part_count(r) >= before_parts):
                 g = r
         # Same px -> tolerance scale as the Manual mask pipeline
         # (_compute_simplification_tolerance), so the spinbox value means the
@@ -1644,7 +1669,12 @@ def shape_polygon_geometry(
                 max_deviation=vertex_max_deviation,
                 max_deviation_fraction=vertex_max_deviation_fraction,
                 keep_fraction=vertex_keep_fraction,
-                dial_max_cap_fraction=dial_cap)
+                dial_max_cap_fraction=dial_cap,
+                # Same axis correction the regularizer below is given: without
+                # it a geographic CRS counts a degree of longitude and one of
+                # latitude as the same length, and the budget thins one axis
+                # against the wrong ground distance.
+                unit_aspect=unit_aspect)
             if r is not None and not r.isEmpty():
                 g = r
         if ortho:
@@ -1669,10 +1699,15 @@ def shape_polygon_geometry(
         if expand_px:
             # After the squaring, never before: with Right angles on, a
             # round-join buffer would re-round every corner just produced, so
-            # the join is mitre there.
+            # the join is mitre there. A contract carries the opening's
+            # part-count refusal; a grow never drops a part.
             dist = expand_px * mupp
+            shrinking = dist < 0.0
+            before_parts = _geometry_part_count(g) if shrinking else 0
             r = _buffer_square_corners(g, dist) if ortho else g.buffer(dist, 8)
-            if r is not None and not r.isEmpty():
+            if (r is not None and not r.isEmpty()
+                    and (not shrinking
+                         or _geometry_part_count(r) >= before_parts)):
                 g = r
         if smooth:
             # Round corners plus its vertex diet, the same pass the Automatic
@@ -1958,19 +1993,24 @@ _DRIVER_EXTENSIONS = {
     "KML": ".kml",
 }
 
+# Formats whose own specification fixes the coordinates on WGS84. Writing one
+# of these in a projected CRS produces a file every conforming reader places
+# somewhere else. The ground-metre CRS goes to the other drivers.
+_WGS84_ONLY_DRIVERS = ("GeoJSON", "KML")
+
 
 def driver_extension(driver: str) -> str:
     """File extension (with dot) for a supported export driver."""
     return _DRIVER_EXTENSIONS.get(driver, ".gpkg")
 
 
-def _release_project_layers_at(path: str) -> int:
-    """Drop project layers reading this exact file. Returns how many went.
+def _release_project_layers_on_gui(path: str) -> int:
+    """Drop project layers reading this exact file. GUI thread only.
 
-    Main thread only, and best effort: a failure to read one layer skips it
-    rather than stopping the export. normcase before comparing, because the
-    same Windows file has many spellings and one that does not match leaves
-    the handle in place, which is the whole point of the call.
+    Best effort: a failure to read one layer skips it rather than stopping the
+    export. normcase before comparing, because the same Windows file has many
+    spellings and one that does not match leaves the handle in place, which is
+    the whole point of the call.
     """
     import os
 
@@ -1995,6 +2035,87 @@ def _release_project_layers_at(path: str) -> int:
     return len(doomed)
 
 
+# How long a worker thread waits for the GUI thread to run a posted release.
+# Long enough for a busy GUI to reach it, short enough that an export never
+# hangs on a GUI thread that cannot answer at all.
+_RELEASE_LAYERS_TIMEOUT_S = 5.0
+
+
+class _LayerReleaseCall(QObject):
+    """One release, run on the thread this object lives on.
+
+    A slot and not a plain function because that is what QMetaObject can post
+    across threads by name. It carries the answer back on ``count``, and
+    ``finished`` is what the calling thread waits on.
+    """
+
+    def __init__(self, path: str) -> None:
+        super().__init__()
+        self._path = path
+        self.count = 0
+        self.finished = threading.Event()
+
+    @pyqtSlot()
+    def run(self) -> None:
+        try:
+            self.count = _release_project_layers_on_gui(self._path)
+        except Exception:  # noqa: BLE001 -- the release never stops an export
+            self.count = 0
+        finally:
+            self.finished.set()
+            _pending_layer_releases.discard(self)
+            self.deleteLater()
+
+
+# Releases posted to the GUI thread and not yet run. A posted call outlives the
+# worker's own reference whenever the wait runs out, and a receiver collected
+# while the GUI thread is about to call it is a crash.
+_pending_layer_releases: set[_LayerReleaseCall] = set()
+
+
+def _release_project_layers_at(path: str) -> int:
+    """Drop project layers reading this exact file. Returns how many went.
+
+    Safe from any thread. A map layer belongs to the GUI thread and dropping
+    one from a worker corrupts the project, so off the GUI thread the work is
+    posted there and waited on: the caller overwrites the file right after, and
+    the handle has to be gone first. A wait that runs out returns 0 and lets the
+    write try anyway, which fails loudly, rather than freezing the export.
+    """
+    from qgis.core import QgsApplication
+    from qgis.PyQt.QtCore import Qt, QThread
+
+    from .qt_compat import resolve_qt_enum
+
+    try:
+        app = QgsApplication.instance()
+        if app is None or QThread.currentThread() == app.thread():
+            return _release_project_layers_on_gui(path)
+    except (RuntimeError, AttributeError):
+        return 0
+    call = _LayerReleaseCall(path)
+    try:
+        call.moveToThread(app.thread())
+        _pending_layer_releases.add(call)
+        queued = resolve_qt_enum(Qt, "ConnectionType", "QueuedConnection")
+        # Only an explicit False is a refusal. This overload answers True on
+        # PyQt5 and None on PyQt6, so reading the result as a plain boolean
+        # throws the posted call away on QGIS 4 and never releases anything.
+        if QMetaObject.invokeMethod(call, "run", queued) is False:
+            _pending_layer_releases.discard(call)
+            return 0
+    except (RuntimeError, AttributeError, TypeError):
+        _pending_layer_releases.discard(call)
+        return 0
+    if not call.finished.wait(_RELEASE_LAYERS_TIMEOUT_S):
+        QgsMessageLog.logMessage(
+            "Export: gave up waiting for the layers holding the target file",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning,
+        )
+        return 0
+    return call.count
+
+
 def export_geometries_to_file(
     geoms: list,
     crs,
@@ -2002,6 +2123,7 @@ def export_geometries_to_file(
     driver: str = "GPKG",
     source_layer_name: str = "",
     layer_name: str | None = None,
+    stats: dict | None = None,
 ):
     """Write polygon geometries to a vector file and return the loaded layer.
 
@@ -2011,9 +2133,9 @@ def export_geometries_to_file(
     ``area_m2`` and ``perimeter_m``), geometries repaired with makeValid before
     save (repair, never silently drop). For GPKG the run-level provenance metadata and the style
     are stored INTO the file; the other drivers cannot embed a style, so they
-    skip it. KML is always written in EPSG:4326 (the format mandates it); every
-    other driver gets the ground-metre CRS from pick_output_crs, so a length
-    read off the file is a length on the ground.
+    skip it. GeoJSON and KML are always written in EPSG:4326 (both formats
+    mandate it); every other driver gets the ground-metre CRS from
+    pick_output_crs, so a length read off the file is a length on the ground.
 
     Args:
         geoms:             QgsGeometry list (any polygonal type).
@@ -2023,6 +2145,13 @@ def export_geometries_to_file(
         driver:            One of EXPORT_DRIVERS. Default "GPKG".
         source_layer_name: Raster name recorded in the GPKG provenance.
         layer_name:        Layer name inside the file; defaults to the file stem.
+        stats:             Optional dict this fills with ``written`` (polygons
+                           staged for the file) and ``skipped`` (geometries no
+                           repair could save). A caller that counts what it
+                           handed in reports a number the file contradicts, so
+                           read ``written`` when telling the user how many
+                           polygons they got. Optional on purpose: an older
+                           caller passes nothing and is unchanged.
 
     Returns:
         The loaded QgsVectorLayer on success (NOT added to the project), or
@@ -2086,11 +2215,14 @@ def export_geometries_to_file(
 
     measurer = make_area_measurer(crs)
     feats = []
+    skipped = 0
     for geom in geoms:
         if geom is None or geom.isEmpty():
+            skipped += 1
             continue
         geom = to_multipolygon(repair_polygon(geom) or geom)
         if geom is None or geom.isEmpty():
+            skipped += 1
             continue
         feat = QgsFeature(temp_layer.fields())
         feat.setGeometry(geom)
@@ -2102,6 +2234,18 @@ def export_geometries_to_file(
         feat.setAttributes(
             ["", round_measure(area), round_measure(perimeter)])
         feats.append(feat)
+    # What reaches the file, not what the caller handed in. A geometry no
+    # repair can save is dropped here, and a caller counting its own input
+    # would name a number the file contradicts.
+    if isinstance(stats, dict):
+        stats["written"] = len(feats)
+        stats["skipped"] = skipped
+    if skipped:
+        QgsMessageLog.logMessage(
+            f"Export: {skipped} polygon(s) no repair could save, left out of "
+            "the file",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning,
+        )
     if not feats:
         return None
     # A rejected batch must not be reported as a saved file: without this the
@@ -2154,8 +2298,11 @@ def export_geometries_to_file(
                 f"target file open before overwriting it",
                 "AI Segmentation", level=Qgis.MessageLevel.Info,
             )
-    if driver == "KML":
-        # KML is defined on WGS84 only; write reprojected coordinates.
+    if driver in _WGS84_ONLY_DRIVERS:
+        # Both formats define their coordinates on WGS84 and nowhere else, so
+        # they get reprojected coordinates whatever the project is set to. A
+        # GeoJSON written in a projected CRS carries no CRS a reader is obliged
+        # to honour, and a web map drops it near 0,0.
         target = QgsCoordinateReferenceSystem("EPSG:4326")
     else:
         # Ground metres, so a length read off the file is a length on the

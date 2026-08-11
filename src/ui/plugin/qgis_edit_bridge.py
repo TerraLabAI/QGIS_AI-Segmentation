@@ -1,23 +1,26 @@
 """The native geometry bridge behind Correct's "Edit by hand" action.
 
 It runs on the detection the user SELECTED on Correct. One click turns the
-review's selection layer into an editable QGIS layer, selects that one object
-(so native Reshape and Split scope to it, and QGIS's own highlight answers
-"which polygon am I editing"), frames it when it is off-screen or too small to
-work on, and arms the vertex tool. The dock exposes Move points, Redraw edge
-and Split as focused buttons backed by QGIS's native actions, each with the
-exact gesture spelled out. "Done editing" commits, restores the user's prior
-editing aids, folds the committed geometry back into the review, and re-selects
-the same object by its stable det_id.
+review's selection layer into an editable QGIS layer, holds the session to that
+one object (see plugin/bridge_isolation.py), selects it so native Reshape and
+Split scope to it, frames it when it is off-screen or too small to work on, and
+arms the vertex tool. The dock exposes Move points, Redraw edge and Split as
+focused buttons backed by QGIS's native actions, each with the exact gesture
+spelled out. "Done editing" commits, restores the user's prior editing aids,
+folds the committed geometry back into the review, and re-selects the same
+object by its stable det_id.
 
-Snapping and topological editing are ON; avoid-overlap is deliberately OFF.
+Snapping is ON; topological editing and avoid-overlap are deliberately OFF.
 On a dense layer of touching detections avoid-overlap silently carves an edit
 that grazes a neighbour (GEOS difference; an edit fully covered by neighbours is
 rejected outright, and a split result keeps only the largest part), which reads
-as "editing is broken". Topological editing already keeps shared borders
-coherent, so the bridge neutralises avoid-overlap and restores the user's own
-setting on exit. Every editing aid the bridge changes is snapshotted on entry
-and restored on every exit path, including cancel and error.
+as "editing is broken". Topological editing goes the other way and writes the
+edit THROUGH the shared border: moving or deleting a vertex takes the
+coincident vertices of the touching polygons with it. A coherent shared border
+is not worth a silent change to a polygon the user did not pick, so the bridge
+neutralises both and restores the user's own settings on exit. Every editing aid
+the bridge changes is snapshotted on entry and restored on every exit path,
+including cancel and error.
 
 This borrows QGIS's mature geometry engine instead of rebuilding vertex / reshape
 / split ourselves, and it retires our own failing split map tool: the review
@@ -72,6 +75,10 @@ _ADD_TOOL_CLASSES = ("QgsMapToolAddFeature", "QgsMapToolDigitizeFeature")
 # public PyQGIS API, so it is only ever recognised by className(), never
 # imported or subclassed.
 _VERTEX_TOOL_CLASSES = ("QgsVertexTool", "QgsVertexToolV2", "QgsMapToolVertexEdit")
+
+# The three tools that edit the shape under the cursor. Each needs a polygon the
+# session is held to; Add does not, because what it draws is new.
+_BRIDGE_SHAPE_TOOLS = ("vertex", "reshape", "split")
 
 
 def _bridge_capture_points(tool, class_name: str):
@@ -249,6 +256,15 @@ class QgisEditBridgeMixin:
         # True once the layer edit-buffer signals are connected, so the live
         # feedback line can be driven and dropped cleanly on teardown.
         self._qgis_bridge_feedback_conn = False
+        # True while the project's layer-removal signal is watched. The session
+        # strips the review layer's Private flag, so the user can see it in the
+        # Layers panel and remove it; without this watch the bridge would stay
+        # open on a layer that no longer exists.
+        self._qgis_bridge_layer_watch = False
+        # True when the subset holding the session to ONE polygon went on. False
+        # means the session runs on the whole layer, which is only allowed when
+        # it has no polygon of its own.
+        self._qgis_bridge_isolated = False
         # The edited layer's QUndoStack. It names the operation QGIS actually
         # recorded ("Moved vertex", "Split features"), which is the only honest
         # way to report a native edit, and it backs the panel's Undo.
@@ -292,11 +308,11 @@ class QgisEditBridgeMixin:
         if layer is None:
             return
         # Capture the polygon the user picked on Correct BEFORE
-        # _disarm_shape_tool clears it. It is context, not a restriction: it
-        # decides where the map looks and what the banner is called, and the
-        # review re-selects it on the way back. The native tools stay free to
-        # reach every polygon (see _select_and_frame_bridge_target). Entering
-        # with nothing picked is a supported, ordinary case.
+        # _disarm_shape_tool clears it. It decides where the map looks, what the
+        # banner is called, which object the session may touch, and which one
+        # the review re-selects on the way back. Entering with nothing picked is
+        # a supported, ordinary case: there is no polygon to hold the session
+        # to, so the whole layer stays reachable.
         self._qgis_bridge_target_idx = getattr(self, "_correct_selected_idx", None)
         # A hand edit (Merge / Split pick) still armed would fight the QGIS tool
         # we are about to set; drop it first (no-op if nothing is armed).
@@ -320,34 +336,76 @@ class QgisEditBridgeMixin:
         if not self._expose_and_activate_bridge_layer(layer):
             self._restore_bridge_layer_presentation(layer)
             self._qgis_bridge_layer_flags = None
-            self._restore_bridge_editing_aids()
+            self._restore_bridge_setting(self._restore_bridge_editing_aids)
             self._qgis_bridge_saved_aids = None
             self._qgis_bridge_prev_maptool = None
             self._show_bridge_unavailable()
+            self._rearm_correct_select_after_bridge_bail()
+            return
+        # Reset BEFORE the isolate call below. The ceiling that call computes
+        # reads the ids this session has handed out, so ids left by the previous
+        # one would push it above every id this one can mint, and a shape drawn
+        # here would fall outside the subset and be lost at Save.
+        self._qgis_bridge_pending_fids = []
+        self._qgis_bridge_born_det_ids = set()
+        self._qgis_bridge_id_write_marks = set()
+        # The session's own polygon, resolved HERE rather than in
+        # _select_and_frame_bridge_target below: the subset that holds the
+        # session to it has to be on the layer before startEditing(), which is
+        # the next call, and a layer already in edit mode refuses one.
+        self._qgis_bridge_target_det_id = self._bridge_target_det_id()
+        self._qgis_bridge_isolated = bool(
+            self._isolate_bridge_target(layer, self._qgis_bridge_target_det_id))
+        if (self._qgis_bridge_target_det_id is not None
+                and not self._qgis_bridge_isolated):
+            # Nothing holds the session to its polygon. The vertex tool scopes to
+            # the LAYER, so a click could take a neighbour's vertex and the fold
+            # would write that neighbour back as a real edit, with nothing on
+            # screen saying so. Refuse the session instead.
+            self._clear_bridge_isolation()
+            self._restore_bridge_layer_presentation(layer)
+            self._qgis_bridge_layer_flags = None
+            self._restore_bridge_setting(self._restore_bridge_editing_aids)
+            self._qgis_bridge_saved_aids = None
+            self._qgis_bridge_prev_maptool = None
+            self._qgis_bridge_target_det_id = None
+            self._show_bridge_isolation_failed()
+            self._rearm_correct_select_after_bridge_bail()
             return
         if not self._apply_bridge_editing_config(layer):
             # Could not start editing: restore whatever we saved and bail, so we
-            # never leave half the aids on.
+            # never leave half the aids on, nor a layer showing one polygon.
+            self._clear_bridge_isolation()
             self._restore_bridge_layer_presentation(layer)
             self._qgis_bridge_layer_flags = None
-            self._restore_bridge_editing_aids()
+            self._restore_bridge_setting(self._restore_bridge_editing_aids)
             self._qgis_bridge_saved_aids = None
             self._qgis_bridge_prev_maptool = None
+            # No session, so no target: the Delete row reads this id and would
+            # otherwise act on a polygon whose session never opened.
+            self._qgis_bridge_target_det_id = None
+            self._rearm_correct_select_after_bridge_bail()
             return
 
+        # Taken UNDER the subset, so it holds the session's own polygon and
+        # nothing else. That is what lets the fold treat an untouched neighbour
+        # as untouched instead of re-basing it.
         self._qgis_bridge_snapshot = self._snapshot_bridge_layer(layer)
 
         self._qgis_bridge_layer = layer
         self._qgis_bridge_active = True
         self._qgis_bridge_finishing = False
-        self._qgis_bridge_pending_fids = []
-        self._qgis_bridge_born_det_ids = set()
-        self._qgis_bridge_id_write_marks = set()
         self._qgis_bridge_id_edit = False
         self._qgis_bridge_t0 = time.monotonic()
 
         self._remember_bridge_vertex_editor_visibility()
-        self.activate_qgis_bridge_tool("vertex")
+        # Move points, Redraw edge and Split each edit the shape under the
+        # cursor. A session with no polygon of its own has nothing holding them
+        # to one, so they leave the panel and Add is the only lane.
+        has_target = self._qgis_bridge_target_det_id is not None
+        self._set_bridge_shape_tools_visible(has_target)
+        if has_target:
+            self.activate_qgis_bridge_tool("vertex")
         # Sync our banner if the user ends editing directly from QGIS's own
         # toggle (which commits or rolls back on its own prompt).
         try:
@@ -374,67 +432,79 @@ class QgisEditBridgeMixin:
             show = getattr(dock, "set_qgis_bridge_points_visible", None)
             if callable(show):
                 show(self._qgis_bridge_target_det_id is not None)
+            # Delete needs the same target, and unlike Points it stays up for
+            # the whole session: a hand edit is where a user finds out the
+            # shape is not worth keeping.
+            show_delete = getattr(dock, "set_qgis_bridge_delete_visible", None)
+            if callable(show_delete):
+                show_delete(self._qgis_bridge_target_det_id is not None)
         except (RuntimeError, AttributeError, TypeError):
             pass
         self._connect_bridge_feedback(layer)
+        self._connect_bridge_layer_watch()
         self._connect_bridge_tool_messages()
         self._start_bridge_gesture_poll()
         self._track_bridge("opened")
 
-    def _select_and_frame_bridge_target(self, layer) -> None:
-        """Frame the polygon the user came in with, and select NOTHING.
+    def _bridge_target_det_id(self):
+        """The stable identity of the polygon the session opened on, or None.
 
-        Manual editing is deliberately permissive: the native tools reach every
-        polygon on the layer, so a user who spots a second one to fix does not
-        have to leave and come back. That rules out selecting the entry
-        polygon, because a selection is not a highlight in QGIS: reshape and
-        split then act ONLY on selected features, and a cut drawn across an
-        unselected neighbour reports "No features were split" instead of
-        cutting it. Any selection already on the layer is cleared for the same
-        reason.
-
-        The entry polygon still decides where the map looks and what the banner
-        is called, and its ``det_id`` (the stable display identity, never the
-        list index) is kept so the review can re-select it on the way back.
-        AI refine is the restrictive half of this split: it needs one chosen
-        polygon and keeps requiring it.
+        Read from the id list DIRECTLY. ``_object_fid_for`` falls back to
+        returning the index when that list is missing or short, and indices and
+        det_ids are different id spaces (det_id is the merger's keeper fid), so
+        the fallback could silently name a DIFFERENT detection than the user
+        picked. No usable id list means no target, which is honest.
         """
-        idx = self._qgis_bridge_target_idx
-        self._qgis_bridge_target_det_id = None
+        idx = getattr(self, "_qgis_bridge_target_idx", None)
+        if idx is None:
+            return None
+        try:
+            ids = getattr(self, "_auto_object_fids", None) or []
+            if idx < 0 or idx >= len(ids):
+                return None
+            return ids[idx]
+        except (RuntimeError, AttributeError, TypeError):
+            return None
+
+    def _select_and_frame_bridge_target(self, layer) -> None:
+        """Select and frame the polygon the user came in with.
+
+        The session works on ONE polygon. The subset applied on entry is what
+        makes that true for the vertex tool, which scopes to the active LAYER
+        and would otherwise let a click grab a neighbour's vertex; the selection
+        set here is what makes it true for native Reshape and Split, which act
+        only on selected features. Any selection already on the layer is
+        dropped, so a stale one cannot widen the session.
+
+        The entry polygon also decides where the map looks and what the banner
+        is called, and its ``det_id`` is kept so the review can re-select it on
+        the way back. Opened with nothing picked, nothing is selected and
+        nothing is isolated: there is no polygon to hold the session to.
+        """
+        det_id = self._bridge_target_det_id()
+        self._qgis_bridge_target_det_id = det_id
         try:
             layer.removeSelection()
         except (RuntimeError, AttributeError):
             pass
-        if idx is None:
-            # Opened with nothing picked: an ordinary case now, and the banner
-            # says the tools work on the layer rather than naming a polygon.
+        if det_id is None:
+            # Opened with nothing picked: an ordinary case, and the banner says
+            # the tools work on the layer rather than naming a polygon.
             self._set_bridge_target_label(None)
             return
-        # Read the identity from the id list DIRECTLY. _object_fid_for falls back
-        # to returning the index when that list is missing or short, and indices
-        # and det_ids are different id spaces (det_id is the merger's keeper
-        # fid), so the fallback could silently name a DIFFERENT detection than
-        # the user picked. No usable id list means no target, which is honest.
-        try:
-            ids = getattr(self, "_auto_object_fids", None) or []
-            if idx < 0 or idx >= len(ids):
-                self._set_bridge_target_label(None)
-                return
-            target_det_id = ids[idx]
-        except (RuntimeError, AttributeError, TypeError):
-            return
-        if target_det_id is None:
-            return
-        self._qgis_bridge_target_det_id = target_det_id
         feature = self._bridge_feature_for_det_id(
-            layer, target_det_id, with_geometry=True)
+            layer, det_id, with_geometry=True)
         if feature is None:
             return
+        try:
+            layer.selectByIds([feature.id()])
+        except (RuntimeError, AttributeError, TypeError):
+            pass
         target_geom = feature.geometry()
         if target_geom is not None and not target_geom.isEmpty():
             self._frame_bridge_target(layer, target_geom)
         # Name the target in the banner so the user reads which object is live.
-        self._set_bridge_target_label(idx)
+        self._set_bridge_target_label(self._qgis_bridge_target_idx)
 
     def _frame_bridge_target(self, layer, geom) -> None:
         """Bring the entry polygon into view ONLY when none of it is on screen.
@@ -494,6 +564,44 @@ class QgisEditBridgeMixin:
             except (RuntimeError, AttributeError, TypeError):
                 pass
 
+    def _set_bridge_shape_tools_visible(self, visible: bool) -> None:
+        """Show or hide Move points, Redraw edge and Split on the session panel.
+
+        Hidden, never greyed: a session with no polygon of its own cannot hold
+        them to one shape, so they are not a choice it offers. Goes through the
+        dock setter when the build has one, and drives the panel's own buttons
+        otherwise. Never raises."""
+        dock = getattr(self, "dock_widget", None)
+        if dock is None:
+            return
+        setter = getattr(dock, "set_qgis_bridge_tools_visible", None)
+        if callable(setter):
+            try:
+                setter(bool(visible))
+            except (RuntimeError, AttributeError, TypeError):
+                pass
+            return
+        buttons = getattr(dock, "_qgis_bridge_tool_buttons", None) or {}
+        for key in _BRIDGE_SHAPE_TOOLS:
+            button = buttons.get(key)
+            if button is None:
+                continue
+            try:
+                button.setVisible(bool(visible))
+            except (RuntimeError, AttributeError):
+                pass
+
+    def _rearm_correct_select_after_bridge_bail(self) -> None:
+        """Put Correct's resting select tool back after a failed entry.
+
+        Entry disarms it before QGIS takes the canvas. Without this the step
+        still reads "Click a polygon" while no click selects one, and only
+        leaving the step and coming back arms it again."""
+        try:
+            self._arm_correct_select()
+        except (RuntimeError, AttributeError):
+            pass
+
     def activate_qgis_bridge_tool(self, tool: str) -> None:
         """Activate one native QGIS geometry tool from the focused dock.
 
@@ -506,12 +614,18 @@ class QgisEditBridgeMixin:
         layer = self._qgis_bridge_layer
         if layer is None or not self._is_layer_valid(layer):
             return
+        tool = str(tool).lower()
+        if (tool in _BRIDGE_SHAPE_TOOLS
+                and getattr(self, "_qgis_bridge_target_det_id", None) is None):
+            # A session with no polygon of its own runs on the whole layer, so
+            # these three would edit any shape the cursor lands on. Refused here
+            # as well as hidden, because the dock is not the only caller.
+            return
         try:
             self.iface.setActiveLayer(layer)
         except (RuntimeError, AttributeError):
             pass
 
-        tool = str(tool).lower()
         action = None
         if tool == "vertex":
             action = self._bridge_iface_action(
@@ -658,6 +772,30 @@ class QgisEditBridgeMixin:
                 return
         self._teardown_qgis_edit_bridge(commit=commit, external=False)
 
+    def delete_bridge_target_polygon(self) -> None:
+        """The Manual session's Delete row: drop the polygon under edit.
+
+        Deleting beats the edit in progress, so the session ends WITHOUT saving
+        it: the ordinary rollback exit, which restores every editing aid and
+        skips the fold-back. The removal itself then runs through
+        ``_remove_detection_index``, the same primitive the AI panel's Delete
+        row uses, so the correction journal, Undo last and the status line
+        behave identically whichever tab the user was on.
+
+        The target's stable det_id is read BEFORE the teardown, which clears it
+        and the selection. Indices are untouched here (no fold-back on a
+        rollback), but the id is resolved back to an index anyway, because that
+        is the only mapping that stays honest if the model moves."""
+        det_id = getattr(self, "_qgis_bridge_target_det_id", None)
+        if getattr(self, "_qgis_bridge_active", False):
+            self.finish_qgis_edit_bridge(commit=False)
+        if det_id is None:
+            return
+        idx = self._object_index_for_det_id(det_id)
+        if idx is None:
+            return
+        self._remove_detection_index(idx)
+
     # ------------------------------------------------------------------
     # Exit-path safety (the #1 risk: a leaked global editing aid)
     # ------------------------------------------------------------------
@@ -676,6 +814,13 @@ class QgisEditBridgeMixin:
             self._log_bridge_failure("qgis_bridge_teardown", exc)
             # Last-resort: force the aids back even if the structured teardown
             # threw, so the user's project is never left with our aids on.
+            try:
+                # Before the aids, because this is the one leak the user cannot
+                # work around: a subset left on shows the review a single
+                # polygon, with no control anywhere to take it off.
+                self._clear_bridge_isolation()
+            except Exception:  # noqa: BLE001
+                pass  # nosec B110
             try:
                 self._restore_bridge_editing_aids()
             except Exception:  # noqa: BLE001
@@ -703,8 +848,17 @@ class QgisEditBridgeMixin:
                 self._stop_bridge_gesture_poll()
             except Exception:  # noqa: BLE001
                 pass  # nosec B110
+            try:
+                self._disconnect_bridge_layer_watch()
+            except Exception:  # noqa: BLE001
+                pass  # nosec B110
+            try:
+                self._set_bridge_shape_tools_visible(True)
+            except Exception:  # noqa: BLE001
+                pass  # nosec B110
             self._qgis_bridge_active = False
             self._qgis_bridge_finishing = False
+            self._qgis_bridge_isolated = False
             self._qgis_bridge_layer = None
             self._qgis_bridge_saved_aids = None
             self._qgis_bridge_prev_maptool = None
@@ -797,6 +951,7 @@ class QgisEditBridgeMixin:
             # re-enter this teardown.
             self._disconnect_bridge_editing_signal(layer)
             self._disconnect_bridge_feedback(layer)
+            self._disconnect_bridge_layer_watch()
             self._disconnect_bridge_tool_messages()
             self._stop_bridge_gesture_poll()
             if (not external and layer is not None and self._is_layer_valid(layer)):
@@ -816,12 +971,15 @@ class QgisEditBridgeMixin:
                 except (RuntimeError, AttributeError):
                     pass
             # Aids come back on EVERY path, before anything that could fail.
-            self._restore_bridge_editing_aids()
-            self._restore_bridge_vertex_search_radius()
-            self._restore_bridge_selection_colour()
-            self._restore_bridge_attribute_form(layer)
-            self._restore_bridge_map_tool()
-            self._restore_bridge_vertex_editor_visibility()
+            # Each one under its own guard: a raise partway used to skip the
+            # ones after it, and the finally below then dropped every saved
+            # value, so the user lost that setting for the session.
+            self._restore_bridge_setting(self._restore_bridge_editing_aids)
+            self._restore_bridge_setting(self._restore_bridge_vertex_search_radius)
+            self._restore_bridge_setting(self._restore_bridge_selection_colour)
+            self._restore_bridge_setting(self._restore_bridge_attribute_form, layer)
+            self._restore_bridge_setting(self._restore_bridge_map_tool)
+            self._restore_bridge_setting(self._restore_bridge_vertex_editor_visibility)
             self._leave_bridge_banner()
             # Fold back ONLY when edits committed (Done, or QGIS ended the
             # session itself). On an explicit rollback (Exit review, mode
@@ -841,9 +999,21 @@ class QgisEditBridgeMixin:
                 "committed" if committed else "rolled_back",
                 duration_ms=duration_ms, features=features)
         finally:
+            # Every detection goes back on the review layer here, AFTER the
+            # fold above has read it. The fold tells an edited shape from an
+            # untouched one against a snapshot taken under the subset, so a
+            # layer handed back whole first would re-base every visible object.
+            # Reached even when the fold raised, and a no-op when the fold
+            # already cleared it on its own way through.
+            self._clear_bridge_isolation()
             self._restore_bridge_layer_presentation(layer)
+            self._disconnect_bridge_layer_watch()
+            # The next session may own a polygon, so the three shape tools come
+            # back on the panel whatever this one was.
+            self._set_bridge_shape_tools_visible(True)
             self._qgis_bridge_active = False
             self._qgis_bridge_finishing = False
+            self._qgis_bridge_isolated = False
             self._qgis_bridge_layer = None
             self._qgis_bridge_saved_aids = None
             self._qgis_bridge_prev_maptool = None
@@ -887,6 +1057,63 @@ class QgisEditBridgeMixin:
         except (TypeError, RuntimeError, AttributeError):
             pass
         self._qgis_bridge_editing_conn = False
+
+    # ------------------------------------------------------------------
+    # The session's layer leaving the project
+    # ------------------------------------------------------------------
+
+    def _connect_bridge_layer_watch(self) -> None:
+        """Watch for the session's own layer leaving the project.
+
+        The session strips the review layer's Private flag, which is what puts
+        it in the Layers panel, so the user can remove it there. Nothing else
+        would notice: the bridge would stay open, its poll ticking, with
+        snapping, topological editing and the selection colour still forced on
+        the project until the user pressed Save."""
+        self._qgis_bridge_layer_watch = False
+        try:
+            from qgis.core import QgsProject
+
+            QgsProject.instance().layersWillBeRemoved.connect(
+                self._on_bridge_layer_will_be_removed)
+            self._qgis_bridge_layer_watch = True
+        except (RuntimeError, AttributeError, TypeError, ImportError):
+            self._qgis_bridge_layer_watch = False
+
+    def _disconnect_bridge_layer_watch(self) -> None:
+        """Drop the layer-removal watch. Idempotent; never raises."""
+        if not getattr(self, "_qgis_bridge_layer_watch", False):
+            return
+        self._qgis_bridge_layer_watch = False
+        try:
+            from qgis.core import QgsProject
+
+            QgsProject.instance().layersWillBeRemoved.disconnect(
+                self._on_bridge_layer_will_be_removed)
+        except (RuntimeError, AttributeError, TypeError, ImportError):
+            pass
+
+    def _on_bridge_layer_will_be_removed(self, layer_ids) -> None:
+        """The session's layer is about to leave the project: end the bridge.
+
+        Run on THIS stack, unlike the editingStopped teardown: the layer is
+        still alive here, and the rollback, the subset and the layer flags all
+        need it. One turn later it is gone and every one of them fails."""
+        if not getattr(self, "_qgis_bridge_active", False):
+            return
+        layer = getattr(self, "_qgis_bridge_layer", None)
+        if layer is None:
+            return
+        try:
+            ids = set(layer_ids or [])
+            if not ids or layer.id() not in ids:
+                return
+        except (RuntimeError, AttributeError, TypeError):
+            return
+        # Dropped first, so the context layer the teardown removes cannot come
+        # back through here.
+        self._disconnect_bridge_layer_watch()
+        self._abort_qgis_edit_bridge_if_active()
 
     # ------------------------------------------------------------------
     # Live feedback (echo each native edit as a plain line in the banner)
@@ -1602,15 +1829,26 @@ class QgisEditBridgeMixin:
             settings = vertex_budget_settings()
         except (RuntimeError, AttributeError, TypeError, KeyError):
             return QgsGeometry(base)
-        factor = 1.0
+        factor = None
+        aspect = 1.0
         try:
             centre = base.boundingBox().center()
-            factor = self._auto_crs_metres_per_unit(
-                centre.x(), centre.y()) or 1.0
+            factor = self._auto_crs_metres_per_unit(centre.x(), centre.y())
+            aspect = self._auto_crs_unit_aspect(centre.x(), centre.y())
         except (RuntimeError, AttributeError, TypeError):
-            factor = 1.0
-        if factor <= 0:
-            factor = 1.0
+            factor = None
+        # No metres-per-unit means the ground dial cannot cross into this CRS.
+        # Standing in 1.0 does not fail safe, it changes the unit: a few ground
+        # metres read as a few degrees drops every ring to its floor. Hand the
+        # shape back untouched instead.
+        if not factor or factor <= 0:
+            return QgsGeometry(base)
+        try:
+            aspect = float(aspect)
+        except (TypeError, ValueError):
+            aspect = 1.0
+        if aspect <= 0:
+            aspect = 1.0
         try:
             result = simplify_to_budget(
                 base,
@@ -1619,6 +1857,9 @@ class QgisEditBridgeMixin:
                 max_deviation=float(settings["max_deviation_m"]) / factor,
                 max_deviation_fraction=float(
                     settings["max_deviation_fraction"]),
+                # The y axis measures differently in a geographic CRS, and the
+                # budget has to square against ground distance, not raw units.
+                unit_aspect=aspect,
                 keep_fraction=pct / 100.0,
                 # A low dial loosens the boundary-movement cap; this ceiling
                 # keeps the loosened cap inside the object. Server dial, so it
@@ -1903,20 +2144,59 @@ class QgisEditBridgeMixin:
         except (RuntimeError, AttributeError):
             pass
 
+    def _show_bridge_isolation_failed(self) -> None:
+        """Explain a session refused because the other polygons could not be
+        held out of it.
+
+        Refusing beats opening: the vertex tool works on the whole active layer,
+        so a click could take a neighbour's vertex and Save would write that
+        neighbour back as a real edit."""
+        message = tr(
+            "Editing by hand could not open on this polygon on its own. Try "
+            "again, or fix it with the AI.")
+        try:
+            from qgis.core import Qgis, QgsMessageLog
+
+            QgsMessageLog.logMessage(
+                "Manual edit refused: the session could not be held to one "
+                "polygon", "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation", message,
+                level=Qgis.MessageLevel.Warning, duration=7)
+        except (RuntimeError, AttributeError):
+            pass
+
     # ------------------------------------------------------------------
     # Editing aids: snapshot on entry, restore on every exit path
     # ------------------------------------------------------------------
 
     def _save_bridge_editing_aids(self) -> None:
         """Snapshot the project's snapping / topology / avoid-overlap so they can
-        be restored exactly on leave. Snapping config is a value object (a copy),
-        so holding it is safe."""
+        be restored exactly on leave.
+
+        The snapping config is saved as the FIVE SCALARS this bridge changes,
+        never as the config object. The object is a value copy, but its
+        per-layer settings are keyed on raw layer pointers: when a layer is
+        removed during the session QGIS scrubs its own copy and cannot scrub
+        ours, so putting the whole thing back resurrects a destroyed layer and
+        the next project save or quit dereferences it. That is the upstream
+        crash `output_store` documents. The bridge never touches a per-layer
+        setting, so it has no business restoring one.
+        """
         from qgis.core import QgsProject
         proj = QgsProject.instance()
         aids: dict = {}
         try:
-            aids["snap"] = proj.snappingConfig()
-        except (RuntimeError, AttributeError):
+            cfg = proj.snappingConfig()
+            getter = (getattr(cfg, "typeFlag", None) or getattr(cfg, "type", None))
+            aids["snap"] = {
+                "enabled": bool(cfg.enabled()),
+                "mode": cfg.mode(),
+                "type": getter() if getter is not None else None,
+                "tolerance": cfg.tolerance(),
+                "units": cfg.units(),
+            }
+        except (RuntimeError, AttributeError, TypeError):
             aids["snap"] = None
         try:
             aids["topo"] = bool(proj.topologicalEditing())
@@ -1933,9 +2213,10 @@ class QgisEditBridgeMixin:
         self._qgis_bridge_saved_aids = aids
 
     def _apply_bridge_editing_config(self, layer) -> bool:
-        """Start editing + snapping (vertex|segment, 12 px) + topological editing
-        + avoid-overlap on ``[layer]``. Returns False if editing could not start
-        (then the caller restores and bails)."""
+        """Start editing on ``layer`` with snapping (vertex|segment, 12 px) on
+        and topological editing plus avoid-overlap off, each for the reason
+        given below. Returns False if editing could not start (then the caller
+        restores and bails)."""
         from qgis.core import QgsProject
         proj = QgsProject.instance()
         # The review rewrites this layer through the PROVIDER on every filter
@@ -1977,16 +2258,22 @@ class QgisEditBridgeMixin:
             proj.setSnappingConfig(cfg)
         except (RuntimeError, AttributeError, TypeError):
             pass
+        # Topological editing stays OFF during hand correction. With it on, a
+        # vertex move or delete is written through every border that touches
+        # the one under the cursor, so the neighbours change shape too. The
+        # session owns ONE polygon, and a coherent shared border is not worth a
+        # silent edit on a polygon the user did not pick. Restored to whatever
+        # the user had on exit, like every other aid here.
         try:
-            proj.setTopologicalEditing(True)
+            proj.setTopologicalEditing(False)
         except (RuntimeError, AttributeError):
             pass
         # Avoid-overlap stays OFF during hand correction. On a dense layer of
         # touching detections it silently carves an edit that grazes a neighbour
         # (clipping it, keeping only the largest part, or rejecting it outright),
-        # which reads as "editing is broken". Topological editing already keeps
-        # shared borders coherent without that trap, so we neutralise avoid here
-        # and restore whatever the user had on exit.
+        # which reads as "editing is broken". The session is already held to one
+        # polygon, so we neutralise avoid here and restore whatever the user had
+        # on exit.
         try:
             off_mode = _avoid_mode("AllowIntersections")
             if off_mode is not None and hasattr(proj, "setAvoidIntersectionsMode"):
@@ -2049,16 +2336,24 @@ class QgisEditBridgeMixin:
         canvas = self.iface.mapCanvas()
         getter = getattr(canvas, "selectionColor", None)
         setter = getattr(canvas, "setSelectionColor", None)
-        if setter is None:
+        # No getter, no copy to put back, so the colour is left as the user set
+        # it. Writing it here would tint every selection in QGIS until restart.
+        if setter is None or getter is None:
             return
         try:
             from qgis.PyQt.QtGui import QColor
-            self._qgis_bridge_saved_selection_colour = (
-                QColor(getter()) if getter is not None else None)
-            setter(QColor(255, 255, 0, 60))
-            canvas.refresh()
+            saved = QColor(getter())
         except (RuntimeError, AttributeError, TypeError, ImportError):
             self._qgis_bridge_saved_selection_colour = None
+            return
+        # Held BEFORE the write, and kept through a failed one: the restore
+        # reads this field, and clearing it is what loses the user's colour.
+        self._qgis_bridge_saved_selection_colour = saved
+        try:
+            setter(QColor(255, 255, 0, 60))
+            canvas.refresh()
+        except (RuntimeError, AttributeError, TypeError):
+            pass
 
     def _restore_bridge_selection_colour(self) -> None:
         """Put the user's selection colour back. Never raises."""
@@ -2124,6 +2419,17 @@ class QgisEditBridgeMixin:
         except (RuntimeError, AttributeError, TypeError, ImportError):
             pass
 
+    def _restore_bridge_setting(self, restore, *args) -> None:
+        """Run ONE restore step under its own guard, and log a failure.
+
+        The steps are independent, and the teardown drops every saved value once
+        it has run them, so a raise in one used to cost the user the settings the
+        steps after it would have put back."""
+        try:
+            restore(*args)
+        except Exception as exc:  # noqa: BLE001 -- one failure must not cost the others
+            self._log_bridge_failure("qgis_bridge_restore", exc)
+
     def _restore_bridge_editing_aids(self) -> None:
         """Put the project's snapping / topology / avoid-overlap back exactly as
         they were before enter. Each step is isolated so one failure cannot leave
@@ -2152,9 +2458,22 @@ class QgisEditBridgeMixin:
             pass
         try:
             snap = saved.get("snap")
-            if snap is not None:
-                proj.setSnappingConfig(snap)
-        except (RuntimeError, AttributeError, TypeError):
+            if snap:
+                # Onto the project's LIVE config, so the per-layer settings
+                # stay the ones QGIS is holding now. Restoring a saved config
+                # object here put back layers the user had deleted meanwhile.
+                cfg = proj.snappingConfig()
+                cfg.setEnabled(snap["enabled"])
+                cfg.setMode(snap["mode"])
+                if snap["type"] is not None:
+                    setter = (getattr(cfg, "setTypeFlag", None)
+                              or getattr(cfg, "setType", None))
+                    if setter is not None:
+                        setter(snap["type"])
+                cfg.setTolerance(snap["tolerance"])
+                cfg.setUnits(snap["units"])
+                proj.setSnappingConfig(cfg)
+        except (RuntimeError, AttributeError, TypeError, KeyError):
             pass
 
     # ------------------------------------------------------------------

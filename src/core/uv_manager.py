@@ -31,7 +31,7 @@ from .archive_utils import safe_extract_zip as _safe_extract_zip
 from .cache_paths import plugin_cache_tmp_dir
 from .logging_utils import log as _log
 from .model_config import IS_ROSETTA
-from .subprocess_utils import get_subprocess_kwargs  # nosec B404 - our helper, name merely starts with "subprocess"
+from .subprocess_utils import get_clean_env_for_venv, get_subprocess_kwargs  # nosec B404 - our own helper
 
 # Plain home path on purpose: the binary stays put when AI_SEGMENTATION_CACHE_DIR
 # moves the rest of the cache, so an existing install keeps finding it.
@@ -408,7 +408,14 @@ def download_uv(
             if sys.platform != "win32":
                 os.chmod(tmp_dest, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
 
-            os.replace(tmp_dest, dest)
+            # The same ladder the checkpoint and the interpreter move on:
+            # an on-access scanner holds a file it has just seen written, and
+            # a single move that loses to it wipes the whole uv directory and
+            # drops the install onto the slow path.
+            from .checkpoint_manager import _replace_with_retry
+
+            if not _replace_with_retry(tmp_dest, dest):
+                return False, "uv binary could not be moved into place"
 
         finally:
             shutil.rmtree(extract_dir, ignore_errors=True)
@@ -445,6 +452,11 @@ def verify_uv(retries: int = 3) -> bool:
     holds a freshly written executable on its first execute, and taking that
     for a broken binary deleted uv and dropped the whole install onto the
     slower path.
+
+    Run with the same scrubbed environment as every other install subprocess.
+    QGIS's own loader path points at the libraries it ships, and on a Flatpak,
+    Snap or conda build uv resolves them instead of the system's and dies. The
+    failure branch below then deletes a binary that works.
     """
     uv_path = get_uv_path()
     if not os.path.isfile(uv_path):
@@ -452,11 +464,13 @@ def verify_uv(retries: int = 3) -> bool:
 
     attempts = max(1, retries)
     last_error = ""
+    clean_env = get_clean_env_for_venv()
     for attempt in range(attempts):
         try:
             result = subprocess.run(  # nosec B603
                 [uv_path, "--version"],
                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
+                env=clean_env,
                 **get_subprocess_kwargs(),
             )
             if result.returncode == 0:

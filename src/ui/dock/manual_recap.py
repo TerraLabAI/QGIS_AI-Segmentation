@@ -1,16 +1,12 @@
-"""What the Manual Start view says about the session that just ended.
+"""The two pieces the Automatic recap card is built from.
 
-One card, three facts: how many polygons were exported, how much ground they
-cover, and the layer they landed in, as a link that frames it on the map. The
-old line stopped at the count and a km2 figure that read "0.00" for anything
-smaller than a city block, so it told a user nothing and pointed nowhere.
+It was the Semi-Auto recap's own module until 2026-08-11, when that card was
+removed: a line counting what the last session produced sat on the Start view
+for the rest of the session, and the saved layer in the legend says the same
+thing without taking a quarter of the panel. What is left here is what
+``auto_recap.py`` still reads.
 """
 from __future__ import annotations
-
-from html import escape
-
-from ...core.i18n import tr
-from .styles import BRAND_BLUE
 
 # Href scheme for the layer link. The recap label carries the layer id, and the
 # dock resolves it against the project when the link is clicked, so a layer the
@@ -37,23 +33,3 @@ def format_ground_area(area_m2) -> str:
     if m2 < 1_000_000.0:
         return f"{m2 / 10_000.0:.2f} ha"
     return f"{m2 / 1_000_000.0:.2f} km²"
-
-
-def manual_recap_html(count: int, area_m2, layer_name: str | None) -> str:
-    """The recap card's rich text: the count, the area, and where it went.
-
-    Rich text because the layer name is a link. Every value from the project
-    is escaped: a layer called "Roofs & walls" must read as itself, not as an
-    entity, and must not be able to inject markup.
-    """
-    head = tr("{count} polygon(s) exported").format(count=int(count))
-    area = format_ground_area(area_m2)
-    if area:
-        head = f"{head} · {area}"
-    line = f"<b>{escape(head)}</b>"
-    name = (layer_name or "").strip()
-    if not name:
-        return line
-    link = (f'<a href="{RECAP_LAYER_LINK}" style="color: {BRAND_BLUE};'
-            f' text-decoration: none;">{escape(name)}</a>')
-    return line + "<br>" + tr("Saved to {layer}").format(layer=link)

@@ -98,6 +98,18 @@ _CARD_QSS = (
 # align to the pixel: (left, top, right, bottom).
 _CARD_MARGINS = (10, 8, 10, 10)
 
+# The open body of a collapsible head (_SECTION_TOGGLE_OPEN_QSS). The head
+# draws the top edge, so this card starts square and borderless there and the
+# pair reads as ONE box. Two stacked cards with a gap between them said the
+# head and the settings were separate things, when the head is the handle of
+# the box it opens.
+_CARD_JOINED_QSS = (
+    "QWidget#{name} {{ background-color: rgba(128, 128, 128, 0.06);"
+    " border: 1px solid rgba(128, 128, 128, 0.30); border-top: none;"
+    " border-top-left-radius: 0px; border-top-right-radius: 0px;"
+    " border-bottom-left-radius: 6px; border-bottom-right-radius: 6px; }}"
+)
+
 # Block nested INSIDE a _CARD_QSS card, for a control that belongs to the card
 # but is not part of its current content (the persistent View-as row sitting
 # above the step pages). One step more fill than the card it sits on, so it
@@ -152,6 +164,14 @@ _MSG_TINTS = {
 
 # Star prefix for premium/upsell copy (D9b treatment).
 _PREMIUM_STAR = "★"
+
+# The two Semi-Auto engine cards. A picture of each place says "off your
+# machine" and "on your machine" before either name is read, which is the whole
+# job of that row. The second deliberate exception to the text-glyph rule below
+# (the first is the tip lightbulb), and kept as a PAIR: one colour emoji beside
+# one monochrome character reads as a mistake, not as a choice.
+_CLOUD_EMOJI = "☁️"
+_LAPTOP_EMOJI = "💻"
 
 # Message-kind glyph prefixes. Statuses (armed/success/warning/error) carry
 # quiet monochrome TEXT glyphs, plain characters tinted by the label's own
@@ -306,6 +326,32 @@ def _card_divider():
     return line
 
 
+def _choice_divider(text: str):
+    """The word between two sibling cards that are the two halves of ONE
+    choice: a hairline, the word, a hairline.
+
+    Not `_card_divider`, which separates the zones inside a single card. Use it
+    only where the two cards are alternatives, never as decoration between
+    unrelated cards. The caller passes the translated word."""
+    from qgis.PyQt.QtCore import Qt
+    from qgis.PyQt.QtWidgets import QHBoxLayout, QLabel, QWidget
+
+    row = QWidget()
+    lay = QHBoxLayout(row)
+    lay.setContentsMargins(0, 2, 0, 2)
+    lay.setSpacing(8)
+    label = QLabel(text)
+    label.setStyleSheet(
+        "font-size: 11px; color: rgba(128,128,128,0.95);"
+        " background: transparent; border: none;")
+    # The hairlines carry a fixed 1px height, so they need the alignment: with
+    # none they would settle at the top of the row instead of on the word's line.
+    lay.addWidget(_card_divider(), 1, Qt.AlignmentFlag.AlignVCenter)
+    lay.addWidget(label, 0, Qt.AlignmentFlag.AlignVCenter)
+    lay.addWidget(_card_divider(), 1, Qt.AlignmentFlag.AlignVCenter)
+    return row
+
+
 def _step_dial(num: int, state: str = "todo"):
     """20px round step dial for ordered page steps: ``todo`` is a grey
     outline number, ``active`` a filled brand-blue number, ``done`` a lime
@@ -367,6 +413,20 @@ _SECTION_TOGGLE_QSS = (
     " padding: 8px 10px; text-align: left; }"
     f"QPushButton:hover {{ color: {BRAND_BLUE};"
     " border-color: rgba(30, 136, 229, 0.7); }"
+)
+
+# The same head with its card open under it (_CARD_JOINED_QSS): no bottom edge
+# and no bottom corners, so head and body draw as one box. Hover only moves the
+# text colour here, because tinting three sides of a box whose fourth side is
+# the card below leaves a broken rectangle on the screen.
+_SECTION_TOGGLE_OPEN_QSS = (
+    "QPushButton { font-size: 11px; color: palette(text);"
+    " font-weight: bold; background-color: rgba(128, 128, 128, 0.10);"
+    " border: 1px solid rgba(128, 128, 128, 0.30); border-bottom: none;"
+    " border-top-left-radius: 6px; border-top-right-radius: 6px;"
+    " border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;"
+    " padding: 8px 10px; text-align: left; }"
+    f"QPushButton:hover {{ color: {BRAND_BLUE}; }}"
 )
 
 # Theme-safe combobox for combos living inside a styled card. A parent card
@@ -631,35 +691,109 @@ _BTN_TILE_ACTIVE = (
     "QPushButton:hover { background: rgba(30, 136, 229, 0.26); }"
 )
 
-# Segmented AI | Manual method switch (Correct step). Two equal halves; the
-# active half carries the armed-blue tint (blue = "the method currently
-# armed", per the taxonomy). Unchecked halves keep a 1px transparent border so
+# Segmented two-half switch. The active half is FILLED brand blue, because a
+# tint behind text reads as a hover state rather than as the current choice: on
+# a dark panel the two halves came out nearly the same weight and the user had
+# to hunt for the selected one. Text on the fill is WHITE, not the black the
+# filled BUTTON constants use: a switch half is a label, not a call to action,
+# and black on blue reads as disabled. Unchecked halves keep a 1px transparent
+# border so
 # checking one never shifts its text by a pixel. A design-system addition
-# mirrored in the web tokens (.seg). No PRO badge: it is not a paid gate, only
-# a way to pick how you fix the polygon.
-_METHOD_SWITCH_QSS = (
-    "QFrame#methodSwitchFrame {"
-    "  background: rgba(128, 128, 128, 0.05);"
-    "  border: 1px solid rgba(128, 128, 128, 0.35);"
-    "  border-radius: 6px;"
-    "}"
+# mirrored in the web tokens (.seg). No PRO badge on either caller: neither is a
+# paid gate.
+
+
+def _segmented_switch_qss(name: str) -> str:
+    """QSS for a two-half segmented control on the given frame objectName.
+
+    One shape for every "pick one of two" on the panel, so a user who has
+    learnt the Correct step's switch already knows the Semi-Auto engine one.
+    Add a caller here rather than writing a second set of rules.
+    """
+    return (
+        f"QFrame#{name} {{"
+        "  background: rgba(128, 128, 128, 0.05);"
+        "  border: 1px solid rgba(128, 128, 128, 0.35);"
+        "  border-radius: 6px;"
+        "}"
+        "QPushButton {"
+        "  background: transparent;"
+        "  border: 1px solid transparent;"
+        "  border-radius: 5px;"
+        "  padding: 6px 0px;"
+        "  font-size: 12px;"
+        "  color: palette(text);"
+        "}"
+        "QPushButton:hover {"
+        "  background: rgba(128, 128, 128, 0.12);"
+        "}"
+        "QPushButton:checked {"
+        f"  background: {BRAND_BLUE};"
+        "  color: #ffffff;"
+        "  font-weight: 700;"
+        f"  border: 1px solid {BRAND_BLUE};"
+        "}"
+        f"QPushButton:checked:hover {{"
+        f"  background: {BRAND_BLUE_HOVER};"
+        f"  border-color: {BRAND_BLUE_HOVER};"
+        f"}}"
+    )
+
+
+_METHOD_SWITCH_QSS = _segmented_switch_qss("methodSwitchFrame")
+
+# The Semi-Auto engine picker: two option cards side by side, each carrying a
+# name and the one thing that separates it from the other.
+#
+# NOT the segmented bar above, and the difference is deliberate. That control
+# switches a view, so a transparent resting half is right: it costs nothing to
+# try. This one picks where the work runs and what it costs, and the unpicked
+# side has to read as a real, pressable thing rather than as empty space, so
+# both cards carry a fill and a border at rest.
+#
+# The picked one is FILLED with the brand blue, like every other picked cell on
+# the panel. A translucent blue wash was tried and rejected: it read as a hover
+# state, so the two cards looked equally chosen and the answer to "which one am
+# I on" cost a second look.
+_ENGINE_CARD_QSS = (
     "QPushButton {"
-    "  background: transparent;"
-    "  border: 1px solid transparent;"
-    "  border-radius: 5px;"
-    "  padding: 6px 0px;"
-    "  font-size: 12px;"
-    "  color: palette(text);"
+    "  background: rgba(128, 128, 128, 0.10);"
+    "  border: 1px solid rgba(128, 128, 128, 0.32);"
+    "  border-radius: 6px;"
+    "  text-align: left;"
     "}"
     "QPushButton:hover {"
-    "  background: rgba(128, 128, 128, 0.12);"
+    "  background: rgba(128, 128, 128, 0.18);"
+    "  border-color: rgba(128, 128, 128, 0.50);"
     "}"
     "QPushButton:checked {"
-    "  background: rgba(30, 136, 229, 0.18);"
-    "  font-weight: 700;"
+    f"  background: {BRAND_BLUE};"
     f"  border: 1px solid {BRAND_BLUE};"
     "}"
+    f"QPushButton:checked:hover {{ background: {BRAND_BLUE_HOVER};"
+    f" border: 1px solid {BRAND_BLUE_HOVER}; }}"
+    "QLabel { background: transparent; border: none; }"
 )
+
+# The two lines inside an engine card, picked and unpicked.
+#
+# They have to be constants the widget re-applies on every toggle, not a
+# descendant rule in the QSS above. A QLabel carries its own stylesheet, and a
+# stylesheet set on the widget itself always beats one inherited from an
+# ancestor, so `QPushButton:checked QLabel { color: ... }` never wins and the
+# picked card would ship near-white text on the brand blue.
+#
+# White on the filled blue, not the black the filled-button constants use.
+# Yvann's call, twice: a picked card has to keep reading as a card of text, and
+# black on blue read as a disabled control to him. The gloss is the full white
+# too, not a dimmed one, because at 11px on a saturated fill any transparency
+# turns to mud.
+_ENGINE_CARD_TITLE_QSS = (
+    "font-size: 12px; font-weight: bold; color: palette(text);")
+_ENGINE_CARD_GLOSS_QSS = "font-size: 11px; color: palette(text);"
+_ENGINE_CARD_TITLE_ON_QSS = (
+    "font-size: 12px; font-weight: bold; color: #ffffff;")
+_ENGINE_CARD_GLOSS_ON_QSS = "font-size: 11px; color: #ffffff;"
 
 
 # Destructive footer row: the one action that ENDS an object, kept quiet and
@@ -673,16 +807,10 @@ _BTN_REMOVE_ROW = (
     f"QPushButton:disabled {{ color: {DISABLED_TEXT}; }}"
 )
 
-# Quiet one-line recap card (neutral grey family) for last-run summaries.
-# What the last session produced. Green, like every other "this worked" surface
-# in the panel (the Manual Start caption, the export success line), so a user
-# coming back to the Start view reads it as a result and not as a warning.
-_RECAP_CARD_QSS = (
-    "QLabel { font-size: 11px; color: palette(text);"
-    " border: 1px solid rgba(67, 160, 71, 0.45);"
-    " border-radius: 6px; padding: 8px 10px;"
-    " background: rgba(67, 160, 71, 0.10); }"
-)
+# _RECAP_CARD_QSS lived here and went on 2026-08-11 with its last caller. Both
+# last-run recap cards, Semi-Auto's and Automatic's, are gone: what a finished
+# run produced is in the legend and on the footer credit ring, and a Start page
+# is about the next run. Do not rebuild a green summary card for that.
 
 
 def _btn_toggle_qss(rgb: tuple[int, int, int], text: str, armed_text: str,
@@ -853,6 +981,11 @@ _FOOTER_CTA_BTN_STYLE = (
 # both. A no-op on the default text size, and outside QGIS.
 for _qss_name in (
     "_SECTION_TOGGLE_QSS",
+    "_SECTION_TOGGLE_OPEN_QSS",
+    "_ENGINE_CARD_TITLE_QSS",
+    "_ENGINE_CARD_GLOSS_QSS",
+    "_ENGINE_CARD_TITLE_ON_QSS",
+    "_ENGINE_CARD_GLOSS_ON_QSS",
     "_INSTRUCTIONS_CARD_QSS",
     "_INSTRUCTIONS_HINT_QSS",
     "_BTN_LINK",
@@ -864,7 +997,6 @@ for _qss_name in (
     "_BTN_TILE_ACTIVE",
     "_METHOD_SWITCH_QSS",
     "_BTN_REMOVE_ROW",
-    "_RECAP_CARD_QSS",
     "_FOOTER_ICON_BTN_STYLE",
     "_HELP_ICON_BTN_STYLE",
     "_FOOTER_CTA_BTN_STYLE",

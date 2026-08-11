@@ -194,12 +194,42 @@ def min_size_noise_floor_m2(mask_gsd_m: float, *, no_prompt: bool = False) -> fl
 # silently changed what a fresh session or a restored polygon lacking the
 # field started with. Grep-proof: defined once here.
 # ---------------------------------------------------------------------------
-# Simplify (px): the SAME unit and the same gentle start as the Automatic
-# review, so a number typed in one mode means the same thing in the other. It
-# used to be an integer on a half-pixel scale, which could not reach a sub-pixel
-# tolerance at all and opened every Manual session at nearly four times this.
-# The point budget below is what thins a Manual outline now; this only de-noises.
-REFINE_SIMPLIFY_DEFAULT = AUTO_REVIEW_SIMPLIFY_DEFAULT
+# Simplify (px): the same UNIT as the Automatic review, so a number typed in one
+# mode means the same thing in the other, but a different opening value. A
+# staircase step is one pixel tall, so the review's sub-pixel start cannot
+# remove one: it hands the point budget the raw traced outline, which then has
+# to guess which of ~280 vertices per 100 m is a real corner, and shaves the
+# corner instead. Douglas-Peucker keeps the point of largest deviation, which IS
+# the corner, so running it first at a couple of pixels costs nothing and leaves
+# the budget a clean polyline.
+#
+# 2.0 is where the knee sits: below it the budget still shaves corners, above it
+# the outline starts losing real ones. Automatic keeps its own start, because a
+# run tunes Simplify per class.
+REFINE_SIMPLIFY_DEFAULT = 2.0
+
+# Ceiling on that tolerance, as a share of the object's own narrow dimension.
+# A distance is the wrong unit for a small object: two crop pixels is nothing on
+# a 25 m roof and a tenth of a car, and at low zoom one crop pixel is metres. The
+# point budget already bounds its own cap this way (vertex_budget.
+# deviation_cap_for); this is the same guard one step earlier. 0.08 costs four
+# vertices across the whole corpus and keeps the smallest objects off the floor.
+REFINE_SIMPLIFY_MAX_NARROW_FRACTION = 0.08
+
+# How far the point budget may move a Manual outline, in ground metres. The
+# served cap is shared with Automatic and is the value a run's classes were
+# calibrated against; at that value the budget may cut a real building step off
+# as if it were mask noise, which is what leaves a chamfered corner where the
+# model drew a square one. Manual has no class and one object on screen, so it
+# holds a tighter cap of its own. The panel's Simplify pays for it: on its own a
+# tighter cap costs vertices, and behind a de-staircased outline it costs none.
+REFINE_VERTEX_MAX_DEVIATION_M = 0.25
+
+# Floor under that cap, in crop pixels. One staircase step moves the boundary by
+# about 0.7 of a ground pixel, so a cap below that can drop no vertex at all and
+# the raw traced outline ships. The floor keeps the budget alive on a coarse
+# crop, where the cap in metres would otherwise sit under one step.
+REFINE_VERTEX_DEVIATION_PIXEL_FLOOR = 1.5
 REFINE_SMOOTH_DEFAULT = 0
 # Round corners: how many Chaikin passes the tick means. The Automatic review
 # runs ONE. Each pass roughly doubles the point count, so the 5 Manual used to

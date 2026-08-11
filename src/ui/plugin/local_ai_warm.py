@@ -117,13 +117,12 @@ def manual_hover_warm_ms() -> int:
 class LocalAiWarmMixin:
     """Model load and crop warm-up for the review's AI method and for Manual."""
 
-    def _correct_ai_warm_allowed(self) -> bool:
-        """Is a speculative warm-up appropriate right now?
+    def _correct_step_resting_on_ai(self) -> bool:
+        """The Correct step is on screen, armed on AI, with nothing running.
 
-        Everything here is re-checked at fire time, because a debounced timer
-        outlives the state that armed it."""
-        if not local_ai_warmup_enabled():
-            return False
+        The shared half of the warm-up guards below. Everything is re-checked
+        at fire time, because a debounced timer outlives the state that armed
+        it."""
         if getattr(self, "_headless", False):
             return False
         if getattr(self, "_correct_method", "ai") != "ai":
@@ -137,6 +136,33 @@ class LocalAiWarmMixin:
             return False
         return getattr(self, "_auto_worker", None) is None
 
+    def _correct_ai_warm_allowed(self) -> bool:
+        """May the LOCAL MODEL be loaded or pre-started right now?"""
+        if not local_ai_warmup_enabled():
+            return False
+        # Nothing to warm when the fix is answered off the machine: loading a
+        # model that will not be asked anything costs the user memory and time.
+        if self._correct_ai_route_is_remote():
+            return False
+        return self._correct_step_resting_on_ai()
+
+    def _correct_crop_warm_allowed(self) -> bool:
+        """May the hovered polygon's CROP be read and encoded ahead of the pick?
+
+        Wider than the model guard on purpose: the remote route has no model to
+        load, and reading the crop ahead is exactly what makes its pick answer
+        in one round trip instead of paying the read, the upload and the far
+        side's encode at the click. The far side expects and rate-limits these
+        warm-ups, and a refused one costs nothing: the pick sends the pixels
+        itself, as it always has."""
+        if not local_ai_warmup_enabled():
+            return False
+        if not self._correct_step_resting_on_ai():
+            return False
+        if self._correct_ai_route_is_remote():
+            return True
+        return self._correct_ai_warm_allowed()
+
     def _review_ai_warm_allowed(self) -> bool:
         """Same question for the review as a whole, one step earlier.
 
@@ -147,6 +173,10 @@ class LocalAiWarmMixin:
         has, so the model load starts there rather than on arrival at Correct.
         Re-checked at fire time like the other guard."""
         if not local_ai_warmup_enabled():
+            return False
+        # Nothing to warm when the fix is answered off the machine: loading a
+        # model that will not be asked anything costs the user memory and time.
+        if self._correct_ai_route_is_remote():
             return False
         if getattr(self, "_headless", False):
             return False
@@ -277,7 +307,7 @@ class LocalAiWarmMixin:
     def _schedule_correct_hover_warm(self, idx) -> None:
         """The cursor moved onto polygon ``idx`` on the resting Correct step:
         arm the crop warm-up. Cheap enough to call on every hover change."""
-        if idx is None or not self._correct_ai_warm_allowed():
+        if idx is None or not self._correct_crop_warm_allowed():
             return
         if self.dock_widget is None:
             return
@@ -287,7 +317,10 @@ class LocalAiWarmMixin:
         # on imagery the cursor had been sitting on for half a minute.
         # _replay_hover_warm_when_ready picks it up when the model arrives.
         self._correct_hover_warm_idx = idx
-        if getattr(self, "predictor", None) is None:
+        if (getattr(self, "predictor", None) is None
+                and not self._correct_ai_route_is_remote()):
+            # The remote route builds its predictor at fire time, so an empty
+            # slot is no reason to stand down there.
             return
         _debounce_timer(self, "_correct_hover_warm_timer", self.dock_widget,
                         correct_hover_warm_ms(), self._warm_hovered_correct_crop)
@@ -299,7 +332,7 @@ class LocalAiWarmMixin:
         touched. The only lasting effect is that the imagery is encoded, which
         is what the pick was going to have to wait for."""
         idx = getattr(self, "_correct_hover_warm_idx", None)
-        if idx is None or not self._correct_ai_warm_allowed():
+        if idx is None or not self._correct_crop_warm_allowed():
             return
         if getattr(self, "_encoding_in_progress", False):
             return  # never queue speculative work ahead of a real gesture
@@ -308,6 +341,15 @@ class LocalAiWarmMixin:
             return
         geom = objects[idx][0]
         if geom is None or geom.isEmpty():
+            return
+        if self._correct_ai_route_is_remote():
+            # The warm-up must feed the predictor the pick will use. With the
+            # remote one in place the encode is a windowed read and one small
+            # request; failing to put it there is not an error, it just means
+            # the pick pays its own way, as it always could.
+            if not self._ensure_cloud_correct_predictor():
+                return
+        elif getattr(self, "predictor", None) is None:
             return
         if not self._bind_correct_crop_context():
             return

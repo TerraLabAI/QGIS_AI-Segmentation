@@ -15,12 +15,13 @@ from qgis.core import (
 from qgis.gui import QgsRubberBand
 from qgis.PyQt.QtGui import QColor
 from qgis.PyQt.QtWidgets import (
+    QApplication,
     QMessageBox,
 )
 
 from ...core.i18n import tr
 from ...core.prompt_manager import FrozenCropSession
-from ...core.qt_compat import DashLine, PolygonGeometry, SolidLine
+from ...core.qt_compat import DashLine, PolygonGeometry, SolidLine, WaitCursor
 from ...core.review_defaults import (
     REFINE_CLEAN_DEFAULT,
     REFINE_EXPAND_DEFAULT,
@@ -35,11 +36,58 @@ from ...core.review_defaults import (
     REFINE_SMOOTH_DEFAULT,
     REFINE_SMOOTH_ITERATIONS,
 )
+from ...core.telemetry_errors import slot_guard
 from ..canvas_palette import (
     PENDING_FILL,
     PENDING_STROKE,
 )
 from ..error_report_dialog import show_error_report
+
+# The ground size of a crop pixel could not be measured, so the Fill holes
+# cutoff is unknown. Its own value because None already means "no cutoff, fill
+# every hole": read as that, a failed measure swallows every courtyard of an
+# object whose owner asked for a bounded fill.
+FILL_HOLES_CAP_UNKNOWN = object()
+
+# Why a click unwound with nothing to report. Neither is a failure, and neither
+# gives the user anything to act on, so neither opens a message.
+QUIET_CLICK_SUPERSEDED = "superseded"   # its crop moved on while it was out
+QUIET_CLICK_REREAD = "reread"           # its imagery is being read again for it
+QUIET_CLICK_REFUSED = "refused"         # the far side said no, and said why
+
+
+def _click_was_superseded(err: Exception) -> bool:
+    """True when the crop moved on while this click's answer was travelling.
+
+    Not a failure to report: the picture the click was asked about is gone, so
+    there is nothing to draw and nothing the user can do. The class is imported
+    at the moment of the failure because the module holding it carries the
+    heavy numeric imports and plugin start must not pay for them.
+    """
+    try:
+        from ...core.cloud_sam_predictor import RefineSupersededError
+
+        return isinstance(err, RefineSupersededError)
+    except Exception:  # noqa: BLE001 -- an unimportable class is not a match
+        return False
+
+
+def _click_refusal_answer(err: Exception) -> str:
+    """The answer a refused click deserves, or "" when it was not a refusal.
+
+    "CREDITS" and "SIGN_IN" are the user's own to settle, so they never earn a
+    bug report. Everything else keeps the report dialog. Imported at the moment
+    of the failure for the same reason as the class above.
+    """
+    try:
+        from ...core.cloud_sam_predictor import REFUSAL_OTHER, RefineRefusedError
+
+        if not isinstance(err, RefineRefusedError):
+            return ""
+        answer = err.refusal_class()
+        return "" if answer == REFUSAL_OTHER else str(answer)
+    except Exception:  # noqa: BLE001 -- an unimportable class is not a refusal
+        return ""
 
 
 class ManualPredictMixin:
@@ -67,8 +115,15 @@ class ManualPredictMixin:
             self.map_tool.remove_last_marker()
         self._sweep_stale_refine_canvas()
 
+    @slot_guard(stage="segment")
     def _on_positive_click(self, point):
-        """Handle left-click: add positive point (select this element)."""
+        """Handle left-click: add positive point (select this element).
+
+        Guarded because this runs on the map tool's own stack frame, straight
+        out of a reimplemented Qt virtual, where an escaping exception is the
+        abort path in PyQt. What the click knows how to report, it reports
+        below; the guard is for everything else.
+        """
         if self._refine_click_is_stale():
             self._drop_stale_refine_click()
             return
@@ -84,7 +139,8 @@ class ManualPredictMixin:
             if self.map_tool:
                 self.map_tool.remove_last_marker()
             layer_name = ""
-            sel = self.dock_widget.layer_combo.currentLayer()
+            dock = self.dock_widget
+            sel = dock.layer_combo.currentLayer() if dock is not None else None
             if sel:
                 layer_name = sel.name()
             self.iface.messageBar().pushMessage(
@@ -225,14 +281,20 @@ class ManualPredictMixin:
         # outline go up before it and come down whatever it returns. Only when
         # this call started them: a predict running under a read the session
         # already announced must not take that read's cursor down with it.
-        waiting = self._begin_correct_wait()
+        waiting = self._begin_click_wait()
         try:
             predicted = self._run_prediction()
+        except Exception:
+            # The point and its marker are on screen already. An error on its
+            # way to the slot guard would leave them there, and every later
+            # predict would carry a point that produced nothing.
+            self._rollback_failed_click("positive", point)
+            raise
         finally:
             if waiting:
-                self._end_correct_wait()
+                self._end_click_wait()
         if not predicted:
-            self._rollback_failed_click("positive")
+            self._rollback_failed_click("positive", point)
             return
 
         # Auto-revert when THIS CLICK added nothing: it found nothing, or what it
@@ -241,7 +303,7 @@ class ManualPredictMixin:
         # is never empty and neither message would ever come back.
         undo_note = None
         if self._last_prediction_found_nothing():
-            undo_note = tr("No element detected at this point. Try clicking on a different area.")
+            undo_note = tr("No object found here. Try clicking somewhere else.")
         elif self._last_click_took_from_another_object():
             undo_note = tr("That ground belongs to another object, so nothing was added. Edit that object instead, or join the two with Merge with neighbours.")  # noqa: E501
         elif self._last_click_stood_clear_of_shape():
@@ -267,8 +329,13 @@ class ManualPredictMixin:
         # handoff only; no-op otherwise).
         self._weld_active_into_overlaps()
 
+    @slot_guard(stage="segment")
     def _on_negative_click(self, point):
-        """Handle right-click: add negative point (exclude this area)."""
+        """Handle right-click: add negative point (exclude this area).
+
+        Guarded like the keep click above, and for the same reason: it runs on
+        the map tool's C++ stack frame, where an escaping exception aborts.
+        """
         if self._refine_click_is_stale():
             self._drop_stale_refine_click()
             return
@@ -337,7 +404,8 @@ class ManualPredictMixin:
             if self.map_tool:
                 self.map_tool.remove_last_marker()
             layer_name = ""
-            sel = self.dock_widget.layer_combo.currentLayer()
+            dock = self.dock_widget
+            sel = dock.layer_combo.currentLayer() if dock is not None else None
             if sel:
                 layer_name = sel.name()
             self.iface.messageBar().pushMessage(
@@ -399,14 +467,19 @@ class ManualPredictMixin:
 
         # Same wait treatment as the keep click above: the predict blocks, so
         # say so on the polygon and on the cursor for as long as it runs.
-        waiting = self._begin_correct_wait()
+        waiting = self._begin_click_wait()
         try:
             predicted = self._run_prediction()
+        except Exception:
+            # Same reason as the keep click: the point is committed before the
+            # predict, so an error must take it back down on its way out.
+            self._rollback_failed_click("negative", point)
+            raise
         finally:
             if waiting:
-                self._end_correct_wait()
+                self._end_click_wait()
         if not predicted:
-            self._rollback_failed_click("negative")
+            self._rollback_failed_click("negative", point)
             return
 
         # Auto-revert when THIS CLICK found nothing. Not "the shape is empty": a
@@ -422,7 +495,7 @@ class ManualPredictMixin:
             self._update_ui_after_prediction()
             self.iface.messageBar().pushMessage(
                 "AI Segmentation",
-                tr("No element detected at this point. Try clicking on a different area."),
+                tr("No object found here. Try clicking somewhere else."),
                 level=Qgis.MessageLevel.Info,
                 duration=4
             )
@@ -434,11 +507,24 @@ class ManualPredictMixin:
         When frozen sessions exist, only the active crop's points are sent
         to SAM (frozen polygons are composited during visualization).
 
-        Returns True when a prediction was stored, False on any failure so
-        the caller can roll the click back.
+        Returns True when a prediction was stored, False otherwise, so the
+        caller can roll the click back. False is not always a failure: a click
+        whose crop moved on, and one whose imagery has to be read again, both
+        say so with `_end_click_quietly` and the rollback reads it there.
         """
         import numpy as np
-        from rasterio.transform import from_bounds as transform_from_bounds
+
+        # Two lines of affine arithmetic, from a library that lives in the
+        # on-device environment. The Automatic review's remote fix route runs on
+        # machines that have none, so a plain-arithmetic stand-in takes over when
+        # the import is missing. Where the library is there, it is still used, so
+        # Manual's answers do not move by a pixel.
+        try:
+            from rasterio import transform as rio_transform
+            from rasterio.transform import from_bounds as transform_from_bounds
+        except ImportError:
+            rio_transform = None
+            transform_from_bounds = None
 
         # Use only active crop points for prediction (not frozen points)
         active_pos = self._active_crop_points_positive
@@ -456,11 +542,16 @@ class ManualPredictMixin:
 
         # A dead worker (cleaned up after a transport error) leaves the crop
         # info in place but no encoded image: every click would fail silently
-        # forever. Re-encode the same crop transparently. This is a rare
-        # recovery path, reached only when the crop was expected "ok", so no
-        # async worker owns the pipe: a SYNCHRONOUS blocking re-encode here is
-        # transport-safe (the main thread owns the pipe) and keeps predict fully
-        # synchronous, at the cost of a brief freeze in this recovery case only.
+        # forever. Read the same crop again, transparently. A rare recovery
+        # path, reached only when the crop was expected "ok", so no async worker
+        # owns the pipe.
+        #
+        # On a file raster the read is local and the blocking form keeps predict
+        # fully synchronous, at the cost of a brief freeze here. An online layer
+        # reads from the tile network, with retries, and that is the whole
+        # interactive path's reason for existing: doing it here froze QGIS for
+        # as long as the tiles took. So the click hands itself to the same
+        # deferred replay a click on a cold crop uses (see _rollback_failed_click).
         if not self.predictor.is_image_set:
             QgsMessageLog.logMessage(
                 "Worker has no encoded image - re-encoding current crop",
@@ -470,6 +561,10 @@ class ManualPredictMixin:
             center = QgsPointXY((b[0] + b[2]) / 2.0, (b[1] + b[3]) / 2.0)
             override = (self._current_crop_actual_mupp if self._is_online_layer
                         else self._current_crop_scale_factor)
+            if self._is_online_layer and not self._headless:
+                if self._extract_and_encode_crop(center, mupp_override=override):
+                    self._end_click_quietly(QUIET_CLICK_REREAD)
+                return False
             if not self._encode_crop_blocking(center, mupp_override=override):
                 return False
 
@@ -478,21 +573,43 @@ class ManualPredictMixin:
         img_height, img_width = img_shape
 
         minx, miny, maxx, maxy = crop_bounds
-        img_clip_transform = transform_from_bounds(
-            minx, miny, maxx, maxy, img_width, img_height)
+        # Both branches below are built on this window, and the library one
+        # raises on a window with no size instead of answering None. No window,
+        # no click.
+        if maxx <= minx or maxy <= miny or img_width <= 0 or img_height <= 0:
+            QgsMessageLog.logMessage(
+                "Crop window has no size - cannot place the click in it",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            return False
+        if rio_transform is not None:
+            img_clip_transform = transform_from_bounds(
+                minx, miny, maxx, maxy, img_width, img_height)
 
-        # Build point arrays from active crop points only
-        from rasterio import transform as rio_transform
+            def crop_pixel_of(px, py):
+                return rio_transform.rowcol(img_clip_transform, px, py)
+        else:
+            from ...core.crop_window import crop_pixel_of_point
+
+            def crop_pixel_of(px, py):
+                return crop_pixel_of_point(crop_bounds, img_shape, px, py)
+
+        # Build point arrays from active crop points only. A window with no size
+        # cannot place a point in it, and the answer for that is no answer: the
+        # top-left corner is a valid pixel address, so the model would be
+        # prompted there and the user would get a mask nowhere near their click.
         point_coords_list = []
         point_labels_list = []
-        for x, y in active_pos:
-            row, col = rio_transform.rowcol(img_clip_transform, x, y)
-            point_coords_list.append([col, row])
-            point_labels_list.append(1)
-        for x, y in active_neg:
-            row, col = rio_transform.rowcol(img_clip_transform, x, y)
-            point_coords_list.append([col, row])
-            point_labels_list.append(0)
+        for points, label in ((active_pos, 1), (active_neg, 0)):
+            for x, y in points:
+                pixel = crop_pixel_of(x, y)
+                if pixel is None:
+                    QgsMessageLog.logMessage(
+                        "Crop window has no size - cannot place the click in it",
+                        "AI Segmentation", level=Qgis.MessageLevel.Warning)
+                    return False
+                row, col = pixel
+                point_coords_list.append([col, row])
+                point_labels_list.append(label)
 
         point_coords = np.array(point_coords_list)
         point_labels = np.array(point_labels_list)
@@ -563,7 +680,39 @@ class ManualPredictMixin:
                 multimask_output=use_multimask,
             )
         except RuntimeError as e:
+            if _click_was_superseded(e):
+                # The session moved to another crop while this click was out.
+                # Nothing failed and nothing is the user's to fix, so the click
+                # ends here without a report and without changing the route.
+                QgsMessageLog.logMessage(
+                    "Click dropped: the crop changed while its answer was on "
+                    "the way", "AI Segmentation", level=Qgis.MessageLevel.Info)
+                self._end_click_quietly(QUIET_CLICK_SUPERSEDED)
+                return False
             error_str = str(e)
+            refusal = _click_refusal_answer(e)
+            if refusal and not self._headless:
+                # An empty balance or a session that signed out. The far side
+                # already says what to do about it, and neither is a fault to
+                # report, so the sentence goes to the message bar instead of a
+                # dialog offering to mail us about the user's own account.
+                QgsMessageLog.logMessage(
+                    f"Click refused ({refusal})", "AI Segmentation",
+                    level=Qgis.MessageLevel.Warning)
+                try:
+                    from ...core import telemetry_errors
+                    telemetry_errors.track_plugin_error(
+                        stage="segment", error_code="predict_refused",
+                        message=error_str)
+                except Exception:
+                    pass  # nosec B110
+                try:
+                    self.iface.messageBar().pushWarning(
+                        "AI Segmentation", error_str)
+                except (RuntimeError, AttributeError):
+                    pass
+                self._end_click_quietly(QUIET_CLICK_REFUSED)
+                return False
             QgsMessageLog.logMessage(
                 f"Prediction failed: {error_str}",
                 "AI Segmentation",
@@ -593,6 +742,11 @@ class ManualPredictMixin:
                 pass  # nosec B110
             if self._headless:
                 self._headless_error = error_str
+                return False
+            # The review's AI fix answered off the machine and the answer never
+            # came. Nothing here is the user's to fix, so the step falls back to
+            # editing by hand instead of opening a report dialog.
+            if self._degrade_correct_ai_to_manual(error_str):
                 return False
             if is_dll_error:
                 show_error_report(
@@ -629,7 +783,7 @@ class ManualPredictMixin:
                     message=str(e))
             except Exception:
                 pass  # nosec B110
-            if not self._headless:
+            if not self._headless and not self._degrade_correct_ai_to_manual(str(e)):
                 self.iface.messageBar().pushMessage(
                     "AI Segmentation",
                     tr("Segmentation failed. Please try again."),
@@ -679,13 +833,13 @@ class ManualPredictMixin:
         # on this, never on a mask that already carries the shape.
         raw_answer = self.current_mask
 
-        # The newest click as mask pixel row/col, in the SAME img_clip_transform
-        # used for the point arrays above. Both locality rules below need it.
+        # The newest click as mask pixel row/col, through the SAME mapping used
+        # for the point arrays above. Both locality rules below need it.
         click_rc = None
         try:
             if getattr(self, "_last_click_point", None) is not None:
                 cx, cy = self._last_click_point
-                crow, ccol = rio_transform.rowcol(img_clip_transform, cx, cy)
+                crow, ccol = crop_pixel_of(cx, cy)
                 click_rc = (int(crow), int(ccol))
         except Exception:  # noqa: BLE001 -- click path is best-effort  # nosec B110
             click_rc = None
@@ -920,12 +1074,32 @@ class ManualPredictMixin:
                 f"Could not keep the part outside the crop: {e}",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning)
 
-    def _rollback_failed_click(self, polarity: str):
-        """Undo all state added by a click whose prediction failed.
+    def _end_click_quietly(self, reason: str) -> None:
+        """Mark the click now unwinding as one with nothing to report.
+
+        Read once by the rollback below, which is the only place that decides
+        whether a click that stored no prediction owes the user a message."""
+        self._quiet_click_end = reason
+
+    def _take_quiet_click_end(self):
+        """Why the click now unwinding ended quietly, or None, and clear it."""
+        reason = getattr(self, "_quiet_click_end", None)
+        self._quiet_click_end = None
+        return reason
+
+    def _rollback_failed_click(self, polarity: str, canvas_point=None):
+        """Undo all state added by a click that stored no prediction.
 
         Without this, a failed prediction leaves a marker and a prompt point
         that never contributed to the mask, silently desyncing every later
         prediction and undo.
+
+        Not every such click FAILED. One whose crop moved on while its answer
+        travelled, and one whose imagery has to be read again, both end here
+        with nothing wrong and nothing the user can act on, so they unwind
+        without the message. The second keeps going: it is handed to the same
+        deferred replay a click on a cold crop uses, and comes back by itself
+        once the imagery lands, which is why it needs ``canvas_point``.
         """
         self.prompts.undo()
         if polarity == "positive" and self._active_crop_points_positive:
@@ -934,9 +1108,15 @@ class ManualPredictMixin:
             self._active_crop_points_negative.pop()
         if self._mask_state_history:
             self._restore_mask_state(self._mask_state_history.pop())
+        quiet = self._take_quiet_click_end()
+        if quiet == QUIET_CLICK_REREAD and canvas_point is not None:
+            # Hand the click to the replay, which takes its marker down now and
+            # puts it back when it re-drives the click.
+            self._remember_pending_manual_click(polarity, canvas_point)
+            return
         if self.map_tool:
             self.map_tool.remove_last_marker()
-        if not self._headless:
+        if quiet is None and not self._headless:
             self.iface.messageBar().pushMessage(
                 "AI Segmentation",
                 tr("Something went wrong with this click, so it was not applied. Please try again."),
@@ -965,6 +1145,7 @@ class ManualPredictMixin:
                 "AI Segmentation",
                 level=Qgis.MessageLevel.Info
             )
+            self._warn_if_unsure(score)
             self._update_mask_visualization()
         else:
             # No active mask: _update_mask_visualization keeps any frozen
@@ -972,6 +1153,110 @@ class ManualPredictMixin:
             self._update_mask_visualization()
 
         self._safe_restore_canvas_focus()
+
+    def _warn_if_unsure(self, score: float) -> None:
+        """Say so when the model's own score says the outline is probably wrong.
+
+        The outline is still drawn and still keepable: this is a hint, not a
+        gate. It has to be, because the signal is real but weak.
+
+        The score does NOT mean the same thing on the two engines, so this
+        reads which one answered before it says anything. Only the off-machine
+        answer carries a score the floor was set against. Half right is worse
+        than silent, so the hint stays quiet on the other one.
+
+        Off unless the server names a floor (``review.click_unsure_below``), and
+        once per object, because a user correcting a hard shape would otherwise
+        read the same sentence on every click of it.
+
+        The sentence is served too, so the floor and the words it triggers can
+        be retuned in the same deploy.
+        """
+        if self._unsure_warning_shown:
+            return
+        if not getattr(getattr(self, "predictor", None),
+                       "last_answer_was_remote", False):
+            return
+        try:
+            from ...core.detection_policy import click_unsure_below
+            floor = click_unsure_below()
+        except Exception:  # noqa: BLE001 -- a hint must never cost the click  # nosec B110
+            return
+        if floor <= 0 or score <= 0 or score >= floor:
+            return
+        self._unsure_warning_shown = True
+        from ...core.server_dials import dial_copy
+
+        self.iface.messageBar().pushMessage(
+            "AI Segmentation",
+            dial_copy(
+                "manual.click_unsure",
+                tr("The model is unsure about this outline. Click again to correct "
+                   "it, or draw it by hand.")),
+            level=Qgis.MessageLevel.Info,
+            duration=5,
+        )
+
+    def _click_answer_travels(self) -> bool:
+        """True when the predictor in hand answers this click over the network.
+
+        Asked BEFORE the click goes out, so the wait can be shown while it is
+        out. The predictor's own record of where the last answer came from is
+        no use for that: it is written after."""
+        active = getattr(self, "_cloud_correct_predictor_active", None)
+        if active is None:
+            return False
+        try:
+            return bool(active())
+        except Exception:  # noqa: BLE001 -- a click must not fail over this
+            return False
+
+    def _remote_click_wait_showing(self) -> bool:
+        """True while a click of base Semi-Auto waits on an answer travelling
+        back."""
+        return bool(getattr(self, "_remote_click_wait_active", False))
+
+    def _begin_click_wait(self) -> bool:
+        """Say the model is working, for as long as this click blocks: the
+        polygon goes dashed and the cursor turns busy. True only when THIS call
+        started the wait, which is what the caller ends.
+
+        The review's fix session has its own wait, and that one is used where it
+        applies. A click answered over the network in base Semi-Auto has no
+        session and waits just as long, the first one of a sitting longest of
+        all, and an arrow cursor with nothing moving for that long reads as a
+        crash. So it gets the same treatment here."""
+        if self._begin_correct_wait():
+            return True
+        if self._correct_wait_showing() or self._remote_click_wait_showing():
+            return False
+        if not self._click_answer_travels():
+            return False
+        self._remote_click_wait_active = True
+        self._remote_click_wait_cursor = False
+        if not self._headless:
+            try:
+                QApplication.setOverrideCursor(WaitCursor)
+                self._remote_click_wait_cursor = True
+            except (RuntimeError, AttributeError):
+                self._remote_click_wait_cursor = False
+        self._apply_mask_band_style()
+        return True
+
+    def _end_click_wait(self) -> None:
+        """Take this click's waiting outline and busy cursor back down. ONE pop
+        for the one push, whichever of the two waits went up."""
+        if not self._remote_click_wait_showing():
+            self._end_correct_wait()
+            return
+        self._remote_click_wait_active = False
+        if getattr(self, "_remote_click_wait_cursor", False):
+            self._remote_click_wait_cursor = False
+            try:
+                QApplication.restoreOverrideCursor()
+            except (RuntimeError, AttributeError):
+                pass
+        self._apply_mask_band_style()
 
     def _apply_mask_band_style(self) -> None:
         """Colour the active-mask band. One color language: blue = editable (not
@@ -1003,9 +1288,11 @@ class ManualPredictMixin:
         # its own that it is busy instead of leaving the cursor to carry it
         # alone. Every path that ends the wait comes back through here, so the
         # dash cannot outlive the work (see correct_focus.py).
+        waiting = (self._correct_wait_showing()
+                   or self._remote_click_wait_showing())
         try:
             self.mask_rubber_band.setLineStyle(
-                DashLine if self._correct_wait_showing() else SolidLine)
+                DashLine if waiting else SolidLine)
         except (RuntimeError, AttributeError):
             pass
 
@@ -1038,31 +1325,112 @@ class ManualPredictMixin:
             pixel_size = min(pixel_size, bbox_height / height_pixels)
         return pixel_size
 
-    def _manual_metres_per_unit(self, ref_x: float, ref_y: float) -> float:
-        """Ground metres per unit of the current layer CRS near (ref_x, ref_y).
+    def _manual_simplify_tolerance(self, geom, transform_info) -> float:
+        """The Simplify spinbox as a distance, capped by the object's own size.
+
+        The spinbox speaks crop pixels, which is the right unit for a staircase
+        and the wrong one for a small object: the same two pixels are nothing on
+        a warehouse and a tenth of a car, and a zoomed-out crop makes one pixel
+        several metres. So the tolerance is also bounded by a share of the
+        object's narrow dimension, the same guard the point budget puts on its
+        own deviation cap. Returns 0 when the control is off.
+        """
+        tolerance = self._compute_simplification_tolerance(
+            transform_info, self._refine_simplify)
+        if tolerance <= 0:
+            return 0.0
+        from ...core.review_defaults import REFINE_SIMPLIFY_MAX_NARROW_FRACTION
+
+        if REFINE_SIMPLIFY_MAX_NARROW_FRACTION <= 0:
+            return tolerance
+        try:
+            _pt, _area, _angle, width, height = geom.orientedMinimumBoundingBox()
+            narrow = min(float(width), float(height))
+        except Exception:  # noqa: BLE001 -- unmeasurable, keep the flat value  # nosec B110
+            return tolerance
+        if narrow <= 0:
+            return tolerance
+        return min(tolerance, REFINE_SIMPLIFY_MAX_NARROW_FRACTION * narrow)
+
+    def _manual_vertex_deviation_cap(self, base_cap_m: float, transform_info,
+                                     served_flat_m: float = 0.0,
+                                     metres_per_unit: float = 1.0) -> float:
+        """The furthest the point budget may move a Semi-Auto outline, in ground
+        metres.
+
+        The served cap is shared with Automatic, where it is the value a run's
+        classes were calibrated against. Semi-Auto has no class and one object on
+        screen, and at the shared value the budget is allowed to cut a real
+        building step off as if it were noise, so it keeps a tighter one of its
+        own. The floor matters as much as the value: one staircase step costs
+        about 0.7 of a ground pixel, so a cap under that can drop no vertex at
+        all and the raw traced outline ships instead.
+
+        ``served_flat_m`` is the run's plain cap when ``base_cap_m`` is one of
+        its variants (Round corners runs on a deliberately looser one). The
+        tighter Semi-Auto value scales by the same ratio, so this replaces the
+        cap without flattening the difference between the two.
+
+        ``metres_per_unit`` is the ground scale under the object, resolved by
+        the caller (which cannot run the budget at all without it).
+        """
+        from ...core.review_defaults import (
+            REFINE_VERTEX_DEVIATION_PIXEL_FLOOR,
+            REFINE_VERTEX_MAX_DEVIATION_M,
+        )
+
+        cap = REFINE_VERTEX_MAX_DEVIATION_M
+        if cap <= 0:
+            return base_cap_m
+        if served_flat_m > 0 and base_cap_m > 0:
+            cap *= base_cap_m / served_flat_m
+        # Never looser than what the run would have used anyway.
+        if base_cap_m > 0:
+            cap = min(cap, base_cap_m)
+        # The pixel floor goes on LAST. Clamped after it, it was thrown away on
+        # exactly the crops it exists for: past a certain ground pixel size one
+        # staircase step moves the boundary further than the flat cap, so no
+        # vertex may be dropped at all and the raw traced outline ships.
+        px_units = self._crop_pixel_size_units(transform_info)
+        if px_units > 0:
+            cap = max(cap, REFINE_VERTEX_DEVIATION_PIXEL_FLOOR
+                      * px_units * metres_per_unit)
+        return cap
+
+    def _manual_metres_per_unit(self, ref_x: float, ref_y: float):
+        """Ground metres per X unit of the current layer CRS near (ref_x, ref_y),
+        or None when it cannot be measured.
 
         Mirrors the Automatic review's _auto_crs_metres_per_unit: a Web Mercator
         unit is well under a metre, a geographic CRS counts in degrees, so a
         ground-metre dial has to cross that gap before it touches a geometry.
-        Answers 1.0 on any failure (reads a metre setting as CRS units)."""
+
+        None, and never 1.0. Substituting 1.0 does not fail safe, it changes the
+        unit: on a degree-based layer a spacing of a few ground metres is then
+        read as a few degrees, the budget falls to its floor and a building
+        ships as an octagon, with nothing on screen to say so. A caller with no
+        use for a wrong number skips its step instead.
+
+        The X axis only. In a geographic CRS the Y axis measures differently,
+        and pairing this with ``_manual_unit_aspect`` is what covers that."""
         layer = getattr(self, "_current_layer", None)
         if layer is None:
-            return 1.0
+            return None
         try:
             crs = layer.crs()
             if not crs.isValid():
-                return 1.0
+                return None
             geographic = bool(crs.isGeographic())
         except Exception:  # noqa: BLE001 -- an unusable CRS means no conversion
-            return 1.0
+            return None
         try:
             from ...core.layer_conventions import make_area_measurer
             step = 0.001 if geographic else 1.0
             metres = float(make_area_measurer(crs).measureLine(
                 QgsPointXY(ref_x, ref_y), QgsPointXY(ref_x + step, ref_y)))
-            return metres / step if metres > 0 else 1.0
+            return metres / step if metres > 0 else None
         except Exception:  # noqa: BLE001 -- never block a refine on a measure
-            return 1.0
+            return None
 
     def _manual_unit_aspect(self, ref_x: float, ref_y: float) -> float:
         """How much longer one y unit of the current layer CRS is than one x
@@ -1096,51 +1464,54 @@ class ManualPredictMixin:
             _envelope = regularize_envelope()
         except Exception:  # noqa: BLE001 -- neutral envelope on any failure  # nosec B110
             _envelope = None
-        try:
-            from ...core.detection_policy import (
-                destair_tolerance_m,
-                regularize_settings,
-                regularize_tolerance_m,
-            )
-            bbox = combined.boundingBox()
-            factor = self._manual_metres_per_unit(
-                bbox.center().x(), bbox.center().y())
-            if factor <= 0:
-                factor = 1.0
-            span_units = min(bbox.width(), bbox.height())
-            reg_tol_m = regularize_tolerance_m(
-                pixel_units * factor, span_units * factor)
-            reg_tol = reg_tol_m / factor
-            destair = destair_tolerance_m(pixel_units * factor) / factor
-            s = regularize_settings()
-            return apply_right_angles(
-                combined,
-                destair_tol=max(0.0, destair - tolerance),
-                tolerance_m=reg_tol,
-                allow_diagonal=bool(s["allow_diagonal"]),
-                allow_circles=bool(s["allow_circles"]),
-                min_keep_iou=float(s["min_keep_iou"]),
-                diagonal_reduction=float(s["diagonal_reduction"]),
-                circle_threshold=float(s["circle_threshold"]),
-                # Multi-direction path: OFF unless the server turns it on, the
-                # same dial the Automatic review forwards. With it on, a
-                # building whose wing sits at an angle to the main block keeps
-                # each wing on its own grid instead of coming back staircased.
-                multi_direction=bool(s["multi_direction"]),
-                multi_max_groups=int(s["multi_max_groups"]),
-                multi_min_separation_deg=float(s["multi_min_separation_deg"]),
-                unit_aspect=self._manual_unit_aspect(
-                    bbox.center().x(), bbox.center().y()),
-                envelope=_envelope)
-        except Exception:  # noqa: BLE001 -- fall back to the pixel-anchored path
-            destair3 = self._compute_simplification_tolerance(transform_info, 1.5)
-            centre = combined.boundingBox().center()
-            return apply_right_angles(
-                combined,
-                destair_tol=max(0.0, destair3 - tolerance),
-                tolerance_m=destair3,
-                unit_aspect=self._manual_unit_aspect(centre.x(), centre.y()),
-                envelope=_envelope)
+        bbox = combined.boundingBox()
+        centre = bbox.center()
+        aspect = self._manual_unit_aspect(centre.x(), centre.y())
+        # The served dials are in ground metres, so with no ground scale they
+        # cannot be crossed into this CRS at all, and the object takes the
+        # pixel-anchored path below, which needs none.
+        factor = self._manual_metres_per_unit(centre.x(), centre.y())
+        if factor is not None and factor > 0:
+            try:
+                from ...core.detection_policy import (
+                    destair_tolerance_m,
+                    regularize_settings,
+                    regularize_tolerance_m,
+                )
+                span_units = min(bbox.width(), bbox.height())
+                reg_tol_m = regularize_tolerance_m(
+                    pixel_units * factor, span_units * factor)
+                reg_tol = reg_tol_m / factor
+                destair = destair_tolerance_m(pixel_units * factor) / factor
+                s = regularize_settings()
+                return apply_right_angles(
+                    combined,
+                    destair_tol=max(0.0, destair - tolerance),
+                    tolerance_m=reg_tol,
+                    allow_diagonal=bool(s["allow_diagonal"]),
+                    allow_circles=bool(s["allow_circles"]),
+                    min_keep_iou=float(s["min_keep_iou"]),
+                    diagonal_reduction=float(s["diagonal_reduction"]),
+                    circle_threshold=float(s["circle_threshold"]),
+                    # Multi-direction path: OFF unless the server turns it on,
+                    # the same dial the Automatic review forwards. With it on, a
+                    # building whose wing sits at an angle to the main block
+                    # keeps each wing on its own grid instead of staircased.
+                    multi_direction=bool(s["multi_direction"]),
+                    multi_max_groups=int(s["multi_max_groups"]),
+                    multi_min_separation_deg=float(
+                        s["multi_min_separation_deg"]),
+                    unit_aspect=aspect,
+                    envelope=_envelope)
+            except Exception:  # noqa: BLE001 -- take the pixel-anchored path
+                pass  # nosec B110
+        destair3 = self._compute_simplification_tolerance(transform_info, 1.5)
+        return apply_right_angles(
+            combined,
+            destair_tol=max(0.0, destair3 - tolerance),
+            tolerance_m=destair3,
+            unit_aspect=aspect,
+            envelope=_envelope)
 
     def _manual_despike_distance(self, combined, transform_info) -> float:
         """The spike-cut opening distance for ``combined``, in the layer's CRS
@@ -1148,14 +1519,16 @@ class ManualPredictMixin:
         (core.detection_policy.despike_tolerance_m) crossed into CRS units by
         the ground scale under the object. 0.0 is the OFF state and is what an
         untuned server gives, so this stays offline-safe like the rest of
-        Manual."""
+        Manual, and it is also the answer when there is no ground scale to
+        cross the dial with: a metre distance applied to degrees would open the
+        shape away entirely."""
         try:
             from ...core.detection_policy import despike_tolerance_m
             pixel_units = self._crop_pixel_size_units(transform_info)
             centre = combined.boundingBox().center()
             factor = self._manual_metres_per_unit(centre.x(), centre.y())
-            if factor <= 0:
-                factor = 1.0
+            if factor is None or factor <= 0:
+                return 0.0
             return despike_tolerance_m(pixel_units * factor) / factor
         except Exception:  # noqa: BLE001 -- the step stays off on any failure
             return 0.0
@@ -1201,8 +1574,7 @@ class ManualPredictMixin:
                         combined = r
                 except Exception:  # noqa: BLE001 -- refine is best-effort  # nosec B110
                     pass
-        tolerance = self._compute_simplification_tolerance(
-            transform_info, self._refine_simplify)
+        tolerance = self._manual_simplify_tolerance(combined, transform_info)
         if tolerance > 0:
             r = combined.simplify(tolerance)
             if r is not None and not r.isEmpty():
@@ -1218,7 +1590,7 @@ class ManualPredictMixin:
         # regularizer every traced pixel corner, which is what brings a wall
         # back as a staircase. It is also what makes the Points control mean
         # something with Right angles on.
-        combined = self._apply_manual_vertex_budget(combined)
+        combined = self._apply_manual_vertex_budget(combined, transform_info)
         if combined is None or combined.isEmpty():
             return None
         if ortho_on:
@@ -1235,7 +1607,7 @@ class ManualPredictMixin:
             combined = rounded_corner_outline(combined, tolerance)
         return combined if combined is not None and not combined.isEmpty() else None
 
-    def _apply_manual_vertex_budget(self, combined):
+    def _apply_manual_vertex_budget(self, combined, transform_info=None):
         """Thin one Manual outline to its point budget: the generic class
         density plus the user's Points dial. Returns the input unchanged on any
         failure, so a mask always yields a polygon."""
@@ -1278,16 +1650,26 @@ class ManualPredictMixin:
                 dev_m = float(s["smooth_max_deviation_m"])
             centre = combined.boundingBox().center()
             factor = self._manual_metres_per_unit(centre.x(), centre.y())
-            if factor <= 0:
-                factor = 1.0
+            if factor is None or factor <= 0:
+                # The spacing and the cap are ground metres, and this is what
+                # turns them into distances on this layer. Without it they would
+                # be read as raw CRS units: on a degree-based layer that hands
+                # every object the floor of the budget. The outline keeps all
+                # its points instead, which is honest and reversible.
+                return combined
             r = simplify_to_budget(
                 combined,
                 spacing=spacing_m / factor,
                 min_vertices=min_pts,
-                max_deviation=dev_m / factor,
+                max_deviation=self._manual_vertex_deviation_cap(
+                    dev_m, transform_info, float(s["max_deviation_m"]),
+                    metres_per_unit=factor) / factor,
                 max_deviation_fraction=float(s["max_deviation_fraction"]),
                 dial_max_cap_fraction=float(s["dial_max_cap_fraction"]),
                 keep_fraction=keep_fraction,
+                # The two axes of a geographic CRS do not cover the same ground,
+                # and every length in the budget is measured on raw coordinates.
+                unit_aspect=self._manual_unit_aspect(centre.x(), centre.y()),
             )
             if r is not None and not r.isEmpty():
                 return r
@@ -1309,13 +1691,14 @@ class ManualPredictMixin:
             mask_to_polygons,
         )
         mask = self.current_mask
-        if self._refine_fill_holes or self._refine_expand != 0 or self._refine_min_area > 0:
+        fill_holes, max_hole_px = self._fill_holes_arguments()
+        if fill_holes or self._refine_expand != 0 or self._refine_min_area > 0:
             mask = apply_mask_refinement(
                 self.current_mask,
                 expand_value=self._refine_expand,
-                fill_holes=self._refine_fill_holes,
+                fill_holes=fill_holes,
                 min_area=self._refine_min_area,
-                max_hole_px=self._fill_holes_pixel_cap(),
+                max_hole_px=max_hole_px,
             )
         # Mask-level simplify tolerance: a multiple of the mask pixel size, OFF
         # (0.0) unless the server tunes it, so today's polygonize is unchanged.
@@ -1336,9 +1719,14 @@ class ManualPredictMixin:
         return combined
 
     def _fill_holes_pixel_cap(self):
-        """The Fill-holes size threshold in MASK PIXELS, or None to fill every
-        hole (the control at 0, and every path where the ground size of a pixel
-        cannot be measured).
+        """The Fill-holes size threshold in MASK PIXELS.
+
+        Three answers, and the last two are NOT the same. A number is the
+        cutoff. None is "no cutoff, fill every hole", which is the control at 0.
+        FILL_HOLES_CAP_UNKNOWN is "the ground size of a pixel cannot be
+        measured here", so the cutoff the user asked for cannot be worked out:
+        answering None there fills every courtyard of an object whose owner
+        asked for a bounded fill, and nothing on screen says why.
 
         The user's number is true ground m2, like Min/Max size, so it crosses to
         pixels through the same area convention (layer_conventions.
@@ -1350,7 +1738,7 @@ class ManualPredictMixin:
             return None
         info = self.current_transform_info
         if not info:
-            return None
+            return FILL_HOLES_CAP_UNKNOWN
         try:
             from qgis.core import QgsRectangle
 
@@ -1359,7 +1747,7 @@ class ManualPredictMixin:
             minx, maxx, miny, maxy = (float(v) for v in info["bbox"])
             rows, cols = int(info["img_shape"][0]), int(info["img_shape"][1])
             if rows <= 0 or cols <= 0:
-                return None
+                return FILL_HOLES_CAP_UNKNOWN
             rect = QgsGeometry.fromRect(QgsRectangle(minx, miny, maxx, maxy))
             ground_m2 = 0.0
             if self._current_layer is not None and self._current_layer.crs().isValid():
@@ -1368,10 +1756,26 @@ class ManualPredictMixin:
             if ground_m2 <= 0:
                 ground_m2 = float(rect.area())
             if ground_m2 <= 0:
-                return None
-            return hole_pixels(max_m2, ground_m2 / (rows * cols))
+                return FILL_HOLES_CAP_UNKNOWN
+            cap = hole_pixels(max_m2, ground_m2 / (rows * cols))
+            return FILL_HOLES_CAP_UNKNOWN if cap is None else cap
         except (RuntimeError, AttributeError, KeyError, TypeError, ValueError):
-            return None
+            return FILL_HOLES_CAP_UNKNOWN
+
+    def _fill_holes_arguments(self):
+        """``(fill_holes, max_hole_px)`` for apply_mask_refinement.
+
+        The step is OFF when the user asked for a bounded fill and the bound
+        cannot be measured. apply_mask_refinement reads a max of None as "fill
+        every hole", so passing an unmeasurable bound through as None does the
+        opposite of what was asked, on the objects that have courtyards to
+        lose."""
+        if not self._refine_fill_holes:
+            return False, None
+        cap = self._fill_holes_pixel_cap()
+        if cap is FILL_HOLES_CAP_UNKNOWN:
+            return False, None
+        return True, cap
 
     def _filter_geometry_parts_by_size(self, geom):
         """Drop polygon parts outside the user's Min/Max size window (true
@@ -1469,9 +1873,9 @@ class ManualPredictMixin:
             # Min/Max size) change NONE of it, yet a move on any of them used to
             # re-clean and re-polygonize the whole mask: tens of ms of scipy and
             # rasterio per settled slider tick, on the GUI thread.
-            mask_key = (self._refine_expand, self._refine_fill_holes,
-                        self._refine_min_area, self._fill_holes_pixel_cap(),
-                        _tol)
+            fill_holes, max_hole_px = self._fill_holes_arguments()
+            mask_key = (self._refine_expand, fill_holes,
+                        self._refine_min_area, max_hole_px, _tol)
             memo = getattr(self, "_mask_preview_memo", None)
             memo_hit = memo is not None
             memo_hit = memo_hit and memo[0] is self.current_mask
@@ -1483,13 +1887,13 @@ class ManualPredictMixin:
                 # Apply refinement to preview in both modes (refine affects current mask only)
                 mask_to_display = self.current_mask
                 # Apply mask-level refinements (fill holes, expand/contract, min region)
-                if self._refine_fill_holes or self._refine_expand != 0 or self._refine_min_area > 0:
+                if fill_holes or self._refine_expand != 0 or self._refine_min_area > 0:
                     mask_to_display = apply_mask_refinement(
                         self.current_mask,
                         expand_value=self._refine_expand,
-                        fill_holes=self._refine_fill_holes,
+                        fill_holes=fill_holes,
                         min_area=self._refine_min_area,
-                        max_hole_px=self._fill_holes_pixel_cap(),
+                        max_hole_px=max_hole_px,
                     )
                 geometries = mask_to_polygons(
                     mask_to_display, self.current_transform_info, _tol)
@@ -1765,6 +2169,13 @@ class ManualPredictMixin:
 
         # Pop the last saved polygon data
         last_polygon = self.saved_polygons.pop()
+        # It carries its identity back into the edit. Without this the re-save
+        # minted a fresh det_id, so the object lost the colour it was saved
+        # with AND read as brand new to the credit ledger: re-opening a
+        # cloud-traced object and saving it again spent a second credit on the
+        # one object. The handoff re-open has always done this (see
+        # manual_handoff._open_saved_polygon_for_edit).
+        self._active_refine_origin_entry = dict(last_polygon)
 
         # Remove the corresponding rubber band (green). In a handoff it is a None
         # placeholder; drop only the restored object's feature from its seed
@@ -1934,6 +2345,7 @@ class ManualPredictMixin:
         self._active_crop_points_positive = []
         self._active_crop_points_negative = []
         self._disjoint_warning_shown = False
+        self._unsure_warning_shown = False
         self.saved_polygons = []
 
         for rb in self.saved_rubber_bands:

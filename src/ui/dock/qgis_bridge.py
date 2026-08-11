@@ -46,15 +46,37 @@ from .styles import (
 
 _MANUAL_TOOL_RGB = (30, 136, 229)
 
-# What the Correct step shows at rest and the session replaces. One thing per
-# state: while a hand edit runs, the panel is the step.
+# What the Correct step shows at rest and the session replaces. Only what this
+# panel says again in its own words: the branch cards it stands in for, the
+# tips about picking a polygon, and the journal row.
+#
+# The per-polygon settings card is NOT here. Manual opens those settings
+# expanded on purpose (Points first: thinning a mask traced pixel by pixel is
+# the first thing a hand editor does), and hiding the card took Simplify, Trim
+# spikes, Grow, Round corners, Fill holes, Right angles, Reset and Delete away
+# for the whole session.
 _RESTING_CORRECT_WIDGETS = (
     "auto_correct_pick_hero",
-    "auto_correct_method_info_hint",
-    "auto_correct_select_card",
+    "auto_correct_or_row",
     "auto_add_lane_card",
+    "auto_correct_delete_tip",
     "auto_correct_status",
     "auto_correct_summary_row",
+)
+
+# The two controls inside that card which act on the RUN rather than on the
+# shape being dragged, so they step aside for the session the way they already
+# do for the AI one (set_correct_session_active hides Merge; this session does
+# not go through it, which is how they came back).
+#
+# Merge takes the map tool off the live edit and then asks the user to click
+# the OTHER polygons, which the session freezes. Delete drops the polygon from
+# the review while the bridge holds it open, and it is the same act as this
+# panel's own Delete this polygon: two buttons, one label, and only one of them
+# ended the session.
+_SESSION_HIDDEN_CORRECT_WIDGETS = (
+    "auto_shape_merge_btn",
+    "auto_correct_remove_row",
 )
 
 
@@ -225,6 +247,25 @@ class DockQgisBridgeMixin:
         self.qgis_bridge_delete_corner_btn.setVisible(False)
         col.addWidget(self.qgis_bridge_delete_corner_btn)
 
+        # Delete the whole polygon: the same quiet row, the same words and the
+        # same treatment as the AI session's. Deleting is what a user does most
+        # in Correct, and it was reachable from the AI panel only. Below the
+        # corner row so the two never read as one choice: this one ends the
+        # session, the one above edits inside it. Shown while the session has a
+        # polygon of its own to delete.
+        self.qgis_bridge_delete_btn = QPushButton(
+            "✕  " + tr("Delete this polygon"))
+        self.qgis_bridge_delete_btn.setStyleSheet(_BTN_REMOVE_ROW)
+        self.qgis_bridge_delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.qgis_bridge_delete_btn.setToolTip(tr(
+            "Delete this polygon and leave the manual edit. Anything you "
+            "changed here and did not save goes with it. Undo brings the "
+            "polygon back."))
+        self.qgis_bridge_delete_btn.clicked.connect(
+            self.auto_qgis_bridge_delete_requested.emit)
+        self.qgis_bridge_delete_btn.setVisible(False)
+        col.addWidget(self.qgis_bridge_delete_btn)
+
         self.qgis_bridge_banner.setVisible(False)
         layout.addWidget(self.qgis_bridge_banner)
 
@@ -243,12 +284,16 @@ class DockQgisBridgeMixin:
         # with no target has nothing to thin).
         self.reset_qgis_bridge_points()
         self.set_qgis_bridge_points_visible(False)
+        # Same rule as Points: the plugin reveals it once it knows which
+        # polygon the session owns.
+        self.set_qgis_bridge_delete_visible(False)
         # Reset the title too: the plugin re-names the target right after, but a
         # session that cannot resolve one must not inherit the previous run's
         # word (a building on a later tree run).
         self.set_qgis_bridge_target("")
-        for name in _RESTING_CORRECT_WIDGETS:
+        for name in _RESTING_CORRECT_WIDGETS + _SESSION_HIDDEN_CORRECT_WIDGETS:
             self._set_bridge_widget_visible(name, False)
+        self._set_bridge_merge_enabled(False)
         try:
             self._set_review_dials_locked(True, 1)
         except (RuntimeError, AttributeError):
@@ -270,6 +315,16 @@ class DockQgisBridgeMixin:
         except (RuntimeError, AttributeError):
             pass
         self.set_qgis_bridge_delete_corner_visible(False)
+        self.set_qgis_bridge_delete_visible(False)
+        # Delete follows the card, so it comes straight back; Merge has its own
+        # rule (a touching neighbour, and no session running), so it is asked
+        # rather than shown.
+        self._set_bridge_widget_visible("auto_correct_remove_row", True)
+        self._set_bridge_merge_enabled(True)
+        try:
+            self._apply_merge_tile()
+        except (RuntimeError, AttributeError):
+            pass
         try:
             self.set_auto_review_step(1)
             # Hero, info line and add lane follow the selection; the journal
@@ -337,8 +392,8 @@ class DockQgisBridgeMixin:
 
     def set_qgis_bridge_target(self, label: str) -> None:
         """Name the polygon under edit the way the AI panel names it: by the
-        run's class. Empty means the session opened with nothing picked and
-        the tools reach every polygon, so the title stays neutral."""
+        run's class. Empty means the session opened with nothing picked, so
+        there is no polygon to name and the title stays neutral."""
         self._qgis_bridge_target_label = str(label or "")
         try:
             text = str(label or "").strip()
@@ -381,6 +436,16 @@ class DockQgisBridgeMixin:
         except (RuntimeError, AttributeError):
             pass
 
+    def set_qgis_bridge_delete_visible(self, visible: bool) -> None:
+        """Show or hide Delete this polygon. The plugin shows it once the
+        session has resolved its target polygon, and it stays up for the whole
+        session: a hand edit is exactly when a user finds out the shape is not
+        worth keeping."""
+        try:
+            self.qgis_bridge_delete_btn.setVisible(bool(visible))
+        except (RuntimeError, AttributeError):
+            pass
+
     def set_qgis_bridge_points_visible(self, visible: bool) -> None:
         """Show or hide the Points row. The plugin shows it only once a target
         polygon is resolved, and hides it the moment the shape is hand-edited."""
@@ -405,5 +470,28 @@ class DockQgisBridgeMixin:
             return
         try:
             widget.setVisible(visible)
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _set_bridge_merge_enabled(self, enabled: bool) -> None:
+        """The belt under the hidden Merge tile, the way the install lock does
+        it (_apply_review_install_lock).
+
+        Merge's visibility is re-decided from outside this panel every time the
+        review reslices, and a reslice can happen mid session (the per-polygon
+        Reset is one). Hiding alone would therefore last only until then, and
+        the click it lets through takes the map tool away from a live edit.
+        Enabled state is not touched by that path, so it holds.
+
+        Releasing goes back to what the install lock asks for, never to plain
+        enabled: an install can own the review around this session.
+        """
+        btn = getattr(self, "auto_shape_merge_btn", None)
+        if btn is None:
+            return
+        try:
+            if enabled and bool(getattr(self, "_auto_review_installing", False)):
+                enabled = False
+            btn.setEnabled(bool(enabled))
         except (RuntimeError, AttributeError):
             pass

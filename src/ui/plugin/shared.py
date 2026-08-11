@@ -48,6 +48,28 @@ def free_zone_cap_km2() -> float:
         return FREE_TRIAL_MAX_ZONE_KM2
 
 
+# Longest served advisory the prompt line renders. A bound has to exist (the
+# sentence arrives from outside and the dock has no room for a runaway string),
+# but the old one cut the authored road advice mid-word, which reads as a bug in
+# the plugin rather than as a long sentence.
+SERVED_HINT_MAX_CHARS = 240
+
+
+def clip_served_hint(text: str) -> str:
+    """A served advisory bounded to SERVED_HINT_MAX_CHARS, never cut mid-word.
+
+    Past the bound the cut falls back to the last space and carries an ellipsis,
+    so a sentence that runs long is visibly unfinished instead of ending on half
+    a word. Shorter text is returned stripped and unchanged.
+    """
+    text = (text or "").strip()
+    if len(text) <= SERVED_HINT_MAX_CHARS:
+        return text
+    head = text[:SERVED_HINT_MAX_CHARS]
+    cut = head.rfind(" ")
+    return (head[:cut] if cut > 0 else head).rstrip(" ,;:.") + "..."
+
+
 def max_tiles_per_run_cap() -> int:
     """Hard per-run tile (credit) ceiling, resolved from the server detection
     policy when present, else the built-in MAX_TILES. Lets the cost ceiling be
@@ -120,11 +142,19 @@ def zone_over_free_cap_lines(area_km2: float, upgrade_url: str) -> tuple[str, st
     """
     from ...core.server_dials import dial_copy
 
+    # Three lines: the gap, the offer, the action. This is the highest-intent
+    # moment on the screen, so the middle line answers the exact thing the user
+    # was just refused (size) before anything else. The 5,000 is the Pro
+    # monthly quota (AI_SEGMENTATION_PRO_MONTHLY_DETECTIONS on the website);
+    # move both or the card starts lying.
     shipped_head = tr(
-        "This zone is {area} km² - free trial zones go up to {max} km².")
-    shipped_tail = tr(
-        'Draw a smaller zone, or <a href="{url}">Upgrade to Pro</a> to '
-        "segment areas of any size.")
+        "This zone is {area} km². Free zones stop at {max} km².")
+    shipped_value = tr(
+        "Pro has no size limit. Any area you draw, 5,000 tiles a month, "
+        "maximum detail.")
+    shipped_action = tr(
+        '<a href="{url}">Upgrade to Pro</a>, or make this zone smaller.')
+    shipped_tail = shipped_value + "<br/>" + shipped_action
     # escape=True: the two lines go into a RichText label, where a served "&"
     # has to be an entity. The shipped fallback comes back untouched, so its
     # own markup survives.
@@ -146,19 +176,35 @@ def _fill_free_cap_text(text: str, area_km2: float, upgrade_url: str) -> str:
 
 
 def backend_stalled_flag(tiles_done: int, warming_ms: int,
-                         submit_retries: int, tiles_skipped_network: int) -> bool:
+                         submit_retries: int, tiles_skipped_network: int,
+                         tiles_timed_out: int = 0) -> bool:
     """Whether an ending run was a STALLED BACKEND rather than a healthy run the
     user simply cancelled.
 
-    True only when the run billed ZERO tiles AND the service showed distress:
-    time spent in the waiting room (warming_ms), transient submit retries, or
-    tiles dropped after their submit-retry budget was exhausted. A user who
-    cancels a run that already produced tiles, or a run with no distress signal,
-    stays False. Carried on auto_detect_cancelled so a service outage the user
-    gives up on does not read as a user-initiated cancel in analytics."""
+    A run that billed ZERO tiles is stalled as soon as the service showed any
+    distress: time spent in the waiting room (warming_ms), transient submit
+    retries, tiles dropped after their submit-retry budget was exhausted, or
+    replies the worker gave up waiting on.
+
+    A run that DID produce tiles is a healthy cancel unless the service left at
+    least as many accepted tiles unanswered as it answered. Those tiles are
+    billed and delivered nothing, so past that line the user gave up on a sick
+    service, not on a run going well. A stricter rule would let a run that
+    served 5 tiles and swallowed 60 read as healthy; a looser one would flag a
+    long run over a single slow tile.
+
+    Carried on auto_detect_cancelled so a service outage the user gives up on
+    does not read as a user-initiated cancel in analytics.
+
+    ``tiles_timed_out`` defaults to 0 so an older caller keeps working. It is
+    the one signal for a service that accepts a request and then answers a byte
+    at a time: nothing retries, nothing is skipped, and without it a run where
+    every reply stalled read as a healthy cancel.
+    """
     if tiles_done > 0:
-        return False
-    return bool(warming_ms > 0 or submit_retries > 0 or tiles_skipped_network > 0)
+        return tiles_timed_out >= tiles_done
+    return bool(warming_ms > 0 or submit_retries > 0
+                or tiles_skipped_network > 0 or tiles_timed_out > 0)
 
 
 # The low recall floor sent to the server so every plausible mask comes back and
@@ -313,14 +359,24 @@ def _clear_all_features(provider) -> None:
         provider.truncate()
 
 
-def _add_features_fast(provider, features) -> None:
+def _add_features_fast(provider, features) -> bool:
     """Bulk-add features with the FastInsert flag when the running QGIS exposes
     it. FastInsert skips writing provider feature IDs back onto the input
-    features (which we never read), the standard speed-up for bulk loads."""
+    features (which we never read), the standard speed-up for bulk loads.
+
+    Returns whether the provider took the batch. A provider that refuses one
+    (a schema it rejected, so every setAttributes mismatched) reports nothing
+    else, and a caller that drops this answer goes on to tell the user it saved
+    polygons over an empty file.
+    """
     if _FAST_INSERT is not None:
-        provider.addFeatures(features, _FAST_INSERT)
+        result = provider.addFeatures(features, _FAST_INSERT)
     else:
-        provider.addFeatures(features)
+        result = provider.addFeatures(features)
+    # Some bindings answer (ok, added_features), the rest a plain bool.
+    if isinstance(result, tuple):
+        return bool(result[0]) if result else False
+    return bool(result)
 
 
 def _add_features_with_ids(provider, features):
@@ -444,6 +500,39 @@ def dir_size_label(path: str) -> str:
     if mb >= 1024:
         return f"{mb / 1024:.1f} GB"
     return f"{mb:.0f} MB"
+
+
+# A flat grid of pixels with no place on the earth: what Manual writes when the
+# raster has no CRS. Two spellings of the same thing, newest first, because an
+# older PROJ only parses the second one.
+_PIXEL_GRID_WKT = (
+    'ENGCRS["Pixel grid",EDATUM["Image origin"],CS[Cartesian,2],'
+    'AXIS["x",east,ORDER[1]],AXIS["y",north,ORDER[2]],'
+    'LENGTHUNIT["metre",1]]',
+    'LOCAL_CS["Pixel grid",UNIT["metre",1],AXIS["X",EAST],AXIS["Y",NORTH]]',
+)
+
+
+def pixel_grid_crs():
+    """The CRS a non-georeferenced Manual export is written in.
+
+    It has to be one the writer leaves alone: the saved layer is moved onto a
+    ground-metre CRS unless its own already measures in ground metres, and
+    Pseudo-Mercator never does, so declaring pixels as EPSG:3857 gets every
+    coordinate reprojected and the mode's one promise is gone. A local grid
+    measures in metres by declaration, so nothing moves, and QGIS draws it at
+    its own coordinates, on top of the image it came from.
+
+    Falls back to EPSG:3857 if neither spelling parses, which is what this
+    mode used before.
+    """
+    from qgis.core import QgsCoordinateReferenceSystem
+
+    for wkt in _PIXEL_GRID_WKT:
+        crs = QgsCoordinateReferenceSystem(wkt)
+        if crs.isValid():
+            return crs
+    return QgsCoordinateReferenceSystem("EPSG:3857")
 
 
 # Plain image formats that carry no georeferencing of their own (a world file

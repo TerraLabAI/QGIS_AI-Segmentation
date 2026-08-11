@@ -41,6 +41,7 @@ from .ai_segmentation_dockwidget import AISegmentationDockWidget
 from .ai_segmentation_maptool import AISegmentationMapTool
 from .canvas_palette import PENDING_FILL, PENDING_STROKE
 from .plugin.auto_correct import AutoCorrectMixin
+from .plugin.auto_detail_window import AutoDetailWindowMixin
 from .plugin.auto_exemplar_grouping import AutoExemplarGroupingMixin
 from .plugin.auto_finalize_steps import AutoFinalizeStepsMixin
 from .plugin.auto_flow import AutoFlowMixin
@@ -58,7 +59,10 @@ from .plugin.auto_run_terminal import AutoRunTerminalMixin
 from .plugin.auto_shape_edit import AutoShapeEditMixin
 from .plugin.auto_shape_overrides import AutoShapeOverridesMixin
 from .plugin.auto_zone import AutoZoneMixin
+from .plugin.bridge_isolation import BridgeIsolationMixin
+from .plugin.correct_ai_route import CorrectAiRouteMixin
 from .plugin.correct_focus import CorrectFocusMixin
+from .plugin.credits_watch import AutoCreditsWatchMixin
 from .plugin.demo_scene import DemoSceneMixin
 from .plugin.env_setup import EnvSetupMixin
 from .plugin.exemplars import ExemplarsMixin
@@ -67,8 +71,11 @@ from .plugin.handoff_shape import HandoffShapeMixin
 from .plugin.local_ai_install_lock import LocalAiInstallLockMixin
 from .plugin.local_ai_warm import LocalAiWarmMixin
 from .plugin.manual_add import ManualAddMixin
+from .plugin.manual_cloud_predictor import ManualCloudPredictorMixin
+from .plugin.manual_crop_window import ManualCropWindowMixin
 from .plugin.manual_crops import ManualCropsMixin
 from .plugin.manual_handoff import ManualHandoffMixin
+from .plugin.manual_object_billing import ManualObjectBillingMixin
 from .plugin.manual_predict import ManualPredictMixin
 from .plugin.manual_workflow import ManualWorkflowMixin
 from .plugin.qgis_edit_bridge import QgisEditBridgeMixin
@@ -78,13 +85,18 @@ from .plugin.shared import park_orphaned_worker
 
 class AISegmentationPlugin(
     AutoFlowMixin,
+    AutoCreditsWatchMixin,
+    AutoDetailWindowMixin,
     AutoCorrectMixin,
     LocalAiWarmMixin,
     LocalAiInstallLockMixin,
+    CorrectAiRouteMixin,
+    ManualCloudPredictorMixin,
     AutoShapeEditMixin,
     AutoShapeOverridesMixin,
     CorrectFocusMixin,
     QgisEditBridgeMixin,
+    BridgeIsolationMixin,
     QgisEditToolMessagesMixin,
     AutoRunMixin,
     AutoImageryGuardMixin,
@@ -107,8 +119,10 @@ class AISegmentationPlugin(
     AutoZoneMixin,
     DemoSceneMixin,
     EnvSetupMixin,
+    ManualObjectBillingMixin,
     ManualWorkflowMixin,
     ManualCropsMixin,
+    ManualCropWindowMixin,
     ManualPredictMixin,
 ):
     """The plugin controller. Behaviour is split across the mixins above
@@ -127,6 +141,16 @@ class AISegmentationPlugin(
         self.terralab_toolbar = None
 
         self.predictor = None
+        # Where an on-device predictor waits while the review's AI fix is served
+        # over the network. Manual gets it back without a second model load.
+        self._local_predictor_held = None
+        # What the Semi-Auto session on TerraLab's servers has already paid for.
+        # None means no session, or a session answered on this computer, and
+        # either way nothing about the account is read or spent.
+        self._manual_credit_ledger = None
+        # Charges still in flight. Held only so the task manager's task is not
+        # collected under it; each one drops itself when it finishes.
+        self._manual_charge_tasks = []
         self.prompts = PromptManager()
 
         self.current_mask = None
@@ -241,6 +265,9 @@ class AISegmentationPlugin(
         self._is_non_georeferenced_mode = False  # Track if current layer is non-georeferenced
         self._is_online_layer = False  # Track if current layer is online (WMS, XYZ, etc.)
         self._disjoint_warning_shown = False
+        # Said once per object, like the disjoint one above: a user correcting a
+        # hard shape would otherwise read it on every click of that shape.
+        self._unsure_warning_shown = False
         # One automatic venv repair per QGIS session: a second one would never
         # cure what the first could not, and the retry loop is a dead end.
         self._rasterio_repair_attempted = False
@@ -263,6 +290,11 @@ class AISegmentationPlugin(
         self._predictor_worker = None
         self._startup_check_worker = None
         self._device_info_worker = None
+        # Which half the last install ran: everything, or the light packages
+        # Automatic loads. Decided once in _on_install_requested, then read by
+        # the workers and by the review's env gate, which must not take a
+        # light install in flight for a local model on its way.
+        self._install_includes_local_model = True
         # Cached "local venv is installed" flag (from the startup check). Drives
         # the Refine-in-Manual env gate so an uninstalled env shows the install
         # dialog instead of trapping the user in "Preparing Manual mode".
@@ -275,6 +307,13 @@ class AISegmentationPlugin(
         # reaches a user who leaves QGIS open rather than waiting for their
         # next start (see _arm_config_refresh).
         self._config_refresh_timer = None  # QTimer | None
+        # Keeps the Automatic balance in step with the account while QGIS stays
+        # open, so credits granted (or a subscription just paid for) do not wait
+        # for a mode switch to show up (see AutoCreditsWatchMixin).
+        self._credits_watch_timer = None  # QTimer | None
+        self._credits_activation_relay = None  # MainWindowActivationRelay | None
+        self._credits_last_read_unix: float = 0.0
+        self._plan_upgrade_announced = False
         # Warms the segment-library catalogue cache off the GUI thread so the
         # library opens instantly (the dialog reads cache-only, never network).
         self._catalog_prefetch_task = None  # GenericRequestTask | None
@@ -320,6 +359,9 @@ class AISegmentationPlugin(
         self._init_auto_correct_state()
         # QGIS digitizing bridge state (native editing on the review layer).
         self._init_qgis_bridge_state()
+        # The subset and the context layer that hold a Manual session to one
+        # polygon (see plugin/bridge_isolation.py).
+        self._init_bridge_isolation_state()
         # True once the user moves the detail slider themselves: the debounced
         # object-aware re-seed then stops overriding their manual pick, for the
         # prompt recorded below. Reset whenever a new zone is drawn (a fresh
@@ -874,10 +916,50 @@ class AISegmentationPlugin(
             _telemetry_flush()
         except Exception:
             pass  # nosec B110
+        # Up here, not at the end: the flag behind it is a module global, so a
+        # step below that raises used to leave the message log connected with an
+        # unbounded buffer for the rest of the QGIS session, and the next reload
+        # read a fresh False and connected a second time.
+        try:
+            stop_log_collector()
+        except Exception:  # noqa: BLE001 -- unload must never raise
+            pass  # nosec B110
+        # Same reason: the task list is a module global that a reload replaces,
+        # so a task left queued resolves against a module dict nobody reads.
+        try:
+            from .plugin.run_export_upload import cancel_inflight_uploads
+            cancel_inflight_uploads()
+        except Exception:  # noqa: BLE001 -- unload must never raise
+            pass  # nosec B110
+        # The crop read owns the encode lock through a dict the call below
+        # clears, and step 3 still has to drop its `done`: take the worker now.
+        _crop_read_worker = None
+        try:
+            _read = getattr(self, "_crop_read", None)
+            if isinstance(_read, dict):
+                _crop_read_worker = _read.get("worker")
+        except Exception:  # noqa: BLE001 -- unload must never raise
+            pass  # nosec B110
+        # The Semi-Auto encode holds an APPLICATION-GLOBAL busy cursor and arms
+        # the lock watchdog. Nothing else in unload pops either, so a reload
+        # during an encode left QGIS showing the hourglass until restart. Runs
+        # here, while the dock is alive, because it clears the panel note too.
+        try:
+            self._invalidate_manual_encode()
+        except Exception:  # noqa: BLE001 -- unload must never raise
+            pass  # nosec B110
         # Roll back and restore first if a QGIS digitizing bridge is open, so
         # the user's project never keeps our snapping / topology / avoid-overlap
         # forced on after the plugin is gone (idempotent, never raises).
         self._abort_qgis_edit_bridge_if_active()
+        # The abort above already clears it when a session was open. Repeated
+        # here unconditionally because a subset left on the review layer would
+        # show one polygon for the rest of the QGIS session, plugin or no
+        # plugin, and this is the last chance to take it off.
+        try:
+            self._clear_bridge_isolation()
+        except Exception:  # noqa: BLE001 -- unload must never raise
+            pass  # nosec B110
         # The waiting cursor is application-global, so it has to come off before
         # the flags below make the session look already gone.
         try:
@@ -913,6 +995,15 @@ class AISegmentationPlugin(
                 self._on_project_read_sweep_temp)
         except (TypeError, RuntimeError):
             pass
+        # A manual session follows the canvas CRS while it runs, and only the
+        # session teardown drops that. Unload does not run it, so without this
+        # a disabled or reloaded plugin leaves a dead controller wired to a
+        # live canvas, and the next project CRS change calls into it. The stop
+        # is idempotent, so a session that already ended costs nothing.
+        try:
+            self._stop_canvas_crs_watch()
+        except (RuntimeError, AttributeError):
+            pass
         # A commit right before unload may still be holding the canvas picture
         # for its redraw: give the map its normal update rate back, or the
         # user's canvas keeps the parked one after the plugin is gone.
@@ -924,13 +1015,19 @@ class AISegmentationPlugin(
         # 0. Remove keyboard shortcut filter
         try:
             if self._shortcut_filter is not None:
-                try:
-                    self.iface.mainWindow().removeEventFilter(self._shortcut_filter)
-                    canvas = self.iface.mapCanvas()
-                    canvas.viewport().removeEventFilter(self._shortcut_filter)
-                    canvas.removeEventFilter(self._shortcut_filter)
-                except RuntimeError:
-                    pass
+                # One guard per target. Under a single try a raise on the first
+                # left the other two installed, and the reference is dropped on
+                # the next line whatever happened, so the filter went on
+                # answering key presses with nothing left owning it.
+                for target in (
+                    lambda: self.iface.mainWindow(),
+                    lambda: self.iface.mapCanvas().viewport(),
+                    lambda: self.iface.mapCanvas(),
+                ):
+                    try:
+                        target().removeEventFilter(self._shortcut_filter)
+                    except (RuntimeError, AttributeError):
+                        pass
                 self._shortcut_filter = None
         except (RuntimeError, AttributeError):
             pass
@@ -953,6 +1050,7 @@ class AISegmentationPlugin(
             try:
                 _dock_signals = [
                     (self.dock_widget.layer_combo.layerChanged, self._on_layer_combo_changed),
+                    (self.dock_widget.manual_engine_changed, self._on_manual_engine_changed),
                     (self.dock_widget.install_requested, self._on_install_requested),
                     (self.dock_widget.cancel_install_requested, self._on_cancel_install),
                     (self.dock_widget.start_segmentation_requested, self._on_start_segmentation),
@@ -1019,6 +1117,8 @@ class AISegmentationPlugin(
                      self._on_bridge_gesture_requested),
                     (self.dock_widget.auto_qgis_bridge_points_changed,
                      self._on_bridge_points_changed),
+                    (self.dock_widget.auto_qgis_bridge_delete_requested,
+                     self.delete_bridge_target_polygon),
                     (self.dock_widget._auto_review_debounce_timer.timeout,
                      self._on_auto_review_refine_debounced),
                     # Mirrors _connect_auto_correct_signals.
@@ -1045,14 +1145,23 @@ class AISegmentationPlugin(
                     sig.disconnect(slot)
                 except (TypeError, RuntimeError, AttributeError):
                     pass
-            # Stop timers before disconnection
-            try:
-                self.dock_widget._progress_timer.stop()
-                self.dock_widget._refine_debounce_timer.stop()
-                self.dock_widget._auto_review_debounce_timer.stop()
-                self.dock_widget._auto_prompt_debounce_timer.stop()
-            except (AttributeError, RuntimeError):
-                pass
+            # Stop timers before disconnection. One try per timer: the ease
+            # timer is built on first use and is None until then, and a single
+            # shared try let that AttributeError skip every timer after it.
+            for _timer_name in (
+                "_progress_timer",
+                "_refine_debounce_timer",
+                "_auto_review_debounce_timer",
+                "_auto_prompt_debounce_timer",
+                "_visibility_debounce_timer",
+                "_auto_progress_ease_timer",
+            ):
+                try:
+                    _timer = getattr(self.dock_widget, _timer_name, None)
+                    if _timer is not None:
+                        _timer.stop()
+                except (AttributeError, RuntimeError):
+                    pass
         if self.map_tool:
             # One try per signal: a single stale connection used to abort the
             # whole block and leave the rest of the tool wired to a dead plugin.
@@ -1073,6 +1182,13 @@ class AISegmentationPlugin(
                     pass
 
         # 2. Cleanup predictor subprocess (with timeout to avoid blocking unload)
+        # A remote route holding the slot has an on-device predictor parked
+        # behind it, and that one owns the subprocess. Give the slot back first
+        # so the cleanup below reaches the thing that has something to close.
+        try:
+            self._drop_cloud_correct_predictor()
+        except Exception:  # noqa: BLE001 -- teardown must never raise  # nosec B110
+            pass
         if self.predictor:
             import threading
             pred = self.predictor
@@ -1100,6 +1216,7 @@ class AISegmentationPlugin(
             except RuntimeError:
                 pass  # the dock took its children with it
             self._config_refresh_timer = None
+        self._disarm_credits_watch()
         self._cancel_task("_key_revalidate_task")
         self._cancel_task("_config_prefetch_task")
         self._cancel_task("_catalog_prefetch_task")
@@ -1107,13 +1224,22 @@ class AISegmentationPlugin(
         self._cancel_task("_warmup_task")
         self._cancel_task("_auto_run_plan_task")
         self._cancel_task("_auto_token_task")
+        self._cancel_manual_charge_tasks()
 
         # 3. Disconnect worker signals before termination to prevent callbacks on deleted UI
+        # Every QThread this controller owns belongs here. Three used to be
+        # missing, and each one kept its `done` wired to a dock that step 6
+        # deletes; the removal worker's completion also holds this controller
+        # through its lambda, so the whole plugin survived unload behind a
+        # multi-gigabyte delete.
         _qthread_workers = [
             self.deps_install_worker, self.download_worker, self._verify_worker,
             getattr(self, "_predictor_worker", None),
             getattr(self, "_startup_check_worker", None),
             getattr(self, "_device_info_worker", None),
+            getattr(self, "_manual_encode_worker", None),
+            _crop_read_worker,
+            getattr(self, "_remove_data_worker", None),
         ]
         for worker in _qthread_workers:
             if worker:
@@ -1139,32 +1265,46 @@ class AISegmentationPlugin(
         # outlives the wait keeps its last reference parked until its finished
         # signal fires, mirroring the auto worker path (see park_orphaned_worker).
         for worker in _qthread_workers:
-            if worker and worker.isRunning() and hasattr(worker, "cancel"):
-                try:
+            # isRunning() INSIDE the try, like the wait loop below. A worker
+            # whose C++ half is already gone raises there, and this is step 4
+            # of a teardown whose remaining steps remove the dock, take the map
+            # tools off the canvas, drop the rubber bands and save a pending
+            # review. Letting one dead wrapper abort unload leaves all of those
+            # behind, alive, holding this controller.
+            try:
+                if worker and worker.isRunning() and hasattr(worker, "cancel"):
                     worker.cancel()
-                except (RuntimeError, AttributeError):
-                    pass
+            except (RuntimeError, AttributeError):
+                pass
         # ONE budget for the whole set, not 3 s per worker: six that ignore
         # cancel used to mean eighteen seconds of frozen QGIS on quit, on top
         # of the auto worker's own wait below. They were all cancelled just
         # above, so the ones that can stop stop together; this only bounds how
         # long we wait before parking the rest.
         deadline = time.monotonic() + 3.0
+        _parked_workers = []
         for worker in _qthread_workers:
-            if worker and worker.isRunning():
-                try:
-                    left_ms = int(max(0.0, deadline - time.monotonic()) * 1000)
-                    if left_ms > 0 and worker.wait(left_ms):
-                        continue
-                    park_orphaned_worker(worker)
-                except RuntimeError:
-                    pass
+            # isRunning() inside the try here too: a dead C++ wrapper raised
+            # RuntimeError on the line that reads it and took the rest of
+            # unload with it.
+            try:
+                if not (worker and worker.isRunning()):
+                    continue
+                left_ms = int(max(0.0, deadline - time.monotonic()) * 1000)
+                if left_ms > 0 and worker.wait(left_ms):
+                    continue
+                park_orphaned_worker(worker)
+                _parked_workers.append(worker)
+            except RuntimeError:
+                pass
         self.deps_install_worker = None
         self.download_worker = None
         self._verify_worker = None
         self._predictor_worker = None
         self._startup_check_worker = None
         self._device_info_worker = None
+        self._manual_encode_worker = None
+        self._remove_data_worker = None
 
         # 5. Disconnect action signal and remove menu/toolbar
         try:
@@ -1215,13 +1355,46 @@ class AISegmentationPlugin(
             self.terralab_toolbar = None
         self.ai_edit_action = None
 
+        # 5b. Save a still-pending review NOW, while the project and the dock
+        # are both alive. _teardown_auto_mode runs the same rescue, but it runs
+        # in step 9, after the dock is deleted and while QGIS may already be
+        # taking the project apart, and a detection the user paid for must not
+        # ride on that. It is a no-op once this one has written the layer.
+        try:
+            self._autosave_pending_auto_review(exit_path="unload")
+        except Exception:  # noqa: BLE001 -- unload must never raise
+            pass  # nosec B110
+        # The same net for the other mode. Semi-Auto's Save only appends to a
+        # list in memory until the user presses Export, and a docked panel gets
+        # no close event when QGIS quits, so polygons the user was told were
+        # saved went with the session. Here, beside its sibling, and for the
+        # same reason: the project and the dock are both still alive.
+        try:
+            self._autosave_manual_saved_polygons()
+        except Exception:  # noqa: BLE001 -- unload must never raise
+            pass  # nosec B110
+
         # 6. Remove dock widget
+        # Guarded like every other step. Qt destroys main-window children on
+        # quit, so a floating dock can already be gone by the time this runs,
+        # and these two bare calls were the last unguarded statements in the
+        # method. A raise here skipped the map tool, the rubber bands, the auto
+        # worker's join, the canvas event filters and the log collector.
         if self.dock_widget:
-            self.iface.removeDockWidget(self.dock_widget)
-            self.dock_widget.deleteLater()
+            try:
+                self.iface.removeDockWidget(self.dock_widget)
+                self.dock_widget.deleteLater()
+            except (RuntimeError, AttributeError):
+                pass
             self.dock_widget = None
 
         # 7. Clear markers and unset map tool
+        # A QgsMapTool is a CHILD of the canvas, so unsetting it only stops it
+        # being active: it stays alive with every connection to this dead
+        # controller, and a reload adds one more generation. Collected here and
+        # deleted after the auto teardown, which nulls the zone tool without
+        # deleting it.
+        _dead_map_tools = [self.map_tool]
         if self.map_tool:
             try:
                 self.map_tool.clear_markers()
@@ -1272,12 +1445,51 @@ class AISegmentationPlugin(
                 park_orphaned_worker(auto_worker)
             self._auto_worker = None
         self._drop_auto_tile_bridge()
+        _dead_map_tools += [
+            getattr(self, "_zone_selection_tool", None),
+            getattr(self, "_exemplar_maptool", None),
+            getattr(self, "_shape_maptool", None),
+        ]
         self._teardown_auto_mode()
         # The usage/warmup/key-revalidate/config requests are QgsTasks now and
         # are cancelled cooperatively above (step 2b); nothing to wait on here.
 
-        # 10. Disconnect log collector signal
-        stop_log_collector()
+        # 10. Delete every map tool this controller made. The canvas watches
+        # its tool's destroyed signal, so dropping the active one is safe, but
+        # unset it first anyway: nothing below this point can repair a canvas
+        # left pointing at a tool that is going away.
+        for tool in _dead_map_tools:
+            if tool is None:
+                continue
+            try:
+                if self.iface.mapCanvas().mapTool() is tool:
+                    self.iface.mapCanvas().unsetMapTool(tool)
+            except (RuntimeError, AttributeError):
+                pass
+            try:
+                tool.deleteLater()
+            except (RuntimeError, AttributeError):
+                pass
+        self._zone_selection_tool = None
+        self._exemplar_maptool = None
+        self._shape_maptool = None
+
+        # 11. One last bounded wait on the threads parked above. Nothing else
+        # ever joins them: a parked thread that is still running when Python
+        # shuts down is destroyed by ~QThread, which aborts the whole process.
+        # A wait here cannot cover a long install, so it is a narrower window,
+        # not a closed one, and it stays bounded so quitting never hangs.
+        if _parked_workers:
+            park_deadline = time.monotonic() + 5.0
+            for worker in _parked_workers:
+                try:
+                    left_ms = int(
+                        max(0.0, park_deadline - time.monotonic()) * 1000)
+                    if left_ms <= 0:
+                        break
+                    worker.wait(left_ms)
+                except (RuntimeError, AttributeError):
+                    pass
 
     def _ensure_dock_widget(self):
         """Create the dock widget and register it with QGIS (idempotent)."""
@@ -1294,6 +1506,8 @@ class AISegmentationPlugin(
 
         self.dock_widget = AISegmentationDockWidget(self.iface.mainWindow())
 
+        self.dock_widget.manual_engine_changed.connect(
+            self._on_manual_engine_changed)
         self.dock_widget.install_requested.connect(self._on_install_requested)
         self.dock_widget.cancel_install_requested.connect(self._on_cancel_install)
         self.dock_widget.start_segmentation_requested.connect(self._on_start_segmentation)
@@ -1390,6 +1604,8 @@ class AISegmentationPlugin(
                 self._on_bridge_gesture_requested)
             self.dock_widget.auto_qgis_bridge_points_changed.connect(
                 self._on_bridge_points_changed)
+            self.dock_widget.auto_qgis_bridge_delete_requested.connect(
+                self.delete_bridge_target_polygon)
         except (AttributeError, RuntimeError):
             pass
 
@@ -1453,6 +1669,9 @@ class AISegmentationPlugin(
         if not visible or self._first_time_setup_done:
             return
         self._first_time_setup_done = True
+        # Armed for the whole session, whatever mode the dock opens in: the
+        # watch decides mode by mode whether a read is worth making.
+        self._arm_credits_watch()
         # One tick so the dock paints before the workers spin up.
         from qgis.PyQt.QtCore import QTimer
 

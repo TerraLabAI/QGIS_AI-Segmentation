@@ -189,6 +189,19 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
         self._hist_cards: dict[str, _RunCard] = {}
         self._thumb_cards: dict[str, _RunCard] = {}
         self._hist_busy = False
+        # Declared here, not only where the fetch starts. The failure handler
+        # closes the progress window before it clears _hist_busy, so on a fetch
+        # that fails before one was ever opened (a run with no stored tiles, or
+        # offline) the missing attribute raised, the busy flag stayed set, and
+        # every later Restore, Export and Rerun in that library session did
+        # nothing at all.
+        self._fetch_worker = None
+        self._fetch_progress = None
+        # Every background worker started from this window, with the signals it
+        # emits back into it. They outlive the dialog (park_orphaned_worker owns
+        # the thread), so closing mid-fetch has to cut them loose; the list is
+        # as long as the actions one visit takes, a handful.
+        self._live_workers: list[tuple] = []
         self._pending_action: tuple | None = None
         self._detail_dlg: _RunDetailDialog | None = None
         self._tabs_tracked: set = set()
@@ -338,13 +351,17 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
 
     def _rebuild_current_grid(self) -> None:
         if self._query:
-            self._rebuild_grid(self._search_matches(self._query))
+            self._rebuild_grid(
+                self._search_matches(self._query),
+                tr("No object matches that search."), "⌕")
             return
         view = _RAIL_HISTORY_VIEWS.get(self._active_key)
         if view is not None:
             self._rebuild_history_grid(view)
         else:
-            self._rebuild_grid(self._presets_for_tab(self._active_key))
+            self._rebuild_grid(
+                self._presets_for_tab(self._active_key),
+                tr("Nothing in this category yet."))
 
     def _apply_search(self) -> None:
         self._query = self._search.text().strip().lower()
@@ -533,10 +550,17 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
             self._hist_cards[_run_key(run)] = card
         return cards
 
-    def _rebuild_grid(self, presets: list[dict]) -> None:
+    def _rebuild_grid(self, presets: list[dict], empty_text: str,
+                      empty_glyph: str = "◇") -> None:
+        """Paint the card grid, or the empty state the CALLER names.
+
+        The sentence has to come from outside: a tab with nothing in it is not
+        a failed search, and telling the user their search matched nothing when
+        they typed nothing reads as blame for something they never did.
+        """
         self._clear_grid()
         if not presets:
-            self._empty_label(tr("No object matches that search."), "⌕")
+            self._empty_label(empty_text, empty_glyph)
             return
         self._place_grid(self._build_preset_cards(presets))
         # Kick lazy loading for whatever is visible now + once layout settles.
@@ -679,6 +703,7 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
             self._history_client(), self._auth, view, before)
         worker.page_fetched.connect(self._on_history_page)
         worker.failed.connect(self._on_history_failed)
+        self._track_live_worker(worker, "page_fetched", "failed")
         park_orphaned_worker(worker)
         worker.start()
 
@@ -846,6 +871,7 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
         worker = _RunFavoriteWorker(
             self._history_client(), self._auth, str(run_id), is_favorite)
         worker.done.connect(self._on_favorite_done)
+        self._track_live_worker(worker, "done")
         park_orphaned_worker(worker)
         worker.start()
 
@@ -943,6 +969,8 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
         worker.cancelled.connect(self._on_run_fetch_cancelled)
         worker.progress.connect(self._on_run_fetch_progress)
         self._fetch_worker = worker
+        self._track_live_worker(
+            worker, "fetched", "failed", "cancelled", "progress")
         self._show_fetch_progress()
         park_orphaned_worker(worker)
         worker.start()
@@ -1071,6 +1099,7 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
         worker = _RunZoneFetchWorker(self._history_client(), self._auth, run)
         worker.fetched.connect(self._on_rerun_zone_fetched)
         worker.failed.connect(self._on_run_fetch_failed)
+        self._track_live_worker(worker, "fetched", "failed")
         park_orphaned_worker(worker)
         worker.start()
 
@@ -1273,3 +1302,30 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
 
     def get_selected_prompt(self) -> str | None:
         return self._selected_prompt
+
+    # ---- teardown ----------------------------------------------------------
+
+    def _track_live_worker(self, worker, *signal_names: str) -> None:
+        """Remember a worker and the signals it fires back into this window."""
+        self._live_workers.append((worker, signal_names))
+
+    def done(self, result):  # noqa: N802 - Qt signature
+        """Cut every background worker loose before the window goes.
+
+        The threads outlive the dialog, so a history page, a star or a run
+        fetch still in flight kept firing into a dismissed window. Their
+        signals go first, then each one is asked to stop; the thread itself
+        winds down under park_orphaned_worker, and is never terminated.
+        """
+        workers = self._live_workers
+        self._live_workers = []
+        self._fetch_worker = None
+        for worker, signal_names in workers:
+            for signal_name in signal_names:
+                safe_disconnect(worker, signal_name)
+            try:
+                worker.requestInterruption()
+            except (RuntimeError, TypeError, AttributeError):
+                pass  # nosec B110 - already finished, or never started
+        self._close_fetch_progress()
+        super().done(result)

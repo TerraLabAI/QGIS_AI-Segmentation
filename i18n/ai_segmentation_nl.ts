@@ -40,20 +40,12 @@
         <translation>Te algemeen om te benoemen. Maak het veld leeg om alleen op basis van je voorbeeld te zoeken, of voer een concreet object in.</translation>
     </message>
     <message>
-        <source>Example match</source>
-        <translation>Voorbeeldovereenkomst</translation>
-    </message>
-    <message>
         <source>Mark an object to find more like it.</source>
         <translation>Markeer een object om er meer zoals dit te vinden.</translation>
     </message>
     <message>
         <source>Mark a false positive to drop things like it.</source>
         <translation>Markeer een fout-positief om vergelijkbare objecten te verwijderen.</translation>
-    </message>
-    <message>
-        <source>Finer detail finds smaller objects.</source>
-        <translation>Een fijnere detailinstelling vindt kleinere objecten.</translation>
     </message>
     <message>
         <source>Finish or exit the review to switch modes.</source>
@@ -94,10 +86,6 @@
     <message>
         <source>Accept the Terms and Privacy Policy to enable segmentation.</source>
         <translation>Accepteer de Algemene Voorwaarden en het Privacybeleid om segmentatie in te schakelen.</translation>
-    </message>
-    <message>
-        <source>An unexpected error occurred during export. Please check the logs.</source>
-        <translation>Er is een onverwachte fout opgetreden tijdens het exporteren. Controleer de logbestanden.</translation>
     </message>
     <message>
         <source>I agree to the &lt;a href=&quot;{terms}&quot;&gt;Terms&lt;/a&gt; and &lt;a href=&quot;{privacy}&quot;&gt;Privacy Policy&lt;/a&gt;</source>
@@ -202,20 +190,8 @@ export AI_SEGMENTATION_CACHE_DIR=/jouw/pad</translation>
         <translation>Bijwerken</translation>
     </message>
     <message>
-        <source>Dependencies ready</source>
-        <translation>Afhankelijkheden gereed</translation>
-    </message>
-    <message>
         <source>Downloading AI model...</source>
         <translation>AI-model wordt gedownload...</translation>
-    </message>
-    <message>
-        <source>Dependencies ready, model not downloaded</source>
-        <translation>Afhankelijkheden gereed, model niet gedownload</translation>
-    </message>
-    <message>
-        <source>Dependencies ready, model download failed</source>
-        <translation>Afhankelijkheden gereed, downloaden van model mislukt</translation>
     </message>
     <message>
         <source>Cancel</source>
@@ -246,10 +222,6 @@ export AI_SEGMENTATION_CACHE_DIR=/jouw/pad</translation>
         <translation>Verificatie mislukt</translation>
     </message>
     <message>
-        <source>Virtual environment was created but verification failed:</source>
-        <translation>De virtuele omgeving is aangemaakt, maar de verificatie is mislukt:</translation>
-    </message>
-    <message>
         <source>Unknown error</source>
         <translation>Onbekende fout</translation>
     </message>
@@ -260,10 +232,6 @@ export AI_SEGMENTATION_CACHE_DIR=/jouw/pad</translation>
     <message>
         <source>Update QGIS to 3.34+ for the latest AI model</source>
         <translation>Werk QGIS bij naar 3.34+ voor het nieuwste AI-model</translation>
-    </message>
-    <message>
-        <source>Intel Mac: using SAM1 (compatible with PyTorch 2.2)</source>
-        <translation>Intel Mac: gebruikt SAM1 (compatibel met PyTorch 2.2)</translation>
     </message>
     <message>
         <source>Download Failed</source>
@@ -342,10 +310,6 @@ export AI_SEGMENTATION_CACHE_DIR=/jouw/pad</translation>
         <translation>Contour</translation>
     </message>
     <message>
-        <source>Click on the element you want to segment:</source>
-        <translation>Klik op het element dat u wilt segmenteren:</translation>
-    </message>
-    <message>
         <source>Left-click to select</source>
         <translation>Klik met de linkermuisknop om te selecteren</translation>
     </message>
@@ -362,16 +326,8 @@ export AI_SEGMENTATION_CACHE_DIR=/jouw/pad</translation>
         <translation>Ongeldige laag</translation>
     </message>
     <message>
-        <source>Layer extent contains invalid coordinates (NaN/Inf). Check the raster file.</source>
-        <translation>De extent van de laag bevat ongeldige coördinaten (NaN/Inf). Controleer het rasterbestand.</translation>
-    </message>
-    <message>
         <source>Not Ready</source>
         <translation>Niet gereed</translation>
-    </message>
-    <message>
-        <source>Please wait for the SAM model to load.</source>
-        <translation>Wacht totdat het SAM-model is geladen.</translation>
     </message>
     <message>
         <source>Layer Creation Failed</source>
@@ -566,10 +522,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Losse onderdelen gedetecteerd. Segmenteer voor de beste nauwkeurigheid één element per keer.</translation>
     </message>
     <message>
-        <source>No element detected at this point. Try clicking on a different area.</source>
-        <translation>Geen element gedetecteerd op dit punt. Klik op een ander gebied.</translation>
-    </message>
-    <message>
         <source>Updating...</source>
         <translation>Bijwerken...</translation>
     </message>
@@ -584,10 +536,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
     <message>
         <source>Loading AI model...</source>
         <translation>AI-model laden...</translation>
-    </message>
-    <message>
-        <source>SAM model ready</source>
-        <translation>SAM-model gereed</translation>
     </message>
     <message>
         <source>Ready</source>
@@ -738,10 +686,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Modusselectie</translation>
     </message>
     <message>
-        <source>Choose between Manual (local) and Automatic (cloud) segmentation</source>
-        <translation>Kies tussen Handmatige (lokale) en Automatische (cloud) segmentatie</translation>
-    </message>
-    <message>
         <source>Stop the active segmentation before switching modes.</source>
         <translation>Stop de actieve segmentatie voordat u van modus wisselt.</translation>
     </message>
@@ -750,24 +694,8 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Annuleer de actieve detectie voordat u van modus wisselt.</translation>
     </message>
     <message>
-        <source>Subscribe to keep detecting without limits:</source>
-        <translation>Neem een abonnement om zonder limieten te blijven detecteren:</translation>
-    </message>
-    <message>
-        <source>Subscribe to Pro</source>
-        <translation>Abonneren op Pro</translation>
-    </message>
-    <message>
         <source>Cancel the running detection first</source>
         <translation>Annuleer eerst de lopende detectie</translation>
-    </message>
-    <message>
-        <source>Detail</source>
-        <translation>Detail</translation>
-    </message>
-    <message>
-        <source>Higher detail splits the zone into more tiles. Each tile costs 1 credit and captures smaller objects.</source>
-        <translation>Meer detail verdeelt de zone in meer tegels. Elke tegel kost 1 credit en legt kleinere objecten vast.</translation>
     </message>
     <message>
         <source>Zone too large - reduce the selection area</source>
@@ -848,14 +776,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
     <message>
         <source>More</source>
         <translation>Meer</translation>
-    </message>
-    <message>
-        <source>This area is large for this detail level. Raise detail or zoom in for sharper detections.</source>
-        <translation>Dit gebied is groot voor dit detailniveau. Verhoog het detail of zoom in voor scherpere detecties.</translation>
-    </message>
-    <message>
-        <source>This zone is too large for sharp detections, even at maximum detail. Draw a smaller zone for the best results.</source>
-        <translation>Deze zone is te groot voor scherpe detecties, zelfs bij maximaal detail. Teken een kleinere zone voor de beste resultaten.</translation>
     </message>
     <message>
         <source>Available when detection finishes</source>
@@ -1026,20 +946,8 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>≈ {n} tegels = {n} credits</translation>
     </message>
     <message>
-        <source>Automatic mode scans your zone tile by tile. 1 tile = 1 credit, so this run costs about {n} credits. More detail splits the zone into more tiles, which costs more credits.</source>
-        <translation>De automatische modus scant uw zone tegel voor tegel. 1 tegel = 1 credit, dus deze uitvoering kost ongeveer {n} credits. Meer detail verdeelt de zone in meer tegels, wat meer credits kost.</translation>
-    </message>
-    <message>
         <source>Draw your example inside the selected zone.</source>
         <translation>Teken uw voorbeeld binnen de geselecteerde zone.</translation>
-    </message>
-    <message>
-        <source>Share anonymous usage statistics</source>
-        <translation>Anonieme gebruiksstatistieken delen</translation>
-    </message>
-    <message>
-        <source>Helps us fix bugs faster. Never includes your data, layers or coordinates.</source>
-        <translation>Helpt ons bugs sneller op te lossen. Bevat nooit uw gegevens, lagen of coördinaten.</translation>
     </message>
     <message>
         <source>{n} objects found</source>
@@ -1052,10 +960,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
     <message>
         <source>0 shown at {pct}% - lower Confidence to reveal them</source>
         <translation>0 getoond bij {pct}% - verlaag Betrouwbaarheid om ze te tonen</translation>
-    </message>
-    <message>
-        <source>Started at {pct}% - nothing scored above.</source>
-        <translation>Gestart bij {pct}% - niets scoorde hoger.</translation>
     </message>
     <message>
         <source>More objects</source>
@@ -1154,10 +1058,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Blader door direct te gebruiken objecten met voor-/na-voorbeelden.</translation>
     </message>
     <message>
-        <source>Subscribe to finish this zone: 10,000 credits/month.</source>
-        <translation>Neem een abonnement om deze zone af te ronden: 10.000 credits/maand.</translation>
-    </message>
-    <message>
         <source>Filter detections by confidence. Lower shows more (and noisier), higher keeps only the strongest. Free and instant.</source>
         <translation>Filter detecties op betrouwbaarheid. Lager toont meer (en ruisiger), hoger houdt alleen de sterkste over. Gratis en direct.</translation>
     </message>
@@ -1180,10 +1080,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
     <message>
         <source>The Library has ready-to-use objects.</source>
         <translation>De Bibliotheek heeft direct te gebruiken objecten.</translation>
-    </message>
-    <message>
-        <source>object</source>
-        <translation>object</translation>
     </message>
     <message>
         <source>Older detection</source>
@@ -1290,20 +1186,12 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Bladeren...</translation>
     </message>
     <message>
-        <source>Your detections</source>
-        <translation>Jouw detecties</translation>
-    </message>
-    <message>
         <source>Recent</source>
         <translation>Recent</translation>
     </message>
     <message>
         <source>Favorites</source>
         <translation>Favorieten</translation>
-    </message>
-    <message>
-        <source>Templates</source>
-        <translation>Sjablonen</translation>
     </message>
     <message>
         <source>Load older runs</source>
@@ -1406,10 +1294,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Handmatig</translation>
     </message>
     <message>
-        <source>Max detail for this zone - draw a larger zone for finer detail.</source>
-        <translation>Maximaal detailniveau voor deze zone - teken een grotere zone voor meer detail.</translation>
-    </message>
-    <message>
         <source>OK</source>
         <translation>OK</translation>
     </message>
@@ -1482,10 +1366,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Start (de Start-knop van de zichtbare modus)</translation>
     </message>
     <message>
-        <source>Start Manual AI Segmentation</source>
-        <translation>Start Handmatige AI Segmentation</translation>
-    </message>
-    <message>
         <source>The raster was removed. Your polygons were saved to a layer.</source>
         <translation>De raster is verwijderd. Je polygonen zijn opgeslagen in een laag.</translation>
     </message>
@@ -1538,10 +1418,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>{visible} van {n} getoond</translation>
     </message>
     <message>
-        <source>Click an object on the map and the AI outlines it. You go one object at a time, checking and saving each polygon yourself.</source>
-        <translation>Klik op een object op de kaart en de AI omlijnt het. Je werkt object voor object, en controleert en bewaart elke polygoon zelf.</translation>
-    </message>
-    <message>
         <source>Show guidance tips again</source>
         <translation>Begeleidingstips opnieuw tonen</translation>
     </message>
@@ -1574,36 +1450,12 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Gratis account - aanmelden duurt 15 seconden in je browser.</translation>
     </message>
     <message>
-        <source>Manual mode stays free and unlimited on your computer.</source>
-        <translation>Handmatige modus blijft gratis en onbeperkt op je computer.</translation>
-    </message>
-    <message>
-        <source>Finds every object of one kind in your zone - draw a zone, name the object, get all the polygons at once.</source>
-        <translation>Vindt elk object van één soort in je zone - teken een zone, benoem het object en krijg direct alle polygonen.</translation>
-    </message>
-    <message>
-        <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;subscribe&lt;/a&gt; to segment areas of any size.</source>
-        <translation>Teken een kleinere zone, of &lt;a href=&quot;{url}&quot;&gt;abonneer je&lt;/a&gt; om gebieden van elke omvang te segmenteren.</translation>
-    </message>
-    <message>
-        <source>Running low: {n} free detections left. &lt;a href=&quot;{url}&quot;&gt;Subscribe&lt;/a&gt; to keep going.</source>
-        <translation>Bijna op: nog {n} gratis detecties over. &lt;a href=&quot;{url}&quot;&gt;Abonneer je&lt;/a&gt; om door te gaan.</translation>
-    </message>
-    <message>
         <source>Then segment any imagery: point and click, or fully automatic.</source>
         <translation>Segmenteer daarna elke afbeelding: klik-en-detecteer, of volledig automatisch.</translation>
     </message>
     <message>
         <source>Waiting for your browser sign-in...</source>
         <translation>Wachten op aanmelden via je browser...</translation>
-    </message>
-    <message>
-        <source>New: Automatic mode finds every object in a zone at once.</source>
-        <translation>Nieuw: automatische modus vindt direct elk object in een zone.</translation>
-    </message>
-    <message>
-        <source>Try Automatic</source>
-        <translation>Probeer Automatisch</translation>
     </message>
     <message>
         <source>Got it - hide this tip</source>
@@ -1618,8 +1470,8 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>0 getoond - verlaag het filter Min. grootte om ze te tonen</translation>
     </message>
     <message>
-        <source>10,000 credits every month. Cancel anytime.</source>
-        <translation>10.000 credits per maand. Op elk moment opzegbaar.</translation>
+        <source>5,000 credits every month. Cancel anytime.</source>
+        <translation>5.000 credits per maand. Op elk moment opzegbaar.</translation>
     </message>
     <message>
         <source>A Component Failed to Load</source>
@@ -1644,10 +1496,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
     <message>
         <source>Any GeoTIFF, WMS or XYZ basemap.</source>
         <translation>Elke GeoTIFF, WMS of XYZ-basiskaart.</translation>
-    </message>
-    <message>
-        <source>At this detail {obj} is too small to spot - raise the detail.</source>
-        <translation>Bij dit detailniveau is {obj} te klein om te herkennen - verhoog het detail.</translation>
     </message>
     <message>
         <source>Available once the current install or detection finishes.</source>
@@ -1696,10 +1544,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Teken op de kaart</translation>
     </message>
     <message>
-        <source>Extra detail keeps helping {obj} in this zone.</source>
-        <translation>Extra detail blijft helpen voor {obj} in deze zone.</translation>
-    </message>
-    <message>
         <source>Free plan</source>
         <translation>Gratis abonnement</translation>
     </message>
@@ -1728,40 +1572,12 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Account beheren</translation>
     </message>
     <message>
-        <source>Manual Mode Not Supported</source>
-        <translation>Handmatige modus niet ondersteund</translation>
-    </message>
-    <message>
-        <source>Manual mode installs local components that are not available for this Mac with this version of QGIS. Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
-        <translation>De Handmatige modus installeert lokale onderdelen die niet beschikbaar zijn voor deze Mac met deze versie van QGIS. Gebruik in plaats daarvan de Automatische modus, die volledig in de cloud draait en geen lokale installatie nodig heeft.</translation>
-    </message>
-    <message>
-        <source>Manual mode is not supported in this QGIS installation</source>
-        <translation>De Handmatige modus wordt niet ondersteund in deze QGIS-installatie</translation>
-    </message>
-    <message>
-        <source>Manual mode needs to install local dependencies, which is not supported inside this sandboxed QGIS installation (Flatpak or Snap). Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
-        <translation>De Handmatige modus moet lokale afhankelijkheden installeren, wat niet wordt ondersteund binnen deze sandbox-QGIS-installatie (Flatpak of Snap). Gebruik in plaats daarvan de Automatische modus, die volledig in de cloud draait en geen lokale installatie nodig heeft.</translation>
-    </message>
-    <message>
-        <source>Name the object (or draw an example) first - Detail then tunes itself to it.</source>
-        <translation>Benoem eerst het object (of teken een voorbeeld) - Detail stemt zich er daarna op af.</translation>
-    </message>
-    <message>
         <source>New here? Our 5-minute tutorial walks you through a full detection, step by step.</source>
         <translation>Nieuw hier? Onze tutorial van 5 minuten leidt je stap voor stap door een volledige detectie.</translation>
     </message>
     <message>
         <source>Not Enough Disk Space</source>
         <translation>Onvoldoende schijfruimte</translation>
-    </message>
-    <message>
-        <source>Not enough credits: {n} tiles, only {left} left. Reduce the detail or zone, or subscribe.</source>
-        <translation>Niet genoeg credits: {n} tegels, nog maar {left} over. Verlaag het detail of verklein de zone, of neem een abonnement.</translation>
-    </message>
-    <message>
-        <source>Not enough credits: {n} tiles, only {left} left. Reduce the detail or zone.</source>
-        <translation>Niet genoeg credits: {n} tegels, nog maar {left} over. Verlaag het detail of verklein de zone.</translation>
     </message>
     <message>
         <source>Online layer returned blank tiles for this area. The current zoom level may be outside the service's range, or this area has no coverage. Zoom to a level where the layer is visible on the map, then try again.</source>
@@ -1840,10 +1656,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Scherper dan {obj} meestal nodig heeft - vangt de allerkleinste.</translation>
     </message>
     <message>
-        <source>Skipped {n} empty tiles (not charged).</source>
-        <translation>{n} lege tegels overgeslagen (niet in rekening gebracht).</translation>
-    </message>
-    <message>
         <source>Small {obj} may be missed at this level.</source>
         <translation>Kleine {obj} kunnen op dit niveau worden gemist.</translation>
     </message>
@@ -1854,14 +1666,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>Something went wrong starting the detection. Please try again.</source>
         <translation>Er ging iets mis bij het starten van de detectie. Probeer het opnieuw.</translation>
-    </message>
-    <message>
-        <source>Started at {pct}% - the usual sweet spot for this object type.</source>
-        <translation>Gestart op {pct}% - het gebruikelijke ideale punt voor dit objecttype.</translation>
-    </message>
-    <message>
-        <source>Started at {pct}% to fit this run's scores - raise to tighten.</source>
-        <translation>Gestart op {pct}% passend bij de scores van deze run - verhoog om strenger te filteren.</translation>
     </message>
     <message>
         <source>Support code: {code}</source>
@@ -1890,10 +1694,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>There's a problem with your subscription. Your last payment may have failed. Open your account to update your payment method or review your plan.</source>
         <translation>Er is een probleem met je abonnement. Je laatste betaling is mogelijk mislukt. Open je account om je betaalmethode bij te werken of je abonnement te bekijken.</translation>
-    </message>
-    <message>
-        <source>This deletes the local AI model files, signs you out, and resets the plugin. Your account and credits are not affected. Manual mode will download the files again next time you use it.</source>
-        <translation>Dit verwijdert de lokale AI-modelbestanden, meldt je af en herstelt de plugin. Je account en credits worden niet beïnvloed. De Handmatige modus downloadt de bestanden opnieuw wanneer je deze de volgende keer gebruikt.</translation>
     </message>
     <message>
         <source>This layer has no valid coordinate reference system. Set one in Layer Properties before detecting.</source>
@@ -1956,10 +1756,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>onzeker</translation>
     </message>
     <message>
-        <source>upgrade to unlock it</source>
-        <translation>upgrade om het te ontgrendelen</translation>
-    </message>
-    <message>
         <source>your object</source>
         <translation>je object</translation>
     </message>
@@ -1967,50 +1763,22 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <source>{n} found so far</source>
         <translation>{n} gevonden tot nu toe</translation>
     </message>
-    <message>
-        <source>{n} tiles could not be loaded from the layer server; results may be incomplete.</source>
-        <translation>{n} tegels konden niet worden geladen van de laagserver; de resultaten kunnen onvolledig zijn.</translation>
-    </message>
-    <message>
-        <source>{n} tiles had no imagery and were not analyzed (not charged). Check the imagery layer loads over this area, then run Detect again.</source>
-        <translation>{n} tegels hadden geen beeldmateriaal en zijn niet geanalyseerd (niet in rekening gebracht). Controleer of de beeldlaag over dit gebied laadt en voer Detecteren daarna opnieuw uit.</translation>
-    </message>
-    <message>
-        <source>{n} {object} saved to layer "{name}"</source>
-        <translation>{n} {object} opgeslagen in laag "{name}"</translation>
-    </message>
-    <message>
-        <source>{used} credits used</source>
-        <translation>{used} credits gebruikt</translation>
-    </message>
     <!-- v2.1.7 sync: append-to-layer export, singular forms, small-example guidance (2026-07-13) -->
     <message>
-        <source>1 credit ~ 0.17 km² at default detail.</source>
-        <translation>1 credit ~ 0,17 km² bij standaard detailniveau.</translation>
+        <source>5,000 detections every month</source>
+        <translation>5.000 detecties per maand</translation>
     </message>
     <message>
-        <source>10,000 detections every month (~1,700 km²)</source>
-        <translation>10.000 detecties per maand (~1.700 km²)</translation>
+        <source>This zone is {area} km². Free zones stop at {max} km².</source>
+        <translation>Deze zone is {area} km². Gratis zones gaan tot {max} km².</translation>
     </message>
     <message>
-        <source>Last run: {count} {object} exported · {area} km² · {used} credits used</source>
-        <translation>Laatste run: {count} {object} geëxporteerd · {area} km² · {used} credits gebruikt</translation>
+        <source>Pro has no size limit. Any area you draw, 5,000 tiles a month, maximum detail.</source>
+        <translation>Pro heeft geen groottelimiet. Elk gebied dat u tekent, 5.000 tiles per maand, maximaal detail.</translation>
     </message>
     <message>
-        <source>Last run: {count} {object} exported · {area} km² · {used} credits used, {left} left</source>
-        <translation>Laatste run: {count} {object} geëxporteerd · {area} km² · {used} credits gebruikt, {left} over</translation>
-    </message>
-    <message>
-        <source>Last session: {count} polygon(s) exported · {area} km²</source>
-        <translation>Laatste sessie: {count} polygoon(en) geëxporteerd · {area} km²</translation>
-    </message>
-    <message>
-        <source>This zone is {area} km² - free trial zones go up to {max} km².</source>
-        <translation>Deze zone is {area} km² - gratis proefzones gaan tot {max} km².</translation>
-    </message>
-    <message>
-        <source>{area} km²</source>
-        <translation>{area} km²</translation>
+        <source>&lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt;, or make this zone smaller.</source>
+        <translation>&lt;a href=&quot;{url}&quot;&gt;Stap over op Pro&lt;/a&gt;, of maak deze zone kleiner.</translation>
     </message>
     <message>
         <source>Sending to the AI...</source>
@@ -2077,14 +1845,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Objectnaam wordt bepaald</translation>
     </message>
     <message>
-        <source>This example is very small at the current detail level. Zoom the detail slider finer or draw a larger object.</source>
-        <translation>Dit voorbeeld is erg klein op het huidige detailniveau. Zet de detailschuif fijner of teken een groter object.</translation>
-    </message>
-    <message>
-        <source>This example is very small even at the finest detail. Draw a larger object, or it may be too small to detect.</source>
-        <translation>Dit voorbeeld is zelfs op het fijnste detail erg klein. Teken een groter object, anders is het mogelijk te klein om te detecteren.</translation>
-    </message>
-    <message>
         <source>Your free detections are used up</source>
         <translation>Je gratis detecties zijn opgebruikt</translation>
     </message>
@@ -2101,10 +1861,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>1 correctie deze ronde</translation>
     </message>
     <message>
-        <source>1 detection removed</source>
-        <translation>1 detectie verwijderd</translation>
-    </message>
-    <message>
         <source>1 object</source>
         <translation>1 object</translation>
     </message>
@@ -2115,14 +1871,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>1 result</source>
         <translation>1 resultaat</translation>
-    </message>
-    <message>
-        <source>A detection run was interrupted before its results were exported. {n} detection(s) were saved.</source>
-        <translation>Een detectie-run werd onderbroken voordat de resultaten werden geëxporteerd. {n} detectie(s) zijn opgeslagen.</translation>
-    </message>
-    <message>
-        <source>A free run covers up to {cap} credits. Lower the detail or draw a smaller zone, or</source>
-        <translation>Een gratis run dekt tot {cap} credits. Verlaag het detail of teken een kleinere zone, of</translation>
     </message>
     <message>
         <source>A newer version of AI Segmentation is available with the latest fixes.</source>
@@ -2141,10 +1889,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>AI-omgeving beschadigd</translation>
     </message>
     <message>
-        <source>AI and Manual are two ways to fix the same polygon.</source>
-        <translation>AI en Handmatig zijn twee manieren om dezelfde polygoon te corrigeren.</translation>
-    </message>
-    <message>
         <source>Add a missing polygon</source>
         <translation>Ontbrekende polygoon toevoegen</translation>
     </message>
@@ -2161,28 +1905,12 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Voeg nog één voorbeeld toe voor het beste resultaat.</translation>
     </message>
     <message>
-        <source>Add them to the project</source>
-        <translation>Voeg ze toe aan het project</translation>
-    </message>
-    <message>
-        <source>Adding an object uses the free on-device AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and Add will arm automatically when it is ready.</source>
-        <translation>Een object toevoegen gebruikt de gratis lokale AI, die nog niet is geïnstalleerd. Nu installeren (enkele minuten, op de achtergrond)? Je kunt blijven beoordelen; Toevoegen wordt automatisch actief zodra het klaar is.</translation>
-    </message>
-    <message>
         <source>Adding needs a one-time setup</source>
         <translation>Toevoegen heeft een eenmalige installatie nodig</translation>
     </message>
     <message>
         <source>Almost done - building the shapes...</source>
         <translation>Bijna klaar - de vormen worden opgebouwd...</translation>
-    </message>
-    <message>
-        <source>Almost there: in step 1, name the object your examples show - words plus examples detect best.</source>
-        <translation>Bijna klaar: benoem in stap 1 het object dat je voorbeelden tonen - woorden plus voorbeelden detecteren het best.</translation>
-    </message>
-    <message>
-        <source>Almost there: in step 2, outline one &quot;{word}&quot; on the map so the AI sees what yours look like.</source>
-        <translation>Bijna klaar: omlijn in stap 2 één &quot;{word}&quot; op de kaart, zodat de AI ziet hoe die van jou eruitzien.</translation>
     </message>
     <message>
         <source>Another QGIS window is installing the AI components. Wait for it to finish, then try again.</source>
@@ -2317,20 +2045,12 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Corrigeren</translation>
     </message>
     <message>
-        <source>Correct the polygons</source>
-        <translation>Polygonen corrigeren</translation>
-    </message>
-    <message>
         <source>Could not apply the new settings. Try a different value.</source>
         <translation>Kon de nieuwe instellingen niet toepassen. Probeer een andere waarde.</translation>
     </message>
     <message>
         <source>Could not check the AI components. See the log for details.</source>
         <translation>Kon de AI-componenten niet controleren. Zie het logbestand voor meer details.</translation>
-    </message>
-    <message>
-        <source>Could not load the saved run. The file may have been moved or deleted.</source>
-        <translation>Kon de opgeslagen run niet laden. Het bestand is mogelijk verplaatst of verwijderd.</translation>
     </message>
     <message>
         <source>Credits come back on {date}</source>
@@ -2369,18 +2089,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Dicht bos? &quot;Forest&quot; neemt het als één geheel; &quot;Tree&quot; kiest afzonderlijke bomen.</translation>
     </message>
     <message>
-        <source>Detect with example only</source>
-        <translation>Alleen detecteren met voorbeeld</translation>
-    </message>
-    <message>
-        <source>Detect with examples only</source>
-        <translation>Alleen detecteren met voorbeelden</translation>
-    </message>
-    <message>
-        <source>Detect with text only</source>
-        <translation>Alleen detecteren met tekst</translation>
-    </message>
-    <message>
         <source>Detection stopped early after {done} tile(s). The objects already found are kept below.</source>
         <translation>Detectie vroegtijdig gestopt na {done} tegel(s). De al gevonden objecten zijn hieronder bewaard.</translation>
     </message>
@@ -2391,14 +2099,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>Distinct</source>
         <translation>Uniek</translation>
-    </message>
-    <message>
-        <source>Drag a box around one look-alike to exclude.</source>
-        <translation>Sleep een vak om één gelijkend object om het uit te sluiten.</translation>
-    </message>
-    <message>
-        <source>Drag a box around one object.</source>
-        <translation>Sleep een vak om één object.</translation>
     </message>
     <message>
         <source>Drag a corner to move it. Click an edge to add one, right-click removes.</source>
@@ -2419,10 +2119,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>Draw a line right across the shape, then Finish.</source>
         <translation>Teken een lijn dwars over de vorm, dan Voltooien.</translation>
-    </message>
-    <message>
-        <source>Draw an example of the object first (step 2).</source>
-        <translation>Teken eerst een voorbeeld van het object (stap 2).</translation>
     </message>
     <message>
         <source>Draw an example, or type what to find.</source>
@@ -2511,14 +2207,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>How detections are coloured on the map (visual only): Normal fill, Outline, Confidence heatmap, or a distinct colour per object to tell them apart.</source>
         <translation>Hoe detecties op de kaart worden gekleurd (alleen visueel): Normale vulling, Omtrek, Betrouwbaarheid-heatmap, of een unieke kleur per object om ze uit elkaar te houden.</translation>
-    </message>
-    <message>
-        <source>How many of each outline&apos;s points to keep, as a share. 100% keeps the class default; lower thins further, dropping the smallest detail first and keeping the corners and the surface. With Right angles on it runs first, so lowering it gives the squaring straight walls to work from.</source>
-        <translation>Hoeveel van de punten van elke contour behouden blijven, als percentage. 100% houdt de klassestandaard aan; lager dunt verder uit, waarbij eerst het kleinste detail verdwijnt en de hoekpunten en het oppervlak behouden blijven. Met Rechte hoeken aan werkt dit eerst, dus als je dit verlaagt, geeft dat het haaks maken rechtere muren om vanuit te starten.</translation>
-    </message>
-    <message>
-        <source>How many of the outline&apos;s points to keep, as a share. 100% keeps the standard density; lower thins further, dropping the smallest detail first and keeping the corners and the surface. With Right angles on it runs first, so lowering it gives the squaring straight walls to work from.</source>
-        <translation>Hoeveel van de punten van de contour behouden blijven, als percentage. 100% houdt de standaarddichtheid aan; lager dunt verder uit, waarbij eerst het kleinste detail verdwijnt en de hoekpunten en het oppervlak behouden blijven. Met Rechte hoeken aan werkt dit eerst, dus als je dit verlaagt, geeft dat het haaks maken rechtere muren om vanuit te starten.</translation>
     </message>
     <message>
         <source>How many of this polygon&apos;s points to keep. The count in the title row follows it. It runs before Right angles, so lowering it gives the squaring straight walls instead of a staircase.</source>
@@ -2637,10 +2325,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Geen verbinding met de aanmeldservice. Controleer je internetverbinding en klik daarna op Verbinden om het opnieuw te proberen.</translation>
     </message>
     <message>
-        <source>No detection in this zone. Try a more specific object word, or a finer detail level.</source>
-        <translation>Geen detectie in deze zone. Probeer een specifieker objectwoord, of een fijner detailniveau.</translation>
-    </message>
-    <message>
         <source>No detection under that click.</source>
         <translation>Geen detectie onder die klik.</translation>
     </message>
@@ -2655,10 +2339,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>Nothing changed. The line has to cross the outline twice, starting and ending outside the shape.</source>
         <translation>Er is niets veranderd. De lijn moet de contour twee keer kruisen, en buiten de vorm beginnen en eindigen.</translation>
-    </message>
-    <message>
-        <source>Nothing cleared the confidence bar in this zone.</source>
-        <translation>Niets kwam in deze zone boven de betrouwbaarheidsdrempel uit.</translation>
     </message>
     <message>
         <source>Nothing was added. A polygon needs at least three corners.</source>
@@ -2683,10 +2363,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>One object per run - detecting &quot;{first}&quot; now. Run the other objects as separate detections.</source>
         <translation>Eén object per run - &quot;{first}&quot; wordt nu gedetecteerd. Voer de andere objecten uit als aparte detecties.</translation>
-    </message>
-    <message>
-        <source>Only this polygon. Every other one follows the Shapes step.</source>
-        <translation>Alleen deze polygoon. Elke andere volgt de stap Vormen.</translation>
     </message>
     <message>
         <source>Open the selected saved polygon for AI editing</source>
@@ -2745,16 +2421,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>QGIS kon de tijdelijke beoordelingslaag niet activeren. Sluit elke andere bewerkingssessie en probeer daarna opnieuw Handmatig bewerken.</translation>
     </message>
     <message>
-        <source>QGIS could not open a browser. Open this address to finish signing in, then come back here:
-{}</source>
-        <translation>QGIS kon geen browser openen. Open dit adres om het aanmelden te voltooien en kom daarna hierheen terug:
-{}</translation>
-    </message>
-    <message>
-        <source>QGIS could not open a browser. The sign-in address is copied to your clipboard: paste it into a browser to finish, then come back here.</source>
-        <translation>QGIS kon geen browser openen. Het aanmeldadres is gekopieerd naar je klembord: plak het in een browser om te voltooien en kom daarna hierheen terug.</translation>
-    </message>
-    <message>
         <source>QGIS could not save these edits. Fix the geometry and click Done again.</source>
         <translation>QGIS kon deze bewerkingen niet opslaan. Corrigeer de geometrie en klik opnieuw op Klaar.</translation>
     </message>
@@ -2777,10 +2443,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>Rebuilding shapes ({done} of {total})</source>
         <translation>Vormen worden herbouwd ({done} van {total})</translation>
-    </message>
-    <message>
-        <source>Recovered {n} detection(s) to the layer {name}.</source>
-        <translation>{n} detectie(s) hersteld in de laag {name}.</translation>
     </message>
     <message>
         <source>Redraw edge</source>
@@ -2815,14 +2477,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Terugzetten naar gedeeld</translation>
     </message>
     <message>
-        <source>Reshape needs a one-time setup</source>
-        <translation>Vormaanpassing heeft een eenmalige installatie nodig</translation>
-    </message>
-    <message>
-        <source>Reshaping uses the free on-device AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and reshaping will open automatically when it is ready.</source>
-        <translation>Vormaanpassing gebruikt de gratis lokale AI, die nog niet is geïnstalleerd. Nu installeren (enkele minuten, op de achtergrond)? Je kunt blijven beoordelen; Vormaanpassing wordt automatisch geopend zodra het klaar is.</translation>
-    </message>
-    <message>
         <source>Right angles</source>
         <translation>Rechte hoeken</translation>
     </message>
@@ -2847,40 +2501,12 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Voer deze zone opnieuw uit</translation>
     </message>
     <message>
-        <source>Running low: {n} free detections left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Subscribe&lt;/a&gt; to keep going.</source>
-        <translation>Bijna op: nog {n} gratis detecties over, terug op {date}. &lt;a href=&quot;{url}&quot;&gt;Abonneer je&lt;/a&gt; om door te gaan.</translation>
-    </message>
-    <message>
-        <source>Same setup as your last run - the result will match. Add an example or change the detail for a different result.</source>
-        <translation>Dezelfde instellingen als je laatste run - het resultaat komt overeen. Voeg een voorbeeld toe of wijzig het detail voor een ander resultaat.</translation>
-    </message>
-    <message>
         <source>Save</source>
         <translation>Opslaan</translation>
     </message>
     <message>
         <source>Save the fix and go back to the review</source>
         <translation>Sla de correctie op en ga terug naar de beoordeling</translation>
-    </message>
-    <message>
-        <source>Save this polygon and go back to picking.</source>
-        <translation>Sla deze polygoon op en ga terug naar het kiezen.</translation>
-    </message>
-    <message>
-        <source>Setting up the on-device AI in the background. You can keep reviewing; reshaping opens automatically when it is ready.</source>
-        <translation>De lokale AI wordt op de achtergrond ingesteld. Je kunt blijven beoordelen; Vormaanpassing wordt automatisch geopend zodra het klaar is.</translation>
-    </message>
-    <message>
-        <source>Setting up the on-device AI in the background...</source>
-        <translation>De lokale AI wordt op de achtergrond ingesteld...</translation>
-    </message>
-    <message>
-        <source>Settings for this polygon</source>
-        <translation>Instellingen voor deze polygoon</translation>
-    </message>
-    <message>
-        <source>Shadows getting detected instead of trees? Draw an &apos;Exclude a look-alike&apos; box on one shadow - the AI drops similar false positives.</source>
-        <translation>Worden schaduwen gedetecteerd in plaats van bomen? Teken een vak met &apos;Gelijkende uitsluiten&apos; rond één schaduw - de AI laat vergelijkbare fout-positieven vallen.</translation>
     </message>
     <message>
         <source>Shape updated. Keep editing, or click Save.</source>
@@ -2943,10 +2569,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>De lokale AI wordt gestopt...</translation>
     </message>
     <message>
-        <source>Switch to AI to shape this polygon on its own.</source>
-        <translation>Schakel over naar AI om deze polygoon zelfstandig te vormen.</translation>
-    </message>
-    <message>
         <source>That area does not touch the object you are editing, so nothing was added. Reshaping works on one object at a time.</source>
         <translation>Dat gebied raakt het object dat je bewerkt niet, dus er is niets toegevoegd. Vormaanpassing werkt op één object tegelijk.</translation>
     </message>
@@ -2991,10 +2613,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Het installatieprogramma kon geen hulpproces starten (een beschadigde Python-launcher). Klik op Afhankelijkheden opnieuw installeren om de omgeving helemaal opnieuw op te bouwen.</translation>
     </message>
     <message>
-        <source>The pieces do not touch, so the result is one object in several parts.</source>
-        <translation>De delen raken elkaar niet, dus het resultaat is één object in meerdere delen.</translation>
-    </message>
-    <message>
         <source>The removal could not start. You are signed out, but the downloaded AI data is still on this computer. Try again.</source>
         <translation>Het verwijderen kon niet starten. Je bent afgemeld, maar de gedownloade AI-gegevens staan nog op deze computer. Probeer het opnieuw.</translation>
     </message>
@@ -3019,10 +2637,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Dun de punten van deze polygoon uit voordat je ze handmatig bewerkt. 100% houdt de contour zoals hij is.</translation>
     </message>
     <message>
-        <source>This image has no position on the map, so Automatic cannot place what it finds. Give it one with the QGIS Georeferencer, or use Manual mode on it as is.</source>
-        <translation>Deze afbeelding heeft geen positie op de kaart, dus Automatisch kan niet plaatsen wat het vindt. Geef er een met de QGIS Georeferencer, of gebruik de Handmatige modus erop zoals hij is.</translation>
-    </message>
-    <message>
         <source>This polygon</source>
         <translation>Deze polygoon</translation>
     </message>
@@ -3033,14 +2647,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>This raster is rotated. Run Warp (Reproject) on it to straighten it before segmenting.</source>
         <translation>Dit raster is geroteerd. Voer Warp (Reproject) erop uit om het recht te trekken voordat je segmenteert.</translation>
-    </message>
-    <message>
-        <source>This raster is rotated. Run Warp (Reproject) on it to straighten it first. Manual mode cannot read it either.</source>
-        <translation>Dit raster is geroteerd. Voer eerst Warp (Reproject) erop uit om het recht te trekken. De Handmatige modus kan het ook niet lezen.</translation>
-    </message>
-    <message>
-        <source>This run costs more credits than a free run covers. Lower the detail or draw a smaller zone, or</source>
-        <translation>Deze run kost meer credits dan een gratis run dekt. Verlaag het detail of teken een kleinere zone, of</translation>
     </message>
     <message>
         <source>This run did not keep where it looked, so it cannot be pointed at the same place. Draw the zone again.</source>
@@ -3057,10 +2663,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>Two references give the strongest detection. Draw a second to reach best quality.</source>
         <translation>Twee referenties geven de sterkste detectie. Teken een tweede voor de beste kwaliteit.</translation>
-    </message>
-    <message>
-        <source>Type a word for the object first (step 1).</source>
-        <translation>Typ eerst een woord voor het object (stap 1).</translation>
     </message>
     <message>
         <source>Unavailable while Right angles is on. Turn it off to adjust this setting.</source>
@@ -3195,10 +2797,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>{n} vorm(en) bewerkt deze sessie</translation>
     </message>
     <message>
-        <source>{n} shapes merged into one · Free</source>
-        <translation>{n} vormen samengevoegd tot één · Gratis</translation>
-    </message>
-    <message>
         <source>{n} shapes picked. Press Enter to join.</source>
         <translation>{n} vormen gekozen. Druk op Enter om samen te voegen.</translation>
     </message>
@@ -3220,12 +2818,8 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     </message>
     <!-- Correct step rework, install and precision wording (2026-07-30) -->
     <message>
-        <source>1 credit ~ 0.17 km² at default precision.</source>
-        <translation>1 credit ~ 0,17 km² bij standaard precisie.</translation>
-    </message>
-    <message>
-        <source>10,000 credits a month.</source>
-        <translation>10.000 credits per maand.</translation>
+        <source>5,000 credits a month.</source>
+        <translation>5.000 credits per maand.</translation>
     </message>
     <message>
         <source>A free run covers up to {cap} credits. This one costs more.</source>
@@ -3240,14 +2834,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Bij deze precisie is {obj} te klein om te herkennen - verhoog de precisie.</translation>
     </message>
     <message>
-        <source>Automatic mode is ready. The on-device AI could not be installed, so Manual mode and the AI fix are off until it is. Everything else works.</source>
-        <translation>De Automatische modus is gereed. De lokale AI kon niet worden geïnstalleerd, dus de Handmatige modus en de AI-correctie zijn uitgeschakeld totdat dit is gebeurd. Al het andere werkt.</translation>
-    </message>
-    <message>
-        <source>Automatic mode needs the AI environment, and it is missing or incomplete. Install the dependencies from the plugin panel, then run Detect again.</source>
-        <translation>De Automatische modus heeft de AI-omgeving nodig, en die ontbreekt of is onvolledig. Installeer de afhankelijkheden vanuit het pluginpaneel en voer Detecteren daarna opnieuw uit.</translation>
-    </message>
-    <message>
         <source>Automatic mode scans your zone tile by tile. 1 tile = 1 credit, so this run costs about {n} credits. More precision splits the zone into more tiles, which costs more credits.</source>
         <translation>De Automatische modus scant je zone tegel voor tegel. 1 tegel = 1 credit, dus deze uitvoering kost ongeveer {n} credits. Meer precisie verdeelt de zone in meer tegels, wat meer credits kost.</translation>
     </message>
@@ -3258,10 +2844,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>Clean up this outline</source>
         <translation>Deze contour opschonen</translation>
-    </message>
-    <message>
-        <source>Click an object and the AI outlines it. You check and save each polygon yourself, one at a time. Use Automatic mode to get every object in a zone at once.</source>
-        <translation>Klik op een object en de AI omlijnt het. Je controleert en bewaart elke polygoon zelf, één voor één. Gebruik de Automatische modus om alle objecten in een zone in één keer te krijgen.</translation>
     </message>
     <message>
         <source>Click points around one look-alike, then double-click to close.</source>
@@ -3290,14 +2872,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>Downloads Blocked by Your Network</source>
         <translation>Downloads geblokkeerd door je netwerk</translation>
-    </message>
-    <message>
-        <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to segment areas of any size.</source>
-        <translation>Teken een kleinere zone, of &lt;a href=&quot;{url}&quot;&gt;Upgraden naar Pro&lt;/a&gt; om gebieden van elke omvang te segmenteren.</translation>
-    </message>
-    <message>
-        <source>Draw a zone, name one kind of object, and get all of them in one run. Use Manual mode to work one object at a time.</source>
-        <translation>Teken een zone, benoem één soort object, en krijg ze allemaal in één run. Gebruik de Handmatige modus om object voor object te werken.</translation>
     </message>
     <message>
         <source>Draw another example</source>
@@ -3338,14 +2912,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>Keep this shape. The polygon stays picked, so you can still adjust, merge or delete it.</source>
         <translation>Behoud deze vorm. De polygoon blijft gekozen, zodat je hem nog kunt aanpassen, samenvoegen of verwijderen.</translation>
-    </message>
-    <message>
-        <source>Last run: {n} {object}</source>
-        <translation>Laatste run: {n} {object}</translation>
-    </message>
-    <message>
-        <source>Last run: {n} {object} in {layer}</source>
-        <translation>Laatste run: {n} {object} in {layer}</translation>
     </message>
     <message>
         <source>Loading the imagery...</source>
@@ -3422,10 +2988,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>Same setup as your last run - the result will match. Add an example or change the precision for a different result.</source>
         <translation>Dezelfde instellingen als je laatste run - het resultaat komt overeen. Voeg een voorbeeld toe of wijzig de precisie voor een ander resultaat.</translation>
-    </message>
-    <message>
-        <source>Saved to {layer}</source>
-        <translation>Opgeslagen in {layer}</translation>
     </message>
     <message>
         <source>Setting up the on-device AI. This runs once and takes a few minutes. The review waits here until it is done.</source>
@@ -3566,16 +3128,12 @@ Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het 
         <translation>Typ een woord voor het object, of teken een voorbeeld.</translation>
     </message>
     <message>
-        <source>Upgrade to Pro to finish this zone: 10,000 credits/month.</source>
-        <translation>Upgrade naar Pro om deze zone af te ronden: 10.000 credits/maand.</translation>
+        <source>Upgrade to Pro to finish this zone: 5,000 credits/month.</source>
+        <translation>Upgrade naar Pro om deze zone af te ronden: 5.000 credits/maand.</translation>
     </message>
     <message>
         <source>Wait for the on-device AI to finish installing.</source>
         <translation>Wacht tot de lokale AI klaar is met installeren.</translation>
-    </message>
-    <message>
-        <source>{count} polygon(s) exported</source>
-        <translation>{count} polygoon(en) geëxporteerd</translation>
     </message>
     <message>
         <source>{n} {object} saved</source>
@@ -3585,22 +3143,471 @@ Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het 
         <source>{n} {object} saved to {layer}</source>
         <translation>{n} {object} opgeslagen in {layer}</translation>
     </message>
-    <message>
-        <source>{used} credits</source>
-        <translation>{used} credits</translation>
-    </message>
     <!-- Correct-step on-device AI setup, free-run cap wording, missing raster (2026-07-30) -->
     <message>
-        <source>or lower the detail to stay free.</source>
-        <translation>of verlaag het detail om gratis te blijven.</translation>
+        <source>5,000 objects every month</source>
+        <translation>5.000 objecten per maand</translation>
     </message>
     <message>
-        <source>This zone at this detail needs a subscription.</source>
-        <translation>Deze zone met dit detail vereist een abonnement.</translation>
+        <source>A session is already running.</source>
+        <translation>Er is al een sessie bezig.</translation>
     </message>
     <message>
-        <source>Subscribe</source>
-        <translation>Abonneren</translation>
+        <source>AI engine</source>
+        <translation>AI-engine</translation>
+    </message>
+    <message>
+        <source>AI fixing is not reachable right now. Switched to editing by hand, which works offline.</source>
+        <translation>AI-correctie is nu niet bereikbaar. Overgeschakeld op handmatige bewerking, die offline werkt.</translation>
+    </message>
+    <message>
+        <source>AI ready</source>
+        <translation>AI gereed</translation>
+    </message>
+    <message>
+        <source>Add an object the AI missed. In AI, point at it and the model outlines it, free; in Manual, draw its corners.</source>
+        <translation>Voeg een object toe dat de AI heeft gemist. Bij AI wijs je het aan en omlijnt het model het gratis; bij Handmatig teken je de hoekpunten.</translation>
+    </message>
+    <message>
+        <source>Almost ready: the AI file did not download.</source>
+        <translation>Bijna klaar: het AI-bestand is niet gedownload.</translation>
+    </message>
+    <message>
+        <source>Almost ready: the AI file is still missing.</source>
+        <translation>Bijna klaar: het AI-bestand ontbreekt nog.</translation>
+    </message>
+    <message>
+        <source>Answered on your computer this time. TerraLab could not be reached.</source>
+        <translation>Deze keer beantwoord op je computer. TerraLab kon niet worden bereikt.</translation>
+    </message>
+    <message>
+        <source>As fine as {obj} benefits from - finer splits them into pieces.</source>
+        <translation>Zo fijn als {obj} nodig heeft - fijner verdeelt ze in stukken.</translation>
+    </message>
+    <message>
+        <source>Automatic mode is ready. The on-device AI could not be installed, so Semi-Auto mode and the AI fix are off until it is. Everything else works.</source>
+        <translation>De Automatische modus is gereed. De lokale AI kon niet worden geïnstalleerd, dus de Semi-Auto-modus en de AI-correctie zijn uitgeschakeld totdat dit is gebeurd. Al het andere werkt.</translation>
+    </message>
+    <message>
+        <source>Automatic mode needs a small one-time setup before it can read your imagery. It takes about a minute.</source>
+        <translation>De Automatische modus heeft een korte eenmalige installatie nodig om je beeldmateriaal te kunnen lezen. Dit duurt ongeveer een minuut.</translation>
+    </message>
+    <message>
+        <source>Automatic mode ready</source>
+        <translation>Automatische modus gereed</translation>
+    </message>
+    <message>
+        <source>Categories</source>
+        <translation>Categorieën</translation>
+    </message>
+    <message>
+        <source>Choose between Semi-Auto and Automatic segmentation</source>
+        <translation>Kies tussen Semi-Auto-segmentatie en Automatische segmentatie</translation>
+    </message>
+    <message>
+        <source>Choose where the AI runs: on TerraLab servers, or on your own computer</source>
+        <translation>Kies waar de AI draait: op TerraLab-servers, of op je eigen computer</translation>
+    </message>
+    <message>
+        <source>Click the object you want to segment:</source>
+        <translation>Klik op het object dat je wilt segmenteren:</translation>
+    </message>
+    <message>
+        <source>Cloud AI</source>
+        <translation>Cloud AI</translation>
+    </message>
+    <message>
+        <source>Cloud AI needs your account, and it is signed out. Sign back in, or install the offline AI to work without one.</source>
+        <translation>Cloud AI heeft je account nodig, en je bent afgemeld. Meld je opnieuw aan, of installeer de lokale AI om zonder account te werken.</translation>
+    </message>
+    <message>
+        <source>How Cloud AI works</source>
+        <translation>Hoe Cloud AI werkt</translation>
+    </message>
+    <message>
+        <source>Continue with Cloud AI</source>
+        <translation>Doorgaan met Cloud AI</translation>
+    </message>
+    <message>
+        <source>Delete this polygon and leave the manual edit. Anything you changed here and did not save goes with it. Undo brings the polygon back.</source>
+        <translation>Deze polygoon verwijderen en de handmatige bewerking verlaten. Alles wat je hier hebt gewijzigd en niet hebt opgeslagen, gaat verloren. Ongedaan maken zet de polygoon terug.</translation>
+    </message>
+    <message>
+        <source>Downloading and setting it up takes &lt;b&gt;about {n} minutes&lt;/b&gt;, once.</source>
+        <translation>Downloaden en instellen duurt &lt;b&gt;ongeveer {n} minuten&lt;/b&gt;, eenmalig.</translation>
+    </message>
+    <message>
+        <source>Draw a zone, name one kind of object, and get all of them in one run. Use Semi-Auto mode to work one object at a time.</source>
+        <translation>Teken een zone, benoem één soort object, en krijg ze allemaal in één run. Gebruik de Semi-Auto-modus om één object tegelijk te bewerken.</translation>
+    </message>
+    <message>
+        <source>Each click sends a small square of the image to our servers in Europe, and the outline comes back.</source>
+        <translation>Elke klik stuurt een klein vierkant van de afbeelding naar onze servers in Europa, en de omlijning komt terug.</translation>
+    </message>
+    <message>
+        <source>Ends this session. Your saved polygons are kept.</source>
+        <translation>Beëindigt deze sessie. Je opgeslagen polygonen blijven behouden.</translation>
+    </message>
+    <message>
+        <source>Faster and more accurate</source>
+        <translation>Sneller en nauwkeuriger</translation>
+    </message>
+    <message>
+        <source>Featured</source>
+        <translation>Uitgelicht</translation>
+    </message>
+    <message>
+        <source>Free, works offline</source>
+        <translation>Gratis, werkt offline</translation>
+    </message>
+    <message>
+        <source>Install it now</source>
+        <translation>Nu installeren</translation>
+    </message>
+    <message>
+        <source>Install the offline AI</source>
+        <translation>De lokale AI installeren</translation>
+    </message>
+    <message>
+        <source>Installing the offline AI</source>
+        <translation>De lokale AI wordt geïnstalleerd</translation>
+    </message>
+    <message>
+        <source>Intel Mac: using the older AI model.</source>
+        <translation>Intel Mac: gebruikt het oudere AI-model.</translation>
+    </message>
+    <message>
+        <source>It needs &lt;b&gt;{gb} GB&lt;/b&gt; of free disk space.</source>
+        <translation>Dit heeft &lt;b&gt;{gb} GB&lt;/b&gt; vrije schijfruimte nodig.</translation>
+    </message>
+    <message>
+        <source>My computer</source>
+        <translation>Mijn computer</translation>
+    </message>
+    <message>
+        <source>My computer, free and unlimited</source>
+        <translation>Mijn computer, gratis en onbeperkt</translation>
+    </message>
+    <message>
+        <source>My work</source>
+        <translation>Mijn werk</translation>
+    </message>
+    <message>
+        <source>No credits left. Each object you save with Cloud AI costs one credit.</source>
+        <translation>Geen credits meer. Elk object dat je opslaat met Cloud AI kost 1 credit.</translation>
+    </message>
+    <message>
+        <source>No credits left. Each object you save with Cloud AI costs one credit. Switch to the offline AI to keep working for free, or upgrade from the panel.</source>
+        <translation>Geen credits meer. Elk object dat je opslaat met Cloud AI kost 1 credit. Schakel over naar de lokale AI om gratis te blijven werken, of upgrade vanuit het paneel.</translation>
+    </message>
+    <message>
+        <source>No credits left. This polygon stays on the map, and Export still works.</source>
+        <translation>Geen credits meer. Deze polygoon blijft op de kaart staan, en Exporteren werkt nog steeds.</translation>
+    </message>
+    <message>
+        <source>No credits left. This polygon stays on the map, but it cannot be saved.</source>
+        <translation>Geen credits meer. Deze polygoon blijft op de kaart staan, maar kan niet worden opgeslagen.</translation>
+    </message>
+    <message>
+        <source>No object found here. Try clicking somewhere else.</source>
+        <translation>Geen object gevonden op deze plek. Klik ergens anders.</translation>
+    </message>
+    <message>
+        <source>Not now</source>
+        <translation>Niet nu</translation>
+    </message>
+    <message>
+        <source>Your project and your files stay on your computer. One credit per object you save.</source>
+        <translation>Je project en je bestanden blijven op je computer. 1 credit per object dat je opslaat.</translation>
+    </message>
+    <message>
+        <source>One precision level fits {obj} in a zone this size - draw a larger zone for a choice.</source>
+        <translation>Eén precisieniveau past bij {obj} in een zone van dit formaat - teken een grotere zone voor een keuze.</translation>
+    </message>
+    <message>
+        <source>One-time setup</source>
+        <translation>Eenmalige installatie</translation>
+    </message>
+    <message>
+        <source>Other detections</source>
+        <translation>Andere detecties</translation>
+    </message>
+    <message>
+        <source>Pick a raster layer and accept the Terms to start.</source>
+        <translation>Kies een rasterlaag en accepteer de Voorwaarden om te beginnen.</translation>
+    </message>
+    <message>
+        <source>Preparing the install...</source>
+        <translation>Installatie voorbereiden...</translation>
+    </message>
+    <message>
+        <source>Pro is active on this account. Your credits are ready.</source>
+        <translation>Pro is actief op dit account. Je credits staan klaar.</translation>
+    </message>
+    <message>
+        <source>Read the privacy policy</source>
+        <translation>Lees het privacybeleid</translation>
+    </message>
+    <message>
+        <source>Right-click a polygon on the map to delete it.</source>
+        <translation>Klik met de rechtermuisknop op een polygoon op de kaart om deze te verwijderen.</translation>
+    </message>
+    <message>
+        <source>Running low: {n} credits left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bijna op: nog {n} credits over, terug op {date}. &lt;a href=&quot;{url}&quot;&gt;Upgraden naar Pro&lt;/a&gt; om door te gaan.</translation>
+    </message>
+    <message>
+        <source>Running low: {n} credits left. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bijna op: nog {n} credits over. &lt;a href=&quot;{url}&quot;&gt;Upgraden naar Pro&lt;/a&gt; om door te gaan.</translation>
+    </message>
+    <message>
+        <source>Save a polygon first. Export writes every polygon you kept to a layer.</source>
+        <translation>Sla eerst een polygoon op. Exporteren schrijft elke polygoon die je hebt bewaard naar een laag.</translation>
+    </message>
+    <message>
+        <source>Saving object</source>
+        <translation>Object opslaan</translation>
+    </message>
+    <message>
+        <source>Semi-Auto</source>
+        <translation>Semi-Auto</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode installs local components that are not available for this Mac with this version of QGIS. Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
+        <translation>De Semi-Auto-modus installeert lokale onderdelen die niet beschikbaar zijn voor deze Mac met deze versie van QGIS. Gebruik in plaats daarvan de Automatische modus, die volledig in de cloud draait en geen lokale installatie nodig heeft.</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode is not supported</source>
+        <translation>Semi-Auto-modus wordt niet ondersteund</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode is not supported in this QGIS installation</source>
+        <translation>Semi-Auto-modus wordt niet ondersteund in deze QGIS-installatie</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode needs to install local dependencies, which is not supported inside this sandboxed QGIS installation (Flatpak or Snap). Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
+        <translation>De Semi-Auto-modus moet lokale afhankelijkheden installeren, wat niet wordt ondersteund binnen deze sandbox-QGIS-installatie (Flatpak of Snap). Gebruik in plaats daarvan de Automatische modus, die volledig in de cloud draait en geen lokale installatie nodig heeft.</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode stays free and unlimited on your computer.</source>
+        <translation>Semi-Auto-modus blijft gratis en onbeperkt op je computer.</translation>
+    </message>
+    <message>
+        <source>Session ended</source>
+        <translation>Sessie beëindigd</translation>
+    </message>
+    <message>
+        <source>Set up now</source>
+        <translation>Nu instellen</translation>
+    </message>
+    <message>
+        <source>Setting up on your computer {dot} &lt;b&gt;pick Cloud AI to start now&lt;/b&gt;</source>
+        <translation>Wordt ingesteld op je computer {dot} &lt;b&gt;kies Cloud AI om nu te starten&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Start Semi-Auto AI Segmentation</source>
+        <translation>Start Semi-Auto AI Segmentation</translation>
+    </message>
+    <message>
+        <source>Stop and use my computer instead</source>
+        <translation>Stop en gebruik in plaats daarvan mijn computer</translation>
+    </message>
+    <message>
+        <source>Stop the install</source>
+        <translation>Installatie stoppen</translation>
+    </message>
+    <message>
+        <source>The AI is still loading. Try again in a few seconds.</source>
+        <translation>De AI wordt nog geladen. Probeer het over een paar seconden opnieuw.</translation>
+    </message>
+    <message>
+        <source>The AI was set up but could not start.</source>
+        <translation>De AI is ingesteld, maar kon niet starten.</translation>
+    </message>
+    <message>
+        <source>The click was cancelled.</source>
+        <translation>De klik is geannuleerd.</translation>
+    </message>
+    <message>
+        <source>The install did not finish. Retry it, or pick Cloud AI.</source>
+        <translation>De installatie is niet voltooid. Probeer het opnieuw, of kies Cloud AI.</translation>
+    </message>
+    <message>
+        <source>The model is unsure about this outline. Click again to correct it, or draw it by hand.</source>
+        <translation>Het model twijfelt over deze omlijning. Klik opnieuw om dit te corrigeren, of teken dit handmatig.</translation>
+    </message>
+    <message>
+        <source>The offline AI</source>
+        <translation>De lokale AI</translation>
+    </message>
+    <message>
+        <source>The offline AI is not installed yet.</source>
+        <translation>De lokale AI is nog niet geïnstalleerd.</translation>
+    </message>
+    <message>
+        <source>The offline AI is still downloading.</source>
+        <translation>De lokale AI wordt nog gedownload.</translation>
+    </message>
+    <message>
+        <source>The smaller model on your computer. No credits, no limit.</source>
+        <translation>Het kleinere model op je computer. Geen credits, geen limiet.</translation>
+    </message>
+    <message>
+        <source>This deletes the local AI model files, signs you out, and resets the plugin. Your account and credits are not affected. Semi-Auto mode will download the files again next time you use it.</source>
+        <translation>Dit verwijdert de lokale AI-modelbestanden, meldt je af en herstelt de plugin. Je account en credits worden niet beïnvloed. De Semi-Auto-modus downloadt de bestanden opnieuw wanneer je deze de volgende keer gebruikt.</translation>
+    </message>
+    <message>
+        <source>This drive has {free} GB free, under the {need} GB the install needs. Free some space, or use Cloud AI.</source>
+        <translation>Deze schijf heeft {free} GB vrij, onder de {need} GB die de installatie nodig heeft. Maak ruimte vrij, of gebruik Cloud AI.</translation>
+    </message>
+    <message>
+        <source>This image has no position on the map, so Automatic cannot place what it finds. Give it one with the QGIS Georeferencer, or use Semi-Auto mode on it as is.</source>
+        <translation>Deze afbeelding heeft geen positie op de kaart, dus Automatisch kan niet plaatsen wat het vindt. Geef er een met de QGIS Georeferencer, of gebruik de Semi-Auto-modus erop zoals hij is.</translation>
+    </message>
+    <message>
+        <source>This model rates every object the same, so filtering by confidence would show all of them or none. Use Size below, or fix objects in the next step.</source>
+        <translation>Dit model beoordeelt elk object hetzelfde, dus filteren op betrouwbaarheid zou ze allemaal laten zien of geen enkele. Gebruik Grootte hieronder, of corrigeer objecten in de volgende stap.</translation>
+    </message>
+    <message>
+        <source>This raster is rotated. Run Warp (Reproject) on it to straighten it first. Semi-Auto mode cannot read it either.</source>
+        <translation>Dit raster is geroteerd. Voer eerst Warp (Reproject) erop uit om het recht te trekken. De Semi-Auto-modus kan het ook niet lezen.</translation>
+    </message>
+    <message>
+        <source>Use Cloud AI instead</source>
+        <translation>Gebruik in plaats daarvan Cloud AI</translation>
+    </message>
+    <message>
+        <source>Use my computer instead</source>
+        <translation>Gebruik in plaats daarvan mijn computer</translation>
+    </message>
+    <message>
+        <source>Where the segmentation runs:</source>
+        <translation>Waar de segmentatie draait:</translation>
+    </message>
+    <message>
+        <source>You can close this window and keep working. The install carries on, and the panel shows how far it has got.</source>
+        <translation>Je kunt dit venster sluiten en blijven werken. De installatie gaat door, en het paneel toont hoe ver deze is.</translation>
+    </message>
+    <message>
+        <source>Your free credits come back on {date}.</source>
+        <translation>Je gratis credits komen terug op {date}.</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;about 10 minutes to install&lt;/b&gt;</source>
+        <translation>Alles blijft op deze computer {dot} &lt;b&gt;ongeveer 10 minuten om te installeren&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;save as many as you like&lt;/b&gt;</source>
+        <translation>Alles blijft op deze computer {dot} &lt;b&gt;sla er zoveel op als je wilt&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;{gb} GB and about 10 minutes to install&lt;/b&gt;</source>
+        <translation>Alles blijft op deze computer {dot} &lt;b&gt;{gb} GB en ongeveer 10 minuten om te installeren&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>No setup on this computer {dot} &lt;b&gt;1 credit per object you save&lt;/b&gt;</source>
+        <translation>Geen installatie op deze computer {dot} &lt;b&gt;1 credit per object dat je opslaat&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>The offline AI answers your clicks on this computer. Your imagery stays here, and every click is free.</source>
+        <translation>De lokale AI beantwoordt je klikken op deze computer. Je beeldmateriaal blijft hier, en elke klik is gratis.</translation>
+    </message>
+    <message>
+        <source>This online layer returned no imagery for this area. Its server refused the request. Check the layer&apos;s URL in Layer Properties, or use another basemap.</source>
+        <translation>Deze online laag leverde geen beeldmateriaal voor dit gebied. De server ervan heeft het verzoek geweigerd. Controleer de URL van de laag in Laageigenschappen, of gebruik een andere achtergrondkaart.</translation>
+    </message>
+    <message>
+        <source>1 credit covers about 0.17 km² at default precision.</source>
+        <translation>1 credit dekt ongeveer 0,17 km² bij standaard precisie.</translation>
+    </message>
+    <message>
+        <source>Clear all {n}</source>
+        <translation>Alles wissen {n}</translation>
+    </message>
+    <message>
+        <source>Could not check your AI Segmentation account. If this lasts, sign out and sign in again.</source>
+        <translation>Kon je AI Segmentation-account niet controleren. Als dit aanhoudt, meld je af en weer aan.</translation>
+    </message>
+    <message>
+        <source>Could not load your account. Try again in a moment.</source>
+        <translation>Kon je account niet laden. Probeer het over een moment opnieuw.</translation>
+    </message>
+    <message>
+        <source>Could not reach TerraLab. Check your internet connection, then try again.</source>
+        <translation>Kon TerraLab niet bereiken. Controleer je internetverbinding en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Editing by hand could not open on this polygon on its own. Try again, or fix it with the AI.</source>
+        <translation>Handmatige bewerking kon niet vanzelf worden geopend voor deze polygoon. Probeer het opnieuw, of corrigeer de polygoon met de AI.</translation>
+    </message>
+    <message>
+        <source>It downloads first, and takes about 10 minutes.</source>
+        <translation>Dit wordt eerst gedownload, en duurt ongeveer 10 minuten.</translation>
+    </message>
+    <message>
+        <source>It downloads first: {gb} GB and about 10 minutes.</source>
+        <translation>Dit wordt eerst gedownload: {gb} GB en ongeveer 10 minuten.</translation>
+    </message>
+    <message>
+        <source>Nothing in this category yet.</source>
+        <translation>Nog niets in deze categorie.</translation>
+    </message>
+    <message>
+        <source>One run covers up to {cap} tiles. This zone at this precision needs more. Draw a smaller zone, or lower the precision.</source>
+        <translation>Eén run dekt tot {cap} tegels. Deze zone heeft bij deze precisie meer nodig. Teken een kleinere zone, of verlaag de precisie.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser. Open this address to finish signing in, then come back here. It works once:
+{}</source>
+        <translation>QGIS kon geen browser openen. Open dit adres om het aanmelden af te ronden, en kom daarna hier terug. Het werkt eenmalig:\n{}</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser. The sign-in address is copied to your clipboard: paste it into a browser to finish, then come back here. It works once.</source>
+        <translation>QGIS kon geen browser openen. Het aanmeldadres is naar je klembord gekopieerd: plak het in een browser om af te ronden, en kom daarna hier terug. Het werkt eenmalig.</translation>
+    </message>
+    <message>
+        <source>Reading your logs...</source>
+        <translation>Je logs lezen...</translation>
+    </message>
+    <message>
+        <source>Sign in again to fix with the AI. Switched to editing by hand, which needs no account.</source>
+        <translation>Meld je opnieuw aan om te corrigeren met de AI. Overgeschakeld op handmatige bewerking, die geen account nodig heeft.</translation>
+    </message>
+    <message>
+        <source>The export did not finish. Your polygons are still on the map, so you can try again.</source>
+        <translation>Exporteren is niet voltooid. Je polygonen staan nog op de kaart, dus je kunt het opnieuw proberen.</translation>
+    </message>
+    <message>
+        <source>The install did not finish {dot} &lt;b&gt;retry it, or pick Cloud AI&lt;/b&gt;</source>
+        <translation>De installatie is niet voltooid {dot} &lt;b&gt;probeer het opnieuw, of kies Cloud AI&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>The polygons could not be put into the new layer, so nothing was saved. They are still on the map, so you can try again.</source>
+        <translation>De polygonen konden niet in de nieuwe laag worden geplaatst, dus er is niets opgeslagen. Ze staan nog op de kaart, dus je kunt het opnieuw proberen.</translation>
+    </message>
+    <message>
+        <source>This layer has no usable position on the map. Open it in QGIS and check its extent.</source>
+        <translation>Deze laag heeft geen bruikbare positie op de kaart. Open de laag in QGIS en controleer de extent ervan.</translation>
+    </message>
+    <message>
+        <source>This run found nothing. Add the object yourself below, or press Exit and run again with another word or a smaller zone.</source>
+        <translation>Deze run vond niets. Voeg het object hieronder zelf toe, of druk op Afsluiten en voer de run opnieuw uit met een ander woord of een kleinere zone.</translation>
+    </message>
+    <message>
+        <source>This zone at this precision needs more tiles than one run covers. Draw a smaller zone, or lower the precision.</source>
+        <translation>Deze zone heeft bij deze precisie meer tegels nodig dan één run dekt. Teken een kleinere zone, of verlaag de precisie.</translation>
+    </message>
+    <message>
+        <source>Undo every correction of this round at once. The count is in the label, so you can see what goes.</source>
+        <translation>Alle correcties van deze ronde in één keer ongedaan maken. Het aantal staat in het label, zodat je ziet wat verdwijnt.</translation>
+    </message>
+    <message>
+        <source>You are out of credits, so the AI fix cannot answer. Switched to editing by hand, which is free.</source>
+        <translation>Je hebt geen credits meer, dus de AI-correctie kan niet antwoorden. Overgeschakeld op handmatige bewerking, die gratis is.</translation>
+    </message>
+    <message>
+        <source>You are signed in on this computer, but QGIS cannot read your sign-in until you enter its master password.</source>
+        <translation>Je bent aangemeld op deze computer, maar QGIS kan je aanmelding pas lezen als je zijn hoofdwachtwoord invoert.</translation>
     </message>
 </context>
 </TS>

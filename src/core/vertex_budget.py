@@ -17,8 +17,10 @@ shape. Three guards bound what it may do:
   - ``keep_fraction``, the share of its own points a ring may keep, which is
     what a user-facing dial moves.
 
-Distances are in the geometry's own CRS units; callers converting a ground
-setting cross the metres-per-unit factor first, like every other ground dial.
+Distances are in the geometry's own CRS units, along its X axis; callers
+converting a ground setting cross the metres-per-unit factor first, like every
+other ground dial, and pass ``unit_aspect`` when the two axes of that CRS cover
+different ground.
 
 Pure QGIS API and standard library: no numpy, no shapely, no venv. Manual mode
 runs it offline like everything else it uses.
@@ -210,9 +212,15 @@ def _perimeter(pts: list) -> float:
 
 def _thin_ring_xy(ring: list, spacing: float, min_vertices: int,
                   max_deviation: float, fit: bool = True,
-                  keep_fraction: float = 0.0) -> list:
-    """One QgsPointXY ring (closed, first == last) thinned to its budget."""
-    pts = [(p.x(), p.y()) for p in ring]
+                  keep_fraction: float = 0.0,
+                  unit_aspect: float = 1.0) -> list:
+    """One QgsPointXY ring (closed, first == last) thinned to its budget.
+
+    ``unit_aspect`` stretches y into the x unit for the whole pass, so every
+    length below is one distance again (see simplify_to_budget). The points go
+    back into the caller's own frame on the way out.
+    """
+    pts = [(p.x(), p.y() * unit_aspect) for p in ring]
     if len(pts) > 1 and pts[0] == pts[-1]:
         pts = pts[:-1]
     if len(pts) <= MIN_RING_VERTICES:
@@ -237,8 +245,8 @@ def _thin_ring_xy(ring: list, spacing: float, min_vertices: int,
         return ring
     from qgis.core import QgsPointXY
 
-    out = [QgsPointXY(x, y) for x, y in kept]
-    out.append(QgsPointXY(kept[0][0], kept[0][1]))
+    out = [QgsPointXY(x, y / unit_aspect) for x, y in kept]
+    out.append(QgsPointXY(kept[0][0], kept[0][1] / unit_aspect))
     return out
 
 
@@ -298,6 +306,96 @@ def _dial_relaxed_cap(geom: Any, cap: float, keep_fraction: float,
     return min(relaxed, max_cap_fraction * narrow)
 
 
+def _polygonal_parts_xy(geom: Any, want_type: Any) -> list:
+    """Every polygonal part of ``geom``, each as a list of QgsPointXY rings.
+
+    ``makeValid`` answers a ring that self-touches with a collection: the
+    repaired polygon next to the line the pinch collapsed to. Read the members
+    and keep the polygons, rather than turning the whole repair down over the
+    line that came with it.
+    """
+    parts: list = []
+    if geom is None:
+        return parts
+    try:
+        members = geom.asGeometryCollection()
+    except Exception:  # noqa: BLE001 -- unreadable repair  # nosec B110
+        return parts
+    for member in members:
+        try:
+            if member is None or member.isEmpty() or member.type() != want_type:
+                continue
+            polys = (member.asMultiPolygon() if member.isMultipart()
+                     else [member.asPolygon()])
+        except Exception:  # noqa: BLE001 -- unreadable member  # nosec B112
+            continue
+        parts.extend(poly for poly in polys if poly)
+    return parts
+
+
+def _thinned_part_rings(rings: list, original: list, want_type: Any) -> list:
+    """The thinned rings of ONE part, or that part's own rings when nothing
+    valid can be built from them.
+
+    Per part on purpose: a single ring self-touching after thinning must cost
+    that part its budget and nothing else. Returning it whole-object, which is
+    what a shared validity check does, hands the user the raw traced staircase
+    for every other part of the same object.
+    """
+    from qgis.core import QgsGeometry
+
+    try:
+        part = QgsGeometry.fromPolygonXY(rings)
+        if part is not None and not part.isEmpty():
+            if part.isGeosValid():
+                return [rings]
+            repaired = _polygonal_parts_xy(part.makeValid(), want_type)
+            if repaired:
+                return repaired
+    except Exception:  # noqa: BLE001 -- rebuild or repair failed  # nosec B110
+        pass
+    return [original]
+
+
+def _polygon_from_parts(parts: list, multi: bool) -> Any:
+    """One geometry out of ring lists, multipart when the input was multipart
+    or a repair split one part into several."""
+    from qgis.core import QgsGeometry
+
+    if multi or len(parts) > 1:
+        return QgsGeometry.fromMultiPolygonXY(parts)
+    return QgsGeometry.fromPolygonXY(parts[0])
+
+
+# Below this the stretch is a no-op and the caller's own geometry is measured.
+_BUDGET_ASPECT_IDENTITY_EPSILON = 1e-9
+
+
+def _measure_frame_polygon(geom: Any, polys: list, multi: bool,
+                           unit_aspect: float) -> Any:
+    """``geom`` with y stretched into the x unit, or ``geom`` itself when the
+    two axes already agree or the stretched copy cannot be built.
+
+    The deviation caps are a share of the object's narrow dimension, while the
+    thinning pass measures every deviation in the stretched frame. Read in two
+    different frames, a north-south object in a geographic CRS is capped
+    against a length the pass never sees.
+    """
+    if abs(unit_aspect - 1.0) < _BUDGET_ASPECT_IDENTITY_EPSILON:
+        return geom
+    try:
+        from qgis.core import QgsPointXY
+
+        stretched = _polygon_from_parts(
+            [[[QgsPointXY(p.x(), p.y() * unit_aspect) for p in ring]
+              for ring in poly] for poly in polys], multi)
+        if stretched is not None and not stretched.isEmpty():
+            return stretched
+    except Exception:  # noqa: BLE001 -- fall back to the caller's frame  # nosec B110
+        pass
+    return geom
+
+
 def simplify_to_budget(
     geom: Any,
     *,
@@ -308,6 +406,7 @@ def simplify_to_budget(
     fit: bool = True,
     keep_fraction: float = 0.0,
     dial_max_cap_fraction: float = _DIAL_MAX_CAP_NARROW_FRACTION,
+    unit_aspect: float = 1.0,
 ) -> Any:
     """Thin every ring of a (multi)polygon to its own point budget.
 
@@ -323,9 +422,21 @@ def simplify_to_budget(
     it is a server dial (``review.vertex_budget.dial_max_cap_fraction``) and
     the default here is the client fallback.
 
+    ``unit_aspect`` is ground metres per y unit over ground metres per x unit
+    of the geometry's own CRS (see core.layer_conventions.ground_unit_aspect).
+    Every measure below reads raw coordinates through ``math.hypot``, which
+    takes the two axes for one unit. In a geographic CRS they are not: a
+    north-south wall then measures short, so it is handed a smaller share of
+    the budget and a looser deviation cap than a wall of the same ground length
+    running east-west. Stretching y into the x unit for the pass makes all of
+    them one distance again, and the points come back in the caller's frame.
+    1.0 (a projected CRS) costs nothing.
+
     Best-effort by design, like the rest of the refine tail: a geometry that
-    cannot be read, or a result that comes back invalid and cannot be repaired,
-    yields the input unchanged rather than an exception or a broken shape.
+    cannot be read yields the input unchanged rather than an exception, and a
+    part whose thinned rings come back invalid and cannot be repaired keeps its
+    own original rings while every other part keeps its budget. The answer is
+    always polygonal and always of the input's own geometry type.
     """
     if geom is None or (spacing <= 0 and keep_fraction <= 0.0):
         return geom
@@ -334,8 +445,6 @@ def simplify_to_budget(
             return geom
     except Exception:  # noqa: BLE001 -- unknown input  # nosec B110
         return geom
-    from qgis.core import QgsGeometry
-
     try:
         multi = bool(geom.isMultipart())
         polys = geom.asMultiPolygon() if multi else [geom.asPolygon()]
@@ -343,41 +452,46 @@ def simplify_to_budget(
         return geom
     if not polys or not any(polys):
         return geom
-    cap = deviation_cap_for(geom, max_deviation, max_deviation_fraction)
+    if not (unit_aspect and math.isfinite(unit_aspect) and unit_aspect > 0.0):
+        unit_aspect = 1.0
+    # Both caps below come off the object's narrow dimension, so they are read
+    # in the same frame the thinning pass measures in, never in raw coordinates.
+    measured = _measure_frame_polygon(geom, polys, multi, unit_aspect)
+    cap = deviation_cap_for(measured, max_deviation, max_deviation_fraction)
     # The user's Points dial loosens this cap as it drops, so a low % actually
     # sheds the corners the fixed cap protects (bounded to the object). Off
     # (keep_fraction 0) leaves the cap exactly as it was.
-    cap = _dial_relaxed_cap(geom, cap, keep_fraction, dial_max_cap_fraction)
-    out_polys = []
+    cap = _dial_relaxed_cap(measured, cap, keep_fraction, dial_max_cap_fraction)
+    want_type = geom.type()
+    out_polys: list = []
     changed = False
     for poly in polys:
         rings = []
         for ring in poly:
             thinned = _thin_ring_xy(ring, spacing, min_vertices, cap, fit,
-                                    keep_fraction)
+                                    keep_fraction, unit_aspect)
             if len(thinned) != len(ring):
                 changed = True
             rings.append(thinned)
-        out_polys.append(rings)
-    if not changed:
+        out_polys.extend(_thinned_part_rings(rings, poly, want_type))
+    if not changed or not out_polys:
         return geom
     try:
-        result = (QgsGeometry.fromMultiPolygonXY(out_polys) if multi
-                  else QgsGeometry.fromPolygonXY(out_polys[0]))
+        result = _polygon_from_parts(out_polys, multi)
     except Exception:  # noqa: BLE001 -- rebuild failed  # nosec B110
         return geom
     if result is None or result.isEmpty():
         return geom
     try:
         if not result.isGeosValid():
-            repaired = result.makeValid()
-            if repaired is None or repaired.isEmpty():
+            # Each part is already valid on its own, so what is left is two of
+            # them meeting, which only a whole-object repair can settle.
+            parts = _polygonal_parts_xy(result.makeValid(), want_type)
+            if not parts:
                 return geom
-            # makeValid can hand back a collection when a ring self-touched;
-            # only a polygonal result is a usable answer here.
-            if repaired.type() != geom.type():
+            result = _polygon_from_parts(parts, multi)
+            if result is None or result.isEmpty():
                 return geom
-            result = repaired
     except Exception:  # noqa: BLE001 -- validity check is best-effort  # nosec B110
         return geom
     return result

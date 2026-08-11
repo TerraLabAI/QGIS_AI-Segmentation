@@ -6,7 +6,6 @@ plain mixin members: state lives on the plugin instance (self).
 """
 from __future__ import annotations
 
-import math
 import os
 
 from qgis.core import (
@@ -159,7 +158,8 @@ class ManualCropsMixin:
                 if self._current_crop_canvas_mupp and current_canvas_mupp > 0:
                     ratio = current_canvas_mupp / self._current_crop_canvas_mupp
                     if ratio < zoom_in_thresh or ratio > zoom_out_thresh:
-                        return "zoom_changed"
+                        if self._crop_resolution_would_change():
+                            return "zoom_changed"
             else:
                 if self._current_crop_canvas_mupp is not None:
                     canvas = self.iface.mapCanvas()
@@ -167,7 +167,8 @@ class ManualCropsMixin:
                     if current_mupp > 0:
                         ratio = current_mupp / self._current_crop_canvas_mupp
                         if ratio < zoom_in_thresh or ratio > zoom_out_thresh:
-                            return "zoom_changed"
+                            if self._crop_resolution_would_change():
+                                return "zoom_changed"
 
         return "ok"
 
@@ -220,19 +221,40 @@ class ManualCropsMixin:
         np.clip(col_idx, 0, src_w - 1, out=col_idx)
         return arr[row_idx[:, None], col_idx[None, :]]
 
-    def _binary_mask_to_logits(self, mask, target: int = 256):
+    def _seed_side(self, fallback: int = 256) -> int:
+        """The side a mask seed has to be for whoever answers the next click.
+
+        Not one number any more. The on-device checkpoint works in 256, the
+        tracker the service now answers with works in 288, and a seed at the
+        wrong side is refused outright rather than resized. The predictor is
+        the only thing that knows which is listening, so it is asked; before
+        any answer has said, 256 is the honest guess, and one refusal teaches
+        it the real one.
+        """
+        side = getattr(getattr(self, "predictor", None), "low_res_side", None)
+        try:
+            side = int(side)
+        except (TypeError, ValueError):
+            return fallback
+        return side if side > 0 else fallback
+
+    def _binary_mask_to_logits(self, mask, target: int | None = None):
         """Convert a binary mask (H x W, 0/1 or bool) to SAM low-res logits of
         shape (1, target, target): foreground=+6, background=-6. Shared by the
         zoom mask-transfer and the Refine-in-Manual polygon seeding so both seed
         SAM the same way.
 
+        `target` defaults to whatever the active predictor works in, so a seed
+        built here is never the wrong size for the model that reads it.
+
         Must stay 3D like the low_res_masks a predict returns: the SAM
         predictors add the batch dimension themselves, so a 4D mask_input
         reaches conv2d as 5D and crashes the prompt encoder."""
         import numpy as np
+        side = self._seed_side() if target is None else int(target)
         m = np.asarray(mask, dtype=np.float32)
         logits = (m * 2.0 - 1.0) * 6.0
-        logits_t = self._resize_nearest(logits, target, target)
+        logits_t = self._resize_nearest(logits, side, side)
         return logits_t[None, :, :]
 
     def _build_mask_input_from_previous(
@@ -241,7 +263,8 @@ class ManualCropsMixin:
         """Transfer a binary mask from old crop space to new crop as SAM logits.
 
         Computes geographic overlap between old and new crops, maps the
-        overlapping region, converts to logits, and resizes to (1, 256, 256).
+        overlapping region, converts to logits, and resizes to the side the
+        active predictor reads.
         Returns None if there is no overlap.
         """
         import numpy as np
@@ -303,22 +326,9 @@ class ManualCropsMixin:
         new_mask = np.zeros((new_h, new_w), dtype=np.float32)
         new_mask[n_r0:n_r1, n_c0:n_c1] = resized_patch
 
-        # Convert to SAM's low-res logits (1, 256, 256): foreground=+6, bg=-6.
+        # Convert to SAM's low-res logits at the side the model reads:
+        # foreground=+6, bg=-6.
         return self._binary_mask_to_logits(new_mask)
-
-    def _get_native_pixel_size(self):
-        """Get the native pixel size of the current file-based raster layer."""
-        try:
-            ext = self._current_layer.extent()
-            w = self._current_layer.width()
-            h = self._current_layer.height()
-            if w > 0 and h > 0:
-                px = (ext.xMaximum() - ext.xMinimum()) / w
-                py = (ext.yMaximum() - ext.yMinimum()) / h
-                return max(px, py)
-        except (RuntimeError, AttributeError):
-            pass
-        return 0.0
 
     def _compute_auto_min_area(self):
         """Compute min_area for artifact removal based on current crop scale.
@@ -341,65 +351,6 @@ class ManualCropsMixin:
                 scale = 1.0
         # Power curve centered on 200 (bumped ×2 per #12 for cleaner defaults).
         return max(100, int(200 * max(0.6, scale) ** 0.3))
-
-    def _compute_initial_scale_factor(self):
-        """Compute initial scale_factor from canvas zoom for file-based rasters.
-
-        For high-res imagery where the user is zoomed out, the crop should cover
-        a proportionally larger geographic area instead of just 1024 native pixels.
-
-        Uses canvas extent in raster CRS to avoid unit mismatches (e.g. canvas
-        in meters vs raster in degrees).
-        """
-        if self._is_online_layer:
-            return None
-        native_pixel_size = self._get_native_pixel_size()
-        if native_pixel_size <= 0:
-            return None
-
-        canvas = self.iface.mapCanvas()
-        canvas_extent = canvas.extent()
-        # Transform canvas extent to raster CRS if needed
-        if self._canvas_to_raster_xform is not None:
-            try:
-                canvas_extent = self._canvas_to_raster_xform.transformBoundingBox(
-                    canvas_extent)
-            except Exception:
-                return None
-
-        # Compute canvas mupp in raster CRS units
-        canvas_width_px = canvas.width()
-        if canvas_width_px <= 0:
-            return None
-        canvas_geo_width = canvas_extent.xMaximum() - canvas_extent.xMinimum()
-        canvas_mupp_raster_crs = canvas_geo_width / canvas_width_px
-
-        ratio = canvas_mupp_raster_crs / native_pixel_size
-        return max(0.25, min(ratio, 8.0))
-
-    # ------------------------------------------------------------------
-    # Crop encoding (PERF-01): async on the interactive path, sync headless.
-    #
-    # set_image() writes a ~4MB crop over stdin to the SAM subprocess and blocks
-    # on stdout until encoding finishes (~3-8s on CPU, longer on old laptops).
-    # On the interactive path that round-trip now runs on a background worker
-    # (SetImageWorker) so QGIS never freezes; crop EXTRACTION and every QGIS/
-    # canvas access stay on the GUI thread. Only ONE encode worker touches the
-    # predictor pipe at a time (the `_encoding_in_progress` transport lock), so
-    # the JSON-RPC stream is never interleaved. Headless/MCP stays fully
-    # synchronous (the API contract is a blocking call).
-    #
-    # State (lazy-initialised, see _ensure_manual_encode_state; the plugin
-    # __init__ already owns `_encoding_in_progress`, the main-thread anchor):
-    # - _manual_encode_worker: the live SetImageWorker (None when idle).
-    # - _manual_encode_gen: generation counter; a teardown bumps it so a stale
-    #   worker completion is dropped (mirrors auto_results `_auto_finalize_gen`).
-    # - _encode_lock_gen: generation that owns the transport lock (None = free);
-    #   a completion from any other generation must leave every field alone.
-    # - _pending_encode: {crop_info, tail, predictor, gen} committed on success.
-    # - _pending_manual_click: {polarity, canvas_point} to replay on completion
-    #   (last click wins; replaced by any click during the encode).
-    # ------------------------------------------------------------------
 
     def _ensure_manual_encode_state(self) -> None:
         """Lazily create the async-encode fields (the plugin __init__ is owned
@@ -529,84 +480,6 @@ class ManualCropsMixin:
             center_point, mupp_override, on_encoded,
             show_busy=show_busy, quiet=quiet)
 
-    def _crop_window_key_for(self, center_point, mupp_override):
-        """Window identity of the crop a read is about to fetch, comparable to
-        what the fix session computes for an object. None when the centre is
-        unusable, which keeps an unknown window from matching another one."""
-        from ...core.crop_window import crop_window_key
-        try:
-            return crop_window_key(center_point.x(), center_point.y(),
-                                   mupp_override or 1.0)
-        except (AttributeError, TypeError):
-            return None
-
-    def _grid_center_for_manual_click(self, raster_pt, scale):
-        """Where to cut the crop that answers ONE Manual click:
-        ``(center, scale)``.
-
-        The click is moved onto the shared grid of `core/crop_window.py`, the
-        same one the warm-ups use, so a second click in the same neighbourhood
-        asks for a window the model already holds instead of one a few metres
-        off it. One grid cell is a quarter of the crop, so the click still lands
-        well inside the window it is answered from, edge clamping included.
-
-        The crop already in hand is preferred over a fresh cell, but ONLY while
-        no crop is current: a click that fell outside the current crop is
-        outside the window that crop was cut from, and handing that window back
-        would read the same imagery and reject the click a second time.
-
-        Online layers keep the click as given here and are snapped in
-        `_begin_online_crop_fetch`, the one place their grid unit (ground per
-        pixel, not a zoom-out factor on native pixels) is known.
-        """
-        if self._is_online_layer:
-            return raster_pt, scale
-        from ...core.crop_window import snap_center_to_grid, window_frames_bounds
-        native = self._get_native_pixel_size()
-        grid_scale = scale or 1.0
-        held = getattr(self, "_encoded_crop_window", None)
-        reuse_held = self._current_crop_info is None and held is not None
-        reuse_held = reuse_held and round(float(held[2]), 6) == round(float(grid_scale), 6)
-        if reuse_held and window_frames_bounds(
-                held,
-                (raster_pt.x(), raster_pt.y(), raster_pt.x(), raster_pt.y()),
-                native):
-            return QgsPointXY(held[0], held[1]), held[2]
-        cx, cy = snap_center_to_grid(
-            raster_pt.x(), raster_pt.y(), grid_scale, native)
-        return QgsPointXY(cx, cy), scale
-
-    def _manual_crop_window_for_points(self, points_geo):
-        """The crop window a whole set of Manual prompt points is answered from:
-        ``(center, scale_or_mupp)``.
-
-        Same grid as the warm-ups and as the review's fix session, so a
-        neighbourhood keeps ONE crop instead of one per gesture. Every point is
-        checked to sit clear of the window's edges before the shared cell is
-        accepted, which a click-centred crop gave for free and a shared one has
-        to earn: a point outside the image sends garbage coordinates to the
-        model. The third value is in the unit the crop reader expects, a
-        zoom-out factor on native pixels for a file raster and ground units per
-        pixel for an online layer.
-        """
-        from ...core.crop_window import crop_window_for_object
-        xs = [p[0] for p in points_geo]
-        ys = [p[1] for p in points_geo]
-        bounds = (min(xs), min(ys), max(xs), max(ys))
-        # The crop in hand is a candidate only when none is current, for the
-        # same reason as _grid_center_for_manual_click.
-        held = (getattr(self, "_encoded_crop_window", None)
-                if self._current_crop_info is None else None)
-        if self._is_online_layer:
-            cx, cy, scale = crop_window_for_object(
-                bounds, 1.0, held_window=held,
-                min_scale=self.iface.mapCanvas().mapUnitsPerPixel(),
-                max_scale=float("inf"))
-        else:
-            cx, cy, scale = crop_window_for_object(
-                bounds, self._get_native_pixel_size(), held_window=held)
-        return QgsPointXY(cx, cy), scale
-
     def _set_manual_encoding_note(self, active: bool) -> None:
         """Say in the panel that the imagery around the click is being read.
 
@@ -671,31 +544,6 @@ class ManualCropsMixin:
             request["center"], request["mupp"],
             on_encoded=request["on_encoded"],
             show_busy=request["show_busy"], quiet=request["quiet"]))
-
-    def _online_crop_mupp(self, mupp_override):
-        """Canvas -> raster map-units-per-pixel for an online crop, stashing the
-        per-crop mupp state. Shared by the sync (_extract_crop_only) and async
-        (_begin_online_crop_fetch) online paths so both compute it identically.
-        """
-        canvas = self.iface.mapCanvas()
-        canvas_mupp = canvas.mapUnitsPerPixel()
-        # When canvas CRS != raster CRS, the MUPP is in canvas units (e.g.
-        # degrees) but crop is in raster units (e.g. meters). Convert by
-        # measuring a small canvas-pixel offset in raster CRS.
-        if self._canvas_to_raster_xform is not None:
-            canvas_center = canvas.center()
-            cx, cy = canvas_center.x(), canvas_center.y()
-            p1 = self._canvas_to_raster_xform.transform(QgsPointXY(cx, cy))
-            p2 = self._canvas_to_raster_xform.transform(
-                QgsPointXY(cx + canvas_mupp, cy))
-            raster_mupp = math.sqrt(
-                (p2.x() - p1.x()) ** 2 + (p2.y() - p1.y()) ** 2)
-        else:
-            raster_mupp = canvas_mupp
-        self._current_crop_canvas_mupp = canvas_mupp
-        actual_mupp = mupp_override or raster_mupp
-        self._current_crop_actual_mupp = actual_mupp
-        return actual_mupp
 
     def _extract_crop_only(self, center_point, mupp_override, quiet=False):
         """Extract one crop on the GUI thread (no predictor access).
@@ -778,8 +626,14 @@ class ManualCropsMixin:
             pass
 
         scale_factor = mupp_override or 1.0
-        self._current_crop_scale_factor = scale_factor
-        self._current_crop_canvas_mupp = self.iface.mapCanvas().mapUnitsPerPixel()
+        # The zoom baseline the next click is measured against, held back until
+        # the crop it describes is actually in hand (see
+        # _apply_encode_result_ok). Written here, a read that failed left the
+        # baseline describing a crop that never arrived, and the click after it
+        # matched the baseline, skipped the re-encode and was answered from the
+        # older, coarser imagery still loaded.
+        self._pending_crop_zoom_baseline = (
+            scale_factor, self.iface.mapCanvas().mapUnitsPerPixel())
         return {
             "raster_path": self._current_raster_path,
             "center_x": center_point.x(),
@@ -978,6 +832,13 @@ class ManualCropsMixin:
         recompute the auto min-area and restore canvas focus. Shared by the sync
         and async success paths."""
         self._current_crop_info = crop_info
+        # The file read's zoom baseline lands with the crop it describes, for
+        # the same reason the window below does. Online crops set their own
+        # baseline in _online_crop_mupp and leave this empty.
+        baseline = getattr(self, "_pending_crop_zoom_baseline", None)
+        self._pending_crop_zoom_baseline = None
+        if baseline is not None and not self._is_online_layer:
+            self._current_crop_scale_factor, self._current_crop_canvas_mupp = baseline
         # The predictor now HOLDS this window. Recording it only here is the
         # point: a read that started, or an encode that failed, must never let a
         # later open skip its own encode over a crop that never arrived.
@@ -1193,7 +1054,18 @@ class ManualCropsMixin:
             # map keeps its projection.
             from ...core.feature_encoder import extract_crop_from_raster
 
-            result = extract_crop_from_raster(**args)
+            # The window freezes for the whole read, and at scale 8 that read
+            # decodes an 8192x8192 window of native pixels. The busy cursor and
+            # the panel note say why, so they go up FIRST and get one paint pass
+            # to reach the screen; the encode handoff below used to be the first
+            # to raise them, which is after the freeze they explain. User input
+            # stays held back over that pass, so a click cannot start a second
+            # read underneath this one.
+            self._show_inline_read_busy(show_busy)
+            try:
+                result = extract_crop_from_raster(**args)
+            finally:
+                self._hide_inline_read_busy(show_busy)
             return self._deliver_crop_read(result, on_encoded, quiet=quiet,
                                            show_busy=show_busy)
 
@@ -1234,6 +1106,39 @@ class ManualCropsMixin:
             return False
         self._arm_encode_watchdog()
         return True
+
+    def _show_inline_read_busy(self, show_busy: bool) -> None:
+        """Put the busy cursor and the panel note on screen before a read that
+        blocks the GUI thread. Paired with _hide_inline_read_busy.
+
+        The paint pass holds back user input, so the wait is announced without
+        letting a click in behind it.
+        """
+        if not show_busy:
+            return
+        QApplication.setOverrideCursor(Qt.CursorShape.BusyCursor)
+        self._set_manual_encoding_note(True)
+        try:
+            from qgis.PyQt.QtCore import QEventLoop
+
+            from ...core.qt_compat import resolve_qt_enum
+
+            QApplication.processEvents(resolve_qt_enum(
+                QEventLoop, "ProcessEventsFlag", "ExcludeUserInputEvents"))
+        except Exception:  # noqa: BLE001 -- a missed repaint must not cost the read
+            pass  # nosec B110
+
+    def _hide_inline_read_busy(self, show_busy: bool) -> None:
+        """Take back what _show_inline_read_busy put up. The encode handoff
+        raises its own cursor and note straight after, in the same turn, so
+        nothing repaints in between."""
+        if not show_busy:
+            return
+        try:
+            QApplication.restoreOverrideCursor()
+        except Exception:  # nosec B110 -- cursor restore is best-effort
+            pass
+        self._set_manual_encoding_note(False)
 
     def _on_file_crop_read_done(self, gen: int, result) -> None:
         """Main-thread completion of an off-thread crop read (queued via the
@@ -1398,13 +1303,15 @@ class ManualCropsMixin:
             self._current_layer, center_point.x(), center_point.y(),
             actual_mupp, crop_size=1024)
         if fetcher.error is not None:
-            self._surface_online_crop_error(fetcher.error, fetcher.error_code)
+            self._surface_online_crop_error(
+                fetcher.error, fetcher.error_code, center_point)
             return False
         try:
             fetcher.begin()
         except Exception as e:  # noqa: BLE001 - never leave the provider mutated
             fetcher.restore()
-            self._surface_online_crop_error(str(e), "crop_error_online_exception")
+            self._surface_online_crop_error(
+                str(e), "crop_error_online_exception", center_point)
             return False
 
         self._ensure_manual_encode_state()
@@ -1415,6 +1322,9 @@ class ManualCropsMixin:
             "gen": gen,
             "on_encoded": on_encoded,
             "cursor": True,
+            # The click this fetch serves, kept for the failure report: it is
+            # what lets the report name the layer the user is actually seeing.
+            "center": center_point,
         }
         # The fetch owns the transport lock + busy cursor for its whole life. A
         # click meanwhile defers via _encoding_in_progress and replays after the
@@ -1479,6 +1389,20 @@ class ManualCropsMixin:
                 fetcher.restore()
             except Exception:  # nosec B110
                 pass
+        # finish() can open a nested event loop (its renderer pass), so a layer
+        # removal, a Stop or an unload delivered inside it has already torn this
+        # session down and released the lock. Everything below would then take
+        # the lock again on a dead session, so re-check before handing off.
+        if self._online_fetch is not fetch:
+            return
+        if self.dock_widget is None or self.predictor is None:
+            self._release_online_fetch(restore_provider=False)
+            return
+        if fetch.get("gen") != self._manual_encode_gen:
+            self._release_online_fetch(restore_provider=False)
+            if self._pending_manual_click is not None:
+                self._replay_pending_manual_click()
+            return
         if error:
             # Provider state already reverted above.
             self._fail_online_fetch(error, error_code, restore_provider=False)
@@ -1500,8 +1424,10 @@ class ManualCropsMixin:
         """Online crop fetch failed: release the lock + cursor (+ provider state
         unless already reverted), surface the same error the sync path would,
         and drop the deferred click (it cannot be honored)."""
+        fetch = getattr(self, "_online_fetch", None) or {}
+        center_point = fetch.get("center")
         self._release_online_fetch(restore_provider=restore_provider)
-        self._surface_online_crop_error(error, error_code)
+        self._surface_online_crop_error(error, error_code, center_point)
         self._discard_pending_manual_click()
 
     def _release_online_fetch(self, restore_provider: bool = True) -> None:
@@ -1529,20 +1455,89 @@ class ManualCropsMixin:
                 pass
             self._set_manual_encoding_note(False)
 
-    def _surface_online_crop_error(self, error, error_code) -> None:
+    def _surface_online_crop_error(self, error, error_code,
+                                   center_point=None) -> None:
         """Log + report an online crop-fetch failure on the GUI thread (mirrors
         the interactive branch of _extract_crop_only; online never returns the
-        rasterio-unavailable code, so no venv recovery is wired here)."""
+        rasterio-unavailable code, so no venv recovery is wired here).
+
+        ``center_point`` is the click in the CURRENT layer's CRS, when the
+        caller has one. It buys the one diagnosis a user cannot make from the
+        error text alone: the layer picked in the panel answers nothing, while
+        the imagery they are LOOKING at comes from another layer underneath.
+        Without the hint that reads as the plugin failing on a picture that is
+        right there on screen.
+        """
         QgsMessageLog.logMessage(
             f"Crop extraction failed: {error}",
             "AI Segmentation", level=Qgis.MessageLevel.Critical
         )
+        shown = error
+        other = self._visible_raster_under_click(center_point)
+        if other:
+            selected = ""
+            try:
+                selected = self._current_layer.name()
+            except (RuntimeError, AttributeError):
+                pass
+            shown = tr(
+                'The selected layer "{selected}" returned no imagery '
+                'here. The image you see at this spot likely comes from '
+                '"{other}", another layer on your map. Select that layer '
+                'at the top of the panel, then click again.\n\n{details}'
+            ).format(selected=selected, other=other, details=error)
         show_error_report(
             self.iface.mainWindow(),
             tr("Crop Error"),
-            error,
+            shown,
             error_code=error_code or "crop_error_unknown",
         )
+
+    def _visible_raster_under_click(self, center_point) -> str:
+        """Name of the topmost VISIBLE raster, other than the session's layer,
+        that covers the clicked spot. Empty when there is none, when there is
+        no point to test, or on any doubt: this feeds a hint, and a wrong name
+        would send the user to a layer that answers nothing either.
+
+        Walked in layer-tree render order, top first, because "the image you
+        see" is by definition the highest visible one that draws there.
+        """
+        if center_point is None:
+            return ""
+        try:
+            from qgis.core import (
+                QgsCoordinateTransform,
+                QgsProject,
+                QgsRasterLayer,
+            )
+
+            project = QgsProject.instance()
+            root = project.layerTreeRoot()
+            current = self._current_layer
+            for layer in root.layerOrder():
+                if layer is current or not isinstance(layer, QgsRasterLayer):
+                    continue
+                node = root.findLayer(layer.id())
+                if node is None or not node.isVisible():
+                    continue
+                point = center_point
+                try:
+                    if current is not None and layer.crs() != current.crs():
+                        point = QgsCoordinateTransform(
+                            current.crs(), layer.crs(),
+                            project.transformContext()).transform(center_point)
+                except Exception:  # noqa: BLE001 -- an untransformable point is no evidence
+                    point = None
+                if point is None:
+                    continue
+                extent = layer.extent()
+                if extent is None or extent.isEmpty():
+                    continue
+                if extent.contains(point):
+                    return layer.name()
+        except Exception:  # noqa: BLE001 -- a hint must never break the report  # nosec B110
+            return ""
+        return ""
 
     def _prewarm_manual_encode(self) -> None:
         """Pre-encode the visible view at session start (first-click latency).
@@ -1639,6 +1634,30 @@ class ManualCropsMixin:
         # unconditionally: the note has no lock to protect, only a line to
         # remove, and leaving it would outlive its own encode.
         self._set_manual_encoding_note(False)
+
+    def _drop_inflight_crop_for_gesture(self) -> None:
+        """Give up the crop being read so a gesture the user just made runs now.
+
+        A busy pipe never blocks the gesture itself: committing a shape reads
+        session state and touches no predictor. What the read carries is a click
+        that has not landed yet plus the crop transition it was going to replay
+        into, and both belong to the shape the gesture is closing, so both go.
+        The generation bump makes the completion drop its tail and its deferred
+        click, while each owner's own release site still hands the lock back.
+
+        The crop the predictor holds is unknown afterwards, so the two facts
+        that claim to know it go with it and the next click re-reads. One
+        re-read is cheap next to a gesture nobody can see refused.
+        """
+        self._invalidate_manual_encode()
+        self._current_crop_info = None
+        self._encoded_crop_window = None
+        # The crop this flag described is gone, and a flag left standing would
+        # let a later gesture abandon a crop somebody did ask for.
+        self._speculative_manual_crop = False
+        QgsMessageLog.logMessage(
+            "Dropped the crop being read: a shape was committed instead",
+            "AI Segmentation", level=Qgis.MessageLevel.Info)
 
     # ---- Transport-lock watchdog --------------------------------------------
     # `_encoding_in_progress` has exactly one release site per owner (worker
@@ -1816,7 +1835,10 @@ class ManualCropsMixin:
             ]
             if (raster_pt.x(), raster_pt.y()) not in all_pts:
                 all_pts.append((raster_pt.x(), raster_pt.y()))
-            if len(all_pts) > 1:
+            whole = self._untouched_shape_crop_window(raster_pt, all_pts)
+            if whole is not None:
+                center, mupp_or_scale = whole
+            elif len(all_pts) > 1:
                 center, mupp_or_scale = self._manual_crop_window_for_points(
                     all_pts)
             else:
@@ -1846,6 +1868,11 @@ class ManualCropsMixin:
                 self.current_mask = None
                 self.current_low_res_mask = None
 
+            # Asked BEFORE the tail freezes anything: while the shape is whole,
+            # the window has to hold all of it, not just the click.
+            whole = self._untouched_shape_crop_window(raster_pt)
+            if whole is not None:
+                return whole[0], whole[1], _tail
             center, scale = self._grid_center_for_manual_click(
                 raster_pt, self._compute_initial_scale_factor())
             return center, scale, _tail
@@ -1859,7 +1886,10 @@ class ManualCropsMixin:
         ]
         if include_click_in_zoom and (raster_pt.x(), raster_pt.y()) not in all_pts:
             all_pts.append((raster_pt.x(), raster_pt.y()))
-        if len(all_pts) > 1:
+        whole = self._untouched_shape_crop_window(raster_pt, all_pts)
+        if whole is not None:
+            new_center, mupp_or_scale = whole
+        elif len(all_pts) > 1:
             new_center, mupp_or_scale = self._manual_crop_window_for_points(
                 all_pts)
         else:

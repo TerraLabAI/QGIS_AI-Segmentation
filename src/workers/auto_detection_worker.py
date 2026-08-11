@@ -144,6 +144,17 @@ _CONVERT_DRAIN_BUDGET_S = 90.0
 # cancel drains in well under this ceiling; kept short so Cancel feels prompt
 # (a tile still computing past it is aborted rather than making the user wait).
 _STOP_DRAIN_BUDGET_S = 2.5
+# Stop reasons whose still-open requests are read before the sockets are
+# released. The service bills a tile the moment it accepts the request, so a
+# reply aborted unread is a detection already paid for. A fatal or offline stop
+# stays out: it has nothing to salvage.
+#
+# "stalled" is out too, and not because those requests are unbilled. The stall
+# watchdog detaches tile_completed before the worker reaches its drain, so
+# every tile read here would be emitted into nothing while the wind-down grew
+# by the drain budget. Adding it pays only together with a controller that
+# waits for the wind-down before it finalizes.
+_BILLED_DRAIN_STOP_REASONS = ("user", "exhausted")
 # The service caps the number of instances it returns per inference, which
 # silently truncates dense scenes at its default. Request the full cap and let
 # tile sizing (not this number) keep the expected object count well under it.
@@ -570,9 +581,8 @@ class AutoDetectionWorker(QThread):
         # map (set only for a map-like text prompt when the server dial is on)
         # and, when a tile's per-instance pass returns nothing, keep its
         # coverage mask above the floor as a single detection. Off = today's
-        # behaviour, bit-identical. Presence is stored per tile for diagnostics.
+        # behaviour, bit-identical.
         self._return_semantic = bool(return_semantic)
-        self._tile_presence: dict[int, float] = {}
         # Per-run mask-grid scale (1 = full, 2 = the validated coarser grid),
         # resolved once by the plugin from server policy and applied to every
         # detection submission of this run (cloud_detection.mask_scale_field
@@ -671,6 +681,11 @@ class AutoDetectionWorker(QThread):
         self._compact_min_fill = _dp.compact_min_fill(_COMPACT_MIN_FILL)
         self._tile_span_fraction = _dp.tile_span_fraction(_TILE_SPAN_FRACTION)
         self._min_keep_px = _dp.min_keep_px(_MIN_KEEP_PX)
+        # Ground floor under the sliver drop, m2. The pixel floor scales with
+        # gsd^2 and stops dropping anything on very fine imagery; this keeps a
+        # resolution-independent minimum. 0.0 = pixel floor alone (shipped
+        # behaviour); served value only.
+        self._min_keep_floor_m2 = _dp.min_keep_floor_m2(0.0)
         # Confidence a whole-tile MAP mask must reach to be kept. 0.0 = off,
         # which is what shipped. Server-overridable, so the value can be picked
         # from the scores the run logs and retuned without a release.
@@ -726,6 +741,15 @@ class AutoDetectionWorker(QThread):
         self._stop_drain_budget_s = _dp.stop_drain_budget_s(_STOP_DRAIN_BUDGET_S)
         self._poll_interval_s = _dp.poll_interval_s(_DEFAULT_POLL_INTERVAL_S)
         self._poll_max_wait_s = _dp.poll_max_wait_s(_DEFAULT_MAX_WAIT_S)
+        # Total-time deadline for ONE streaming reply. The timeout the request
+        # itself carries measures INACTIVITY, so a service that trickles bytes
+        # never trips it and the reply keeps its window slot for the session.
+        # Never shorter than that timeout, or a slow but healthy answer would
+        # be dropped after the user paid for it.
+        self._stream_reply_budget_s = max(
+            self._poll_max_wait_s,
+            _dp.submit_timeout_ms(int(self._poll_max_wait_s * 1000)) / 1000.0,
+        )
         self._min_poll_backoff_s = _dp.min_poll_backoff_s(_MIN_POLL_BACKOFF_S)
         self._gate_render_cache_max = _dp.gate_render_cache_max(_GATE_RENDER_CACHE_MAX)
         self._prefetch_holdoff_s = _dp.prefetch_holdoff_s(_PREFETCH_HOLDOFF_S)
@@ -784,6 +808,11 @@ class AutoDetectionWorker(QThread):
         # already emitted their own signal, and a trailing cancelled would
         # let its handler wipe the banner those handlers just showed.
         self._stop_reason: str | None = None
+        # True once a terminal signal has been SENT for this run (cancelled,
+        # error, credits_exhausted or all_tiles_finished). The main thread
+        # finalizes on the first one, so a second one rebuilds run state on a
+        # run that is already over. One run, one terminal.
+        self._terminal_sent = False
         # Tiles that reached server status "completed" (zero-mask included,
         # they consume a credit). Tiles the client saw fail or time out are
         # excluded, so this is the count DELIVERED, which is a floor on what
@@ -866,6 +895,13 @@ class AutoDetectionWorker(QThread):
         # submit-retry budget was exhausted (never reached the service).
         self.submit_network_retries = 0
         self.tiles_skipped_network = 0
+        # Tiles the service ACCEPTED and never answered inside their own budget
+        # (see _expire_stalled_replies and the batched poll deadline). Their own
+        # outcome, not a completion and not a skip: the service took the request,
+        # so the tile is billed, and the user got nothing back for it. Never
+        # re-posted, because a second request is a second charge. Plain int,
+        # GIL-safe.
+        self.tiles_timed_out = 0
         self._completed_idx: set[int] = set()
         # Set True if any tile came back at the per-inference ceiling
         # (self._max_masks masks): the model emits a bounded number of object
@@ -936,6 +972,8 @@ class AutoDetectionWorker(QThread):
           submit_retries        total transient submit network-error requeues
           tiles_skipped_network tiles dropped after their submit-retry budget
                                 was exhausted (never reached the service)
+          tiles_timed_out       tiles the service accepted and never answered
+                                inside their budget (billed, nothing delivered)
           renders_slow          tiles that waited past the slow-render mark for
                                 their basemap imagery
           render_window_floor   narrowest the adaptive render window went; equal
@@ -944,6 +982,7 @@ class AutoDetectionWorker(QThread):
         return {
             "submit_retries": int(self.submit_network_retries),
             "tiles_skipped_network": int(self.tiles_skipped_network),
+            "tiles_timed_out": int(self.tiles_timed_out),
             "renders_slow": int(self.renders_slow),
             "render_window_floor": int(self.render_window_floor),
         }
@@ -1070,6 +1109,7 @@ class AutoDetectionWorker(QThread):
         total = len(self._tiles)
 
         if total == 0:
+            self._terminal_sent = True
             self.all_tiles_finished.emit([])
             return
 
@@ -1143,6 +1183,12 @@ class AutoDetectionWorker(QThread):
         has not finished by then is cancelled; the threads are left to end on
         their own rather than joined.
 
+        A stop that lands DURING the long budget cuts it down to the short one
+        from that instant. The GUI stops waiting for the worker's terminal after
+        a few seconds, so a drain that keeps its full budget through a Cancel
+        forces the user out and leaves this thread running. Nothing already
+        dequeued is lost: each pass emits what it drained before the check.
+
         ``emit`` False closes QUIETLY. Used by run()'s crash net: the terminal
         has already gone out by then, the main thread has finalized on it, and
         a late tile_completed would rebuild review state on a dead run.
@@ -1153,10 +1199,15 @@ class AutoDetectionWorker(QThread):
         started = time.monotonic()
         owed = int(pool.pending or 0)
         deadline = started + max(0.0, budget_s)
+        stop_seen = self._stop_requested
         while pool.pending and time.monotonic() < deadline:
             items = pool.drain(timeout=0.25)
             if emit:
                 self._settle_converted_batch(items)
+            if self._stop_requested and not stop_seen:
+                stop_seen = True
+                deadline = min(
+                    deadline, time.monotonic() + self._stop_drain_budget_s)
         leftover = pool.close(wait=False)
         if emit:
             self._settle_converted_batch(leftover)
@@ -1190,7 +1241,11 @@ class AutoDetectionWorker(QThread):
     def _emit_terminal(self) -> None:
         """Emit the run's terminal signal. A user cancel emits cancelled(); an
         error/exhausted already emitted its own terminal; otherwise the run
-        finished normally."""
+        finished normally.
+
+        Sends nothing at all once _emit_stop has spoken for this run, whatever
+        its emit did: the main thread finalizes on the first terminal, so a
+        second one lands on a run that is already over."""
         self._flush_withheld()
         # Nothing can be submitted after the terminal, so the per-tile pre-stamp
         # images of tiles that never settled (a stop mid-flight) go now.
@@ -1204,6 +1259,9 @@ class AutoDetectionWorker(QThread):
                 self.rescan_state.emit(-1, None, False)
             except RuntimeError:
                 pass
+        if self._terminal_sent:
+            return
+        self._terminal_sent = True
         if self._stop_requested:
             if self._stop_reason == "user":
                 self.cancelled.emit()
@@ -1310,22 +1368,47 @@ class AutoDetectionWorker(QThread):
             return ("fatal", OFFLINE_STOP_CODE)
         return stop_payload
 
-    def _emit_stop(self, stop_payload: tuple) -> None:
-        """Terminal stop shared by both run loops. Flushes withheld re-split
-        parents BEFORE the terminal signal: the main thread finalizes (nulls
-        the merger) on that signal, so a parent's late tile_completed would
-        race the finalize and its billed detections could be dropped
-        (_flush_withheld clears _withheld, making the later call in
-        _emit_terminal a no-op). In-flight tiles are deliberately not drained;
-        the plugin finalizes partial results."""
-        self._flush_withheld()
-        if stop_payload[0] == "exhausted":
-            self.credits_exhausted.emit(stop_payload[1])
-            self._stop_reason = "exhausted"
-        else:
-            self.error.emit(self._submit_error_message(stop_payload[1]))
-            self._stop_reason = "error"
+    def _mark_stop(self, stop_payload: tuple) -> None:
+        """Record a worker-decided stop and halt both run loops, with NO signal.
+
+        The signal goes out in _emit_stop, once the loop has drained what it
+        still owes. Splitting the two is what lets a run out of credits keep
+        the tiles it already paid for: the main thread finalizes the run on the
+        terminal signal, so anything emitted after it is dropped, and both the
+        in-flight replies and the converter pool still hold billed geometry
+        when the wall is hit."""
+        self._stop_reason = (
+            "exhausted" if stop_payload[0] == "exhausted" else "error")
         self._stop_requested = True
+
+    def _emit_stop(self, stop_payload: tuple) -> None:
+        """Terminal signal for a worker-decided stop (out of credits, fatal,
+        offline). Call it LAST, after the drains.
+
+        The stop is RECORDED FIRST, before anything is emitted. _emit_terminal
+        reads that state to decide whether the run ended normally, so a signal
+        that raises must not be able to leave it unset: the run would then read
+        as a clean finish and the GUI would get a second terminal for it.
+        Recording first also makes this safe on the one caller that has no
+        _mark_stop of its own (the scan gate).
+
+        Flushes withheld re-split parents next: the main thread finalizes
+        (nulls the merger) on the terminal, so a parent's late tile_completed
+        would race the finalize and its billed detections could be dropped
+        (_flush_withheld clears _withheld, making the later call in
+        _emit_terminal a no-op). The flush also needs every quadrant conversion
+        settled, or a parent whose quadrants have not been folded in yet reads
+        as orphaned and emits its coarse blob beside their fine outlines."""
+        self._mark_stop(stop_payload)
+        self._flush_withheld()
+        self._terminal_sent = True
+        try:
+            if stop_payload[0] == "exhausted":
+                self.credits_exhausted.emit(stop_payload[1])
+            else:
+                self.error.emit(self._submit_error_message(stop_payload[1]))
+        except RuntimeError:
+            pass  # receiver gone mid-teardown; the stop is already recorded
 
     @staticmethod
     def _free_read_replies(replies) -> None:
@@ -1411,6 +1494,112 @@ class AutoDetectionWorker(QThread):
             return {"error": "Reply destroyed before it was read",
                     "code": "REPLY_DESTROYED"}
 
+    def _expire_stalled_replies(self, in_flight: dict) -> int:
+        """Abort the in-flight replies past their per-tile deadline and drop
+        them from ``in_flight``. Returns how many, so the caller advances its
+        progress count.
+
+        The streaming loop only ever frees a slot when a reply FINISHES, and the
+        request's own timeout measures inactivity, so one reply the service
+        never completes would hold its slot for the rest of the session and park
+        this thread with its network manager. Budget in _stream_reply_budget_s.
+        A reply that has finished is never expired: its answer may be billed,
+        and the caller is about to read it.
+
+        Each expiry is counted as a TIMED-OUT tile, never as a completed one.
+        The service accepted the request, so the tile is billed and the user got
+        nothing for it; counting it done would hide that from the run summary
+        and from the credit reporting. It is not re-posted either, because a
+        second request on the same tile is a second charge.
+        """
+        now = time.monotonic()
+        expired = [
+            reply for reply, entry in in_flight.items()
+            if now > entry[4] and not self._reply_is_finished(reply)
+        ]
+        for reply in expired:
+            tile_idx = in_flight.pop(reply)[0]
+            try:
+                reply.abort()
+            except (RuntimeError, AttributeError):
+                pass
+            self._release_tile_clean_image(tile_idx)
+            self.tiles_timed_out += 1
+            self.warning.emit(
+                f"Tile {tile_idx} timed out after "
+                f"{int(self._stream_reply_budget_s)}s")
+        self._free_read_replies(expired)
+        return len(expired)
+
+    def _drain_polled_on_stop(
+        self, in_flight: dict, completed: int, total: int
+    ) -> int:
+        """Poll the requests still open when the batched loop stopped, and emit
+        the ones that answer. Returns the new progress count.
+
+        The server bills a tile when it accepts the request, so a request the
+        client drops unpolled is a detection the user paid for and never sees.
+        The loop stops SUBMITTING the instant the stop lands, so this only waits
+        out the small accepted set. Bounded by the stop drain budget, because
+        unload joins this thread from the main thread and the GUI stops waiting
+        for the terminal after a few seconds.
+
+        The caller decides which stops reach here (_BILLED_DRAIN_STOP_REASONS).
+        Nothing is re-posted: a second request on the same tile is a second
+        charge. Same rule as the streaming loop's reply drain, on the path that
+        polls instead of holding replies.
+        """
+        drain_deadline = time.monotonic() + self._stop_drain_budget_s
+
+        # The run loop hands the client _should_abort, which is the stop flag
+        # itself, and that flag is already set here: every poll would quit
+        # before it left. This drain rides its own clock instead, so the polls
+        # go out and still cannot outlive the budget.
+        def past_budget() -> bool:
+            return time.monotonic() >= drain_deadline
+
+        while in_flight and not past_budget():
+            poll_ids = list(in_flight.keys())
+            try:
+                responses = self._client.get_detection_status_many(
+                    poll_ids, self._auth, should_abort=past_budget)
+            except Exception:  # noqa: BLE001 - the terminal still has to go out
+                logger.debug(
+                    "AutoDetectionWorker: stop drain poll failed", exc_info=True)
+                break
+            answered = False
+            for request_id, resp in zip(poll_ids, responses):
+                status = resp.get("status")
+                if status not in ("completed", "failed", "cancelled"):
+                    # Still working, or the poll itself failed: ask again while
+                    # the budget lasts.
+                    continue
+                entry = in_flight.pop(request_id, None)
+                if entry is None:
+                    continue
+                answered = True
+                if status != "completed":
+                    # Answered with nothing to keep. Dropped rather than
+                    # re-polled, so the budget goes to the tiles that can still
+                    # deliver.
+                    continue
+                tile_idx, tile_spec, _, _, _, tile_transform = entry
+                _, _, tile_w, tile_h = tile_spec
+                if self._emit_completed(
+                    resp, tile_idx, tile_w, tile_h, tile_transform
+                ):
+                    self.tiles_succeeded += 1
+                    self._completed_idx.add(tile_idx)
+                completed += 1
+                self._emit_progress(completed, total)
+            if in_flight and not answered:
+                # Nothing landed this pass: give the service a beat instead of
+                # re-polling flat out. Not _interruptible_sleep, which returns
+                # at once on the stop flag this drain runs under.
+                time.sleep(
+                    max(0.0, min(0.25, drain_deadline - time.monotonic())))
+        return completed
+
     def _run_batched(self, total: int) -> None:
         # Process tiles in bounded concurrent batches.
         # We maintain a queue of tiles and a dict of in-flight requests.
@@ -1420,6 +1609,10 @@ class AutoDetectionWorker(QThread):
         pending: deque = deque(enumerate(self._tiles))
         # Tiles to RE-submit (already encoded) after a rate-limit/transient error,
         # so a retry never re-encodes. submit_attempts bounds the retries per tile.
+        # (tile_idx, tile_spec, png_bytes, not_before), where not_before is the
+        # monotonic instant the retry may be re-posted: same stamp the streaming
+        # loop carries. Without it a partly rate-limited batch re-posted the
+        # limited tiles with no delay on every cycle.
         resubmit: deque = deque()
         submit_attempts: dict[int, int] = {}
         # tile_idx -> monotonic time of its FIRST queue-busy answer. Busy retries
@@ -1433,6 +1626,8 @@ class AutoDetectionWorker(QThread):
         # Consecutive per-tile rejections with no accepted submit in between
         # (see RUN_FATAL_CODES / _MAX_CONSECUTIVE_TILE_FATALS).
         fatal_streak = 0
+        # The terminal stop this run decided. Held, not emitted: see _mark_stop.
+        terminal_stop: tuple | None = None
 
         # resubmit MUST be in the guard: a cycle where a whole batch comes back
         # rate-limited (launch spike) drains pending into resubmit with nothing
@@ -1458,9 +1653,22 @@ class AutoDetectionWorker(QThread):
             # a ~200-400KB JPEG and blocked ~1.4s, so N tiles took N x 1.4s.
             batch = []
             while (resubmit or pending) and (len(in_flight) + len(batch)) < effective_cap:
-                if resubmit:
-                    batch.append(resubmit.popleft())  # already encoded
+                # Jittered delays make later entries mature before the head, so
+                # scan for the FIRST ready retry rather than gating on index 0
+                # (same rule as the streaming loop).
+                ready_i = None
+                now = time.monotonic()
+                for i, entry in enumerate(resubmit):
+                    if entry[3] <= now:
+                        ready_i = i
+                        break
+                if ready_i is not None:
+                    tile_idx, tile_spec, png_bytes, _ = resubmit[ready_i]
+                    del resubmit[ready_i]
+                    batch.append((tile_idx, tile_spec, png_bytes))  # already encoded
                     continue
+                if not pending:
+                    break  # only retries left, all still waiting out their delay
                 tile_idx, spec = pending.popleft()
                 # Encode off the GUI thread, just before submit. A blank/failed
                 # render is deferred for a re-render (the worker keeps it);
@@ -1470,8 +1678,8 @@ class AutoDetectionWorker(QThread):
                     continue
                 if status == "empty":
                     # Degenerate render (provably objectless): settle as a
-                    # completed empty tile, no request spent.
-                    self._settle_empty_tile(tile_idx)
+                    # completed empty tile, no request spent so no charge.
+                    self._settle_empty_tile(tile_idx, charged=False)
                     completed += 1
                     self._emit_progress(completed, total)
                     continue
@@ -1550,7 +1758,9 @@ class AutoDetectionWorker(QThread):
                             completed += 1
                             self._emit_progress(completed, total)
                         else:
-                            resubmit.append((tile_idx, tile_spec, png_bytes))
+                            resubmit.append(
+                                (tile_idx, tile_spec, png_bytes,
+                                 time.monotonic() + delay))
                             submit_backoff = (
                                 delay if submit_backoff is None
                                 else max(submit_backoff, delay)
@@ -1564,11 +1774,13 @@ class AutoDetectionWorker(QThread):
             total += self._drain_subtiles(pending)
 
             # Offline fast-fail + terminal stop, shared with the streaming loop
-            # (see _offline_stop / _emit_stop). The whole batch was processed
-            # first, so already-charged "ok" tiles are kept.
+            # (see _offline_stop). The whole batch was processed first, so
+            # already-charged "ok" tiles are kept. Recorded only; the signal
+            # goes out after the loop, on the one stop protocol both loops use.
             batch_stop = self._offline_stop(batch_stop)
             if batch_stop is not None:
-                self._emit_stop(batch_stop)
+                terminal_stop = batch_stop
+                self._mark_stop(batch_stop)
 
             if self._stop_requested:
                 break
@@ -1584,9 +1796,10 @@ class AutoDetectionWorker(QThread):
 
             if not in_flight:
                 self._settle_concurrency(cycle_setback, cycle_progress)
-                # Only render-retry tiles waiting out their delay: pace the
-                # loop instead of spinning hot until they mature.
-                if self._render_deferred and not pending and not resubmit:
+                # Nothing can be fired this instant: every render retry and
+                # every re-submit is still waiting out its delay. Pace the loop
+                # instead of spinning hot until one matures.
+                if (self._render_deferred or resubmit) and not pending:
                     self._interruptible_sleep(0.25)
                 continue
 
@@ -1643,6 +1856,10 @@ class AutoDetectionWorker(QThread):
                 elif status == "pending":
                     retry_after = float(resp.get("retry_after", poll_interval))
                     if time.monotonic() > deadline:
+                        # Accepted, billed, never answered: its own outcome, not
+                        # a completion (see tiles_timed_out). Progress still
+                        # advances, since the run stops waiting on it.
+                        self.tiles_timed_out += 1
                         self.warning.emit(
                             f"Tile {tile_idx} timed out after {int(max_wait)}s"
                         )
@@ -1666,6 +1883,7 @@ class AutoDetectionWorker(QThread):
                         # pending branch so a tile whose status keeps failing
                         # transiently times out instead of looping forever.
                         if time.monotonic() > deadline:
+                            self.tiles_timed_out += 1
                             self.warning.emit(
                                 f"Tile {tile_idx} timed out after {int(max_wait)}s"
                             )
@@ -1704,6 +1922,18 @@ class AutoDetectionWorker(QThread):
                     min(max(next_backoff, self._min_poll_backoff_s), 5.0)
                 )
 
+        # Before the terminal, read the answers of the tiles already accepted.
+        # Every break above leaves them open, and they are billed: the loop
+        # exits on the stop flag with requests in flight, and the poll right
+        # before the last break threw its own responses away. Which stops drain
+        # is _BILLED_DRAIN_STOP_REASONS, the same set as the streaming loop.
+        if self._stop_reason in _BILLED_DRAIN_STOP_REASONS and in_flight:
+            completed = self._drain_polled_on_stop(in_flight, completed, total)
+
+        # The terminal LAST, once nothing more will be emitted. This path runs
+        # no converter pool, so there is nothing to drain first.
+        if terminal_stop is not None:
+            self._emit_stop(terminal_stop)
         self._emit_terminal()
 
     def _bbox_ground_width_m(self, bbox_native) -> float | None:
@@ -1861,11 +2091,13 @@ class AutoDetectionWorker(QThread):
         times; the instant any reply finishes it is converted + emitted and a new
         tile is fired, so the service never idles between batches and tiles stream in
         one-by-one. No poll phase (the direct endpoint answers each post with the
-        finished masks). A user cancel stops firing new tiles at once, then
-        drains the already-in-flight set (bounded by _STOP_DRAIN_BUDGET_S) so
-        their billed masks are kept before sockets are released. Falls back to
-        requeue+retry on transient/rate-limit codes and stops cleanly on
-        exhausted/fatal, mirroring the batched path."""
+        finished masks), so each reply carries its own deadline and is given up
+        on past it (_expire_stalled_replies). A cancel or an out-of-credits stop
+        stops firing new tiles at once, then drains the already-in-flight set
+        (bounded by the wind-down clock) so their billed masks are kept before
+        sockets are released. Falls back to requeue+retry on transient and
+        rate-limit codes and stops cleanly on exhausted/fatal, mirroring the
+        batched path."""
         from qgis.core import QgsNetworkAccessManager
         from qgis.PyQt.QtCore import QCoreApplication, QEventLoop
 
@@ -1876,10 +2108,17 @@ class AutoDetectionWorker(QThread):
         # Without it a busy server was re-hammered with zero delay, exactly the
         # synchronized-retry storm the queue is meant to absorb.
         resubmit: deque = deque()
-        in_flight: dict = {}       # reply -> (tile_idx, tile_spec, tile_transform, png_bytes)
+        # reply -> (tile_idx, tile_spec, tile_transform, png_bytes, deadline).
+        # deadline is the monotonic instant this reply is given up on: the
+        # endpoint answers each post itself, so nothing else ever times one out
+        # and a service that trickles bytes would hold the slot for the session.
+        in_flight: dict = {}
         submit_attempts: dict[int, int] = {}
         busy_since: dict[int, float] = {}  # see _run_batched: time-budget busy retries
         completed = 0
+        # The terminal stop this run decided (out of credits, fatal, offline).
+        # Held, not emitted: it goes out after the drains below (see _mark_stop).
+        terminal_stop: tuple | None = None
         # Consecutive per-tile rejections with no success in between
         # (see RUN_FATAL_CODES / _MAX_CONSECUTIVE_TILE_FATALS).
         fatal_streak = 0
@@ -1918,7 +2157,8 @@ class AutoDetectionWorker(QThread):
                         # render requested for it before the skip was known is
                         # released, never left holding a prefetch slot.
                         self._discard_prefetch(tile_idx)
-                        self._settle_empty_tile(tile_idx)
+                        self._settle_empty_tile(
+                            tile_idx, charged=tile_idx in self._gate_skip)
                         completed += 1
                         self._emit_progress(completed, total)
                         continue
@@ -1927,8 +2167,9 @@ class AutoDetectionWorker(QThread):
                         continue
                     if status == "empty":
                         # Degenerate render caught at encode time: settle as a
-                        # completed empty tile (see _settle_empty_tile).
-                        self._settle_empty_tile(tile_idx)
+                        # completed empty tile, no request spent so no charge
+                        # (see _settle_empty_tile).
+                        self._settle_empty_tile(tile_idx, charged=False)
                         completed += 1
                         self._emit_progress(completed, total)
                         continue
@@ -1944,7 +2185,10 @@ class AutoDetectionWorker(QThread):
                     tile_idx, tile_spec, png_bytes
                 )
                 reply = self._client.post_detection_async(nam, submission, self._auth)
-                in_flight[reply] = (tile_idx, tile_spec, tile_transform, png_bytes)
+                in_flight[reply] = (
+                    tile_idx, tile_spec, tile_transform, png_bytes,
+                    time.monotonic() + self._stream_reply_budget_s,
+                )
                 # Imagery is no longer what the user is waiting on: a tile is on
                 # the wire. Deduped, so this costs nothing on later tiles.
                 self._emit_run_phase("detecting")
@@ -2006,6 +2250,18 @@ class AutoDetectionWorker(QThread):
                 break
 
             done = [r for r in in_flight if self._reply_is_finished(r)]
+            # Give up on replies past their per-tile budget. Checked before the
+            # empty-cycle exit, because a stalled reply is exactly the case
+            # where nothing ever finishes.
+            expired = self._expire_stalled_replies(in_flight)
+            if expired:
+                # Progress only: the bar counts tiles the run is done waiting
+                # on. The tile itself is booked as timed out (tiles_timed_out),
+                # never as succeeded, so a billed tile that answered nothing
+                # stays visible in the run summary.
+                completed += expired
+                self._emit_progress(completed, total)
+                self._aimd.on_setback()  # latency setback: narrow the window
             if not done:
                 # Nothing finished on the wire this slice, so the converters own
                 # the cycle: hand over what they have instead of holding it
@@ -2021,7 +2277,7 @@ class AutoDetectionWorker(QThread):
             cycle_progress = False
             stop_payload = None
             for reply in done:
-                tile_idx, tile_spec, tile_transform, png_bytes = in_flight.pop(reply)
+                tile_idx, tile_spec, tile_transform, png_bytes, _ = in_flight.pop(reply)
                 response = self._read_reply(tile_idx, reply)
                 outcome = self._classify_submit_response(tile_idx, response, tile_transform)
                 kind = outcome[0]
@@ -2094,10 +2350,13 @@ class AutoDetectionWorker(QThread):
             self._free_read_replies(done)
 
             # Offline fast-fail + terminal stop, shared with the batched loop
-            # (see _offline_stop / _emit_stop).
+            # (see _offline_stop). Recorded only: the signal goes out after the
+            # drains below, so the tiles this run already paid for are not
+            # emitted into a finalized review.
             stop_payload = self._offline_stop(stop_payload)
             if stop_payload is not None:
-                self._emit_stop(stop_payload)
+                terminal_stop = stop_payload
+                self._mark_stop(stop_payload)
                 break
 
             # Fold this drain cycle into the adaptive width, then refill to it so
@@ -2130,27 +2389,38 @@ class AutoDetectionWorker(QThread):
             # spends time the run would have spent waiting anyway.
             self._settle_converted_batch(self._convert_pool.drain())
 
-        # User cancel: before releasing sockets, drain the tiles ALREADY in
-        # flight. The server bills a tile when it processes the request, so a
-        # reply we abort unread is a detection paid for and thrown away. New
-        # tiles stopped firing the instant Cancel was pressed (the real cost +
-        # time driver), so this only waits out the small in-flight set already
-        # sent, and only up to _STOP_DRAIN_BUDGET_S so a hung reply can never
-        # hold the stop open. Errors/exhausted skip this: there is no user
-        # result to salvage and the wall is already hit.
+        # ONE clock for the whole wind-down, shared by the reply drain and the
+        # converter drain below. Each used to take the full stop budget, so a
+        # drain that finished early let its share lapse while the converters
+        # were cut off holding billed tiles. Sized so the terminal still goes
+        # out inside the window the GUI waits for it, and unload's join with it.
+        wind_down_end = time.monotonic() + 2 * self._stop_drain_budget_s
+
+        # Before releasing sockets, drain the tiles ALREADY in flight. The
+        # server bills a tile when it processes the request, so a reply we abort
+        # unread is a detection paid for and thrown away. New tiles stopped
+        # firing the instant the stop landed (the real cost + time driver), so
+        # this only waits out the small in-flight set already sent, bounded by
+        # the wind-down clock so a hung reply can never hold the stop open.
+        # Which stops drain is _BILLED_DRAIN_STOP_REASONS: out of credits, where
+        # the wall stops the NEXT tile and the ones already accepted were
+        # charged before it, and the run-wide stall, where the watchdog winds
+        # the worker down with requests still open on the service.
         # Drain whatever is in flight, including on a run where no tile has
         # landed yet. A cold service is the case where this matters most: the
         # user waited, saw nothing, and pressed Cancel while the first tiles
         # were mid-inference. Aborting those replies unread destroys masks that
         # are already charged, and nothing hands the credits back. The budget
-        # below is what keeps Cancel prompt, not a precondition on success.
-        if self._stop_reason == "user" and in_flight:
-            drain_deadline = time.monotonic() + self._stop_drain_budget_s
+        # below is what keeps the stop prompt, not a precondition on success.
+        if self._stop_reason in _BILLED_DRAIN_STOP_REASONS and in_flight:
+            drain_deadline = min(
+                wind_down_end, time.monotonic() + self._stop_drain_budget_s)
             while in_flight and time.monotonic() < drain_deadline:
                 QCoreApplication.processEvents(_wait, 100)
                 drained = [r for r in in_flight if self._reply_is_finished(r)]
                 for reply in drained:
-                    tile_idx, tile_spec, tile_transform, png_bytes = in_flight.pop(reply)
+                    tile_idx, tile_spec, tile_transform, png_bytes, _ = (
+                        in_flight.pop(reply))
                     response = self._read_reply(tile_idx, reply)
                     outcome = self._classify_submit_response(
                         tile_idx, response, tile_transform)
@@ -2162,8 +2432,8 @@ class AutoDetectionWorker(QThread):
                             self._completed_idx.add(tile_idx)
                         completed += 1
                         self._emit_progress(completed, total)
-                    # A non-completed reply on a user stop is not retried: it
-                    # drops to the abort path below.
+                    # A non-completed reply on a stop is not retried: it drops
+                    # to the abort path below.
                 self._free_read_replies(drained)
 
         # On stop, abort any still-in-flight replies so sockets are released.
@@ -2180,12 +2450,17 @@ class AutoDetectionWorker(QThread):
         # Every conversion must be emitted BEFORE the terminal: the main thread
         # finalizes the run on that signal, so geometry arriving after it would
         # be dropped after the user was billed for it. A stop settles what it
-        # can too, for the same reason the reply drain above does, but on the
-        # short budget so unload's join is never held.
+        # can too, for the same reason the reply drain above does, on whatever
+        # the wind-down clock has left, so unload's join is never held.
         self._close_convert_pool(
-            self._stop_drain_budget_s if self._stop_requested
+            max(0.0, wind_down_end - time.monotonic()) if self._stop_requested
             else self._convert_drain_budget_s)
 
+        # The terminal LAST, after every billed tile has been emitted. A run
+        # that stopped itself says so here; _emit_terminal covers a user cancel
+        # and a clean finish.
+        if terminal_stop is not None:
+            self._emit_stop(terminal_stop)
         self._emit_terminal()
 
     # ------------------------------------------------------------------
@@ -2583,17 +2858,24 @@ class AutoDetectionWorker(QThread):
         self._apply_client_meta(submission)
         return submission, scanned
 
-    def _settle_empty_tile(self, tile_idx: int) -> None:
+    def _settle_empty_tile(self, tile_idx: int, charged: bool = True) -> None:
         """Settle one tile as a fast empty result: it flows through the same
         signals as a zero-mask detection (tile_completed + progress), so run
         accounting, review and export see a completed empty tile, never a
         hole. Two producers: a scan-skipped tile (billed via its scan's
-        charge_tiles) and a prefilter-degenerate tile (no request at all)."""
+        charge_tiles) and a prefilter-degenerate tile (no request at all).
+
+        ``charged`` False is the prefilter case. It stays out of
+        tiles_succeeded, which counts the tiles that spent a request or a scan
+        charge and is what the user is shown as "N of M tiles"; the prefilter
+        has its own count in tiles_prefiltered.
+        """
         try:
             self.tile_completed.emit(tile_idx, [])
         except RuntimeError:
             return
-        self.tiles_succeeded += 1
+        if charged:
+            self.tiles_succeeded += 1
         self._completed_idx.add(tile_idx)
 
     # ------------------------------------------------------------------
@@ -3023,6 +3305,13 @@ class AutoDetectionWorker(QThread):
             else:
                 tile_img = self._tile_renderer(tx, ty, tw, th, out_w, out_h)
             got_pixels = tile_img is not None and not tile_img.isNull()
+            if not got_pixels and self._stop_requested:
+                # A stop wakes every pending render with None (request_stop
+                # cancels the bridge). Nothing tried to load this tile, so it
+                # is neither a slow link nor a coverage hole: skip it without
+                # touching the render health or the failure counts, which is
+                # what the run summary reports to the user.
+                return ("skip", None)
             self._note_render_health(time.monotonic() - render_t0, got_pixels)
             if not got_pixels:
                 # The render produced nothing: a provider/WMS hole or timeout,
@@ -3414,7 +3703,12 @@ class AutoDetectionWorker(QThread):
         clear the mark once that ground has been fully re-read. A quadrant that
         never settles (skip, fatal, stop) leaves its count short, which the
         terminal's clear-all covers."""
-        root = self._billed_ancestor_of(tile_idx)
+        self._settle_rescanning_root(self._billed_ancestor_of(tile_idx))
+
+    def _settle_rescanning_root(self, root: int | None) -> None:
+        """Same count-down, keyed on the BASE tile directly. A quadrant dropped
+        before it ever got a tile index has no index to resolve, so it settles
+        through the base its _mark_rescanning counted against."""
         if root is None or root not in self._rescanning:
             return
         left = self._rescanning[root] - 1
@@ -3446,6 +3740,12 @@ class AutoDetectionWorker(QThread):
         remaining quadrants: its coarse read is superseded for good, so
         dropping the rest would leave that part of the tile empty.
 
+        The "already part re-read" test is on the item's DIRECT parent, the key
+        the withhold bookkeeping uses (_settle_converted). On a depth-2 ladder
+        the billed ancestor is the base tile, shared by every branch, so
+        testing it lets one delivering quadrant keep every sibling's quadrants
+        and the time cap stops bounding the free tail.
+
         Paid base tiles are never touched: they have no ancestor, and a run may
         not drop work the user was charged for.
         """
@@ -3455,8 +3755,10 @@ class AutoDetectionWorker(QThread):
         dropped = 0
         while pending:
             item = pending.popleft()
-            root = self._billed_ancestor_of(item[0])
-            if root is None or root in self._parents_with_child_results:
+            if self._billed_ancestor_of(item[0]) is None:
+                kept.append(item)  # paid base tile
+                continue
+            if self._parent_of.get(item[0]) in self._parents_with_child_results:
                 kept.append(item)
                 continue
             dropped += 1
@@ -3496,6 +3798,14 @@ class AutoDetectionWorker(QThread):
                 logger.debug(
                     "AutoDetectionWorker: re-split time budget spent, dropped %d "
                     "queued quadrant(s)", len(self._pending_subtiles))
+                # Owed before the drop, exactly as _drop_unsent_quadrants does
+                # it: a quadrant that will never be sent still holds a slot in
+                # its base tile's re-scan count, and that count is what keeps
+                # the parent's objects withheld until the terminal flush.
+                for _spec, _depth, parent_idx in self._pending_subtiles:
+                    root = self._billed_ancestor_of(parent_idx)
+                    self._settle_rescanning_root(
+                        parent_idx if root is None else root)
                 self._pending_subtiles.clear()
             # Draining alone does not bound the tail: quadrants queued WHILE the
             # paid grid ran are already in the submit deque before the clock
@@ -3719,11 +4029,10 @@ class AutoDetectionWorker(QThread):
         # continuous feature is not left empty. A tile with any instance keeps
         # today's result untouched (the rescue no-ops on it).
         yield from self._semantic_rescue_masks(
-            response, instance_count, tile_idx, tile_w, tile_h)
+            response, instance_count, tile_w, tile_h)
 
     def _semantic_rescue_masks(
-        self, response: dict, instance_count: int, tile_idx: int,
-        tile_w: int, tile_h: int,
+        self, response: dict, instance_count: int, tile_w: int, tile_h: int,
     ) -> list:
         """Coverage-map zero-instance rescue for map-like prompts (policy-gated).
 
@@ -3733,7 +4042,6 @@ class AutoDetectionWorker(QThread):
         coverage as the score, so the review confidence slider still filters it.
         Returns [] when the rescue was not requested, the fields are absent, or
         the coverage is below the floor (a missing field is never an error).
-        Also records the tile's presence value for diagnostics.
         """
         if not self._return_semantic:
             return []
@@ -3743,9 +4051,7 @@ class AutoDetectionWorker(QThread):
             should_rescue_with_semantic,
         )
 
-        rle, coverage, presence = parse_semantic_fields(response)
-        if presence is not None:
-            self._tile_presence[tile_idx] = presence
+        rle, coverage, _presence = parse_semantic_fields(response)
         if not should_rescue_with_semantic(
             instance_count, coverage, rle is not None,
             self._return_semantic, self._semantic_coverage_floor,
@@ -3847,7 +4153,10 @@ class AutoDetectionWorker(QThread):
         # gsd 0.4 m/px the floor is (1.5*0.4)^2 = 0.36 m2, which drops 0.1 m2
         # slivers while keeping a 2x2 m tree/car. gsd<=0 (no metric scale) =>
         # floor 0, no drop.
-        min_keep_area = (self._min_keep_px * self._gsd) ** 2 if self._gsd > 0 else 0.0
+        min_keep_area = (
+            max((self._min_keep_px * self._gsd) ** 2, self._min_keep_floor_m2)
+            if self._gsd > 0 else 0.0
+        )
         # Tile ground size, for the observed mask-resolution bookkeeping below.
         # tile_transform["bbox"] uses the polygon_exporter (minx, maxx, miny,
         # maxy) convention.

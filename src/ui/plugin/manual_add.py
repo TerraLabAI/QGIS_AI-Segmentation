@@ -123,7 +123,10 @@ class ManualAddMixin:
         # Start the Manual SAM session directly (imports the detections so the
         # overlap weld can complete a partial object); if the predictor is still
         # loading it defers and _retry_predictor_load_for_handoff finishes it.
-        self._ensure_interactive_setup()
+        # Skipped on the remote route, same reason as the reshape lane: it only
+        # opens the on-device install UI.
+        if not self._cloud_correct_predictor_active():
+            self._ensure_interactive_setup()
         self._enter_manual_refine_session()
         # Add mode: a click on empty ground starts a normal prediction. The flag
         # scopes the resting-click gate flip in manual_predict.
@@ -150,36 +153,52 @@ class ManualAddMixin:
     # ------------------------------------------------------------------
 
     def _ai_add_outline_in_progress(self) -> bool:
-        """True while something is on screen that a Keep would commit: a live
-        mask, points already placed, a frozen crop part, or an object opened
-        for editing. The single definition of "in progress" for the lane, so
-        Keep, Escape and the Keep button can never disagree about it."""
-        if self.current_mask is not None:
-            return True
-        if getattr(self, "_active_crop_points_positive", None):
+        """True while a shape on screen would be COMMITTED by a Keep: a live
+        mask with its transform, a frozen crop part, or an object opened for
+        editing that carries geometry.
+
+        Deliberately the same set `_on_save_polygon` accepts. The lane shows
+        Keep on exactly this answer, so a visible Keep can never be a button
+        the save then refuses. Loose points with no shape behind them are
+        Escape's business, not Keep's (see _ai_add_gesture_in_progress)."""
+        if self.current_mask is not None and self.current_transform_info is not None:
             return True
         if getattr(self, "_frozen_sessions", None):
             return True
-        if getattr(self, "_unfrozen_display_polygon", None) is not None:
+        return getattr(self, "_unfrozen_display_polygon", None) is not None
+
+    def _ai_add_gesture_in_progress(self) -> bool:
+        """True while the lane holds ANY unfinished work: a shape a Keep would
+        commit, points placed with no shape yet, or an object opened for
+        editing. Escape's question, which is wider than Keep's: a click whose
+        prediction never produced a shape still has a marker on the map, and
+        Escape is what takes it back."""
+        if self._ai_add_outline_in_progress():
+            return True
+        if self.current_mask is not None:
+            return True
+        if getattr(self, "_active_crop_points_positive", None):
             return True
         return bool(getattr(self, "_is_refining_saved_object", False))
 
     def _keep_ai_add_outline(self) -> bool:
         """Commit the outline on screen as its own object and STAY armed, so
         the next missed object is one click away. Returns False when there was
-        nothing to keep, or when a crop encode owns the predictor pipe (the
-        save no-ops there, and reporting success would lie).
+        nothing to keep.
 
         The save is the ordinary Manual one, so the outline lands with the
         session's refine settings (inherited from the review) and folds at Done
-        like every other hand edit."""
+        like every other hand edit. It also owns the whole decision about a
+        busy predictor pipe: a second guard here refused keeps the save itself
+        would have taken, which turned a visible Keep into a no-op."""
         if not getattr(self, "_refine_add_mode_active", False):
-            return False
-        if getattr(self, "_encoding_in_progress", False):
             return False
         if not self._ai_add_outline_in_progress():
             return False
-        before = len(self.saved_polygons)
+        # A keep that welds into an existing detection drops the entry it
+        # absorbed and appends the merged one, so the list does not have to
+        # grow: a fresh entry at the end is what says the save landed.
+        before_last = self.saved_polygons[-1] if self.saved_polygons else None
         try:
             self._on_save_polygon()
         except (RuntimeError, AttributeError, TypeError, ValueError) as exc:
@@ -187,7 +206,7 @@ class ManualAddMixin:
                 f"AI Add: keep failed ({exc})",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning)
             return False
-        kept = len(self.saved_polygons) > before
+        kept = bool(self.saved_polygons) and self.saved_polygons[-1] is not before_last
         self._refresh_ai_add_keep_button()
         if kept:
             self._ai_add_kept_count = getattr(self, "_ai_add_kept_count", 0) + 1
@@ -276,7 +295,7 @@ class ManualAddMixin:
         lane, not from selecting a polygon), so leave it entirely: fold the
         objects kept this session and return to the resting Correct step.
         Returns True (Escape consumed)."""
-        if self._ai_add_outline_in_progress():
+        if self._ai_add_gesture_in_progress():
             try:
                 self._clear_active_mask_without_saving()
             except (RuntimeError, AttributeError):

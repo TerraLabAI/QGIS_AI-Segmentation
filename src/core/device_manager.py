@@ -48,10 +48,10 @@ def probe_inprocess_torch_device():  # -> torch.device
                 del test
 
                 _cached_device = torch.device("mps")
-                _device_info = "Apple Silicon GPU (MPS)"
+                _device_info = "Apple Silicon (MPS)"
                 _configure_mps_optimizations()
                 QgsMessageLog.logMessage(
-                    "Using MPS acceleration (Apple Silicon GPU)",
+                    "Using MPS acceleration (Apple Silicon)",
                     "AI Segmentation",
                     level=Qgis.MessageLevel.Info
                 )

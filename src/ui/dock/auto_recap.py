@@ -41,17 +41,7 @@ def auto_export_success_html(count: int, object_word: str, layer_name: str,
         n=int(count), object=obj, layer=link)
 
 
-def auto_last_run_html(count: int, object_word: str, layer_name: str,
-                       credits_used, linked: bool = True) -> str:
-    """The session memory the Start page keeps once the success line is gone:
-    the same count and layer, plus what the run cost. Rich text."""
-    obj = escape((object_word or "").strip() or tr("polygons"))
-    link = layer_link_html(layer_name, linked)
-    head = (tr("Last run: {n} {object} in {layer}").format(
-                n=int(count), object=obj, layer=link)
-            if link else
-            tr("Last run: {n} {object}").format(n=int(count), object=obj))
-    if credits_used is None:
-        return head
-    return head + " · " + escape(
-        tr("{used} credits").format(used=credits_used))
+# auto_last_run_html was removed on 2026-08-11 with the card it filled. It read
+# "Last run: 69 building in Building 4 (11 Aug) · 14 credits" and stayed on the
+# Start page for the rest of the session, repeating the legend and the footer
+# credit ring on the one screen that is about the NEXT run.

@@ -46,6 +46,11 @@ from ..canvas_palette import (
 # never both own the canvas tool. UI-only, so it lives here, not in shape_edits.
 KIND_SELECT = "select"
 
+# QGIS's resting navigation tool, by C++ class name: what the canvas lands on
+# when the user picks Pan, and what QGIS falls back to when a tool is unset. Our
+# own select tool pans on a drag, so re-arming over it costs the user nothing.
+_NAVIGATION_TOOL_CLASSES = ("QgsMapToolPan",)
+
 # How far apart, in IMAGE pixels of the run, two shapes may sit and still count
 # as touching for the Merge offer. A tile seam parts two halves of one object by
 # well under a pixel; anything wider is two objects. Deliberately not a screen
@@ -302,6 +307,41 @@ class AutoShapeEditMixin:
             self._set_correct_status("neutral", "")
         except (RuntimeError, AttributeError):
             pass
+        # QGIS deactivates our tool from inside its own setMapTool, so the tool
+        # it is switching TO is only readable one turn later, and setting one
+        # from here would fight the switch in progress.
+        try:
+            from qgis.PyQt.QtCore import QTimer
+            QTimer.singleShot(0, self._rearm_correct_select_on_navigation)
+        except (RuntimeError, AttributeError, ImportError):
+            pass
+
+    def _rearm_correct_select_on_navigation(self) -> None:
+        """Bring the resting select tool back once QGIS lands on Pan.
+
+        Picking Pan (or any path that unsets a tool, which QGIS answers with
+        Pan) left the Correct step with nothing armed: the hero still asked for
+        a click on a polygon, no click selected one, and nothing on screen armed
+        it again. Our select tool pans on a drag, so the user keeps what they
+        picked. Any other tool is a deliberate choice and is left alone."""
+        if self._shape_maptool is not None or self._shape_edit_mode is not None:
+            return
+        # A fix session owns the canvas through its own tool, and the turn this
+        # runs on is long enough for one to have opened.
+        if getattr(self, "_qgis_bridge_active", False) or getattr(
+                self, "_refine_handoff_active", False):
+            return
+        try:
+            tool = self.iface.mapCanvas().mapTool()
+            if tool is None:
+                return
+            meta = getattr(tool, "metaObject", None)
+            name = meta().className() if meta is not None else type(tool).__name__
+        except (RuntimeError, AttributeError, TypeError):
+            return
+        if name not in _NAVIGATION_TOOL_CLASSES:
+            return
+        self._arm_correct_select()
 
     # ------------------------------------------------------------------
     # Select a detection (the Correct step's resting tool) + Remove
@@ -376,6 +416,13 @@ class AutoShapeEditMixin:
         never opens an interactive session)."""
         idx = getattr(self, "_correct_selected_idx", None)
         if idx is None or self._auto_review is None:
+            return
+        # The polygon can go while the session waits to open (a delete during a
+        # local-AI setup): opening on it would put the user in a fix session for
+        # a shape the review no longer holds.
+        if idx < 0 or idx >= len(self._auto_objects):
+            return
+        if idx in self._review_removed_fids():
             return
         if getattr(self, "_auto_review_step", 0) != 1:
             return
@@ -568,14 +615,16 @@ class AutoShapeEditMixin:
         self._auto_correction_removed.add(int(idx))
         self._record_remove_entry(idx)
         if self._correct_selected_idx == idx:
-            self._set_correct_selection(None)
+            # The dedicated clear, not _set_correct_selection(None): that one
+            # refuses while a local-AI setup runs, so the polygon deleted during
+            # a setup kept its index and its band, and the session opened on it
+            # when the setup finished.
+            self._clear_correct_selection()
         if getattr(self, "_shape_hover_idx", None) == idx:
             # The shape is gone; its blue outline would otherwise sit on the
             # canvas until the next cursor move.
             self._set_shape_hover(None)
         self._after_shape_edit(changed=())
-        self._set_correct_status(
-            "success", tr("1 detection removed"), undo=True)
         self._track_shape_edit(KIND_REMOVE, "removed", 1)
 
     def _record_remove_entry(self, idx: int) -> None:
@@ -741,23 +790,21 @@ class AutoShapeEditMixin:
                            self._object_row(merged, plan.score))
         self._auto_correction_removed.update(plan.absorbed)
         self._record_shape_edit(edit, fids=plan.absorbed)
-        text = tr("{n} shapes merged into one · Free").format(n=joined)
-        if merged.isMultipart() and len(merged.asGeometryCollection()) > 1:
-            # Honest, not blocking: the user may well want one object made of
-            # separate parts (an object cut by a road, a courtyard building).
-            text += " " + tr(
-                "The pieces do not touch, so the result is one object in "
-                "several parts.")
         self._disarm_shape_tool()
-        self._set_correct_status("success", text, undo=True)
         # Only the target row's geometry changed (the absorbed rows are just
         # marked removed); the rest keep their cached squared shape.
         self._after_shape_edit(changed=(plan.target,))
         self._track_shape_edit(KIND_MERGE, "merged", joined)
         self._arm_correct_select()  # back to the resting select tool
-        # The merged shape becomes the polygon's new base: re-select it (as a
-        # genuine pick) so the current method's fix session opens on it.
-        self._set_correct_selection(plan.target, enter_session=True)
+        # The merged shape becomes the polygon's new base: re-select it so the
+        # current method's fix session opens on it. Through the re-enter path,
+        # never on this stack: _after_shape_edit above starts a cooperative
+        # reslice that keeps writing the review layer, and a Manual session
+        # opened now would snapshot it half written, so every shape landing
+        # afterwards would read as hand-edited.
+        self._correct_reenter_det_id = self._det_id_for_object_index(plan.target)
+        self._correct_reenter_looks = 0
+        self._reenter_correct_session_after_fold()
 
     # ------------------------------------------------------------------
     # Journal, undo and the shared refresh

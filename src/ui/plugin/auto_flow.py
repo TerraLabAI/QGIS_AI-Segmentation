@@ -12,7 +12,25 @@ from ...core.telemetry_errors import slot_guard
 from .shared import (
     _WEBMERC_MUPP_Z0,
     _debounce_timer,
+    clip_served_hint,
 )
+
+
+def _crs_run_identifier(crs) -> str:
+    """A string the rest of the run can rebuild this CRS from.
+
+    The authority code whenever there is one. A custom or WKT-only raster CRS
+    has none, and the empty string it returns reads as EPSG:4326 further down,
+    which stamps projected metres as degrees and lands the saved polygons
+    thousands of km away. So fall back to the CRS object's own WKT, which
+    QgsCoordinateReferenceSystem parses back into the same CRS.
+    """
+    try:
+        if crs is None or not crs.isValid():
+            return ""
+        return crs.authid() or crs.toWkt()
+    except (RuntimeError, AttributeError):
+        return ""
 
 
 class AutoFlowMixin:
@@ -20,6 +38,11 @@ class AutoFlowMixin:
 
     def _on_mode_changed(self, mode) -> None:
         from ..ai_segmentation_dockwidget import Mode
+        # Before anything else, including the handoff return below: arriving on
+        # Semi-Auto with the cloud engine picked is a click coming, and the ping
+        # has to overlap the user rather than the click. Debounced and silent.
+        if mode == Mode.INTERACTIVE:
+            self._warmup_if_manual_cloud()
         # Refine-in-Manual handoff: preserve both the held _auto_review and the
         # manual session across the Manual<->Auto hop, so the usual destructive
         # reset below MUST be skipped. The flag stays set for the whole round trip
@@ -50,9 +73,11 @@ class AutoFlowMixin:
         # when there is unsaved manual work, to never silently discard it.
         self._reset_auto_flow_to_start(exit_path="mode_switch")
         self._reset_manual_flow_to_start()
-        if mode == Mode.AUTOMATIC and self.dock_widget:
+        # The footer gauge is on in both modes now, so both refresh it. The
+        # fetch is a hidden task and drops out while one is already in flight.
+        if self.dock_widget:
             self._refresh_auto_credits()
-        elif mode == Mode.INTERACTIVE and self.dock_widget:
+        if mode == Mode.INTERACTIVE and self.dock_widget:
             self._ensure_interactive_setup()
         try:
             from ...core import telemetry_session_events
@@ -106,7 +131,15 @@ class AutoFlowMixin:
             canvas = self.iface.mapCanvas()
             tool = getattr(self, "map_tool", None)
             if tool is not None and canvas.mapTool() == tool:
-                canvas.unsetMapTool(tool)
+                # The tool announces every deactivate, and the handler puts it
+                # straight back one event-loop turn later unless this flag is
+                # up. Without it the switch to Automatic re-arms the Semi-Auto
+                # tool and flips the page to "session active".
+                self._stopping_segmentation = True
+                try:
+                    canvas.unsetMapTool(tool)
+                finally:
+                    self._stopping_segmentation = False
         except (RuntimeError, AttributeError):
             pass
         self._reset_session()
@@ -117,40 +150,76 @@ class AutoFlowMixin:
                 pass
 
     def _refresh_auto_credits(self) -> None:
-        """Fetch usage/credits off the main thread and reflect them in the dock."""
+        """Fetch usage/credits off the main thread and reflect them in the dock.
+
+        A refresh asked for while one is already in flight is REMEMBERED, never
+        dropped. The in-flight read left before the charges this call is meant
+        to show, so its answer is the balance from before the run, and skipping
+        the new read leaves that pre-run figure on screen. The remembered
+        refresh fires as soon as the older read settles, and its newer stamp
+        wins in _apply_usage_payload.
+        """
         from ...core.activation_manager import get_auth_header, is_plugin_activated
         if not self.dock_widget or not is_plugin_activated():
             return
         if self._usage_fetch_task is not None and self._usage_fetch_task.is_active():
+            self._usage_refresh_pending = True
             return
         auth = get_auth_header()
         if not auth:
             return
+        self._usage_refresh_pending = False
         from qgis.core import QgsApplication
 
         from ...api.terralab_client import TerraLabClient
         from ...workers.generic_request_task import GenericRequestTask
         client = TerraLabClient()
-        self._usage_fetch_task = GenericRequestTask(
+        # Stamp the read with the moment it leaves, not the moment it lands: a
+        # charge that goes out after it can answer first, and the older figure
+        # must not overwrite the newer one. See _apply_usage_payload.
+        import time as _time
+        fetched_at = _time.monotonic()
+        task = GenericRequestTask(
             tr("Refreshing credits"),
             lambda: client.get_usage(auth=auth),
             hidden=True,
         )
-        self._usage_fetch_task.succeeded.connect(self._on_usage_fetched)
+        self._usage_fetch_task = task
+        # Both callbacks carry the task they belong to: they release the
+        # in-flight reference, and an older read must not release a newer one.
+        task.succeeded.connect(
+            lambda usage, at=fetched_at, t=task: self._on_usage_fetched(usage, at, t))
         # A usage error (network or server) keeps the dock's last figures rather
         # than blanking the ring; matches the old "empty dict on error" contract.
         # A lapsed subscription (failed payment) is called out clearly instead.
-        self._usage_fetch_task.failed.connect(self._on_usage_failed)
-        QgsApplication.taskManager().addTask(self._usage_fetch_task)
+        task.failed.connect(
+            lambda msg, code, t=task: self._on_usage_failed(msg, code, t))
+        QgsApplication.taskManager().addTask(task)
 
-    def _on_usage_failed(self, message: str = "", code: str = "") -> None:
+    def _settle_usage_fetch(self, task=None) -> None:
+        """Release the in-flight usage reference and fire a refresh that was
+        asked for while this read was out.
+
+        Only the read that OWNS the reference may clear it: an older answer
+        landing after a newer read went out would otherwise drop the live task,
+        leaving it uncancelled at unload and letting the next call fire a
+        second one in parallel. ``task`` None keeps the old unconditional
+        behaviour for any caller that has no task to name.
+        """
+        if task is None or self._usage_fetch_task is task:
+            self._usage_fetch_task = None
+        if getattr(self, "_usage_refresh_pending", False) and self._usage_fetch_task is None:
+            self._usage_refresh_pending = False
+            self._refresh_auto_credits()
+
+    def _on_usage_failed(self, message: str = "", code: str = "", task=None) -> None:
         """Credits refresh failed. Keep the last-known figures (never blank the
         ring on a transient error). If the server reports the subscription is no
         longer active (a failed renewal payment: the key still authenticates
         locally but every call is rejected), surface a clear one-time notice
         pointing at the account page, so the user is not left with stale credits
         and a mysterious failed run. Throttled to once per session."""
-        self._usage_fetch_task = None
+        self._settle_usage_fetch(task)
         if code == "SUBSCRIPTION_INACTIVE" and not self._billing_warning_shown:
             self._billing_warning_shown = True
             try:
@@ -164,17 +233,54 @@ class AutoFlowMixin:
             except (RuntimeError, AttributeError):
                 pass
 
-    def _on_usage_fetched(self, usage: dict) -> None:
-        """Main thread: push fetched usage data into the dock's credit display."""
-        self._usage_fetch_task = None
+    def _on_usage_fetched(self, usage: dict, fetched_at: float | None = None,
+                          task=None) -> None:
+        """Main thread: push fetched usage data into the dock's credit display.
+
+        ``fetched_at`` is the monotonic time this read went out (see
+        _refresh_auto_credits); ``task`` is the read itself, so the in-flight
+        reference is released by its owner only."""
+        self._settle_usage_fetch(task)
+        self._apply_usage_payload(usage, fetched_at=fetched_at)
+
+    def _apply_usage_payload(self, usage: dict, fetched_at: float | None = None) -> None:
+        """Reflect a usage payload in the dock, whoever fetched it.
+
+        Split from the task callback because the account window fetches the
+        same payload for its own card and hands it here, rather than leaving
+        the footer ring on a figure the user can see is out of date. It must
+        never touch the in-flight task reference: that belongs to the task,
+        and clearing it from here would leave a live request uncancelled at
+        unload.
+
+        ``fetched_at`` is the monotonic time the payload was ASKED for. Two
+        writers reach this: a read of the balance, and the charge that lowers
+        it. A read fired before the charge can land after it and put the spent
+        credit back, so a payload older than the last one applied is dropped. A
+        caller with nothing to stamp (the charge response, the account window)
+        counts as now and always wins.
+        """
         if not usage or not isinstance(usage, dict) or not self.dock_widget:
             return
+        import time as _time
+        stamp = _time.monotonic() if fetched_at is None else float(fetched_at)
+        applied_at = getattr(self, "_usage_applied_at", None)
+        if applied_at is not None and stamp < applied_at:
+            return
+        self._usage_applied_at = stamp
         # Cache the last-known usage so run telemetry can report credits_before /
         # is_free_tier without an extra fetch on the critical path. Capture the
         # previous free balance first so a drop can emit free_taste_consumed.
-        prev_free = (self._last_usage or {}).get("free_detections_remaining")
+        prev = self._last_usage or {}
+        prev_free = prev.get("free_detections_remaining")
         self._last_usage = dict(usage)
         is_free = usage.get("is_free_tier", True)
+        # A plan that flips to Pro mid-session is the payment landing. Say it
+        # once: the user is coming back from a browser to a panel that was
+        # asking them to subscribe. Never on the first payload of a session
+        # (empty prev), which carries no change at all.
+        if prev and bool(prev.get("is_free_tier", True)) and not is_free:
+            self._announce_plan_upgrade()
         free_left = usage.get("free_detections_remaining")
         if is_free and prev_free is not None and free_left is not None and free_left < prev_free:
             try:
@@ -187,7 +293,12 @@ class AutoFlowMixin:
             except Exception:
                 pass  # nosec B110
         if is_free:
-            credits = free_left if free_left is not None else 0
+            # None travels. It means "the account has not said", which the gauge
+            # hides and the gates read as not-exhausted. Turning it into 0 here
+            # told the whole panel the user was out of credits: Start went grey
+            # and the paywall came up on a funded account, on nothing worse than
+            # a response that left the field out.
+            credits = free_left
             # Lifetime free-taste allowance. Newer servers echo the total; older
             # deploys omit it, so fall back to the allowance dial for the ring
             # gauge. Read the getter, never a second copy of the number: a
@@ -303,6 +414,11 @@ class AutoFlowMixin:
         the prompt committed, and a detail-slider move. The prompt-commit
         trigger is the universal one (every run passes through it); the others
         buy extra runway when they fire first.
+
+        Also fired when a Semi-Auto session opens on the cloud route. Same
+        backend, same host, so one warm instance answers both, and without it
+        the session's first click is the one that waits for a machine to start.
+
         Debounced to at most once per ~30s and gated on cloud access (an
         activated key); every failure is silent. Never blocks the main thread.
         """
@@ -458,7 +574,7 @@ class AutoFlowMixin:
         """Detail slider moved: the grid, overlay and credit estimate change.
 
         This fires only on a genuine USER move: programmatic seeds go through
-        set_auto_detail_value / set_auto_detail_max, which block the slider's
+        set_auto_detail_value / set_auto_detail_range, which block the slider's
         signal. So a real move here means the user is overriding the auto pick;
         latch that so the object-aware re-seed stops fighting them for this zone.
         The prompt the override was made for is recorded with it: a manual
@@ -496,10 +612,17 @@ class AutoFlowMixin:
         try:
             from ...core import telemetry_run_events
             tiles = getattr(self, "_auto_est_tiles", -1)
+            # The band travels with the level: without it a level reads as a
+            # free choice when it may have been the only one on offer.
+            slider = self.dock_widget.auto_detail_slider
             telemetry_run_events.track_detail_changed(
                 detail=self._get_auto_detail_level(),
                 tiles=tiles if tiles is not None else -1,
                 source=getattr(self, "_detail_tel_source", "user"),
+                band_lo=int(slider.minimum()),
+                band_hi=int(slider.maximum()),
+                object_bound=bool(getattr(
+                    self.dock_widget, "_auto_detail_object_bound", False)),
             )
         except Exception:
             pass  # nosec B110
@@ -919,12 +1042,14 @@ class AutoFlowMixin:
         try:
             obj_m, target_mupp = self._object_detail_profile(object_class)
             return self._auto_detail_for_target(
-                layer, zone_in_layer, obj_m, target_mupp)
+                layer, zone_in_layer, obj_m, target_mupp,
+                self._detail_window_profile(object_class)[1])
         except (RuntimeError, AttributeError, ValueError):
             return self._default_detail_for_zone(layer, zone_in_layer)
 
     def _auto_detail_for_target(
-        self, layer, zone_in_layer, obj_m: float, target_mupp: float
+        self, layer, zone_in_layer, obj_m: float, target_mupp: float,
+        floor_m: float = 0.0,
     ) -> int:
         """Cheapest detail level whose ground resolution reaches ``target_mupp``.
 
@@ -933,19 +1058,31 @@ class AutoFlowMixin:
         paths pick levels identically. ``obj_m`` is the object's typical ground
         size, used only for the resolvable fallback.
 
+        ``floor_m`` is the smallest tile ground side the object is known to
+        detect at (``detection_policy.object_tile_floor_m``, 0.0 = none) and it
+        OUTRANKS the target. Some objects are read through a fixed wide window,
+        so a tile under that width is padding rather than context and the answer
+        degrades however sharp the pixels are. The target only says "fine
+        enough", which on some zone sizes is first reached one level BELOW the
+        floor; taking it there would make the plugin recommend the setting the
+        floor exists to forbid, and the slider band, which must contain the
+        recommendation, would follow it down.
+
         When no level inside the seed's tile cap reaches the target, the pick
         is the FINEST of three floors, so a named object never seeds coarser
         than the same zone with no prompt at all: the finest level inside the
         soft tile budget, the cheapest level inside the adequate-quality band
         (the zone default crosses the soft budget for this too), and the
-        cheapest level where the object still spans the minimum pixels. Always
-        >= 1.
+        cheapest level where the object still spans the minimum pixels. Each is
+        collected only on levels that clear ``floor_m``, so the fallback cannot
+        reintroduce what the walk stopped at. Always >= 1.
         """
         from ...core.detection_policy import (
             object_min_px,
             soft_tile_budget,
             sweet_spot_max_mupp,
         )
+        from ...core.tile_manager import TILE_SIZE
 
         cap = self._max_useful_detail(layer, zone_in_layer)
         min_px = object_min_px()
@@ -967,6 +1104,8 @@ class AutoFlowMixin:
             ground_mupp = self._mupp_to_meters(layer, zone_in_layer, mupp)
             if ground_mupp <= 0:
                 continue
+            if floor_m > 0 and TILE_SIZE * ground_mupp < floor_m:
+                break  # tiles shrink with n: no finer level clears the floor
             if ground_mupp <= target_mupp:
                 return n
             if tiles <= soft_budget:
@@ -1265,7 +1404,7 @@ class AutoFlowMixin:
         # owns the line (the dock enforces that precedence).
         hint = plan.get("hint")
         if isinstance(hint, str) and self.dock_widget is not None:
-            hint = hint.strip()[:160]
+            hint = clip_served_hint(hint)
             if hint:
                 try:
                     if self.dock_widget.show_auto_prompt_hint(hint):
@@ -1413,8 +1552,12 @@ class AutoFlowMixin:
             return
         try:
             zone_in_layer = self._reproject_zone_to_run_crs(self._auto_zone, layer)
+            # The plan is already stored under this prompt, so the shared
+            # profile reader resolves the tile floor the same way the slider
+            # band does: the plan's when it names one, else the blob tier's.
             detail = self._auto_detail_for_target(
-                layer, zone_in_layer, obj_m, float(target_mupp))
+                layer, zone_in_layer, obj_m, float(target_mupp),
+                self._detail_window_profile(prompt)[1])
             self.dock_widget.set_auto_detail_value(detail)
             self._update_credit_estimate()
         except (RuntimeError, AttributeError):
@@ -1550,7 +1693,8 @@ class AutoFlowMixin:
                 is_valid_obj_m = isinstance(obj_m, (int, float)) and not isinstance(obj_m, bool) and obj_m > 0
                 obj_m = float(obj_m) if is_valid_obj_m else 10.0
                 return self._auto_detail_for_target(
-                    layer, zone_in_layer, obj_m, float(target_mupp))
+                    layer, zone_in_layer, obj_m, float(target_mupp),
+                    self._detail_window_profile(object_class)[1])
         if object_class:
             return self._auto_detail_for_object(layer, zone_in_layer, object_class)
         return self._default_detail_for_zone(layer, zone_in_layer)
@@ -1666,8 +1810,8 @@ class AutoFlowMixin:
                 "zone_x": 0,
                 "zone_y": 0,
                 "bbox": (minx, miny, maxx, maxy),
-                "crs": (run_crs.authid() if run_crs is not None
-                        else layer.crs().authid()),
+                "crs": (_crs_run_identifier(run_crs)
+                        or _crs_run_identifier(layer.crs())),
                 "online": True,
             }
 
@@ -1685,5 +1829,6 @@ class AutoFlowMixin:
         return {
             "pixel_w": pixel_w, "pixel_h": pixel_h,
             "zone_x": zone_x, "zone_y": zone_y,
-            "bbox": bbox, "crs": layer.crs().authid(), "online": False,
+            "bbox": bbox, "crs": _crs_run_identifier(layer.crs()),
+            "online": False,
         }

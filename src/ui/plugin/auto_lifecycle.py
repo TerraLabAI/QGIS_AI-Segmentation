@@ -72,7 +72,10 @@ class AutoLifecycleMixin:
             # how) BEFORE the rescue export clears the review state.
             self._track_review_abandoned(exit_path)
             exported = self._export_auto_review(include_hidden=True, autosave=True)
-            if exported and exported[1] > 0 and self.dock_widget:
+            # A write that produced no layer name saved nothing: without the
+            # name check the rescue path announced "Saved 12 polygon(s) to "
+            # for a file every target refused.
+            if exported and exported[0] and exported[1] > 0 and self.dock_widget:
                 name, count = exported
                 try:
                     self.dock_widget.set_auto_status(
@@ -288,7 +291,7 @@ class AutoLifecycleMixin:
         elif salvaged_tiles > 0 and not self._auto_headless_run:
             banner = tr("Detection stopped early after {done} tile(s). "
                         "The objects already found are kept below.").format(
-                            done=salvaged_tiles)
+                            done=self._auto_tiles_done_shown(salvaged_tiles))
         elif error_class == "SERVER":
             # Never promise a refund here: the plugin has no count of what the
             # server charged for this run, and a tile can be billed even when
@@ -408,6 +411,21 @@ class AutoLifecycleMixin:
             from qgis.PyQt.QtCore import QTimer
             QTimer.singleShot(0, self._on_settings_clicked)
 
+    def _auto_tiles_done_shown(self, tiles_succeeded: int) -> int:
+        """The worker's succeeded count, held to the grid the user was quoted.
+
+        The counter also covers the free re-split quadrants, which are extra
+        tiles appended to the run, so an unclamped figure reads past the total
+        and the user is told 214 of 200 tiles are done.
+        """
+        total = (self._auto_run_ctx or {}).get("total")
+        try:
+            if total is not None and int(total) > 0:
+                return min(int(tiles_succeeded), int(total))
+        except (TypeError, ValueError):
+            pass
+        return int(tiles_succeeded)
+
     def _on_auto_credits_exhausted(self, remaining: int) -> None:
         QgsMessageLog.logMessage(
             f"Auto detection: credits exhausted (remaining={remaining})",
@@ -437,7 +455,8 @@ class AutoLifecycleMixin:
                     "info",
                     tr("Out of credits after {done}/{total} tiles. "
                        "Your detections are kept below.").format(
-                        done=tiles_succeeded, total=tiles_total),
+                        done=self._auto_tiles_done_shown(tiles_succeeded),
+                        total=tiles_total),
                 )
                 # Free users get a one-click path to finish the zone.
                 self.dock_widget.set_auto_exhausted_subscribe_visible(is_free_tier)
@@ -510,9 +529,14 @@ class AutoLifecycleMixin:
             health = {}
         submit_retries = int(health.get("submit_retries", 0) or 0)
         skipped_network = int(health.get("tiles_skipped_network", 0) or 0)
+        # A service that accepts a request and then answers a byte at a time
+        # retries nothing and skips nothing, so this is the only signal that
+        # says the run was waiting on it rather than going well.
+        timed_out = int(health.get("tiles_timed_out", 0) or 0)
         from .shared import backend_stalled_flag
         backend_stalled = backend_stalled_flag(
-            tiles_succeeded, warming_ms, submit_retries, skipped_network)
+            tiles_succeeded, warming_ms, submit_retries, skipped_network,
+            timed_out)
         if self.dock_widget:
             try:
                 self.dock_widget.set_auto_run_active(False)
@@ -546,6 +570,11 @@ class AutoLifecycleMixin:
         except Exception:
             pass  # nosec B110
         self._auto_tel_stop_reason = "stalled" if stalled else "cancelled"
+        # Read the balance again, as the completed and out-of-credits ends both
+        # do: a run stopped half way was still billed for the tiles it got, and
+        # without this the footer keeps the pre-run figure and the next run is
+        # gated against it.
+        self._refresh_auto_credits()
         # A stalled run stopped responding: say so on the message bar before the
         # review opens (opening it swaps the dock status to idle). A user cancel
         # needs no such line.
@@ -555,7 +584,8 @@ class AutoLifecycleMixin:
             # what happened is that it never got an answer.
             msg = (
                 tr("The detection stopped responding. Keeping the {n} "
-                   "tiles already found.").format(n=tiles_succeeded)
+                   "tiles already found.").format(
+                       n=self._auto_tiles_done_shown(tiles_succeeded))
                 if tiles_succeeded > 0 else
                 tr("The detection stopped responding before any tile came "
                    "back. Check your connection, then run Detect again "
@@ -756,7 +786,14 @@ class AutoLifecycleMixin:
         if not features_to_add:
             return None
 
-        _add_features_fast(pr, features_to_add)
+        if not _add_features_fast(pr, features_to_add):
+            # The provider refused the whole batch, so the table is empty.
+            # Both callers read None as "no layer" and keep the paid results on
+            # screen; going on would name a layer holding nothing.
+            QgsMessageLog.logMessage(
+                "Export refused: the layer provider took no features",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            return None
         temp_layer.updateExtents()
 
         # The run's raster only steers the fallback output directory; the run

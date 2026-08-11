@@ -65,6 +65,13 @@ class PairingPollTask(QgsTask):
         self._failure: tuple[str, str] | None = None
         self._timed_out = False
 
+    @property
+    def pairing_code(self) -> str:
+        """The code this poll waits on. A cancel is cooperative, so the task
+        can still read as running while a NEW code needs a listener: the caller
+        compares this before reusing the worker."""
+        return self._code
+
     def is_active(self) -> bool:
         try:
             return self.status() in (
@@ -85,7 +92,9 @@ class PairingPollTask(QgsTask):
             try:
                 result = self._client.poll_pairing(self._code)
             except Exception:
-                result = {"error": "poll failed", "code": "NO_NETWORK"}
+                # The code has to be one OfflineFastFail knows, or the streak
+                # below never counts and the wait runs to the full deadline.
+                result = {"error": "poll failed", "code": "NO_INTERNET"}
 
             if self.isCanceled():
                 return False
@@ -100,7 +109,7 @@ class PairingPollTask(QgsTask):
                     self._failure = (
                         tr("No connection to the sign-in service. Check your "
                            "internet connection, then click Connect to try again."),
-                        "NO_NETWORK",
+                        "NO_INTERNET",
                     )
                     return False
             else:
@@ -165,7 +174,7 @@ class PairingPollTask(QgsTask):
                 except (TypeError, ValueError):
                     pass
             # Status detail makes user error reports diagnosable (pending =
-            # browser seen, not_found = browser never seen, NO_NETWORK = the
+            # browser seen, not_found = browser never seen, NO_INTERNET = the
             # poll itself failing). Never log the code itself.
             detail = status or (result.get("code") if isinstance(result, dict) else None)
             log(f"Pairing poll: waiting ({detail or 'unknown'})")

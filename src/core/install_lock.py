@@ -145,13 +145,15 @@ def _process_start_stamp(pid: int) -> str | None:
     the user is told another QGIS window is installing when none is.
 
     Compared as an opaque string, never interpreted. None everywhere the
-    creation time cannot be read (macOS has no /proc), which leaves the pid
-    probe and the file age exactly as they are.
+    creation time cannot be read, which leaves the pid probe and the file age
+    exactly as they are.
     """
     if pid <= 0:
         return None
     if sys.platform == "win32":
         return _process_start_stamp_windows(pid)
+    if sys.platform == "darwin":
+        return _process_start_stamp_darwin(pid)
     return _process_start_stamp_proc(pid)
 
 
@@ -183,6 +185,33 @@ def _process_start_stamp_windows(pid: int) -> str | None:
         if not ok:
             return None
         return str((created.dwHighDateTime << 32) | created.dwLowDateTime)
+    except Exception:  # noqa: BLE001 - probe is best-effort; fall back to age
+        return None
+
+
+def _process_start_stamp_darwin(pid: int) -> str | None:
+    """Creation time from ps, the only start time macOS publishes without /proc.
+
+    Without it a force-quit mid-install leaves a lock whose pid macOS has
+    since handed to something else, and every install and every "remove AI
+    data" is refused for the whole stale age. One short-lived process, run on
+    the install path only.
+    """
+    try:
+        import subprocess  # nosec B404 - fixed argv, no shell
+
+        result = subprocess.run(  # nosec B603
+            ["/bin/ps", "-o", "lstart=", "-p", str(pid)],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=5,
+        )
+        if result.returncode != 0:
+            return None
+        # ps writes the date with spaces in it, and the lock record is one
+        # whitespace-separated line, so the stamp has to hold together as a
+        # single field.
+        stamp = "_".join(result.stdout.split())
+        return stamp or None
     except Exception:  # noqa: BLE001 - probe is best-effort; fall back to age
         return None
 
@@ -282,6 +311,9 @@ class InstallLock:
         self._acquired = False
         # Whether WE created the lock file (only then may release() remove it).
         self._owns_file = False
+        # The exact line we wrote, so release() can tell our own file from a
+        # NEW lock somebody else took after ours was broken as stale.
+        self._record = ""
 
     @property
     def path(self) -> str:
@@ -336,6 +368,7 @@ class InstallLock:
             return False
         self._acquired = True
         self._owns_file = True
+        self._record = record
         return True
 
     def _break_if_stale(self) -> bool:
@@ -373,15 +406,31 @@ class InstallLock:
             return self._try_create()
         return False
 
+    def _file_still_ours(self) -> bool:
+        """Whether the lock on disk is the one this instance wrote.
+
+        A very slow install outlives its own stale age: another process then
+        breaks the lock and takes a fresh one under its own pid. Unlinking by
+        path alone would hand that process's lock to a third one, and two
+        installs would build the same venv at once. The record we wrote
+        carries the pid and the moment, so a plain comparison settles it.
+        """
+        try:
+            with open(self._path, encoding="utf-8") as f:
+                return f.read().strip() == self._record.strip()
+        except OSError:
+            return False
+
     def release(self) -> None:
-        """Release the lock, removing the file only if we created it."""
-        if self._acquired and self._owns_file:
+        """Release the lock, removing the file only if it is still ours."""
+        if self._acquired and self._owns_file and self._file_still_ours():
             try:
                 os.unlink(self._path)
             except OSError:
                 pass  # nosec B110 - already gone or removed by recovery
         self._acquired = False
         self._owns_file = False
+        self._record = ""
 
     def __enter__(self) -> InstallLock:
         if not self.acquire():

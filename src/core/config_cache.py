@@ -169,7 +169,7 @@ def _without_kill_switches(config: dict) -> dict:
 # to wait for it. Anything here turns a write to one unauthenticated JSON file
 # into code execution at the next dependency repair, so the disk copy does not
 # carry them and the shipped constants stand until a live fetch replaces them.
-_INSTALL_KEYS_THAT_RUN_CODE = ("packages", "torch_index_url")
+_INSTALL_KEYS_THAT_RUN_CODE = ("packages", "torch_index_url", "checkpoint")
 _INSTALL_SUBKEYS_THAT_RUN_CODE = {
     # Moving the release tag makes the digest merge drop the shipped digests
     # (they describe a different artefact), leaving a served table authoritative.

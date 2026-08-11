@@ -83,7 +83,8 @@ class DockActivationMixin:
         if not activated:
             self._show_signed_out_page()
             self._update_ui_state()
-            self._update_try_automatic_hint_visibility()
+            self._refresh_manual_engine_ui()
+            self._refresh_manual_credit_gate()
             self._update_auto_tutorial_banner_visibility()
             return
         if self._mode == Mode.INTERACTIVE:
@@ -91,12 +92,14 @@ class DockActivationMixin:
         else:
             self._update_full_ui_automatic()
         self._update_ui_state()
-        self._update_try_automatic_hint_visibility()
+        self._refresh_manual_engine_ui()
+        self._refresh_manual_credit_gate()
         self._update_auto_tutorial_banner_visibility()
 
     def _mode_flow_started(self) -> bool:
         """True once the current mode has left its Start screen for a live flow:
-        Manual after 'Start Manual AI Segmentation' (a session is active), or
+        Manual after 'Start Semi auto AI Segmentation' (a session is
+        active), or
         Automatic after 'Start Automatic AI Segmentation' (past step 0). This is
         the single test for hiding the mode switch mid-flow."""
         if self._mode == Mode.INTERACTIVE:
@@ -149,11 +152,46 @@ class DockActivationMixin:
 
     def _update_full_ui_interactive(self):
         """Interactive mode (activated): install gate + segmentation section."""
-        setup_complete = self._dependencies_ok and self._checkpoint_ok
+        # With the clicks answered off the machine there is nothing on disk to
+        # be complete: no venv, no model file, no download. So the page opens
+        # on the same terms an installed user gets.
+        setup_complete = (self._dependencies_ok and self._checkpoint_ok) \
+            or self._manual_cloud_route_picked()
 
-        # Segmentation section: only show if fully set up.
-        show_segmentation = setup_complete
+        # Cloud with an empty account is not "not usable yet", it is blocked,
+        # and the gate below carries the whole story. A pale green Start above
+        # the refusal is the wall of dead controls the design system bans.
+        blocked = (self._manual_cloud_route_picked()
+                   and self._manual_credits_exhausted()
+                   and not self._segmentation_active)
+
+        # Segmentation section: shown once the mode can do something. With a
+        # second engine on offer that is always, because picking Cloud AI is
+        # what makes an empty machine ready and the Start button has to be
+        # there to press once it is picked. Hiding this block behind the
+        # install would leave the picker at the foot of the page with nothing
+        # to act on. Start itself says which of the two it is about to do (see
+        # _refresh_manual_start_action).
+        show_segmentation = setup_complete or self._manual_engine_offered()
         self.seg_widget.setVisible(show_segmentation)
+        # The Start button gives its place to the credit gate.
+        _start = getattr(self, "start_button", None)
+        if _start is not None:
+            try:
+                _start.setVisible(not blocked)
+            except (RuntimeError, AttributeError):
+                pass
+        # The Terms row goes with them, but it has a stronger reason to stay
+        # hidden and that one wins: once consent is sealed the row is gone for
+        # good, and nothing here may bring it back. Showing it unconditionally
+        # is exactly what did, on every refresh, to a user who agreed months
+        # ago.
+        _tos = getattr(self, "tos_container", None)
+        if _tos is not None:
+            try:
+                _tos.setVisible(not blocked and not has_tos_locked())
+            except (RuntimeError, AttributeError):
+                pass
 
         # Setup section (install/download group + welcome title): shown while a
         # setup is genuinely needed or running, tracked in _setup_section_wanted
@@ -162,14 +200,29 @@ class DockActivationMixin:
         # switching to Automatic mid-install and back left this page empty while
         # the background install kept running. Gating on the flag also still
         # avoids flashing "Click Install..." during the silent startup re-check.
-        show_setup = (not setup_complete) and getattr(
-            self, "_setup_section_wanted", False)
+        setup_needed = not setup_complete or self._manual_install_running()
+        if self._manual_engine_offered():
+            # The offline install has its own window now (see
+            # dock/manual_local_install.py), so the page stops opening on a
+            # download nobody asked for. Two states are still the panel's: an
+            # install already on the wire that no window is showing, because a
+            # user who closed it must not be left with minutes of downloading
+            # and nothing on screen; and the moment after one fails, where the
+            # card carries the real message and the Retry button.
+            setup_needed = (self._manual_install_running()
+                            and not self._manual_install_window_owns_it())
+            setup_needed = setup_needed or bool(
+                getattr(self, "_manual_install_failed", False))
+        show_setup = getattr(self, "_setup_section_wanted", False) and setup_needed
         self.setup_group.setVisible(show_setup)
         self.welcome_widget.setVisible(show_setup)
 
         self.activation_group.setVisible(False)
         self._settings_btn.setVisible(True)
-        self._ai_edit_btn.setVisible(True)
+        # The credit gauge + Subscribe pill own the bottom-left slot in both
+        # modes: the balance belongs to the account, so it reads the same
+        # wherever the user is. The AI Edit cross-promo yields it here too.
+        self._ai_edit_btn.setVisible(False)
         if not show_segmentation:
             self.batch_info_widget.setVisible(False)
 
@@ -178,7 +231,6 @@ class DockActivationMixin:
         # page, so it needs its own call).
         self.auto_page.setVisible(False)
         self.auto_review_view_row.setVisible(False)
-        # Footer credit gauge is an Automatic-mode surface only.
         self._refresh_auto_credits_display()
 
     def _update_full_ui_automatic(self):
@@ -191,9 +243,8 @@ class DockActivationMixin:
         self.activation_group.setVisible(False)
 
         self._settings_btn.setVisible(True)
-        # The credit gauge + Subscribe pill take the bottom-left slot in
-        # Automatic mode; the AI Edit cross-promo yields it (still shown in
-        # Interactive mode).
+        # Same bottom-left slot as Semi auto: the credit gauge + Subscribe
+        # pill, never the AI Edit cross-promo.
         self._ai_edit_btn.setVisible(False)
 
         self.auto_page.setVisible(True)
@@ -207,9 +258,18 @@ class DockActivationMixin:
         from ...core.logging_utils import log as _log
         _log("Install button clicked")
         self.install_button.setEnabled(False)
+        # This card is the Semi-Auto setup, so the install it starts carries
+        # the on-device AI. Automatic's lighter one never comes through here.
+        self._manual_install_wants_model = True
         self.install_requested.emit()
 
     def _toggle_cancel_button(self):
+        """Kept for the toggle still wired in dock/build.py.
+
+        The disclosure step is gone: the Cancel button shows with the progress
+        bar and the toggle never does (see set_install_progress), so stopping
+        an install is the button plus its confirm rather than three actions.
+        """
         visible = not self.cancel_button.isVisible()
         self.cancel_button.setVisible(visible)
         arrow = Qt.ArrowType.DownArrow if visible else Qt.ArrowType.RightArrow
@@ -224,7 +284,10 @@ class DockActivationMixin:
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
-            self.cancel_install_requested.emit()
+            # The same ending the install window's Stop gets. The two used to
+            # part ways: one moved the engine back to Cloud AI, this one left
+            # the switch on a half with nothing behind it.
+            self._end_manual_install_as_stopped()
 
     def _on_layer_changed(self, layer):
         # Just update UI state - layer change handling is done by the plugin
@@ -287,6 +350,11 @@ class DockActivationMixin:
     def _on_start_clicked(self):
         layer = self.layer_combo.currentLayer()
         if not layer:
+            return
+        # The engine box decides what this press means: a cloud session needs
+        # the data notice answered first, and a cleared box on a machine with
+        # no offline AI turns the press into the download.
+        if not self._manual_engine_gate_start():
             return
         self.seal_tos_consent()
         self.start_segmentation_requested.emit(layer)

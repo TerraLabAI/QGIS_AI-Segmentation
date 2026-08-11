@@ -379,6 +379,31 @@ def feature_enabled(name: str) -> bool:
     return dial_bool(f"features.{name}", True)
 
 
+def correct_ai_cloud_enabled() -> bool:
+    """Whether the Automatic review's AI fix is answered off the machine.
+
+    Default OFF, which is the opposite of every other switch here and is the
+    point: off is exactly what the plugin did before the remote route existed,
+    so a fleet that never hears from the server keeps today's behaviour. Only
+    an explicit true opts a user in.
+
+    Manual mode never reads this. It is on-device and offline by product rule.
+    """
+    return dial_bool("features.correct_ai_cloud", False)
+
+
+def crop_webp_enabled() -> bool:
+    """Whether the click path may pack its crop as lossless WebP.
+
+    Default OFF, like correct_ai_cloud above and for the same reason: the
+    format is a wire contract, and every server has to accept webp before any
+    client sends it. Off keeps today's PNG, so a plugin that never hears from
+    the server changes nothing. Deliberately NOT feature_enabled(), which is
+    fail-open and would turn this on for a fleet the server never reached.
+    """
+    return dial_bool("features.crop_webp", False)
+
+
 def automatic_mode_enabled() -> bool:
     """Whether Automatic mode is available.
 

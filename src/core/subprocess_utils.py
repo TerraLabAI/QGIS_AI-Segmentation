@@ -54,6 +54,11 @@ def get_clean_env_for_venv() -> dict:
     qgis_roots = _qgis_install_roots()
     vars_to_remove = [
         "PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV",
+        # Where pip puts what it installs. A machine-wide PIP_USER=1, which
+        # managed IT sets so nothing lands outside the account, makes every
+        # install in a venv stop at "Can not perform a '--user' install". The
+        # other three redirect the target directory the same way.
+        "PIP_USER", "PIP_TARGET", "PIP_PREFIX", "PYTHONUSERBASE",
         "QGIS_PREFIX_PATH", "QGIS_PLUGINPATH",
         "PROJ_DATA", "PROJ_LIB",
         "GDAL_DATA", "GDAL_DRIVER_PATH",

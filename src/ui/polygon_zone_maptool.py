@@ -122,13 +122,28 @@ class PolygonZoneMapTool(QgsMapTool):
     # -- ShortcutFilter space-pan hooks (compatible with the old tool) --
     def start_space_pan(self) -> None:
         self._space_panning = True
-        self._slide_pan.begin_at(self._canvas.mapFromGlobal(QCursor.pos()))
+        # Anchor only when the pointer is over the canvas. Space is caught on
+        # the main window, so a press with the cursor over the dock would
+        # otherwise anchor far outside the viewport and jump the picture by
+        # that distance on the first move. With no anchor the first move over
+        # the canvas sets it.
+        pos = self._canvas.mapFromGlobal(QCursor.pos())
+        if self._canvas.rect().contains(pos):
+            self._slide_pan.begin_at(pos)
         self._canvas.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
 
     def stop_space_pan(self) -> None:
         self._space_panning = False
         self._slide_pan.commit()
-        self._canvas.setCursor(QCursor(Qt.CursorShape.CrossCursor))
+        # Only restyle the cursor while this tool still owns the canvas: a
+        # Space released after a tool swap would force a cross cursor onto
+        # whichever tool owns it now.
+        if self.isActive():
+            self._canvas.setCursor(QCursor(Qt.CursorShape.CrossCursor))
+
+    def is_space_panning(self) -> bool:
+        """True between start_space_pan and stop_space_pan."""
+        return self._space_panning
 
     def set_snap_context(self, *args, **kwargs) -> None:
         """No-op (kept so the shared activation path can call it blindly)."""
@@ -165,10 +180,14 @@ class PolygonZoneMapTool(QgsMapTool):
             return
         if event.button() != Qt.MouseButton.LeftButton:
             return
-        if self._can_close and len(self._points) >= self.MIN_VERTICES:
+        pos = event_pos(event)
+        # Test where the release actually landed, never the flag left by the
+        # last move: Qt compresses and drops moves, and a stale flag closed the
+        # polygon on a click meant to add a vertex.
+        self._can_close = self._near_first(pos)
+        if self._can_close:
             self._finish()
             return
-        pos = event_pos(event)
         self._add_point(self.toMapCoordinates(pos), pos)
 
     def canvasDoubleClickEvent(self, event):  # noqa: N802 (Qt API)
@@ -389,6 +408,7 @@ class PolygonZoneMapTool(QgsMapTool):
             self._in_deactivate_emit = False
 
     def deactivate(self) -> None:
+        had_points = bool(self._points)
         self._reset_visuals()
         self._points = []
         self._space_panning = False
@@ -396,4 +416,9 @@ class PolygonZoneMapTool(QgsMapTool):
         # the user moved it to rather than snapping it back.
         self._slide_pan.commit()
         super().deactivate()
+        # The dots went with the tool, so say so: the owner's hint was still
+        # asking the user to click the first point to close a draw that no
+        # longer exists.
+        if had_points:
+            self.vertices_changed.emit(0)
         self._emit_deactivated()

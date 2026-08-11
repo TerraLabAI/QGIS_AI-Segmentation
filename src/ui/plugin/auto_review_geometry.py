@@ -599,6 +599,7 @@ class AutoReviewGeometryMixin:
         cached_geoms = cache["geoms"]
         deadline = (_t.monotonic() + refine_budget_s) if refine_budget_s > 0 else None
         unshaped = 0
+        unrepairable = 0
         out = []
         out_scores = []
         for det_idx, (base, score, area) in enumerate(self._auto_objects):
@@ -614,11 +615,20 @@ class AutoReviewGeometryMixin:
             if g is not None:
                 out.append(g)
                 out_scores.append(float(score))
+            else:
+                unrepairable += 1
         if unshaped:
             QgsMessageLog.logMessage(
                 f"Auto review: rescue export ran out of its {_RESCUE_REFINE_BUDGET_S:.0f}s "
                 f"shaping budget; {unshaped} hidden object(s) saved with their "
                 f"traced outline", "AI Segmentation", level=Qgis.MessageLevel.Info)
+        if unrepairable:
+            # A base that will not repair is the one case that loses a billed
+            # object, so it is counted and said rather than dropped in silence.
+            QgsMessageLog.logMessage(
+                f"Auto review: {unrepairable} object(s) left out; their geometry "
+                f"could not be repaired", "AI Segmentation",
+                level=Qgis.MessageLevel.Warning)
         # The set is complete here, which is the only point a whole-set
         # operation can run: shared borders needs every neighbour at once.
         out = self._apply_boundary_snap(out, params)

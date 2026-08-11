@@ -44,20 +44,12 @@
         <translation>名称过于笼统。清空输入框以仅根据示例搜索，或输入一个具体的对象。</translation>
     </message>
     <message>
-        <source>Example match</source>
-        <translation>示例匹配</translation>
-    </message>
-    <message>
         <source>Mark an object to find more like it.</source>
         <translation>标记一个对象，以查找更多相似对象。</translation>
     </message>
     <message>
         <source>Mark a false positive to drop things like it.</source>
         <translation>标记一个误检结果，以剔除类似的结果。</translation>
-    </message>
-    <message>
-        <source>Finer detail finds smaller objects.</source>
-        <translation>更精细的细节可发现更小的对象。</translation>
     </message>
     <!-- Refine in Manual handoff -->
     <message>
@@ -101,10 +93,6 @@
     <message>
         <source>Accept the Terms and Privacy Policy to enable segmentation.</source>
         <translation>接受服务条款和隐私政策以启用分割功能。</translation>
-    </message>
-    <message>
-        <source>An unexpected error occurred during export. Please check the logs.</source>
-        <translation>Export 过程中发生意外错误，请查看日志。</translation>
     </message>
     <message>
         <source>I agree to the &lt;a href=&quot;{terms}&quot;&gt;Terms&lt;/a&gt; and &lt;a href=&quot;{privacy}&quot;&gt;Privacy Policy&lt;/a&gt;</source>
@@ -212,20 +200,8 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>更新</translation>
     </message>
     <message>
-        <source>Dependencies ready</source>
-        <translation>依赖项已就绪</translation>
-    </message>
-    <message>
         <source>Downloading AI model...</source>
         <translation>正在下载 AI 模型...</translation>
-    </message>
-    <message>
-        <source>Dependencies ready, model not downloaded</source>
-        <translation>依赖项已就绪，模型尚未下载</translation>
-    </message>
-    <message>
-        <source>Dependencies ready, model download failed</source>
-        <translation>依赖项已就绪，模型下载失败</translation>
     </message>
     <message>
         <source>Cancel</source>
@@ -256,10 +232,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>验证失败</translation>
     </message>
     <message>
-        <source>Virtual environment was created but verification failed:</source>
-        <translation>虚拟环境已创建，但验证失败：</translation>
-    </message>
-    <message>
         <source>Unknown error</source>
         <translation>未知错误</translation>
     </message>
@@ -272,10 +244,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     <message>
         <source>Update QGIS to 3.34+ for the latest AI model</source>
         <translation>请将 QGIS 更新到 3.34 及以上版本以使用最新的 AI 模型</translation>
-    </message>
-    <message>
-        <source>Intel Mac: using SAM1 (compatible with PyTorch 2.2)</source>
-        <translation>Intel Mac：使用 SAM1（兼容 PyTorch 2.2）</translation>
     </message>
     <message>
         <source>Download Failed</source>
@@ -362,10 +330,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
 
     <!-- Instructions -->
     <message>
-        <source>Click on the element you want to segment:</source>
-        <translation>点击您要分割的对象：</translation>
-    </message>
-    <message>
         <source>Left-click to select</source>
         <translation>左键点击以选择</translation>
     </message>
@@ -381,19 +345,11 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <source>Invalid Layer</source>
         <translation>无效图层</translation>
     </message>
-    <message>
-        <source>Layer extent contains invalid coordinates (NaN/Inf). Check the raster file.</source>
-        <translation>图层范围包含无效坐标（NaN/Inf），请检查栅格文件。</translation>
-    </message>
 
     <!-- Dialogs -->
     <message>
         <source>Not Ready</source>
         <translation>尚未就绪</translation>
-    </message>
-    <message>
-        <source>Please wait for the SAM model to load.</source>
-        <translation>请等待 SAM 模型加载完成。</translation>
     </message>
     <message>
         <source>Layer Creation Failed</source>
@@ -603,10 +559,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>检测到不连续的部分。为获得最佳精度，请一次只分割一个对象。</translation>
     </message>
 
-    <message>
-        <source>No element detected at this point. Try clicking on a different area.</source>
-        <translation>在此位置未检测到对象，请尝试点击其他区域。</translation>
-    </message>
 
     <message>
         <source>Updating...</source>
@@ -628,10 +580,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Loading AI model...</source>
         <translation>正在加载 AI 模型...</translation>
-    </message>
-    <message>
-        <source>SAM model ready</source>
-        <translation>SAM 模型已就绪</translation>
     </message>
     <message>
         <source>Ready</source>
@@ -793,11 +741,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Choose between Manual (local) and Automatic (cloud) segmentation</source>
-        <translation>在手动（本地）和自动（云端）分割之间选择</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
         <source>Stop the active segmentation before switching modes.</source>
         <translation>请先停止当前的分割，再切换模式。</translation>
     </message>
@@ -807,29 +750,9 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>请先取消当前的检测，再切换模式。</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Subscribe to keep detecting without limits:</source>
-        <translation>订阅以不受限制地持续检测：</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Subscribe to Pro</source>
-        <translation>订阅 Pro</translation>
-    </message>
-    <message>
         <location filename="../src/ui/zone_selection_maptool.py" line="0"/>
         <source>Cancel the running detection first</source>
         <translation>请先取消正在进行的检测</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Detail</source>
-        <translation>细节</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Higher detail splits the zone into more tiles. Each tile costs 1 credit and captures smaller objects.</source>
-        <translation>更高的细节会将区域划分为更多瓦片。每个瓦片消耗 1 积分，并能捕捉更小的对象。</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
@@ -930,16 +853,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
         <source>More</source>
         <translation>更多</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>This area is large for this detail level. Raise detail or zoom in for sharper detections.</source>
-        <translation>该区域相对于当前细节级别偏大。请提高细节或放大地图以获得更精确的检测结果。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>This zone is too large for sharp detections, even at maximum detail. Draw a smaller zone for the best results.</source>
-        <translation>即使在最高细节级别下，该区域也过大，难以获得精确的检测结果。请绘制更小的区域以获得最佳效果。</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
@@ -1152,24 +1065,9 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>≈ {n} 个瓦片 = {n} 积分</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Automatic mode scans your zone tile by tile. 1 tile = 1 credit, so this run costs about {n} credits. More detail splits the zone into more tiles, which costs more credits.</source>
-        <translation>自动模式会逐个瓦片扫描您的区域。1 个瓦片 = 1 积分，因此本次运行大约消耗 {n} 积分。细节越高，区域被划分的瓦片越多，消耗的积分也越多。</translation>
-    </message>
-    <message>
         <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
         <source>Draw your example inside the selected zone.</source>
         <translation>在所选区域内绘制您的示例。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/account_settings_dialog.py" line="0"/>
-        <source>Share anonymous usage statistics</source>
-        <translation>分享匿名使用统计信息</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/account_settings_dialog.py" line="0"/>
-        <source>Helps us fix bugs faster. Never includes your data, layers or coordinates.</source>
-        <translation>帮助我们更快地修复问题。绝不包含您的数据、图层或坐标信息。</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
@@ -1185,11 +1083,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
         <source>0 shown at {pct}% - lower Confidence to reveal them</source>
         <translation>在 {pct}% 下显示 0 个，降低置信度即可显示它们</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Started at {pct}% - nothing scored above.</source>
-        <translation>起始置信度为 {pct}%，没有更高分的结果。</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
@@ -1313,11 +1206,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/dock/auto_build.py" line="0"/>
-        <source>Subscribe to finish this zone: 10,000 credits/month.</source>
-        <translation>订阅以完成该区域的检测：每月 10,000 积分。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
         <source>Filter detections by confidence. Lower shows more (and noisier), higher keeps only the strongest. Free and instant.</source>
         <translation>按置信度筛选检测结果。数值越低，显示的结果越多（也更嘈杂）；数值越高，仅保留最可靠的结果。免费且即时生效。</translation>
     </message>
@@ -1345,11 +1233,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <location filename="../src/ui/dock/auto_state.py" line="0"/>
         <source>The Library has ready-to-use objects.</source>
         <translation>对象库中有现成的对象可供使用。</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
-        <source>object</source>
-        <translation>对象</translation>
     </message>
     <message>
         <location filename="../src/ui/dialogs/segment_library/cards.py" line="0"/>
@@ -1483,11 +1366,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
-        <source>Your detections</source>
-        <translation>您的检测结果</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
         <source>Recent</source>
         <translation>最近</translation>
     </message>
@@ -1495,11 +1373,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
         <source>Favorites</source>
         <translation>收藏</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
-        <source>Templates</source>
-        <translation>模板</translation>
     </message>
     <message>
         <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
@@ -1627,11 +1500,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>手动</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
-        <source>Max detail for this zone - draw a larger zone for finer detail.</source>
-        <translation>该区域已达到最高细节级别，绘制更大的区域可获得更精细的细节。</translation>
-    </message>
-    <message>
         <location filename="../src/core/venv_manager.py" line="0"/>
         <source>OK</source>
         <translation>确定</translation>
@@ -1722,11 +1590,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>开始（当前可见模式的“开始”按钮）</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/build.py" line="0"/>
-        <source>Start Manual AI Segmentation</source>
-        <translation>开始手动 AI Segmentation</translation>
-    </message>
-    <message>
         <location filename="../src/ui/plugin/auto_lifecycle.py" line="0"/>
         <source>The raster was removed. Your polygons were saved to a layer.</source>
         <translation>该栅格已被移除，您的多边形已保存到图层中。</translation>
@@ -1791,10 +1654,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <source>{visible} of {n} shown</source>
         <translation>已显示 {visible}/{n} 个</translation>
     </message>
-    <message>
-        <source>Click an object on the map and the AI outlines it. You go one object at a time, checking and saving each polygon yourself.</source>
-        <translation>在地图上点击一个对象，AI 会为其生成轮廓。您可以逐个处理对象，亲自检查并保存每个多边形。</translation>
-    </message>
     <!-- Onboarding conversion batch (2026-07-04) -->
     <message>
         <source>Show guidance tips again</source>
@@ -1829,36 +1688,12 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>免费账户，在浏览器中注册仅需 15 秒。</translation>
     </message>
     <message>
-        <source>Manual mode stays free and unlimited on your computer.</source>
-        <translation>手动模式在您的电脑上始终免费且不受限制。</translation>
-    </message>
-    <message>
-        <source>Finds every object of one kind in your zone - draw a zone, name the object, get all the polygons at once.</source>
-        <translation>一次性找出您区域内某一类别的所有对象，绘制区域、命名对象，即可一次获得全部多边形。</translation>
-    </message>
-    <message>
-        <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;subscribe&lt;/a&gt; to segment areas of any size.</source>
-        <translation>请绘制更小的区域，或&lt;a href=&quot;{url}&quot;&gt;订阅&lt;/a&gt;以分割任意大小的区域。</translation>
-    </message>
-    <message>
-        <source>Running low: {n} free detections left. &lt;a href=&quot;{url}&quot;&gt;Subscribe&lt;/a&gt; to keep going.</source>
-        <translation>免费次数即将用完：剩余 {n} 次免费检测。&lt;a href=&quot;{url}&quot;&gt;订阅&lt;/a&gt;以继续使用。</translation>
-    </message>
-    <message>
         <source>Then segment any imagery: point and click, or fully automatic.</source>
         <translation>然后即可分割任意影像：点选操作，或全自动完成。</translation>
     </message>
     <message>
         <source>Waiting for your browser sign-in...</source>
         <translation>正在等待您在浏览器中完成登录...</translation>
-    </message>
-    <message>
-        <source>New: Automatic mode finds every object in a zone at once.</source>
-        <translation>新功能：自动模式可一次性找出区域内的所有对象。</translation>
-    </message>
-    <message>
-        <source>Try Automatic</source>
-        <translation>试用自动模式</translation>
     </message>
     <message>
         <source>Got it - hide this tip</source>
@@ -1873,8 +1708,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>显示 0 个，降低最小尺寸筛选即可显示它们</translation>
     </message>
     <message>
-        <source>10,000 credits every month. Cancel anytime.</source>
-        <translation>每月 10,000 积分，随时可取消。</translation>
+        <source>5,000 credits every month. Cancel anytime.</source>
+        <translation>每月 5,000 积分，随时可取消。</translation>
     </message>
     <message>
         <source>A Component Failed to Load</source>
@@ -1899,10 +1734,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Any GeoTIFF, WMS or XYZ basemap.</source>
         <translation>支持任意 GeoTIFF、WMS 或 XYZ 底图。</translation>
-    </message>
-    <message>
-        <source>At this detail {obj} is too small to spot - raise the detail.</source>
-        <translation>在当前细节级别下，{obj}太小而难以发现，请提高细节。</translation>
     </message>
     <message>
         <source>Available once the current install or detection finishes.</source>
@@ -1951,10 +1782,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>在地图上绘制</translation>
     </message>
     <message>
-        <source>Extra detail keeps helping {obj} in this zone.</source>
-        <translation>在此区域中，提高细节仍能持续改善{obj}的检测效果。</translation>
-    </message>
-    <message>
         <source>Free plan</source>
         <translation>免费套餐</translation>
     </message>
@@ -1983,40 +1810,12 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>管理账户</translation>
     </message>
     <message>
-        <source>Manual Mode Not Supported</source>
-        <translation>不支持手动模式</translation>
-    </message>
-    <message>
-        <source>Manual mode installs local components that are not available for this Mac with this version of QGIS. Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
-        <translation>手动模式需要安装本地组件，但在此 Mac 与此版本的 QGIS 下不可用。请改用自动模式，它完全在云端运行，无需本地安装。</translation>
-    </message>
-    <message>
-        <source>Manual mode is not supported in this QGIS installation</source>
-        <translation>此 QGIS 安装环境不支持手动模式</translation>
-    </message>
-    <message>
-        <source>Manual mode needs to install local dependencies, which is not supported inside this sandboxed QGIS installation (Flatpak or Snap). Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
-        <translation>手动模式需要安装本地依赖项，但在此沙盒化的 QGIS 环境（Flatpak 或 Snap）中不受支持。请改用自动模式，它完全在云端运行，无需本地安装。</translation>
-    </message>
-    <message>
-        <source>Name the object (or draw an example) first - Detail then tunes itself to it.</source>
-        <translation>请先命名对象（或绘制示例），细节会随之自动调整。</translation>
-    </message>
-    <message>
         <source>New here? Our 5-minute tutorial walks you through a full detection, step by step.</source>
         <translation>第一次使用？我们 5 分钟的教程会带您逐步完成一次完整的检测。</translation>
     </message>
     <message>
         <source>Not Enough Disk Space</source>
         <translation>磁盘空间不足</translation>
-    </message>
-    <message>
-        <source>Not enough credits: {n} tiles, only {left} left. Reduce the detail or zone, or subscribe.</source>
-        <translation>积分不足：需要 {n} 个瓦片，仅剩 {left} 个。请降低细节或缩小区域，或订阅。</translation>
-    </message>
-    <message>
-        <source>Not enough credits: {n} tiles, only {left} left. Reduce the detail or zone.</source>
-        <translation>积分不足：需要 {n} 个瓦片，仅剩 {left} 个。请降低细节或缩小区域。</translation>
     </message>
     <message>
         <source>Online layer returned blank tiles for this area. The current zoom level may be outside the service's range, or this area has no coverage. Zoom to a level where the layer is visible on the map, then try again.</source>
@@ -2095,10 +1894,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>细节高于{obj}通常所需的水平，可捕捉到最小的对象。</translation>
     </message>
     <message>
-        <source>Skipped {n} empty tiles (not charged).</source>
-        <translation>已跳过 {n} 个空瓦片（不计费）。</translation>
-    </message>
-    <message>
         <source>Small {obj} may be missed at this level.</source>
         <translation>在此级别下，较小的{obj}可能会被遗漏。</translation>
     </message>
@@ -2109,14 +1904,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>Something went wrong starting the detection. Please try again.</source>
         <translation>启动检测时出错，请重试。</translation>
-    </message>
-    <message>
-        <source>Started at {pct}% - the usual sweet spot for this object type.</source>
-        <translation>起始置信度为 {pct}%，这是该对象类型通常的最佳值。</translation>
-    </message>
-    <message>
-        <source>Started at {pct}% to fit this run's scores - raise to tighten.</source>
-        <translation>根据本次运行的评分，起始置信度为 {pct}%，提高数值可收紧结果。</translation>
     </message>
     <message>
         <source>Support code: {code}</source>
@@ -2145,10 +1932,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>There's a problem with your subscription. Your last payment may have failed. Open your account to update your payment method or review your plan.</source>
         <translation>您的订阅出现问题，上次付款可能失败了。请打开您的账户以更新付款方式或查看您的套餐。</translation>
-    </message>
-    <message>
-        <source>This deletes the local AI model files, signs you out, and resets the plugin. Your account and credits are not affected. Manual mode will download the files again next time you use it.</source>
-        <translation>这将删除本地 AI 模型文件、退出登录并重置插件。您的账户和积分不受影响。下次使用手动模式时会重新下载文件。</translation>
     </message>
     <message>
         <source>This layer has no valid coordinate reference system. Set one in Layer Properties before detecting.</source>
@@ -2211,10 +1994,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>置信度低</translation>
     </message>
     <message>
-        <source>upgrade to unlock it</source>
-        <translation>升级以解锁</translation>
-    </message>
-    <message>
         <source>your object</source>
         <translation>您的对象</translation>
     </message>
@@ -2222,50 +2001,22 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <source>{n} found so far</source>
         <translation>目前已发现 {n} 个</translation>
     </message>
-    <message>
-        <source>{n} tiles could not be loaded from the layer server; results may be incomplete.</source>
-        <translation>无法从图层服务器加载 {n} 个瓦片，结果可能不完整。</translation>
-    </message>
-    <message>
-        <source>{n} tiles had no imagery and were not analyzed (not charged). Check the imagery layer loads over this area, then run Detect again.</source>
-        <translation>{n} 个瓦片没有影像数据，未进行分析（不计费）。请确认影像图层在此区域能够正常加载，然后重新运行检测。</translation>
-    </message>
-    <message>
-        <source>{n} {object} saved to layer "{name}"</source>
-        <translation>已将 {n} 个{object}保存到图层“{name}”</translation>
-    </message>
-    <message>
-        <source>{used} credits used</source>
-        <translation>已使用 {used} 积分</translation>
-    </message>
     <!-- v2.1.7 sync: append-to-layer export, singular forms, small-example guidance (2026-07-13) -->
     <message>
-        <source>1 credit ~ 0.17 km² at default detail.</source>
-        <translation>默认细节级别下，1 积分约对应 0.17 平方公里。</translation>
+        <source>5,000 detections every month</source>
+        <translation>每月 5,000 次检测（约 1,700 平方公里）</translation>
     </message>
     <message>
-        <source>10,000 detections every month (~1,700 km²)</source>
-        <translation>每月 10,000 次检测（约 1,700 平方公里）</translation>
+        <source>This zone is {area} km². Free zones stop at {max} km².</source>
+        <translation>这个区域为 {area} km²。免费区域最大 {max} km²。</translation>
     </message>
     <message>
-        <source>Last run: {count} {object} exported · {area} km² · {used} credits used</source>
-        <translation>上次运行：已 Export {count} 个 {object} · {area} 平方公里 · 消耗 {used} 积分</translation>
+        <source>Pro has no size limit. Any area you draw, 5,000 tiles a month, maximum detail.</source>
+        <translation>Pro 没有大小限制。你画多大都行，每月 5,000 个瓦片，最高细节。</translation>
     </message>
     <message>
-        <source>Last run: {count} {object} exported · {area} km² · {used} credits used, {left} left</source>
-        <translation>上次运行：已 Export {count} 个 {object} · {area} 平方公里 · 消耗 {used} 积分，剩余 {left}</translation>
-    </message>
-    <message>
-        <source>Last session: {count} polygon(s) exported · {area} km²</source>
-        <translation>上次会话：已 Export {count} 个多边形 · {area} 平方公里</translation>
-    </message>
-    <message>
-        <source>This zone is {area} km² - free trial zones go up to {max} km².</source>
-        <translation>该区域面积为 {area} 平方公里，免费试用区域上限为 {max} 平方公里。</translation>
-    </message>
-    <message>
-        <source>{area} km²</source>
-        <translation>{area} 平方公里</translation>
+        <source>&lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt;, or make this zone smaller.</source>
+        <translation>&lt;a href=&quot;{url}&quot;&gt;升级到 Pro&lt;/a&gt;，或把区域画小一点。</translation>
     </message>
     <message>
         <source>Sending to the AI...</source>
@@ -2332,14 +2083,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>正在解析对象名称</translation>
     </message>
     <message>
-        <source>This example is very small at the current detail level. Zoom the detail slider finer or draw a larger object.</source>
-        <translation>此示例在当前细节级别下非常小。请将细节滑块调得更精细，或绘制更大的对象。</translation>
-    </message>
-    <message>
-        <source>This example is very small even at the finest detail. Draw a larger object, or it may be too small to detect.</source>
-        <translation>即使在最精细的细节级别下，此示例也非常小。请绘制更大的对象，否则可能太小而无法检测。</translation>
-    </message>
-    <message>
         <source>Your free detections are used up</source>
         <translation>您的免费检测已用完</translation>
     </message>
@@ -2356,10 +2099,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>本轮 1 次修正</translation>
     </message>
     <message>
-        <source>1 detection removed</source>
-        <translation>已移除 1 个检测结果</translation>
-    </message>
-    <message>
         <source>1 object</source>
         <translation>1 个对象</translation>
     </message>
@@ -2370,14 +2109,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>1 result</source>
         <translation>1 个结果</translation>
-    </message>
-    <message>
-        <source>A detection run was interrupted before its results were exported. {n} detection(s) were saved.</source>
-        <translation>检测运行被中断，此时结果尚未 Export，已保存 {n} 个检测结果。</translation>
-    </message>
-    <message>
-        <source>A free run covers up to {cap} credits. Lower the detail or draw a smaller zone, or</source>
-        <translation>免费运行最多可覆盖 {cap} 积分。请降低细节或缩小区域，或</translation>
     </message>
     <message>
         <source>A newer version of AI Segmentation is available with the latest fixes.</source>
@@ -2396,10 +2127,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>AI 环境已损坏</translation>
     </message>
     <message>
-        <source>AI and Manual are two ways to fix the same polygon.</source>
-        <translation>AI 和手动是修正同一个多边形的两种方式。</translation>
-    </message>
-    <message>
         <source>Add a missing polygon</source>
         <translation>添加遗漏的多边形</translation>
     </message>
@@ -2416,28 +2143,12 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>再添加一个示例以获得最佳效果。</translation>
     </message>
     <message>
-        <source>Add them to the project</source>
-        <translation>将它们添加到项目中</translation>
-    </message>
-    <message>
-        <source>Adding an object uses the free on-device AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and Add will arm automatically when it is ready.</source>
-        <translation>添加对象使用免费的本地 AI，但尚未安装。现在安装吗？（需要几分钟，在后台进行）。您可以在此期间继续复核，安装完成后“添加”功能会自动启用。</translation>
-    </message>
-    <message>
         <source>Adding needs a one-time setup</source>
         <translation>添加功能需要进行一次性安装</translation>
     </message>
     <message>
         <source>Almost done - building the shapes...</source>
         <translation>即将完成，正在生成形状…</translation>
-    </message>
-    <message>
-        <source>Almost there: in step 1, name the object your examples show - words plus examples detect best.</source>
-        <translation>还差一步：在步骤 1 中为您示例所展示的对象命名，文字加示例的检测效果最佳。</translation>
-    </message>
-    <message>
-        <source>Almost there: in step 2, outline one &quot;{word}&quot; on the map so the AI sees what yours look like.</source>
-        <translation>还差一步：在步骤 2 中，在地图上圈出一个“{word}”，让 AI 了解它的样子。</translation>
     </message>
     <message>
         <source>Another QGIS window is installing the AI components. Wait for it to finish, then try again.</source>
@@ -2572,20 +2283,12 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>修正</translation>
     </message>
     <message>
-        <source>Correct the polygons</source>
-        <translation>修正多边形</translation>
-    </message>
-    <message>
         <source>Could not apply the new settings. Try a different value.</source>
         <translation>无法应用新设置，请尝试其他数值。</translation>
     </message>
     <message>
         <source>Could not check the AI components. See the log for details.</source>
         <translation>无法检查 AI 组件，详情请查看日志。</translation>
-    </message>
-    <message>
-        <source>Could not load the saved run. The file may have been moved or deleted.</source>
-        <translation>无法加载已保存的运行记录，文件可能已被移动或删除。</translation>
     </message>
     <message>
         <source>Credits come back on {date}</source>
@@ -2624,18 +2327,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>茂密的森林？“Forest”会作为一整块处理，“Tree”则会识别单株树木。</translation>
     </message>
     <message>
-        <source>Detect with example only</source>
-        <translation>仅使用示例检测</translation>
-    </message>
-    <message>
-        <source>Detect with examples only</source>
-        <translation>仅使用示例检测</translation>
-    </message>
-    <message>
-        <source>Detect with text only</source>
-        <translation>仅使用文字检测</translation>
-    </message>
-    <message>
         <source>Detection stopped early after {done} tile(s). The objects already found are kept below.</source>
         <translation>检测在处理 {done} 个瓦片后提前停止，已发现的对象保留在下方。</translation>
     </message>
@@ -2646,14 +2337,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>Distinct</source>
         <translation>分色</translation>
-    </message>
-    <message>
-        <source>Drag a box around one look-alike to exclude.</source>
-        <translation>拖出一个框，圈选一个要排除的相似对象。</translation>
-    </message>
-    <message>
-        <source>Drag a box around one object.</source>
-        <translation>拖出一个框，圈选一个对象。</translation>
     </message>
     <message>
         <source>Drag a corner to move it. Click an edge to add one, right-click removes.</source>
@@ -2674,10 +2357,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>Draw a line right across the shape, then Finish.</source>
         <translation>绘制一条贯穿形状的线，然后点击“完成”。</translation>
-    </message>
-    <message>
-        <source>Draw an example of the object first (step 2).</source>
-        <translation>请先绘制该对象的示例（步骤 2）。</translation>
     </message>
     <message>
         <source>Draw an example, or type what to find.</source>
@@ -2766,14 +2445,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>How detections are coloured on the map (visual only): Normal fill, Outline, Confidence heatmap, or a distinct colour per object to tell them apart.</source>
         <translation>检测结果在地图上的着色方式（仅影响显示）：普通填充、轮廓、置信度热力图，或每个对象使用不同颜色以便区分。</translation>
-    </message>
-    <message>
-        <source>How many of each outline&apos;s points to keep, as a share. 100% keeps the class default; lower thins further, dropping the smallest detail first and keeping the corners and the surface. With Right angles on it runs first, so lowering it gives the squaring straight walls to work from.</source>
-        <translation>保留每条轮廓节点的比例。100% 保持该类别的默认密度；数值越低，细化程度越高，优先去除最细小的细节，同时保留转角和整体轮廓。开启“直角化”时该项先执行，因此调低它可为直角化提供更平直的墙面基础。</translation>
-    </message>
-    <message>
-        <source>How many of the outline&apos;s points to keep, as a share. 100% keeps the standard density; lower thins further, dropping the smallest detail first and keeping the corners and the surface. With Right angles on it runs first, so lowering it gives the squaring straight walls to work from.</source>
-        <translation>保留轮廓节点的比例。100% 保持标准密度；数值越低，细化程度越高，优先去除最细小的细节，同时保留转角和整体轮廓。开启“直角化”时该项先执行，因此调低它可为直角化提供更平直的墙面基础。</translation>
     </message>
     <message>
         <source>How many of this polygon&apos;s points to keep. The count in the title row follows it. It runs before Right angles, so lowering it gives the squaring straight walls instead of a staircase.</source>
@@ -2892,10 +2563,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>无法连接登录服务，请检查网络连接，然后点击“连接”重试。</translation>
     </message>
     <message>
-        <source>No detection in this zone. Try a more specific object word, or a finer detail level.</source>
-        <translation>该区域内无检测结果，请尝试更具体的对象名称，或提高细节级别。</translation>
-    </message>
-    <message>
         <source>No detection under that click.</source>
         <translation>该点击位置未检测到对象。</translation>
     </message>
@@ -2910,10 +2577,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>Nothing changed. The line has to cross the outline twice, starting and ending outside the shape.</source>
         <translation>未发生更改。该线必须与轮廓相交两次，且起点和终点都在形状外部。</translation>
-    </message>
-    <message>
-        <source>Nothing cleared the confidence bar in this zone.</source>
-        <translation>该区域内没有对象达到置信度阈值。</translation>
     </message>
     <message>
         <source>Nothing was added. A polygon needs at least three corners.</source>
@@ -2938,10 +2601,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>One object per run - detecting &quot;{first}&quot; now. Run the other objects as separate detections.</source>
         <translation>每次运行仅处理一个对象，目前正在检测“{first}”。其他对象请作为单独的检测运行。</translation>
-    </message>
-    <message>
-        <source>Only this polygon. Every other one follows the Shapes step.</source>
-        <translation>仅此多边形；其他多边形仍遵循“形状”步骤的设置。</translation>
     </message>
     <message>
         <source>Open the selected saved polygon for AI editing</source>
@@ -3000,16 +2659,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>QGIS 无法激活临时复核图层。请关闭其他编辑会话，然后重新尝试手动编辑。</translation>
     </message>
     <message>
-        <source>QGIS could not open a browser. Open this address to finish signing in, then come back here:
-{}</source>
-        <translation>QGIS 无法打开浏览器。请打开以下地址完成登录，然后返回此处：
-{}</translation>
-    </message>
-    <message>
-        <source>QGIS could not open a browser. The sign-in address is copied to your clipboard: paste it into a browser to finish, then come back here.</source>
-        <translation>QGIS 无法打开浏览器。登录地址已复制到剪贴板：请将其粘贴到浏览器中完成登录，然后返回此处。</translation>
-    </message>
-    <message>
         <source>QGIS could not save these edits. Fix the geometry and click Done again.</source>
         <translation>QGIS 无法保存这些编辑，请修复几何图形后重新点击“完成”。</translation>
     </message>
@@ -3032,10 +2681,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>Rebuilding shapes ({done} of {total})</source>
         <translation>正在重建形状（{done}/{total}）</translation>
-    </message>
-    <message>
-        <source>Recovered {n} detection(s) to the layer {name}.</source>
-        <translation>已将 {n} 个检测结果恢复到图层 {name}。</translation>
     </message>
     <message>
         <source>Redraw edge</source>
@@ -3070,14 +2715,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>重置为共享设置</translation>
     </message>
     <message>
-        <source>Reshape needs a one-time setup</source>
-        <translation>重塑功能需要进行一次性安装</translation>
-    </message>
-    <message>
-        <source>Reshaping uses the free on-device AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and reshaping will open automatically when it is ready.</source>
-        <translation>重塑功能使用免费的本地 AI，但尚未安装。现在安装吗？（需要几分钟，在后台进行）。您可以在此期间继续复核，安装完成后重塑面板会自动打开。</translation>
-    </message>
-    <message>
         <source>Right angles</source>
         <translation>直角化</translation>
     </message>
@@ -3102,40 +2739,12 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>重新运行此区域</translation>
     </message>
     <message>
-        <source>Running low: {n} free detections left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Subscribe&lt;/a&gt; to keep going.</source>
-        <translation>即将用完：还剩 {n} 次免费检测，将于 {date} 恢复。&lt;a href=&quot;{url}&quot;&gt;订阅&lt;/a&gt;以继续使用。</translation>
-    </message>
-    <message>
-        <source>Same setup as your last run - the result will match. Add an example or change the detail for a different result.</source>
-        <translation>与上次运行的设置相同，结果也会相同。添加示例或更改细节以获得不同的结果。</translation>
-    </message>
-    <message>
         <source>Save</source>
         <translation>保存</translation>
     </message>
     <message>
         <source>Save the fix and go back to the review</source>
         <translation>保存修正并返回复核</translation>
-    </message>
-    <message>
-        <source>Save this polygon and go back to picking.</source>
-        <translation>保存此多边形并返回选取。</translation>
-    </message>
-    <message>
-        <source>Setting up the on-device AI in the background. You can keep reviewing; reshaping opens automatically when it is ready.</source>
-        <translation>正在后台设置本地 AI。您可以继续复核，准备就绪后重塑面板会自动打开。</translation>
-    </message>
-    <message>
-        <source>Setting up the on-device AI in the background...</source>
-        <translation>正在后台设置本地 AI…</translation>
-    </message>
-    <message>
-        <source>Settings for this polygon</source>
-        <translation>此多边形的设置</translation>
-    </message>
-    <message>
-        <source>Shadows getting detected instead of trees? Draw an &apos;Exclude a look-alike&apos; box on one shadow - the AI drops similar false positives.</source>
-        <translation>检测到的是阴影而不是树木？在一处阴影上绘制“排除相似对象”框，AI 会剔除类似的误检结果。</translation>
     </message>
     <message>
         <source>Shape updated. Keep editing, or click Save.</source>
@@ -3198,10 +2807,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>正在停止本地 AI…</translation>
     </message>
     <message>
-        <source>Switch to AI to shape this polygon on its own.</source>
-        <translation>切换到 AI 模式，让其自动为此多边形塑形。</translation>
-    </message>
-    <message>
         <source>That area does not touch the object you are editing, so nothing was added. Reshaping works on one object at a time.</source>
         <translation>该区域未与您正在编辑的对象相接触，因此未添加任何内容。重塑每次只能处理一个对象。</translation>
     </message>
@@ -3246,10 +2851,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>安装程序无法启动辅助进程（Python 启动器已损坏）。请点击“重新安装依赖项”以从头重建环境。</translation>
     </message>
     <message>
-        <source>The pieces do not touch, so the result is one object in several parts.</source>
-        <translation>这些部分互不相邻，因此结果是一个分为多段的对象。</translation>
-    </message>
-    <message>
         <source>The removal could not start. You are signed out, but the downloaded AI data is still on this computer. Try again.</source>
         <translation>移除操作无法启动。您已退出登录，但已下载的 AI 数据仍保留在本机上，请重试。</translation>
     </message>
@@ -3274,10 +2875,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>在手动编辑之前细化此多边形的节点。100% 表示保持轮廓不变。</translation>
     </message>
     <message>
-        <source>This image has no position on the map, so Automatic cannot place what it finds. Give it one with the QGIS Georeferencer, or use Manual mode on it as is.</source>
-        <translation>此图像在地图上没有地理位置，因此自动模式无法定位其检测结果。请使用 QGIS 地理配准器为其添加位置，或直接以当前状态使用手动模式。</translation>
-    </message>
-    <message>
         <source>This polygon</source>
         <translation>此多边形</translation>
     </message>
@@ -3288,14 +2885,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>This raster is rotated. Run Warp (Reproject) on it to straighten it before segmenting.</source>
         <translation>此栅格已旋转，请在分割前运行 Warp（重投影）将其校正。</translation>
-    </message>
-    <message>
-        <source>This raster is rotated. Run Warp (Reproject) on it to straighten it first. Manual mode cannot read it either.</source>
-        <translation>此栅格已旋转，请先运行 Warp（重投影）将其校正。手动模式同样无法读取该栅格。</translation>
-    </message>
-    <message>
-        <source>This run costs more credits than a free run covers. Lower the detail or draw a smaller zone, or</source>
-        <translation>本次运行所需积分超出免费额度。请降低细节或缩小区域，或</translation>
     </message>
     <message>
         <source>This run did not keep where it looked, so it cannot be pointed at the same place. Draw the zone again.</source>
@@ -3312,10 +2901,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>Two references give the strongest detection. Draw a second to reach best quality.</source>
         <translation>两个参考示例可获得最强的检测效果，请再绘制一个以达到最佳质量。</translation>
-    </message>
-    <message>
-        <source>Type a word for the object first (step 1).</source>
-        <translation>请先为该对象输入一个词（步骤 1）。</translation>
     </message>
     <message>
         <source>Unavailable while Right angles is on. Turn it off to adjust this setting.</source>
@@ -3450,10 +3035,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>本次会话已编辑 {n} 个形状</translation>
     </message>
     <message>
-        <source>{n} shapes merged into one · Free</source>
-        <translation>{n} 个形状已合并为一个 · 免费</translation>
-    </message>
-    <message>
         <source>{n} shapes picked. Press Enter to join.</source>
         <translation>已选择 {n} 个形状，按 Enter 拼接。</translation>
     </message>
@@ -3475,12 +3056,8 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     </message>
     <!-- Correct step rework, install and precision wording (2026-07-30) -->
     <message>
-        <source>1 credit ~ 0.17 km² at default precision.</source>
-        <translation>默认精度下，1 积分约对应 0.17 平方公里。</translation>
-    </message>
-    <message>
-        <source>10,000 credits a month.</source>
-        <translation>每月 10,000 积分。</translation>
+        <source>5,000 credits a month.</source>
+        <translation>每月 5,000 积分。</translation>
     </message>
     <message>
         <source>A free run covers up to {cap} credits. This one costs more.</source>
@@ -3495,14 +3072,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>在当前精度下，{obj}太小，难以发现，请提高精度。</translation>
     </message>
     <message>
-        <source>Automatic mode is ready. The on-device AI could not be installed, so Manual mode and the AI fix are off until it is. Everything else works.</source>
-        <translation>自动模式已就绪。本地 AI 未能安装，因此手动模式和 AI 修正在安装完成前不可用。其余功能均可正常使用。</translation>
-    </message>
-    <message>
-        <source>Automatic mode needs the AI environment, and it is missing or incomplete. Install the dependencies from the plugin panel, then run Detect again.</source>
-        <translation>自动模式需要 AI 环境，但该环境缺失或不完整。请在插件面板中安装依赖项，然后重新运行检测。</translation>
-    </message>
-    <message>
         <source>Automatic mode scans your zone tile by tile. 1 tile = 1 credit, so this run costs about {n} credits. More precision splits the zone into more tiles, which costs more credits.</source>
         <translation>自动模式会逐个瓦片扫描您的区域。1 个瓦片 = 1 积分，因此本次运行大约消耗 {n} 积分。精度越高，区域被划分的瓦片越多，消耗的积分也越多。</translation>
     </message>
@@ -3513,10 +3082,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>Clean up this outline</source>
         <translation>清理此轮廓</translation>
-    </message>
-    <message>
-        <source>Click an object and the AI outlines it. You check and save each polygon yourself, one at a time. Use Automatic mode to get every object in a zone at once.</source>
-        <translation>点击一个对象，AI 即可为其勾出轮廓。您可以逐一亲自检查并保存每个多边形。使用自动模式可一次性获取区域内的所有对象。</translation>
     </message>
     <message>
         <source>Click points around one look-alike, then double-click to close.</source>
@@ -3545,14 +3110,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>Downloads Blocked by Your Network</source>
         <translation>下载被您的网络阻止</translation>
-    </message>
-    <message>
-        <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to segment areas of any size.</source>
-        <translation>请绘制更小的区域，或&lt;a href=&quot;{url}&quot;&gt;升级到 Pro&lt;/a&gt;以分割任意大小的区域。</translation>
-    </message>
-    <message>
-        <source>Draw a zone, name one kind of object, and get all of them in one run. Use Manual mode to work one object at a time.</source>
-        <translation>绘制一个区域，命名一种对象，即可在一次运行中获取全部结果。使用手动模式可逐一处理对象。</translation>
     </message>
     <message>
         <source>Draw another example</source>
@@ -3593,14 +3150,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>Keep this shape. The polygon stays picked, so you can still adjust, merge or delete it.</source>
         <translation>保留此形状。该多边形将保持选中，您仍可以调整、合并或删除它。</translation>
-    </message>
-    <message>
-        <source>Last run: {n} {object}</source>
-        <translation>上次运行：{n} 个{object}</translation>
-    </message>
-    <message>
-        <source>Last run: {n} {object} in {layer}</source>
-        <translation>上次运行：{n} 个{object}，位于{layer}</translation>
     </message>
     <message>
         <source>Loading the imagery...</source>
@@ -3677,10 +3226,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>Same setup as your last run - the result will match. Add an example or change the precision for a different result.</source>
         <translation>与上次运行的设置相同，结果也会相同。添加示例或更改精度以获得不同的结果。</translation>
-    </message>
-    <message>
-        <source>Saved to {layer}</source>
-        <translation>已保存到 {layer}</translation>
     </message>
     <message>
         <source>Setting up the on-device AI. This runs once and takes a few minutes. The review waits here until it is done.</source>
@@ -3821,16 +3366,12 @@ It may have been moved or renamed, or the drive or network share it is on may be
         <translation>为对象输入一个词，或绘制一个示例。</translation>
     </message>
     <message>
-        <source>Upgrade to Pro to finish this zone: 10,000 credits/month.</source>
-        <translation>升级到 Pro 以完成该区域的检测：每月 10,000 积分。</translation>
+        <source>Upgrade to Pro to finish this zone: 5,000 credits/month.</source>
+        <translation>升级到 Pro 以完成该区域的检测：每月 5,000 积分。</translation>
     </message>
     <message>
         <source>Wait for the on-device AI to finish installing.</source>
         <translation>等待本地 AI 完成安装。</translation>
-    </message>
-    <message>
-        <source>{count} polygon(s) exported</source>
-        <translation>已 Export {count} 个多边形</translation>
     </message>
     <message>
         <source>{n} {object} saved</source>
@@ -3840,22 +3381,472 @@ It may have been moved or renamed, or the drive or network share it is on may be
         <source>{n} {object} saved to {layer}</source>
         <translation>已将 {n} 个{object}保存到 {layer}</translation>
     </message>
-    <message>
-        <source>{used} credits</source>
-        <translation>{used} 积分</translation>
-    </message>
     <!-- Correct-step on-device AI setup, free-run cap wording, missing raster (2026-07-30) -->
     <message>
-        <source>or lower the detail to stay free.</source>
-        <translation>或降低细节以保持免费。</translation>
+        <source>5,000 objects every month</source>
+        <translation>每月 5,000 个对象</translation>
     </message>
     <message>
-        <source>This zone at this detail needs a subscription.</source>
-        <translation>在此细节下处理该区域需要订阅。</translation>
+        <source>A session is already running.</source>
+        <translation>会话已在进行中。</translation>
     </message>
     <message>
-        <source>Subscribe</source>
-        <translation>订阅</translation>
+        <source>AI engine</source>
+        <translation>AI 引擎</translation>
+    </message>
+    <message>
+        <source>AI fixing is not reachable right now. Switched to editing by hand, which works offline.</source>
+        <translation>AI 修正暂时无法访问。已切换为手动编辑，可离线使用。</translation>
+    </message>
+    <message>
+        <source>AI ready</source>
+        <translation>AI 已就绪</translation>
+    </message>
+    <message>
+        <source>Add an object the AI missed. In AI, point at it and the model outlines it, free; in Manual, draw its corners.</source>
+        <translation>添加一个 AI 遗漏的对象。在 AI 模式下，点击它，模型即可免费勾出轮廓；在手动模式下，逐一绘制其节点。</translation>
+    </message>
+    <message>
+        <source>Almost ready: the AI file did not download.</source>
+        <translation>即将就绪：AI 文件未能下载。</translation>
+    </message>
+    <message>
+        <source>Almost ready: the AI file is still missing.</source>
+        <translation>即将就绪：AI 文件仍然缺失。</translation>
+    </message>
+    <message>
+        <source>Answered on your computer this time. TerraLab could not be reached.</source>
+        <translation>此次已在您的电脑上完成处理。未能连接到 TerraLab。</translation>
+    </message>
+    <message>
+        <source>As fine as {obj} benefits from - finer splits them into pieces.</source>
+        <translation>精细度已是 {obj} 能获益的上限，更精细会将其拆分成碎片。</translation>
+    </message>
+    <message>
+        <source>Automatic mode is ready. The on-device AI could not be installed, so Semi-Auto mode and the AI fix are off until it is. Everything else works.</source>
+        <translation>自动模式已就绪。本地 AI 未能安装，因此半自动模式和 AI 修正在安装完成前不可用。其余功能均可正常使用。</translation>
+    </message>
+    <message>
+        <source>Automatic mode needs a small one-time setup before it can read your imagery. It takes about a minute.</source>
+        <translation>自动模式需要先进行一次简短的一次性设置，才能读取您的影像。这大约需要一分钟。</translation>
+    </message>
+    <message>
+        <source>Automatic mode ready</source>
+        <translation>自动模式已就绪</translation>
+    </message>
+    <message>
+        <source>Categories</source>
+        <translation>分类</translation>
+    </message>
+    <message>
+        <source>Choose between Semi-Auto and Automatic segmentation</source>
+        <translation>在半自动分割和自动分割之间选择</translation>
+    </message>
+    <message>
+        <source>Choose where the AI runs: on TerraLab servers, or on your own computer</source>
+        <translation>选择 AI 的运行位置：TerraLab 服务器，或您自己的电脑</translation>
+    </message>
+    <message>
+        <source>Click the object you want to segment:</source>
+        <translation>点击您想要分割的对象：</translation>
+    </message>
+    <message>
+        <source>Cloud AI</source>
+        <translation>Cloud AI</translation>
+    </message>
+    <message>
+        <source>Cloud AI needs your account, and it is signed out. Sign back in, or install the offline AI to work without one.</source>
+        <translation>Cloud AI 需要您的账户，但当前已登出。请重新登录，或安装离线 AI 以在无需账户的情况下使用。</translation>
+    </message>
+    <message>
+        <source>How Cloud AI works</source>
+        <translation>Cloud AI 的工作方式</translation>
+    </message>
+    <message>
+        <source>Continue with Cloud AI</source>
+        <translation>继续使用 Cloud AI</translation>
+    </message>
+    <message>
+        <source>Delete this polygon and leave the manual edit. Anything you changed here and did not save goes with it. Undo brings the polygon back.</source>
+        <translation>删除此多边形并退出手动编辑。您在此处所做但未保存的更改将一并丢失。撤销可将其恢复。</translation>
+    </message>
+    <message>
+        <source>Downloading and setting it up takes &lt;b&gt;about {n} minutes&lt;/b&gt;, once.</source>
+        <translation>下载并设置需要&lt;b&gt;约 {n} 分钟&lt;/b&gt;，仅此一次。</translation>
+    </message>
+    <message>
+        <source>Draw a zone, name one kind of object, and get all of them in one run. Use Semi-Auto mode to work one object at a time.</source>
+        <translation>绘制一个区域，命名一种对象，即可在一次运行中获取全部结果。使用半自动模式可逐一处理对象。</translation>
+    </message>
+    <message>
+        <source>Each click sends a small square of the image to our servers in Europe, and the outline comes back.</source>
+        <translation>每次点击会将图像中的一小块方形区域发送到我们在欧洲的服务器，随后返回轮廓结果。</translation>
+    </message>
+    <message>
+        <source>Ends this session. Your saved polygons are kept.</source>
+        <translation>结束本次会话。您已保存的多边形会被保留。</translation>
+    </message>
+    <message>
+        <source>Faster and more accurate</source>
+        <translation>更快，更准确</translation>
+    </message>
+    <message>
+        <source>Featured</source>
+        <translation>精选</translation>
+    </message>
+    <message>
+        <source>Free, works offline</source>
+        <translation>免费，可离线使用</translation>
+    </message>
+    <message>
+        <source>Install it now</source>
+        <translation>立即安装</translation>
+    </message>
+    <message>
+        <source>Install the offline AI</source>
+        <translation>安装离线 AI</translation>
+    </message>
+    <message>
+        <source>Installing the offline AI</source>
+        <translation>正在安装离线 AI</translation>
+    </message>
+    <message>
+        <source>Intel Mac: using the older AI model.</source>
+        <translation>Intel Mac：使用旧版 AI 模型。</translation>
+    </message>
+    <message>
+        <source>It needs &lt;b&gt;{gb} GB&lt;/b&gt; of free disk space.</source>
+        <translation>需要&lt;b&gt;{gb} GB&lt;/b&gt;的可用磁盘空间。</translation>
+    </message>
+    <message>
+        <source>My computer</source>
+        <translation>我的电脑</translation>
+    </message>
+    <message>
+        <source>My computer, free and unlimited</source>
+        <translation>我的电脑，免费且不受限制</translation>
+    </message>
+    <message>
+        <source>My work</source>
+        <translation>我的作品</translation>
+    </message>
+    <message>
+        <source>No credits left. Each object you save with Cloud AI costs one credit.</source>
+        <translation>积分已用完。使用 Cloud AI 保存的每个对象消耗 1 积分。</translation>
+    </message>
+    <message>
+        <source>No credits left. Each object you save with Cloud AI costs one credit. Switch to the offline AI to keep working for free, or upgrade from the panel.</source>
+        <translation>积分已用完。使用 Cloud AI 保存的每个对象消耗 1 积分。切换到离线 AI 可继续免费使用，或从面板升级。</translation>
+    </message>
+    <message>
+        <source>No credits left. This polygon stays on the map, and Export still works.</source>
+        <translation>积分已用完。此多边形会保留在地图上，Export 功能仍可使用。</translation>
+    </message>
+    <message>
+        <source>No credits left. This polygon stays on the map, but it cannot be saved.</source>
+        <translation>积分已用完。此多边形会保留在地图上，但无法保存。</translation>
+    </message>
+    <message>
+        <source>No object found here. Try clicking somewhere else.</source>
+        <translation>此处未找到对象，请尝试点击其他位置。</translation>
+    </message>
+    <message>
+        <source>Not now</source>
+        <translation>暂不</translation>
+    </message>
+    <message>
+        <source>Your project and your files stay on your computer. One credit per object you save.</source>
+        <translation>您的工程和文件都留在您的电脑上。每保存 1 个对象消耗 1 积分。</translation>
+    </message>
+    <message>
+        <source>One precision level fits {obj} in a zone this size - draw a larger zone for a choice.</source>
+        <translation>在此大小的区域内，只有一个精度级别适合 {obj}，绘制更大的区域可获得更多选择。</translation>
+    </message>
+    <message>
+        <source>One-time setup</source>
+        <translation>一次性设置</translation>
+    </message>
+    <message>
+        <source>Other detections</source>
+        <translation>其他检测结果</translation>
+    </message>
+    <message>
+        <source>Pick a raster layer and accept the Terms to start.</source>
+        <translation>选择一个栅格图层并接受服务条款以开始。</translation>
+    </message>
+    <message>
+        <source>Preparing the install...</source>
+        <translation>正在准备安装...</translation>
+    </message>
+    <message>
+        <source>Pro is active on this account. Your credits are ready.</source>
+        <translation>此账户已激活 Pro。您的积分已就绪。</translation>
+    </message>
+    <message>
+        <source>Read the privacy policy</source>
+        <translation>查看隐私政策</translation>
+    </message>
+    <message>
+        <source>Right-click a polygon on the map to delete it.</source>
+        <translation>在地图上右键点击多边形即可将其删除。</translation>
+    </message>
+    <message>
+        <source>Running low: {n} credits left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>即将用完：还剩 {n} 积分，将于 {date} 恢复。&lt;a href=&quot;{url}&quot;&gt;升级到 Pro&lt;/a&gt;以继续使用。</translation>
+    </message>
+    <message>
+        <source>Running low: {n} credits left. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>即将用完：还剩 {n} 积分。&lt;a href=&quot;{url}&quot;&gt;升级到 Pro&lt;/a&gt;以继续使用。</translation>
+    </message>
+    <message>
+        <source>Save a polygon first. Export writes every polygon you kept to a layer.</source>
+        <translation>请先保存一个多边形。Export 会将您保留的所有多边形写入图层。</translation>
+    </message>
+    <message>
+        <source>Saving object</source>
+        <translation>正在保存对象</translation>
+    </message>
+    <message>
+        <source>Semi-Auto</source>
+        <translation>半自动</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode installs local components that are not available for this Mac with this version of QGIS. Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
+        <translation>半自动模式需要安装本地组件，但在此 Mac 与此版本的 QGIS 下不可用。请改用自动模式，它完全在云端运行，无需本地安装。</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode is not supported</source>
+        <translation>半自动模式不受支持</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode is not supported in this QGIS installation</source>
+        <translation>此 QGIS 安装环境不支持半自动模式</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode needs to install local dependencies, which is not supported inside this sandboxed QGIS installation (Flatpak or Snap). Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
+        <translation>半自动模式需要安装本地依赖项，但在此沙盒化的 QGIS 环境（Flatpak 或 Snap）中不受支持。请改用自动模式，它完全在云端运行，无需本地安装。</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode stays free and unlimited on your computer.</source>
+        <translation>半自动模式在您的电脑上始终免费且不受限制。</translation>
+    </message>
+    <message>
+        <source>Session ended</source>
+        <translation>会话已结束</translation>
+    </message>
+    <message>
+        <source>Set up now</source>
+        <translation>立即设置</translation>
+    </message>
+    <message>
+        <source>Setting up on your computer {dot} &lt;b&gt;pick Cloud AI to start now&lt;/b&gt;</source>
+        <translation>正在您的电脑上设置 {dot} &lt;b&gt;选择 Cloud AI 以立即开始&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Start Semi-Auto AI Segmentation</source>
+        <translation>开始半自动 AI Segmentation</translation>
+    </message>
+    <message>
+        <source>Stop and use my computer instead</source>
+        <translation>停止并改用我的电脑</translation>
+    </message>
+    <message>
+        <source>Stop the install</source>
+        <translation>停止安装</translation>
+    </message>
+    <message>
+        <source>The AI is still loading. Try again in a few seconds.</source>
+        <translation>AI 仍在加载中，请几秒后重试。</translation>
+    </message>
+    <message>
+        <source>The AI was set up but could not start.</source>
+        <translation>AI 已完成设置，但无法启动。</translation>
+    </message>
+    <message>
+        <source>The click was cancelled.</source>
+        <translation>此次点击已取消。</translation>
+    </message>
+    <message>
+        <source>The install did not finish. Retry it, or pick Cloud AI.</source>
+        <translation>安装未完成。请重试，或选择 Cloud AI。</translation>
+    </message>
+    <message>
+        <source>The model is unsure about this outline. Click again to correct it, or draw it by hand.</source>
+        <translation>模型对此轮廓把握不大。请再次点击以修正，或手动绘制。</translation>
+    </message>
+    <message>
+        <source>The offline AI</source>
+        <translation>离线 AI</translation>
+    </message>
+    <message>
+        <source>The offline AI is not installed yet.</source>
+        <translation>离线 AI 尚未安装。</translation>
+    </message>
+    <message>
+        <source>The offline AI is still downloading.</source>
+        <translation>离线 AI 仍在下载中。</translation>
+    </message>
+    <message>
+        <source>The smaller model on your computer. No credits, no limit.</source>
+        <translation>在您电脑上运行的较小模型。无需积分，不受限制。</translation>
+    </message>
+    <message>
+        <source>This deletes the local AI model files, signs you out, and resets the plugin. Your account and credits are not affected. Semi-Auto mode will download the files again next time you use it.</source>
+        <translation>这将删除本地 AI 模型文件、退出登录并重置插件。您的账户和积分不受影响。下次使用半自动模式时会重新下载文件。</translation>
+    </message>
+    <message>
+        <source>This drive has {free} GB free, under the {need} GB the install needs. Free some space, or use Cloud AI.</source>
+        <translation>此磁盘还有 {free} GB 可用空间，低于安装所需的 {need} GB。请释放一些空间，或使用 Cloud AI。</translation>
+    </message>
+    <message>
+        <source>This image has no position on the map, so Automatic cannot place what it finds. Give it one with the QGIS Georeferencer, or use Semi-Auto mode on it as is.</source>
+        <translation>此图像在地图上没有地理位置，因此自动模式无法定位其检测结果。请使用 QGIS 地理配准器为其添加位置，或直接以当前状态使用半自动模式。</translation>
+    </message>
+    <message>
+        <source>This model rates every object the same, so filtering by confidence would show all of them or none. Use Size below, or fix objects in the next step.</source>
+        <translation>此模型对所有对象给出相同的评分，因此按置信度筛选会显示全部或不显示。请使用下方的大小选项，或在下一步中修正对象。</translation>
+    </message>
+    <message>
+        <source>This raster is rotated. Run Warp (Reproject) on it to straighten it first. Semi-Auto mode cannot read it either.</source>
+        <translation>此栅格已旋转，请先运行 Warp（重投影）将其校正。半自动模式同样无法读取该栅格。</translation>
+    </message>
+    <message>
+        <source>Use Cloud AI instead</source>
+        <translation>改用 Cloud AI</translation>
+    </message>
+    <message>
+        <source>Use my computer instead</source>
+        <translation>改用我的电脑</translation>
+    </message>
+    <message>
+        <source>Where the segmentation runs:</source>
+        <translation>分割运行的位置：</translation>
+    </message>
+    <message>
+        <source>You can close this window and keep working. The install carries on, and the panel shows how far it has got.</source>
+        <translation>您可以关闭此窗口继续工作。安装会在后台继续进行，面板会显示当前进度。</translation>
+    </message>
+    <message>
+        <source>Your free credits come back on {date}.</source>
+        <translation>您的免费积分将于 {date} 恢复。</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;about 10 minutes to install&lt;/b&gt;</source>
+        <translation>一切都留在您的电脑上 {dot} &lt;b&gt;安装约需 10 分钟&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;save as many as you like&lt;/b&gt;</source>
+        <translation>一切都留在您的电脑上 {dot} &lt;b&gt;保存数量不限&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;{gb} GB and about 10 minutes to install&lt;/b&gt;</source>
+        <translation>一切都留在您的电脑上 {dot} &lt;b&gt;{gb} GB，安装约需 10 分钟&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>No setup on this computer {dot} &lt;b&gt;1 credit per object you save&lt;/b&gt;</source>
+        <translation>您的电脑上无需设置 {dot} &lt;b&gt;每保存 1 个对象消耗 1 积分&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>The offline AI answers your clicks on this computer. Your imagery stays here, and every click is free.</source>
+        <translation>离线 AI 会在您的电脑上响应点击。您的影像留在本地，每次点击都是免费的。</translation>
+    </message>
+    <message>
+        <source>This online layer returned no imagery for this area. Its server refused the request. Check the layer&apos;s URL in Layer Properties, or use another basemap.</source>
+        <translation>此在线图层未返回此区域的影像。其服务器拒绝了请求。请在图层属性中检查该图层的 URL，或使用其他底图。</translation>
+    </message>
+    <message>
+        <source>1 credit covers about 0.17 km² at default precision.</source>
+        <translation>默认精度下，1 积分约对应 0.17 平方公里。</translation>
+    </message>
+    <message>
+        <source>Clear all {n}</source>
+        <translation>全部清空 {n}</translation>
+    </message>
+    <message>
+        <source>Could not check your AI Segmentation account. If this lasts, sign out and sign in again.</source>
+        <translation>无法核实您的 AI Segmentation 账户。如果问题持续存在，请退出登录后重新登录。</translation>
+    </message>
+    <message>
+        <source>Could not load your account. Try again in a moment.</source>
+        <translation>无法加载您的账户，请稍后重试。</translation>
+    </message>
+    <message>
+        <source>Could not reach TerraLab. Check your internet connection, then try again.</source>
+        <translation>无法连接到 TerraLab，请检查您的网络连接，然后重试。</translation>
+    </message>
+    <message>
+        <source>Editing by hand could not open on this polygon on its own. Try again, or fix it with the AI.</source>
+        <translation>手动编辑未能自行在此多边形上打开。请重试，或改用 AI 进行修正。</translation>
+    </message>
+    <message>
+        <source>It downloads first, and takes about 10 minutes.</source>
+        <translation>会先进行下载，大约需要 10 分钟。</translation>
+    </message>
+    <message>
+        <source>It downloads first: {gb} GB and about 10 minutes.</source>
+        <translation>会先进行下载：{gb} GB，大约需要 10 分钟。</translation>
+    </message>
+    <message>
+        <source>Nothing in this category yet.</source>
+        <translation>此分类下暂无内容。</translation>
+    </message>
+    <message>
+        <source>One run covers up to {cap} tiles. This zone at this precision needs more. Draw a smaller zone, or lower the precision.</source>
+        <translation>一次运行最多可覆盖 {cap} 个瓦片，此区域在当前精度下需要更多瓦片。请绘制更小的区域，或降低精度。</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser. Open this address to finish signing in, then come back here. It works once:
+{}</source>
+        <translation>QGIS 无法打开浏览器。请打开以下地址完成登录，然后返回此处。该地址仅可使用一次：
+{}</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser. The sign-in address is copied to your clipboard: paste it into a browser to finish, then come back here. It works once.</source>
+        <translation>QGIS 无法打开浏览器。登录地址已复制到剪贴板：请将其粘贴到浏览器中完成登录，然后返回此处。该地址仅可使用一次。</translation>
+    </message>
+    <message>
+        <source>Reading your logs...</source>
+        <translation>正在读取您的日志…</translation>
+    </message>
+    <message>
+        <source>Sign in again to fix with the AI. Switched to editing by hand, which needs no account.</source>
+        <translation>请重新登录以使用 AI 修正。已切换为手动编辑，此方式无需账户。</translation>
+    </message>
+    <message>
+        <source>The export did not finish. Your polygons are still on the map, so you can try again.</source>
+        <translation>Export 未完成。您的多边形仍保留在地图上，您可以重试。</translation>
+    </message>
+    <message>
+        <source>The install did not finish {dot} &lt;b&gt;retry it, or pick Cloud AI&lt;/b&gt;</source>
+        <translation>安装未完成 {dot} &lt;b&gt;请重试，或选择 Cloud AI&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>The polygons could not be put into the new layer, so nothing was saved. They are still on the map, so you can try again.</source>
+        <translation>无法将这些多边形写入新图层，因此未保存任何内容。它们仍留在地图上，您可以重试。</translation>
+    </message>
+    <message>
+        <source>This layer has no usable position on the map. Open it in QGIS and check its extent.</source>
+        <translation>此图层在地图上没有可用的位置。请在 QGIS 中打开它并检查其范围。</translation>
+    </message>
+    <message>
+        <source>This run found nothing. Add the object yourself below, or press Exit and run again with another word or a smaller zone.</source>
+        <translation>此次运行未找到任何内容。请在下方手动添加对象，或点击“退出”后换一个词语或缩小区域重新运行。</translation>
+    </message>
+    <message>
+        <source>This zone at this precision needs more tiles than one run covers. Draw a smaller zone, or lower the precision.</source>
+        <translation>此区域在当前精度下需要的瓦片数超过一次运行所能覆盖的数量。请绘制更小的区域，或降低精度。</translation>
+    </message>
+    <message>
+        <source>Undo every correction of this round at once. The count is in the label, so you can see what goes.</source>
+        <translation>一次性撤销本轮所有修正。次数显示在标签中，方便您了解将撤销的内容。</translation>
+    </message>
+    <message>
+        <source>You are out of credits, so the AI fix cannot answer. Switched to editing by hand, which is free.</source>
+        <translation>您的积分已用完，AI 修正无法响应。已切换为手动编辑，此方式免费。</translation>
+    </message>
+    <message>
+        <source>You are signed in on this computer, but QGIS cannot read your sign-in until you enter its master password.</source>
+        <translation>您已在此电脑上登录，但在您输入 QGIS 的主密码之前，QGIS 无法读取您的登录信息。</translation>
     </message>
 </context>
 </TS>

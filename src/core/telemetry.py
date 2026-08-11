@@ -20,7 +20,9 @@ Design principles (do not deviate):
   consent, batching, scrubbing, and the one POST.
 - MAIN THREAD ONLY: flush() ends in QgsApplication.taskManager().addTask(),
   which is main-thread-only. Worker threads must only track(); the next
-  main-thread flush ships the batch.
+  main-thread flush ships the batch. A repeating main-thread timer flushes on
+  its own, so a run whose events all come from worker threads does not have to
+  wait for the dock to close. The batch is capped either way.
 - Errors in telemetry never affect plugin functionality (fail silently).
 - Payloads carry no paths, coordinates, layer names, urls or emails: every
   string leaving the machine goes through scrub_payload_value first.
@@ -49,7 +51,7 @@ from qgis.core import (
     QgsBlockingNetworkRequest,
     QgsTask,
 )
-from qgis.PyQt.QtCore import QByteArray, QSettings, QThread, QUrl
+from qgis.PyQt.QtCore import QByteArray, QSettings, QThread, QTimer, QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
 from .qt_compat import HttpStatusCodeAttribute, silent_task_flags
@@ -59,6 +61,15 @@ _TIMEOUT_MS = 5_000
 _BATCH_MAX = 10
 _PENDING_PRE_AUTH_MAX = 50
 _TELEMETRY_ENABLED_KEY = "TerraLab/telemetry_enabled"
+
+# Ceiling on the events held in memory. The flush threshold above is a
+# preference and flush() no-ops off the main thread, so this is the real bound.
+_BATCH_HARD_MAX = 200
+# Ceiling on one POST body. An error event carries a log tail, so a full batch
+# of them would otherwise make a body of hundreds of KB.
+_POST_MAX_BYTES = 128 * 1024
+# How often the main thread ships what the worker threads queued.
+_FLUSH_INTERVAL_S = 60
 
 # How much telemetry travels is a server dial: batch size, transport timeout,
 # and a per-event sample rate for throttling one noisy event during an
@@ -91,7 +102,7 @@ def _timeout_ms() -> int:
         return _TIMEOUT_MS
 
 
-def _event_sampled_in(event: str) -> bool:
+def _event_sampled_in(event: str, urgent: bool = False) -> bool:
     """Whether this occurrence of ``event`` is kept.
 
     ``telemetry.sample_rates`` is a ``{event_name: rate}`` map, every event
@@ -100,12 +111,18 @@ def _event_sampled_in(event: str) -> bool:
     gets throttled during an incident without shipping a release. Only a
     number in [0, 1] counts; anything else keeps the event.
 
+    An event that ships immediately reads its own map,
+    ``telemetry.urgent_sample_rates``. An incident is exactly what makes a
+    failure or a milestone noisy, so those need a brake too, and a separate map
+    means reaching for it can never thin the batched funnel by accident.
+
     A dropped event is never queued, so this cannot be used to collect more.
     """
     try:
         from .server_dials import read_value
 
-        rates = read_value("telemetry.sample_rates")
+        key = "telemetry.urgent_sample_rates" if urgent else "telemetry.sample_rates"
+        rates = read_value(key)
         if not isinstance(rates, dict):
             return True
         rate = rates.get(event)
@@ -127,6 +144,8 @@ _batch: list[dict] = []
 _pending_pre_auth: list[dict] = []
 _inflight: list = []
 _session_id = uuid.uuid4().hex
+# The periodic main-thread flush, created once on the first main-thread track().
+_flush_timer = None
 
 # Most-recent Automatic run correlation id (the id the server archives each
 # billed run under). Kept so the error report can quote it for support; None
@@ -156,17 +175,33 @@ def is_telemetry_enabled() -> bool:
 
 
 def set_telemetry_enabled(enabled: bool) -> None:
-    """Persist the global telemetry opt-out flag (shared across TerraLab plugins)."""
+    """Persist the global telemetry opt-out flag (shared across TerraLab plugins).
+
+    Turning it OFF also drops what is still queued. The opt-out event itself is
+    a flush-now event and the dialog sends it before flipping the flag, so it
+    has already left; everything behind it was queued under a consent the user
+    has just withdrawn. The drop runs even when the write failed, because an
+    unwritten preference is the fail-closed case."""
     try:
         QSettings().setValue(_TELEMETRY_ENABLED_KEY, bool(enabled))
     except Exception:  # nosec B110
         pass
+    if not enabled:
+        with _lock:
+            _batch.clear()
+            _pending_pre_auth.clear()
 
 
 def new_session() -> None:
     """Rotate the per-session id. Call on dock open so events group by session."""
     global _session_id
     _session_id = uuid.uuid4().hex
+
+
+def current_session_id() -> str:
+    """The id every event carries until new_session() rotates it. Read by the
+    error path, which reports one occurrence of a crash per session."""
+    return _session_id
 
 
 def set_last_run_id(run_id: str | None) -> None:
@@ -379,9 +414,8 @@ def track(event: str, properties: dict | None = None, flush_now: bool = False) -
     or the batch is full; otherwise it waits for the next flush()."""
     if not is_telemetry_enabled():
         return
-    # A milestone always travels: sampling is for volume, not for losing the
-    # events the funnel is measured on.
-    if not (flush_now or event in FLUSH_NOW) and not _event_sampled_in(event):
+    urgent = flush_now or event in FLUSH_NOW
+    if not _event_sampled_in(event, urgent):
         return
     try:
         evt = {
@@ -392,9 +426,88 @@ def track(event: str, properties: dict | None = None, flush_now: bool = False) -
         return
     with _lock:
         _batch.append(evt)
-        should_flush = flush_now or event in FLUSH_NOW or len(_batch) >= _batch_max()
+        _trim_batch_locked()
+        should_flush = urgent or len(_batch) >= _batch_max()
+    _arm_flush_timer()
     if should_flush:
         flush()
+
+
+def _trim_batch_locked() -> None:
+    """Hold the batch under its ceiling. Call with _lock held.
+
+    A worker thread can track for the length of a whole run while flush()
+    no-ops off the main thread, so the list has to have an end. The oldest
+    ordinary events go first and the milestones stay, since those are what the
+    funnel is measured on; a flood of milestones alone still gets cut from the
+    oldest, or the bound would not be one."""
+    drop = len(_batch) - _BATCH_HARD_MAX
+    if drop <= 0:
+        return
+    kept: list[dict] = []
+    for evt in _batch:
+        if drop > 0 and evt.get("event") not in FLUSH_NOW:
+            drop -= 1
+            continue
+        kept.append(evt)
+    if drop > 0:
+        kept = kept[drop:]
+    _batch[:] = kept
+
+
+def _on_flush_timer() -> None:
+    """Timer slot. Swallows everything: a telemetry failure must never reach
+    the event loop."""
+    try:
+        flush()
+    except Exception:  # nosec B110
+        pass
+
+
+def _arm_flush_timer() -> None:
+    """Start the periodic main-thread flush, once per process.
+
+    flush() no-ops off the main thread, and the plugin calls it at unload and
+    at dock close only. Without this, events a worker queued during a run wait
+    for one of those two moments and die with the session if it ends first.
+    Armed from track() because that is the first main-thread call telemetry
+    makes: Qt refuses to start a timer from another thread."""
+    global _flush_timer
+    if _flush_timer is not None or not on_main_thread():
+        return
+    try:
+        timer = QTimer()
+        timer.setInterval(_FLUSH_INTERVAL_S * 1000)
+        timer.timeout.connect(_on_flush_timer)
+        timer.start()
+        _flush_timer = timer
+    except Exception:  # nosec B110
+        _flush_timer = None
+
+
+def _split_for_post(events: list[dict]) -> list[list[dict]]:
+    """Cut one flush into bodies the relay will accept.
+
+    An error event carries a log tail, so a batch of them is worth hundreds of
+    KB and one POST would carry the lot. Each chunk stays under the byte cap;
+    an event that busts the cap on its own still travels, alone."""
+    chunks: list[list[dict]] = []
+    current: list[dict] = []
+    size = 0
+    for evt in events:
+        try:
+            evt_bytes = len(json.dumps(evt).encode("utf-8"))
+        except Exception:  # noqa: BLE001 -- unmeasurable: give it its own POST
+            evt_bytes = _POST_MAX_BYTES
+        if current and size + evt_bytes > _POST_MAX_BYTES:
+            chunks.append(current)
+            current = []
+            size = 0
+        current.append(evt)
+        size += evt_bytes
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 def flush() -> None:
@@ -403,7 +516,15 @@ def flush() -> None:
     park in _pending_pre_auth until the first authenticated flush."""
     if not on_main_thread():
         return
-    task = None
+    # The opt-out is re-read here, not only in track(). The pre-auth queue can
+    # hold events from before a sign-in that happened after the user turned
+    # telemetry off, and nothing queued under an earlier consent may leave once
+    # the setting says no.
+    if not is_telemetry_enabled():
+        with _lock:
+            _batch.clear()
+            _pending_pre_auth.clear()
+        return
     with _lock:
         if not _batch and not _pending_pre_auth:
             return
@@ -421,16 +542,20 @@ def flush() -> None:
         ]
         _batch.clear()
         _pending_pre_auth.clear()
-        if not events_to_send:
-            return
-        task = _TelemetryFlushTask(events_to_send, auth)
-        _inflight.append(task)
-    try:
-        task.taskCompleted.connect(lambda t=task: _drop_inflight(t))
-        task.taskTerminated.connect(lambda t=task: _drop_inflight(t))
-    except Exception:  # nosec B110
-        pass
-    QgsApplication.taskManager().addTask(task)
+    if not events_to_send:
+        return
+    # Sizing the chunks means serializing every event, so it happens off the
+    # lock: a worker thread must not wait on it to queue one more.
+    tasks = [_TelemetryFlushTask(chunk, auth) for chunk in _split_for_post(events_to_send)]
+    with _lock:
+        _inflight.extend(tasks)
+    for task in tasks:
+        try:
+            task.taskCompleted.connect(lambda t=task: _drop_inflight(t))
+            task.taskTerminated.connect(lambda t=task: _drop_inflight(t))
+        except Exception:  # nosec B110
+            pass
+        QgsApplication.taskManager().addTask(task)
 
 
 # --- Payload scrubbing (kept as-is) ---------------------------------------

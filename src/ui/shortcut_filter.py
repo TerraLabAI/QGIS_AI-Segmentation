@@ -34,7 +34,72 @@ class ShortcutFilter(QObject):
         return isinstance(focused, (QLineEdit, QTextEdit, QPlainTextEdit,
                                     QSpinBox, QDoubleSpinBox))
 
+    def _automatic_flow_owns_keys(self) -> bool:
+        """True while the Automatic flow's own Escape / Enter dispatcher is
+        live. There the two keys belong to the run and the review (soft
+        cancel, Detect, Export), so the armed session must not claim them."""
+        dock = getattr(self._plugin, "dock_widget", None)
+        owns = getattr(dock, "auto_flow_owns_keys", None)
+        if not callable(owns):
+            return False
+        try:
+            return bool(owns())
+        except (RuntimeError, AttributeError):
+            return False
+
+    def _session_owns_key(self, key, modifiers) -> bool:
+        """Whether the armed session handles this key in the KeyPress branch.
+
+        Every key listed here is also claimed by a window-level shortcut that
+        would consume the press before it could reach this filter: QGIS binds a
+        bare S (toggle snapping) and a bare T, and the dock binds Escape and
+        Enter for the Automatic flow, whose gate is down in Manual yet still
+        eats the key. Accepting the ShortcutOverride for these skips the
+        shortcut map and routes the key here instead.
+        """
+        ctrl = bool(modifiers & Qt.KeyboardModifier.ControlModifier)
+        if key == Qt.Key.Key_Delete or (key == Qt.Key.Key_Backspace and ctrl):
+            return True
+        if key == Qt.Key.Key_Z and ctrl:
+            return True
+        if key == Qt.Key.Key_Backspace and not modifiers:
+            return True
+        blocking = Qt.KeyboardModifier.ControlModifier
+        blocking |= Qt.KeyboardModifier.AltModifier
+        blocking |= Qt.KeyboardModifier.ShiftModifier
+        if key in (Qt.Key.Key_S, Qt.Key.Key_E) and not (modifiers & blocking):
+            return True
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Escape):
+            return not self._automatic_flow_owns_keys()
+        return False
+
+    def _end_lost_space_pan(self) -> None:
+        """End a Space pan whose KeyRelease will never arrive.
+
+        The release only reaches this filter while the window is in front and
+        the canvas holds focus, and dock updates take that focus away. A lost
+        release leaves the tool panning for good: every click ignored and the
+        map sliding under the cursor until the user switches tool.
+        """
+        try:
+            pan_tool = self._plugin._active_space_pan_tool()
+            if pan_tool is None or not pan_tool.is_space_panning():
+                return
+            pan_tool.stop_space_pan()
+        except (RuntimeError, AttributeError):
+            pass
+
     def eventFilter(self, _obj, event):
+        # Qt calls this from C++ for every event the main window and the canvas
+        # receive, and the branches below call plugin slots (undo, delete, save,
+        # export, stop). A raise would travel back into Qt's event dispatch, so
+        # any failure drops the key instead: the shortcut is lost, nothing else.
+        try:
+            return self._route_event(event)
+        except Exception:
+            return False
+
+    def _route_event(self, event):
         event_type = event.type()
         plugin = self._plugin
 
@@ -55,21 +120,23 @@ class ShortcutFilter(QObject):
                     pan_tool.stop_space_pan()
                     return True
 
-        # --- Session-owned editing keys. While the segmentation tool is armed,
-        # Delete / Ctrl+Backspace (delete the open object) and Ctrl+Z (undo the
-        # last gesture) belong to the session. The review dock binds the same
-        # keys as window-level QShortcuts, and a matched QShortcut consumes the
-        # key even when its own gate then does nothing, so the branches below
-        # would never receive the KeyPress. Accepting the ShortcutOverride
-        # skips the shortcut map and routes the key here instead.
+        # The window going to the back, or the canvas losing focus, ends a pan
+        # the same way its release would. Never consumed: both events belong to
+        # whoever else is watching them.
+        if event_type in (QEvent.Type.WindowDeactivate, QEvent.Type.FocusOut):
+            self._end_lost_space_pan()
+            return False
+
+        # --- Session-owned keys. While the segmentation tool is armed, every
+        # key this filter handles belongs to the session, and a window-level
+        # shortcut elsewhere would otherwise consume the press before the
+        # KeyPress branch below ever ran (see _session_owns_key).
         if event_type == QEvent.Type.ShortcutOverride:
             if not plugin.map_tool or not plugin.map_tool.isActive():
                 return False
             if self._typing_in_text_field():
                 return False
-            key = event.key()
-            ctrl = event.modifiers() & Qt.KeyboardModifier.ControlModifier
-            if (key == Qt.Key.Key_Delete or (key == Qt.Key.Key_Backspace and ctrl) or (key == Qt.Key.Key_Z and ctrl)):
+            if self._session_owns_key(event.key(), event.modifiers()):
                 event.accept()
                 return True
             return False
@@ -149,7 +216,8 @@ class ShortcutFilter(QObject):
             return True
         # E opens the single selected detection for SAM editing (the keyboard
         # twin of the second click / double-click).
-        if key == Qt.Key.Key_E and not modifiers and getattr(plugin, "_edit_selected_saved_polygon", None):
+        if key == Qt.Key.Key_E and not (modifiers & blocking_mods) and getattr(
+                plugin, "_edit_selected_saved_polygon", None):
             # Mirror the double-click open: while a foreground (busy-cursor)
             # encode owns the pipe, E defers to it and no-ops, so a stray press
             # during a busy encode can never race the open (see _encode_blocks_ui).

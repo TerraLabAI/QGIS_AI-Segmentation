@@ -69,7 +69,10 @@ class LocalAiInstallLockMixin:
             f"Local AI setup started from the review ({lane})",
             "AI Segmentation", level=Qgis.MessageLevel.Info)
         try:
-            self._on_install_requested()
+            # Both lanes fall back to the on-device model, which is the only
+            # reason either of them ever starts an install, so this one carries
+            # it whatever mode the dock is showing.
+            self._on_install_requested(include_local_model=True)
         finally:
             # _on_install_requested has early returns that show their own
             # dialog and never start a worker: a platform that cannot run

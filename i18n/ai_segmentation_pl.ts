@@ -40,20 +40,12 @@
         <translation>Za ogólne, aby to nazwać. Wyczyść pole, aby szukać tylko na podstawie przykładu, albo wpisz konkretny obiekt.</translation>
     </message>
     <message>
-        <source>Example match</source>
-        <translation>Dopasowanie przez przykład</translation>
-    </message>
-    <message>
         <source>Mark an object to find more like it.</source>
         <translation>Oznacz obiekt, aby znaleźć więcej podobnych.</translation>
     </message>
     <message>
         <source>Mark a false positive to drop things like it.</source>
         <translation>Oznacz błędną detekcję, aby odrzucić podobne przypadki.</translation>
-    </message>
-    <message>
-        <source>Finer detail finds smaller objects.</source>
-        <translation>Wyższa szczegółowość pozwala znaleźć mniejsze obiekty.</translation>
     </message>
     <message>
         <source>Finish or exit the review to switch modes.</source>
@@ -94,10 +86,6 @@
     <message>
         <source>Accept the Terms and Privacy Policy to enable segmentation.</source>
         <translation>Zaakceptuj Warunki i Politykę prywatności, aby włączyć segmentację.</translation>
-    </message>
-    <message>
-        <source>An unexpected error occurred during export. Please check the logs.</source>
-        <translation>Podczas Export wystąpił nieoczekiwany błąd. Sprawdź dzienniki.</translation>
     </message>
     <message>
         <source>I agree to the &lt;a href=&quot;{terms}&quot;&gt;Terms&lt;/a&gt; and &lt;a href=&quot;{privacy}&quot;&gt;Privacy Policy&lt;/a&gt;</source>
@@ -202,20 +190,8 @@ export AI_SEGMENTATION_CACHE_DIR=/twoja/ścieżka</translation>
         <translation>Aktualizuj</translation>
     </message>
     <message>
-        <source>Dependencies ready</source>
-        <translation>Zależności gotowe</translation>
-    </message>
-    <message>
         <source>Downloading AI model...</source>
         <translation>Pobieranie modelu AI...</translation>
-    </message>
-    <message>
-        <source>Dependencies ready, model not downloaded</source>
-        <translation>Zależności gotowe, model nie pobrany</translation>
-    </message>
-    <message>
-        <source>Dependencies ready, model download failed</source>
-        <translation>Zależności gotowe, pobieranie modelu nie powiodło się</translation>
     </message>
     <message>
         <source>Cancel</source>
@@ -246,10 +222,6 @@ export AI_SEGMENTATION_CACHE_DIR=/twoja/ścieżka</translation>
         <translation>Weryfikacja nie powiodła się</translation>
     </message>
     <message>
-        <source>Virtual environment was created but verification failed:</source>
-        <translation>Środowisko wirtualne zostało utworzone, ale weryfikacja nie powiodła się:</translation>
-    </message>
-    <message>
         <source>Unknown error</source>
         <translation>Nieznany błąd</translation>
     </message>
@@ -260,10 +232,6 @@ export AI_SEGMENTATION_CACHE_DIR=/twoja/ścieżka</translation>
     <message>
         <source>Update QGIS to 3.34+ for the latest AI model</source>
         <translation>Zaktualizuj QGIS do wersji 3.34+, aby uzyskać najnowszy model AI</translation>
-    </message>
-    <message>
-        <source>Intel Mac: using SAM1 (compatible with PyTorch 2.2)</source>
-        <translation>Intel Mac: używanie SAM1 (kompatybilne z PyTorch 2.2)</translation>
     </message>
     <message>
         <source>Download Failed</source>
@@ -342,10 +310,6 @@ export AI_SEGMENTATION_CACHE_DIR=/twoja/ścieżka</translation>
         <translation>Kontur</translation>
     </message>
     <message>
-        <source>Click on the element you want to segment:</source>
-        <translation>Kliknij na element, który chcesz zsegmentować:</translation>
-    </message>
-    <message>
         <source>Left-click to select</source>
         <translation>Klik lewym, aby zaznaczyć</translation>
     </message>
@@ -362,16 +326,8 @@ export AI_SEGMENTATION_CACHE_DIR=/twoja/ścieżka</translation>
         <translation>Nieprawidłowa warstwa</translation>
     </message>
     <message>
-        <source>Layer extent contains invalid coordinates (NaN/Inf). Check the raster file.</source>
-        <translation>Zasięg warstwy zawiera nieprawidłowe współrzędne (NaN/Inf). Sprawdź plik rastrowy.</translation>
-    </message>
-    <message>
         <source>Not Ready</source>
         <translation>Nie gotowe</translation>
-    </message>
-    <message>
-        <source>Please wait for the SAM model to load.</source>
-        <translation>Poczekaj na wczytanie modelu SAM.</translation>
     </message>
     <message>
         <source>Layer Creation Failed</source>
@@ -566,10 +522,6 @@ Po instalacji uruchom ponownie QGIS i spróbuj ponownie.</translation>
         <translation>Wykryto niepołączone części. Dla najlepszej dokładności, segmentuj jeden element na raz.</translation>
     </message>
     <message>
-        <source>No element detected at this point. Try clicking on a different area.</source>
-        <translation>Nie wykryto elementu w tym miejscu. Spróbuj kliknąć w innym obszarze.</translation>
-    </message>
-    <message>
         <source>Updating...</source>
         <translation>Aktualizowanie...</translation>
     </message>
@@ -584,10 +536,6 @@ Po instalacji uruchom ponownie QGIS i spróbuj ponownie.</translation>
     <message>
         <source>Loading AI model...</source>
         <translation>Wczytywanie modelu AI...</translation>
-    </message>
-    <message>
-        <source>SAM model ready</source>
-        <translation>Model SAM gotowy</translation>
     </message>
     <message>
         <source>Ready</source>
@@ -738,10 +686,6 @@ Po instalacji uruchom ponownie QGIS i spróbuj ponownie.</translation>
         <translation>Wybór trybu</translation>
     </message>
     <message>
-        <source>Choose between Manual (local) and Automatic (cloud) segmentation</source>
-        <translation>Wybierz między segmentacją Ręczną (lokalną) i Automatyczną (w chmurze)</translation>
-    </message>
-    <message>
         <source>Stop the active segmentation before switching modes.</source>
         <translation>Zatrzymaj aktywną segmentację przed zmianą trybu.</translation>
     </message>
@@ -750,24 +694,8 @@ Po instalacji uruchom ponownie QGIS i spróbuj ponownie.</translation>
         <translation>Anuluj aktywną detekcję przed zmianą trybu.</translation>
     </message>
     <message>
-        <source>Subscribe to keep detecting without limits:</source>
-        <translation>Zasubskrybuj, aby kontynuować detekcję bez limitów:</translation>
-    </message>
-    <message>
-        <source>Subscribe to Pro</source>
-        <translation>Zasubskrybuj Pro</translation>
-    </message>
-    <message>
         <source>Cancel the running detection first</source>
         <translation>Najpierw anuluj trwającą detekcję</translation>
-    </message>
-    <message>
-        <source>Detail</source>
-        <translation>Szczegółowość</translation>
-    </message>
-    <message>
-        <source>Higher detail splits the zone into more tiles. Each tile costs 1 credit and captures smaller objects.</source>
-        <translation>Wyższa szczegółowość dzieli strefę na więcej kafelków. Każdy kafelek kosztuje 1 kredyt i pozwala uchwycić mniejsze obiekty.</translation>
     </message>
     <message>
         <source>Zone too large - reduce the selection area</source>
@@ -848,14 +776,6 @@ Po instalacji uruchom ponownie QGIS i spróbuj ponownie.</translation>
     <message>
         <source>More</source>
         <translation>Więcej</translation>
-    </message>
-    <message>
-        <source>This area is large for this detail level. Raise detail or zoom in for sharper detections.</source>
-        <translation>Ten obszar jest duży dla tego poziomu szczegółowości. Zwiększ szczegółowość lub powiększ widok dla ostrzejszych detekcji.</translation>
-    </message>
-    <message>
-        <source>This zone is too large for sharp detections, even at maximum detail. Draw a smaller zone for the best results.</source>
-        <translation>Ta strefa jest za duża dla ostrych detekcji, nawet przy maksymalnej szczegółowości. Narysuj mniejszą strefę dla najlepszych wyników.</translation>
     </message>
     <message>
         <source>Available when detection finishes</source>
@@ -1026,20 +946,8 @@ Po instalacji uruchom ponownie QGIS i spróbuj ponownie.</translation>
         <translation>≈ {n} kafelków = {n} kredytów</translation>
     </message>
     <message>
-        <source>Automatic mode scans your zone tile by tile. 1 tile = 1 credit, so this run costs about {n} credits. More detail splits the zone into more tiles, which costs more credits.</source>
-        <translation>Tryb Automatyczny skanuje Twoją strefę kafelek po kafelku. 1 kafelek = 1 kredyt, więc ten przebieg kosztuje około {n} kredytów. Wyższa szczegółowość dzieli strefę na więcej kafelków, co kosztuje więcej kredytów.</translation>
-    </message>
-    <message>
         <source>Draw your example inside the selected zone.</source>
         <translation>Narysuj swój przykład wewnątrz wybranej strefy.</translation>
-    </message>
-    <message>
-        <source>Share anonymous usage statistics</source>
-        <translation>Udostępniaj anonimowe statystyki użycia</translation>
-    </message>
-    <message>
-        <source>Helps us fix bugs faster. Never includes your data, layers or coordinates.</source>
-        <translation>Pomaga nam szybciej naprawiać błędy. Nigdy nie obejmuje Twoich danych, warstw czy współrzędnych.</translation>
     </message>
     <message>
         <source>{n} objects found</source>
@@ -1052,10 +960,6 @@ Po instalacji uruchom ponownie QGIS i spróbuj ponownie.</translation>
     <message>
         <source>0 shown at {pct}% - lower Confidence to reveal them</source>
         <translation>0 pokazane przy {pct}% - zmniejsz Ufność, aby je odkryć</translation>
-    </message>
-    <message>
-        <source>Started at {pct}% - nothing scored above.</source>
-        <translation>Rozpoczęto od {pct}% - nic nie ma wyniku wyżej.</translation>
     </message>
     <message>
         <source>More objects</source>
@@ -1154,10 +1058,6 @@ Po instalacji uruchom ponownie QGIS i spróbuj ponownie.</translation>
         <translation>Przeglądaj gotowe do użycia obiekty z podglądami przed / po.</translation>
     </message>
     <message>
-        <source>Subscribe to finish this zone: 10,000 credits/month.</source>
-        <translation>Zasubskrybuj, aby zakończyć tę strefę: 10 000 kredytów/miesiąc.</translation>
-    </message>
-    <message>
         <source>Filter detections by confidence. Lower shows more (and noisier), higher keeps only the strongest. Free and instant.</source>
         <translation>Filtruj detekcje przez ufność. Niższa wartość pokazuje więcej (i więcej szumu), wyższa zachowuje tylko najsilniejsze. Darmowe i natychmiastowe.</translation>
     </message>
@@ -1180,10 +1080,6 @@ Po instalacji uruchom ponownie QGIS i spróbuj ponownie.</translation>
     <message>
         <source>The Library has ready-to-use objects.</source>
         <translation>Biblioteka ma gotowe do użycia obiekty.</translation>
-    </message>
-    <message>
-        <source>object</source>
-        <translation>obiekt</translation>
     </message>
     <message>
         <source>Older detection</source>
@@ -1290,20 +1186,12 @@ Po instalacji uruchom ponownie QGIS i spróbuj ponownie.</translation>
         <translation>Przeglądaj...</translation>
     </message>
     <message>
-        <source>Your detections</source>
-        <translation>Twoje detekcje</translation>
-    </message>
-    <message>
         <source>Recent</source>
         <translation>Ostatnie</translation>
     </message>
     <message>
         <source>Favorites</source>
         <translation>Ulubione</translation>
-    </message>
-    <message>
-        <source>Templates</source>
-        <translation>Szablony</translation>
     </message>
     <message>
         <source>Load older runs</source>
@@ -1406,10 +1294,6 @@ Po instalacji uruchom ponownie QGIS i spróbuj ponownie.</translation>
         <translation>Ręczny</translation>
     </message>
     <message>
-        <source>Max detail for this zone - draw a larger zone for finer detail.</source>
-        <translation>Maksymalna szczegółowość dla tej strefy - narysuj większą strefę dla wyższej szczegółowości.</translation>
-    </message>
-    <message>
         <source>OK</source>
         <translation>OK</translation>
     </message>
@@ -1482,10 +1366,6 @@ Po instalacji uruchom ponownie QGIS i spróbuj ponownie.</translation>
         <translation>Start (przycisk Start widocznego trybu)</translation>
     </message>
     <message>
-        <source>Start Manual AI Segmentation</source>
-        <translation>Uruchom ręczne AI Segmentation</translation>
-    </message>
-    <message>
         <source>The raster was removed. Your polygons were saved to a layer.</source>
         <translation>Raster został usunięty. Twoje poligony zostały zapisane w warstwie.</translation>
     </message>
@@ -1538,10 +1418,6 @@ Po instalacji uruchom ponownie QGIS i spróbuj ponownie.</translation>
         <translation>{visible} z {n} pokazane</translation>
     </message>
     <message>
-        <source>Click an object on the map and the AI outlines it. You go one object at a time, checking and saving each polygon yourself.</source>
-        <translation>Kliknij obiekt na mapie, a AI zaznaczy jego kontur. Idziesz obiekt po obiekcie, sprawdzając i zapisując każdy poligon samodzielnie.</translation>
-    </message>
-    <message>
         <source>Show guidance tips again</source>
         <translation>Pokaż ponownie wskazówki</translation>
     </message>
@@ -1574,36 +1450,12 @@ Po instalacji uruchom ponownie QGIS i spróbuj ponownie.</translation>
         <translation>Darmowe konto - rejestracja zajmuje 15 sekund w Twojej przeglądarce.</translation>
     </message>
     <message>
-        <source>Manual mode stays free and unlimited on your computer.</source>
-        <translation>Tryb Ręczny pozostaje darmowy i nielimitowany na Twoim komputerze.</translation>
-    </message>
-    <message>
-        <source>Finds every object of one kind in your zone - draw a zone, name the object, get all the polygons at once.</source>
-        <translation>Znajduje każdy obiekt jednego typu w Twojej strefie - narysuj strefę, nazwij obiekt, otrzymaj wszystkie poligony na raz.</translation>
-    </message>
-    <message>
-        <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;subscribe&lt;/a&gt; to segment areas of any size.</source>
-        <translation>Narysuj mniejszą strefę albo &amp;lt;a href=&amp;quot;{url}&amp;quot;&amp;gt;zasubskrybuj&amp;lt;/a&amp;gt;, aby segmentować strefy każdego rozmiaru.</translation>
-    </message>
-    <message>
-        <source>Running low: {n} free detections left. &lt;a href=&quot;{url}&quot;&gt;Subscribe&lt;/a&gt; to keep going.</source>
-        <translation>Kończą się: {n} darmowych detekcji pozostało. &amp;lt;a href=&amp;quot;{url}&amp;quot;&amp;gt;Zasubskrybuj&amp;lt;/a&amp;gt;, aby kontynuować.</translation>
-    </message>
-    <message>
         <source>Then segment any imagery: point and click, or fully automatic.</source>
         <translation>Potem zsegmentuj każdy obraz: klikając albo w pełni automatycznie.</translation>
     </message>
     <message>
         <source>Waiting for your browser sign-in...</source>
         <translation>Czekanie na Twoje logowanie w przeglądarce...</translation>
-    </message>
-    <message>
-        <source>New: Automatic mode finds every object in a zone at once.</source>
-        <translation>Nowość: tryb Automatyczny znajduje wszystkie obiekty w strefie na raz.</translation>
-    </message>
-    <message>
-        <source>Try Automatic</source>
-        <translation>Wypróbuj Automatyczny</translation>
     </message>
     <message>
         <source>Got it - hide this tip</source>
@@ -1618,8 +1470,8 @@ Po instalacji uruchom ponownie QGIS i spróbuj ponownie.</translation>
         <translation>0 pokazane - zmniejsz filtr Min. rozmiar, aby je odkryć</translation>
     </message>
     <message>
-        <source>10,000 credits every month. Cancel anytime.</source>
-        <translation>10 000 kredytów każdego miesiąca. Anuluj w każdej chwili.</translation>
+        <source>5,000 credits every month. Cancel anytime.</source>
+        <translation>5 000 kredytów każdego miesiąca. Anuluj w każdej chwili.</translation>
     </message>
     <message>
         <source>A Component Failed to Load</source>
@@ -1644,10 +1496,6 @@ Po instalacji uruchom ponownie QGIS i spróbuj ponownie.</translation>
     <message>
         <source>Any GeoTIFF, WMS or XYZ basemap.</source>
         <translation>Dowolny GeoTIFF, WMS lub mapa bazowa XYZ.</translation>
-    </message>
-    <message>
-        <source>At this detail {obj} is too small to spot - raise the detail.</source>
-        <translation>Przy tej szczegółowości {obj} jest za mały, aby go dostrzec - zwiększ szczegółowość.</translation>
     </message>
     <message>
         <source>Available once the current install or detection finishes.</source>
@@ -1696,10 +1544,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
         <translation>Narysuj na mapie</translation>
     </message>
     <message>
-        <source>Extra detail keeps helping {obj} in this zone.</source>
-        <translation>Dodatkowa szczegółowość wciąż pomaga dla {obj} w tej strefie.</translation>
-    </message>
-    <message>
         <source>Free plan</source>
         <translation>Plan darmowy</translation>
     </message>
@@ -1728,40 +1572,12 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
         <translation>Zarządzaj kontem</translation>
     </message>
     <message>
-        <source>Manual Mode Not Supported</source>
-        <translation>Tryb Ręczny nieobsługiwany</translation>
-    </message>
-    <message>
-        <source>Manual mode installs local components that are not available for this Mac with this version of QGIS. Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
-        <translation>Tryb Ręczny instaluje lokalne komponenty, które nie są dostępne dla tego Maca z tą wersją QGIS. Użyj zamiast tego trybu Automatycznego, który działa w pełni w chmurze i nie wymaga lokalnej instalacji.</translation>
-    </message>
-    <message>
-        <source>Manual mode is not supported in this QGIS installation</source>
-        <translation>Tryb Ręczny nie jest obsługiwany w tej instalacji QGIS</translation>
-    </message>
-    <message>
-        <source>Manual mode needs to install local dependencies, which is not supported inside this sandboxed QGIS installation (Flatpak or Snap). Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
-        <translation>Tryb Ręczny musi zainstalować lokalne zależności, co nie jest obsługiwane w tej izolowanej instalacji QGIS (Flatpak lub Snap). Użyj zamiast tego trybu Automatycznego, który działa w pełni w chmurze i nie wymaga lokalnej instalacji.</translation>
-    </message>
-    <message>
-        <source>Name the object (or draw an example) first - Detail then tunes itself to it.</source>
-        <translation>Najpierw nazwij obiekt (albo narysuj przykład) - Szczegółowość dostroi się do niego sama.</translation>
-    </message>
-    <message>
         <source>New here? Our 5-minute tutorial walks you through a full detection, step by step.</source>
         <translation>Nowy tutaj? Nasz 5-minutowy samouczek przeprowadzi Cię krok po kroku przez pełną detekcję.</translation>
     </message>
     <message>
         <source>Not Enough Disk Space</source>
         <translation>Za mało miejsca na dysku</translation>
-    </message>
-    <message>
-        <source>Not enough credits: {n} tiles, only {left} left. Reduce the detail or zone, or subscribe.</source>
-        <translation>Za mało kredytów: {n} kafelków, pozostało tylko {left}. Zmniejsz szczegółowość lub strefę, albo zasubskrybuj.</translation>
-    </message>
-    <message>
-        <source>Not enough credits: {n} tiles, only {left} left. Reduce the detail or zone.</source>
-        <translation>Za mało kredytów: {n} kafelków, pozostało tylko {left}. Zmniejsz szczegółowość lub strefę.</translation>
     </message>
     <message>
         <source>Online layer returned blank tiles for this area. The current zoom level may be outside the service's range, or this area has no coverage. Zoom to a level where the layer is visible on the map, then try again.</source>
@@ -1840,10 +1656,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
         <translation>Ostrzej, niż {obj} zwykle potrzebuje - wychwytuje najmniejsze.</translation>
     </message>
     <message>
-        <source>Skipped {n} empty tiles (not charged).</source>
-        <translation>Pominięto {n} pustych kafelków (bez opłaty).</translation>
-    </message>
-    <message>
         <source>Small {obj} may be missed at this level.</source>
         <translation>Małe {obj} mogą zostać pominięte na tym poziomie.</translation>
     </message>
@@ -1854,14 +1666,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
     <message>
         <source>Something went wrong starting the detection. Please try again.</source>
         <translation>Coś poszło nie tak podczas uruchamiania detekcji. Spróbuj ponownie.</translation>
-    </message>
-    <message>
-        <source>Started at {pct}% - the usual sweet spot for this object type.</source>
-        <translation>Rozpoczęto od {pct}% - zwykle optymalny punkt dla tego typu obiektu.</translation>
-    </message>
-    <message>
-        <source>Started at {pct}% to fit this run's scores - raise to tighten.</source>
-        <translation>Rozpoczęto od {pct}%, aby dopasować się do wyników tego przebiegu - zwiększ, aby zaostrzyć.</translation>
     </message>
     <message>
         <source>Support code: {code}</source>
@@ -1890,10 +1694,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
     <message>
         <source>There's a problem with your subscription. Your last payment may have failed. Open your account to update your payment method or review your plan.</source>
         <translation>Wystąpił problem z Twoją subskrypcją. Ostatnia płatność mogła się nie powieść. Otwórz swoje konto, aby zaktualizować metodę płatności lub przejrzeć swój plan.</translation>
-    </message>
-    <message>
-        <source>This deletes the local AI model files, signs you out, and resets the plugin. Your account and credits are not affected. Manual mode will download the files again next time you use it.</source>
-        <translation>To usuwa lokalne pliki modelu AI, wylogowuje Cię i resetuje wtyczkę. Twoje konto i kredyty pozostają nietknięte. Tryb Ręczny pobierze pliki ponownie przy następnym użyciu.</translation>
     </message>
     <message>
         <source>This layer has no valid coordinate reference system. Set one in Layer Properties before detecting.</source>
@@ -1956,10 +1756,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
         <translation>niepewne</translation>
     </message>
     <message>
-        <source>upgrade to unlock it</source>
-        <translation>ulepsz plan, aby to odblokować</translation>
-    </message>
-    <message>
         <source>your object</source>
         <translation>Twój obiekt</translation>
     </message>
@@ -1967,50 +1763,22 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
         <source>{n} found so far</source>
         <translation>Dotąd znaleziono {n}</translation>
     </message>
-    <message>
-        <source>{n} tiles could not be loaded from the layer server; results may be incomplete.</source>
-        <translation>Nie udało się wczytać {n} kafelków z serwera warstwy; wyniki mogą być niekompletne.</translation>
-    </message>
-    <message>
-        <source>{n} tiles had no imagery and were not analyzed (not charged). Check the imagery layer loads over this area, then run Detect again.</source>
-        <translation>{n} kafelków nie miało obrazów i nie zostało przeanalizowanych (bez opłaty). Sprawdź, czy warstwa obrazów wczytuje się nad tym obszarem, a potem uruchom Wykrywanie ponownie.</translation>
-    </message>
-    <message>
-        <source>{n} {object} saved to layer "{name}"</source>
-        <translation>{n} {object} zapisano w warstwie „{name}”</translation>
-    </message>
-    <message>
-        <source>{used} credits used</source>
-        <translation>{used} kredytów wykorzystanych</translation>
-    </message>
     <!-- v2.1.7 sync: append-to-layer export, singular forms, small-example guidance (2026-07-13) -->
     <message>
-        <source>1 credit ~ 0.17 km² at default detail.</source>
-        <translation>1 kredyt ~ 0,17 km² przy domyślnej szczegółowości.</translation>
+        <source>5,000 detections every month</source>
+        <translation>5 000 detekcji każdego miesiąca</translation>
     </message>
     <message>
-        <source>10,000 detections every month (~1,700 km²)</source>
-        <translation>10 000 detekcji każdego miesiąca (~1700 km²)</translation>
+        <source>This zone is {area} km². Free zones stop at {max} km².</source>
+        <translation>Ta strefa ma {area} km². Darmowe strefy sięgają {max} km².</translation>
     </message>
     <message>
-        <source>Last run: {count} {object} exported · {area} km² · {used} credits used</source>
-        <translation>Ostatni przebieg: {count} {object} wyeksportowano · {area} km² · {used} kredytów wykorzystanych</translation>
+        <source>Pro has no size limit. Any area you draw, 5,000 tiles a month, maximum detail.</source>
+        <translation>Pro nie ma limitu wielkości. Dowolny obszar, 5 000 kafelków miesięcznie, maksymalne szczegóły.</translation>
     </message>
     <message>
-        <source>Last run: {count} {object} exported · {area} km² · {used} credits used, {left} left</source>
-        <translation>Ostatni przebieg: {count} {object} wyeksportowano · {area} km² · {used} kredytów wykorzystanych, {left} pozostało</translation>
-    </message>
-    <message>
-        <source>Last session: {count} polygon(s) exported · {area} km²</source>
-        <translation>Ostatnia sesja: {count} poligon(ów) wyeksportowano · {area} km²</translation>
-    </message>
-    <message>
-        <source>This zone is {area} km² - free trial zones go up to {max} km².</source>
-        <translation>Ta strefa ma {area} km² - strefy darmowego okresu próbnego sięgają do {max} km².</translation>
-    </message>
-    <message>
-        <source>{area} km²</source>
-        <translation>{area} km²</translation>
+        <source>&lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt;, or make this zone smaller.</source>
+        <translation>&lt;a href=&quot;{url}&quot;&gt;Przejdź na Pro&lt;/a&gt; lub zmniejsz tę strefę.</translation>
     </message>
     <message>
         <source>Sending to the AI...</source>
@@ -2077,14 +1845,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
         <translation>Ustalanie nazwy obiektu</translation>
     </message>
     <message>
-        <source>This example is very small at the current detail level. Zoom the detail slider finer or draw a larger object.</source>
-        <translation>Ten przykład jest bardzo mały przy obecnym poziomie szczegółowości. Ustaw suwak szczegółowości dokładniej lub narysuj większy obiekt.</translation>
-    </message>
-    <message>
-        <source>This example is very small even at the finest detail. Draw a larger object, or it may be too small to detect.</source>
-        <translation>Ten przykład jest bardzo mały nawet przy najdokładniejszym poziomie. Narysuj większy obiekt, inaczej może być zbyt mały do wykrycia.</translation>
-    </message>
-    <message>
         <source>Your free detections are used up</source>
         <translation>Twoje darmowe detekcje zostały wykorzystane</translation>
     </message>
@@ -2101,10 +1861,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
         <translation>1 poprawka w tej rundzie</translation>
     </message>
     <message>
-        <source>1 detection removed</source>
-        <translation>Usunięto 1 detekcję</translation>
-    </message>
-    <message>
         <source>1 object</source>
         <translation>1 obiekt</translation>
     </message>
@@ -2115,14 +1871,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
     <message>
         <source>1 result</source>
         <translation>1 wynik</translation>
-    </message>
-    <message>
-        <source>A detection run was interrupted before its results were exported. {n} detection(s) were saved.</source>
-        <translation>Przebieg detekcji został przerwany, zanim jego wyniki zostały wyeksportowane. Zapisano {n} detekcji.</translation>
-    </message>
-    <message>
-        <source>A free run covers up to {cap} credits. Lower the detail or draw a smaller zone, or</source>
-        <translation>Darmowy przebieg pokrywa do {cap} kredytów. Zmniejsz szczegółowość albo narysuj mniejszą strefę, albo</translation>
     </message>
     <message>
         <source>A newer version of AI Segmentation is available with the latest fixes.</source>
@@ -2141,10 +1889,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
         <translation>Uszkodzone środowisko AI</translation>
     </message>
     <message>
-        <source>AI and Manual are two ways to fix the same polygon.</source>
-        <translation>AI i Ręczny to dwa sposoby poprawy tego samego poligonu.</translation>
-    </message>
-    <message>
         <source>Add a missing polygon</source>
         <translation>Dodaj brakujący poligon</translation>
     </message>
@@ -2161,28 +1905,12 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
         <translation>Dodaj jeszcze jeden przykład dla najlepszych wyników.</translation>
     </message>
     <message>
-        <source>Add them to the project</source>
-        <translation>Dodaj je do projektu</translation>
-    </message>
-    <message>
-        <source>Adding an object uses the free on-device AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and Add will arm automatically when it is ready.</source>
-        <translation>Dodawanie obiektu wykorzystuje darmową lokalną AI, która nie jest jeszcze zainstalowana. Zainstalować ją teraz (kilka minut, w tle)? Możesz kontynuować przegląd, a Dodaj aktywuje się automatycznie, gdy będzie gotowe.</translation>
-    </message>
-    <message>
         <source>Adding needs a one-time setup</source>
         <translation>Dodawanie wymaga jednorazowej konfiguracji</translation>
     </message>
     <message>
         <source>Almost done - building the shapes...</source>
         <translation>Prawie gotowe - budowanie kształtów...</translation>
-    </message>
-    <message>
-        <source>Almost there: in step 1, name the object your examples show - words plus examples detect best.</source>
-        <translation>Już prawie: w kroku 1 nazwij obiekt, który pokazują Twoje przykłady - słowa razem z przykładami wykrywają najlepiej.</translation>
-    </message>
-    <message>
-        <source>Almost there: in step 2, outline one &quot;{word}&quot; on the map so the AI sees what yours look like.</source>
-        <translation>Już prawie: w kroku 2 zaznacz kontur jednego „{word}” na mapie, aby pokazać AI, jak wygląda Twój.</translation>
     </message>
     <message>
         <source>Another QGIS window is installing the AI components. Wait for it to finish, then try again.</source>
@@ -2317,20 +2045,12 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
         <translation>Popraw</translation>
     </message>
     <message>
-        <source>Correct the polygons</source>
-        <translation>Popraw poligony</translation>
-    </message>
-    <message>
         <source>Could not apply the new settings. Try a different value.</source>
         <translation>Nie udało się zastosować nowych ustawień. Spróbuj innej wartości.</translation>
     </message>
     <message>
         <source>Could not check the AI components. See the log for details.</source>
         <translation>Nie udało się sprawdzić komponentów AI. Szczegóły w dzienniku.</translation>
-    </message>
-    <message>
-        <source>Could not load the saved run. The file may have been moved or deleted.</source>
-        <translation>Nie udało się wczytać zapisanego przebiegu. Plik mógł zostać przeniesiony albo usunięty.</translation>
     </message>
     <message>
         <source>Credits come back on {date}</source>
@@ -2369,18 +2089,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
         <translation>Gęsty las? „Forest” traktuje go jako jeden blok; „Tree” wybiera pojedyncze drzewa.</translation>
     </message>
     <message>
-        <source>Detect with example only</source>
-        <translation>Wykryj tylko na podstawie przykładu</translation>
-    </message>
-    <message>
-        <source>Detect with examples only</source>
-        <translation>Wykryj tylko na podstawie przykładów</translation>
-    </message>
-    <message>
-        <source>Detect with text only</source>
-        <translation>Wykryj tylko na podstawie tekstu</translation>
-    </message>
-    <message>
         <source>Detection stopped early after {done} tile(s). The objects already found are kept below.</source>
         <translation>Detekcja zatrzymała się wcześniej, po {done} kafelkach. Już znalezione obiekty są zachowane poniżej.</translation>
     </message>
@@ -2391,14 +2099,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
     <message>
         <source>Distinct</source>
         <translation>Odrębny</translation>
-    </message>
-    <message>
-        <source>Drag a box around one look-alike to exclude.</source>
-        <translation>Przeciągnij prostokąt wokół jednego podobnego obiektu, aby go wykluczyć.</translation>
-    </message>
-    <message>
-        <source>Drag a box around one object.</source>
-        <translation>Przeciągnij prostokąt wokół jednego obiektu.</translation>
     </message>
     <message>
         <source>Drag a corner to move it. Click an edge to add one, right-click removes.</source>
@@ -2419,10 +2119,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
     <message>
         <source>Draw a line right across the shape, then Finish.</source>
         <translation>Narysuj linię w poprzek kształtu, a potem kliknij Zamknij.</translation>
-    </message>
-    <message>
-        <source>Draw an example of the object first (step 2).</source>
-        <translation>Najpierw narysuj przykład obiektu (krok 2).</translation>
     </message>
     <message>
         <source>Draw an example, or type what to find.</source>
@@ -2511,14 +2207,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
     <message>
         <source>How detections are coloured on the map (visual only): Normal fill, Outline, Confidence heatmap, or a distinct colour per object to tell them apart.</source>
         <translation>Jak detekcje są kolorowane na mapie (tylko wizualnie): wypełnienie Normalne, Kontur, mapa cieplna Ufności albo odrębny kolor dla każdego obiektu, aby je rozróżnić.</translation>
-    </message>
-    <message>
-        <source>How many of each outline&apos;s points to keep, as a share. 100% keeps the class default; lower thins further, dropping the smallest detail first and keeping the corners and the surface. With Right angles on it runs first, so lowering it gives the squaring straight walls to work from.</source>
-        <translation>Ile punktów każdego konturu zachować, podane jako udział procentowy. 100% zachowuje wartość domyślną dla tego typu; niższa wartość przerzedza dalej, usuwając najpierw najdrobniejsze szczegóły, a zachowując rogi i powierzchnię. Gdy Kąty proste są włączone, działają jako pierwsze, więc obniżenie tej wartości daje im proste ściany do pracy.</translation>
-    </message>
-    <message>
-        <source>How many of the outline&apos;s points to keep, as a share. 100% keeps the standard density; lower thins further, dropping the smallest detail first and keeping the corners and the surface. With Right angles on it runs first, so lowering it gives the squaring straight walls to work from.</source>
-        <translation>Ile punktów konturu zachować, podane jako udział procentowy. 100% zachowuje standardową gęstość; niższa wartość przerzedza dalej, usuwając najpierw najdrobniejsze szczegóły, a zachowując rogi i powierzchnię. Gdy Kąty proste są włączone, działają jako pierwsze, więc obniżenie tej wartości daje im proste ściany do pracy.</translation>
     </message>
     <message>
         <source>How many of this polygon&apos;s points to keep. The count in the title row follows it. It runs before Right angles, so lowering it gives the squaring straight walls instead of a staircase.</source>
@@ -2637,10 +2325,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
         <translation>Brak połączenia z usługą logowania. Sprawdź swoje połączenie internetowe, a potem kliknij Połącz, aby spróbować ponownie.</translation>
     </message>
     <message>
-        <source>No detection in this zone. Try a more specific object word, or a finer detail level.</source>
-        <translation>Brak detekcji w tej strefie. Spróbuj bardziej konkretnego słowa dla obiektu albo dokładniejszego poziomu szczegółowości.</translation>
-    </message>
-    <message>
         <source>No detection under that click.</source>
         <translation>Brak detekcji pod tym kliknięciem.</translation>
     </message>
@@ -2655,10 +2339,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
     <message>
         <source>Nothing changed. The line has to cross the outline twice, starting and ending outside the shape.</source>
         <translation>Nic się nie zmieniło. Linia musi przeciąć kontur dwukrotnie, zaczynając i kończąc poza kształtem.</translation>
-    </message>
-    <message>
-        <source>Nothing cleared the confidence bar in this zone.</source>
-        <translation>Nic nie przekroczyło progu ufności w tej strefie.</translation>
     </message>
     <message>
         <source>Nothing was added. A polygon needs at least three corners.</source>
@@ -2683,10 +2363,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
     <message>
         <source>One object per run - detecting &quot;{first}&quot; now. Run the other objects as separate detections.</source>
         <translation>Jeden obiekt na przebieg - teraz wykrywanie „{first}”. Uruchom pozostałe obiekty jako osobne detekcje.</translation>
-    </message>
-    <message>
-        <source>Only this polygon. Every other one follows the Shapes step.</source>
-        <translation>Tylko ten poligon. Każdy inny podąża za krokiem Kształty.</translation>
     </message>
     <message>
         <source>Open the selected saved polygon for AI editing</source>
@@ -2745,16 +2421,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
         <translation>QGIS nie mógł aktywować tymczasowej warstwy przeglądu. Zamknij każdą inną sesję edycji, a potem spróbuj ponownie kliknąć Edytuj ręcznie.</translation>
     </message>
     <message>
-        <source>QGIS could not open a browser. Open this address to finish signing in, then come back here:
-{}</source>
-        <translation>QGIS nie mógł otworzyć przeglądarki. Otwórz ten adres, aby dokończyć logowanie, a potem wróć tutaj:
-{}</translation>
-    </message>
-    <message>
-        <source>QGIS could not open a browser. The sign-in address is copied to your clipboard: paste it into a browser to finish, then come back here.</source>
-        <translation>QGIS nie mógł otworzyć przeglądarki. Adres logowania został skopiowany do schowka: wklej go w przeglądarce, aby dokończyć, a potem wróć tutaj.</translation>
-    </message>
-    <message>
         <source>QGIS could not save these edits. Fix the geometry and click Done again.</source>
         <translation>QGIS nie mógł zapisać tych zmian. Popraw geometrię i kliknij ponownie Gotowe.</translation>
     </message>
@@ -2777,10 +2443,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
     <message>
         <source>Rebuilding shapes ({done} of {total})</source>
         <translation>Odbudowywanie kształtów ({done} z {total})</translation>
-    </message>
-    <message>
-        <source>Recovered {n} detection(s) to the layer {name}.</source>
-        <translation>Odzyskano {n} detekcji do warstwy {name}.</translation>
     </message>
     <message>
         <source>Redraw edge</source>
@@ -2815,14 +2477,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
         <translation>Przywróć wspólne</translation>
     </message>
     <message>
-        <source>Reshape needs a one-time setup</source>
-        <translation>Zmiana kształtu wymaga jednorazowej konfiguracji</translation>
-    </message>
-    <message>
-        <source>Reshaping uses the free on-device AI, which is not installed yet. Install it now (a few minutes, in the background)? You can keep reviewing, and reshaping will open automatically when it is ready.</source>
-        <translation>Zmienianie kształtu wykorzystuje darmową lokalną AI, która nie jest jeszcze zainstalowana. Zainstalować ją teraz (kilka minut, w tle)? Możesz kontynuować przegląd, a zmienianie kształtu otworzy się automatycznie, gdy będzie gotowe.</translation>
-    </message>
-    <message>
         <source>Right angles</source>
         <translation>Kąty proste</translation>
     </message>
@@ -2847,40 +2501,12 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
         <translation>Uruchom tę strefę ponownie</translation>
     </message>
     <message>
-        <source>Running low: {n} free detections left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Subscribe&lt;/a&gt; to keep going.</source>
-        <translation>Kończą się: {n} darmowych detekcji pozostało, wracają {date}. &lt;a href=&quot;{url}&quot;&gt;Zasubskrybuj&lt;/a&gt;, aby kontynuować.</translation>
-    </message>
-    <message>
-        <source>Same setup as your last run - the result will match. Add an example or change the detail for a different result.</source>
-        <translation>Taka sama konfiguracja jak w ostatnim przebiegu - wynik będzie identyczny. Dodaj przykład albo zmień szczegółowość, aby uzyskać inny wynik.</translation>
-    </message>
-    <message>
         <source>Save</source>
         <translation>Zapisz</translation>
     </message>
     <message>
         <source>Save the fix and go back to the review</source>
         <translation>Zapisz poprawkę i wróć do przeglądu</translation>
-    </message>
-    <message>
-        <source>Save this polygon and go back to picking.</source>
-        <translation>Zapisz ten poligon i wróć do wybierania.</translation>
-    </message>
-    <message>
-        <source>Setting up the on-device AI in the background. You can keep reviewing; reshaping opens automatically when it is ready.</source>
-        <translation>Konfigurowanie lokalnej AI w tle. Możesz kontynuować przegląd; zmienianie kształtu otwiera się automatycznie, gdy będzie gotowe.</translation>
-    </message>
-    <message>
-        <source>Setting up the on-device AI in the background...</source>
-        <translation>Konfigurowanie lokalnej AI w tle...</translation>
-    </message>
-    <message>
-        <source>Settings for this polygon</source>
-        <translation>Ustawienia dla tego poligonu</translation>
-    </message>
-    <message>
-        <source>Shadows getting detected instead of trees? Draw an &apos;Exclude a look-alike&apos; box on one shadow - the AI drops similar false positives.</source>
-        <translation>Cienie wykrywane zamiast drzew? Narysuj prostokąt „Wyklucz podobny obiekt” na jednym cieniu - AI odrzuca podobne błędne wykrycia.</translation>
     </message>
     <message>
         <source>Shape updated. Keep editing, or click Save.</source>
@@ -2943,10 +2569,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
         <translation>Zatrzymywanie lokalnej AI...</translation>
     </message>
     <message>
-        <source>Switch to AI to shape this polygon on its own.</source>
-        <translation>Przełącz na AI, aby samodzielnie nadać kształt temu poligonowi.</translation>
-    </message>
-    <message>
         <source>That area does not touch the object you are editing, so nothing was added. Reshaping works on one object at a time.</source>
         <translation>Ten obszar nie styka się z obiektem, który edytujesz, więc nic nie zostało dodane. Zmienianie kształtu działa na jednym obiekcie naraz.</translation>
     </message>
@@ -2991,10 +2613,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
         <translation>Instalator nie mógł uruchomić procesu pomocniczego (uszkodzony program uruchamiający Pythona). Kliknij Zainstaluj ponownie zależności, aby odbudować środowisko od podstaw.</translation>
     </message>
     <message>
-        <source>The pieces do not touch, so the result is one object in several parts.</source>
-        <translation>Fragmenty się nie stykają, więc wynikiem jest jeden obiekt w kilku częściach.</translation>
-    </message>
-    <message>
         <source>The removal could not start. You are signed out, but the downloaded AI data is still on this computer. Try again.</source>
         <translation>Usuwanie nie mogło się rozpocząć. Wylogowano Cię, ale pobrane dane AI wciąż są na tym komputerze. Spróbuj ponownie.</translation>
     </message>
@@ -3019,10 +2637,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
         <translation>Przerzedź punkty tego poligonu, zanim zaczniesz je edytować ręcznie. 100% zachowuje kontur bez zmian.</translation>
     </message>
     <message>
-        <source>This image has no position on the map, so Automatic cannot place what it finds. Give it one with the QGIS Georeferencer, or use Manual mode on it as is.</source>
-        <translation>Ten obraz nie ma pozycji na mapie, więc tryb Automatyczny nie może umieścić tego, co znajdzie. Nadaj mu ją za pomocą Georeferencera QGIS, albo użyj trybu Ręcznego bez zmian.</translation>
-    </message>
-    <message>
         <source>This polygon</source>
         <translation>Ten poligon</translation>
     </message>
@@ -3033,14 +2647,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
     <message>
         <source>This raster is rotated. Run Warp (Reproject) on it to straighten it before segmenting.</source>
         <translation>Ten raster jest obrócony. Uruchom na nim Warp (Reproject), aby go wyprostować przed segmentacją.</translation>
-    </message>
-    <message>
-        <source>This raster is rotated. Run Warp (Reproject) on it to straighten it first. Manual mode cannot read it either.</source>
-        <translation>Ten raster jest obrócony. Uruchom na nim Warp (Reproject), aby go najpierw wyprostować. Tryb Ręczny również nie może go odczytać.</translation>
-    </message>
-    <message>
-        <source>This run costs more credits than a free run covers. Lower the detail or draw a smaller zone, or</source>
-        <translation>Ten przebieg kosztuje więcej kredytów, niż pokrywa darmowy przebieg. Zmniejsz szczegółowość albo narysuj mniejszą strefę, albo</translation>
     </message>
     <message>
         <source>This run did not keep where it looked, so it cannot be pointed at the same place. Draw the zone again.</source>
@@ -3057,10 +2663,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
     <message>
         <source>Two references give the strongest detection. Draw a second to reach best quality.</source>
         <translation>Dwie referencje dają najsilniejszą detekcję. Narysuj drugą, aby osiągnąć najlepszą jakość.</translation>
-    </message>
-    <message>
-        <source>Type a word for the object first (step 1).</source>
-        <translation>Najpierw wpisz słowo dla obiektu (krok 1).</translation>
     </message>
     <message>
         <source>Unavailable while Right angles is on. Turn it off to adjust this setting.</source>
@@ -3195,10 +2797,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
         <translation>Edytowano {n} kształtów w tej sesji</translation>
     </message>
     <message>
-        <source>{n} shapes merged into one · Free</source>
-        <translation>{n} kształtów scalonych w jeden · Darmowe</translation>
-    </message>
-    <message>
         <source>{n} shapes picked. Press Enter to join.</source>
         <translation>Wybrano {n} kształtów. Naciśnij Enter, aby je scalić.</translation>
     </message>
@@ -3220,12 +2818,8 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
     </message>
     <!-- Correct step rework, install and precision wording (2026-07-30) -->
     <message>
-        <source>1 credit ~ 0.17 km² at default precision.</source>
-        <translation>1 kredyt ~ 0,17 km² przy domyślnej precyzji.</translation>
-    </message>
-    <message>
-        <source>10,000 credits a month.</source>
-        <translation>10 000 kredytów miesięcznie.</translation>
+        <source>5,000 credits a month.</source>
+        <translation>5 000 kredytów miesięcznie.</translation>
     </message>
     <message>
         <source>A free run covers up to {cap} credits. This one costs more.</source>
@@ -3240,14 +2834,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
         <translation>Przy tej precyzji {obj} jest za mały, aby go dostrzec - zwiększ precyzję.</translation>
     </message>
     <message>
-        <source>Automatic mode is ready. The on-device AI could not be installed, so Manual mode and the AI fix are off until it is. Everything else works.</source>
-        <translation>Tryb Automatyczny jest gotowy. Lokalnej AI nie udało się zainstalować, więc tryb Ręczny i poprawianie AI są wyłączone, dopóki nie zostanie zainstalowana. Wszystko inne działa.</translation>
-    </message>
-    <message>
-        <source>Automatic mode needs the AI environment, and it is missing or incomplete. Install the dependencies from the plugin panel, then run Detect again.</source>
-        <translation>Tryb Automatyczny wymaga środowiska AI, którego brakuje lub które jest niekompletne. Zainstaluj zależności z panelu wtyczki, a potem uruchom Wykrywanie ponownie.</translation>
-    </message>
-    <message>
         <source>Automatic mode scans your zone tile by tile. 1 tile = 1 credit, so this run costs about {n} credits. More precision splits the zone into more tiles, which costs more credits.</source>
         <translation>Tryb Automatyczny skanuje Twoją strefę kafelek po kafelku. 1 kafelek = 1 kredyt, więc ten przebieg kosztuje około {n} kredytów. Wyższa precyzja dzieli strefę na więcej kafelków, co kosztuje więcej kredytów.</translation>
     </message>
@@ -3258,10 +2844,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
     <message>
         <source>Clean up this outline</source>
         <translation>Wyczyść ten kontur</translation>
-    </message>
-    <message>
-        <source>Click an object and the AI outlines it. You check and save each polygon yourself, one at a time. Use Automatic mode to get every object in a zone at once.</source>
-        <translation>Kliknij obiekt, a AI zaznaczy jego kontur. Sprawdzasz i zapisujesz każdy poligon samodzielnie, jeden po drugim. Użyj trybu Automatycznego, aby uzyskać wszystkie obiekty w strefie na raz.</translation>
     </message>
     <message>
         <source>Click points around one look-alike, then double-click to close.</source>
@@ -3290,14 +2872,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
     <message>
         <source>Downloads Blocked by Your Network</source>
         <translation>Pobieranie zablokowane przez Twoją sieć</translation>
-    </message>
-    <message>
-        <source>Draw a smaller zone, or &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to segment areas of any size.</source>
-        <translation>Narysuj mniejszą strefę, albo &lt;a href=&quot;{url}&quot;&gt;Przejdź na Pro&lt;/a&gt;, aby segmentować strefy każdego rozmiaru.</translation>
-    </message>
-    <message>
-        <source>Draw a zone, name one kind of object, and get all of them in one run. Use Manual mode to work one object at a time.</source>
-        <translation>Narysuj strefę, nazwij jeden rodzaj obiektu i otrzymaj je wszystkie w jednym przebiegu. Użyj trybu Ręcznego, aby pracować nad jednym obiektem na raz.</translation>
     </message>
     <message>
         <source>Draw another example</source>
@@ -3338,14 +2912,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
     <message>
         <source>Keep this shape. The polygon stays picked, so you can still adjust, merge or delete it.</source>
         <translation>Zachowaj ten kształt. Poligon pozostaje wybrany, więc nadal możesz go dostosować, scalić lub usunąć.</translation>
-    </message>
-    <message>
-        <source>Last run: {n} {object}</source>
-        <translation>Ostatni przebieg: {n} {object}</translation>
-    </message>
-    <message>
-        <source>Last run: {n} {object} in {layer}</source>
-        <translation>Ostatni przebieg: {n} {object} w warstwie {layer}</translation>
     </message>
     <message>
         <source>Loading the imagery...</source>
@@ -3422,10 +2988,6 @@ Spróbuj otworzyć go w QGIS, aby potwierdzić, że się wyświetla, albo przeko
     <message>
         <source>Same setup as your last run - the result will match. Add an example or change the precision for a different result.</source>
         <translation>Taka sama konfiguracja jak w ostatnim przebiegu - wynik będzie identyczny. Dodaj przykład albo zmień precyzję, aby uzyskać inny wynik.</translation>
-    </message>
-    <message>
-        <source>Saved to {layer}</source>
-        <translation>Zapisano w warstwie {layer}</translation>
     </message>
     <message>
         <source>Setting up the on-device AI. This runs once and takes a few minutes. The review waits here until it is done.</source>
@@ -3566,16 +3128,12 @@ Mógł zostać przeniesiony lub zmieniona jego nazwa, albo dysk lub udział siec
         <translation>Wpisz słowo dla obiektu albo narysuj przykład.</translation>
     </message>
     <message>
-        <source>Upgrade to Pro to finish this zone: 10,000 credits/month.</source>
-        <translation>Przejdź na Pro, aby zakończyć tę strefę: 10 000 kredytów/miesiąc.</translation>
+        <source>Upgrade to Pro to finish this zone: 5,000 credits/month.</source>
+        <translation>Przejdź na Pro, aby zakończyć tę strefę: 5 000 kredytów/miesiąc.</translation>
     </message>
     <message>
         <source>Wait for the on-device AI to finish installing.</source>
         <translation>Poczekaj na zakończenie instalacji lokalnej AI.</translation>
-    </message>
-    <message>
-        <source>{count} polygon(s) exported</source>
-        <translation>{count} poligon(ów) wyeksportowano</translation>
     </message>
     <message>
         <source>{n} {object} saved</source>
@@ -3585,22 +3143,472 @@ Mógł zostać przeniesiony lub zmieniona jego nazwa, albo dysk lub udział siec
         <source>{n} {object} saved to {layer}</source>
         <translation>{n} {object} zapisano w warstwie {layer}</translation>
     </message>
-    <message>
-        <source>{used} credits</source>
-        <translation>{used} kredytów</translation>
-    </message>
     <!-- Correct-step on-device AI setup, free-run cap wording, missing raster (2026-07-30) -->
     <message>
-        <source>or lower the detail to stay free.</source>
-        <translation>albo zmniejsz szczegółowość, aby pozostać w wersji darmowej.</translation>
+        <source>5,000 objects every month</source>
+        <translation>5 000 obiektów miesięcznie</translation>
     </message>
     <message>
-        <source>This zone at this detail needs a subscription.</source>
-        <translation>Ta strefa przy tej szczegółowości wymaga subskrypcji.</translation>
+        <source>A session is already running.</source>
+        <translation>Sesja już trwa.</translation>
     </message>
     <message>
-        <source>Subscribe</source>
-        <translation>Zasubskrybuj</translation>
+        <source>AI engine</source>
+        <translation>Silnik AI</translation>
+    </message>
+    <message>
+        <source>AI fixing is not reachable right now. Switched to editing by hand, which works offline.</source>
+        <translation>Poprawianie AI jest teraz niedostępne. Przełączono na edycję ręczną, która działa offline.</translation>
+    </message>
+    <message>
+        <source>AI ready</source>
+        <translation>AI gotowa</translation>
+    </message>
+    <message>
+        <source>Add an object the AI missed. In AI, point at it and the model outlines it, free; in Manual, draw its corners.</source>
+        <translation>Dodaj obiekt, który ominęła AI. W trybie AI wskaż go, a model zaznaczy jego kontur za darmo; w trybie Ręcznym narysuj jego rogi.</translation>
+    </message>
+    <message>
+        <source>Almost ready: the AI file did not download.</source>
+        <translation>Prawie gotowe: plik AI się nie pobrał.</translation>
+    </message>
+    <message>
+        <source>Almost ready: the AI file is still missing.</source>
+        <translation>Prawie gotowe: pliku AI wciąż brakuje.</translation>
+    </message>
+    <message>
+        <source>Answered on your computer this time. TerraLab could not be reached.</source>
+        <translation>Tym razem odpowiedziano na Twoim komputerze. Nie udało się połączyć z TerraLab.</translation>
+    </message>
+    <message>
+        <source>As fine as {obj} benefits from - finer splits them into pieces.</source>
+        <translation>Tak drobno, jak potrzebuje {obj} - drobniej podzieli je na kawałki.</translation>
+    </message>
+    <message>
+        <source>Automatic mode is ready. The on-device AI could not be installed, so Semi-Auto mode and the AI fix are off until it is. Everything else works.</source>
+        <translation>Tryb Automatyczny jest gotowy. Nie udało się zainstalować lokalnej AI, więc tryb Semi-Auto i poprawianie AI są wyłączone, dopóki nie zostanie zainstalowana. Wszystko inne działa.</translation>
+    </message>
+    <message>
+        <source>Automatic mode needs a small one-time setup before it can read your imagery. It takes about a minute.</source>
+        <translation>Tryb Automatyczny wymaga małej jednorazowej konfiguracji, zanim będzie mógł odczytać Twoje obrazy. Zajmuje to około minuty.</translation>
+    </message>
+    <message>
+        <source>Automatic mode ready</source>
+        <translation>Tryb Automatyczny gotowy</translation>
+    </message>
+    <message>
+        <source>Categories</source>
+        <translation>Kategorie</translation>
+    </message>
+    <message>
+        <source>Choose between Semi-Auto and Automatic segmentation</source>
+        <translation>Wybierz tryb segmentacji: Semi-Auto albo Automatyczny</translation>
+    </message>
+    <message>
+        <source>Choose where the AI runs: on TerraLab servers, or on your own computer</source>
+        <translation>Wybierz, gdzie działa AI: na serwerach TerraLab albo na Twoim własnym komputerze</translation>
+    </message>
+    <message>
+        <source>Click the object you want to segment:</source>
+        <translation>Kliknij obiekt, który chcesz zsegmentować:</translation>
+    </message>
+    <message>
+        <source>Cloud AI</source>
+        <translation>Cloud AI</translation>
+    </message>
+    <message>
+        <source>Cloud AI needs your account, and it is signed out. Sign back in, or install the offline AI to work without one.</source>
+        <translation>Cloud AI wymaga Twojego konta, a wylogowano Cię z niego. Zaloguj się ponownie albo zainstaluj lokalną AI, aby pracować bez konta.</translation>
+    </message>
+    <message>
+        <source>How Cloud AI works</source>
+        <translation>Jak działa Cloud AI</translation>
+    </message>
+    <message>
+        <source>Continue with Cloud AI</source>
+        <translation>Kontynuuj z Cloud AI</translation>
+    </message>
+    <message>
+        <source>Delete this polygon and leave the manual edit. Anything you changed here and did not save goes with it. Undo brings the polygon back.</source>
+        <translation>Usuń ten poligon i opuść ręczną edycję. Wszystko, co tu zmieniono i nie zapisano, zniknie razem z nim. Cofnij przywraca go z powrotem.</translation>
+    </message>
+    <message>
+        <source>Downloading and setting it up takes &lt;b&gt;about {n} minutes&lt;/b&gt;, once.</source>
+        <translation>Pobieranie i konfiguracja zajmują &lt;b&gt;około {n} minut&lt;/b&gt;, jednorazowo.</translation>
+    </message>
+    <message>
+        <source>Draw a zone, name one kind of object, and get all of them in one run. Use Semi-Auto mode to work one object at a time.</source>
+        <translation>Narysuj strefę, nazwij jeden rodzaj obiektu i otrzymaj je wszystkie w jednym przebiegu. Użyj trybu Semi-Auto, aby pracować nad jednym obiektem na raz.</translation>
+    </message>
+    <message>
+        <source>Each click sends a small square of the image to our servers in Europe, and the outline comes back.</source>
+        <translation>Każde kliknięcie wysyła mały kwadrat obrazu na nasze serwery w Europie, a kontur wraca.</translation>
+    </message>
+    <message>
+        <source>Ends this session. Your saved polygons are kept.</source>
+        <translation>Kończy tę sesję. Twoje zapisane poligony zostają zachowane.</translation>
+    </message>
+    <message>
+        <source>Faster and more accurate</source>
+        <translation>Szybsza i dokładniejsza</translation>
+    </message>
+    <message>
+        <source>Featured</source>
+        <translation>Wyróżnione</translation>
+    </message>
+    <message>
+        <source>Free, works offline</source>
+        <translation>Darmowy, działa offline</translation>
+    </message>
+    <message>
+        <source>Install it now</source>
+        <translation>Zainstaluj teraz</translation>
+    </message>
+    <message>
+        <source>Install the offline AI</source>
+        <translation>Zainstaluj lokalną AI</translation>
+    </message>
+    <message>
+        <source>Installing the offline AI</source>
+        <translation>Instalowanie lokalnej AI</translation>
+    </message>
+    <message>
+        <source>Intel Mac: using the older AI model.</source>
+        <translation>Intel Mac: używanie starszego modelu AI.</translation>
+    </message>
+    <message>
+        <source>It needs &lt;b&gt;{gb} GB&lt;/b&gt; of free disk space.</source>
+        <translation>Potrzebuje &lt;b&gt;{gb} GB&lt;/b&gt; wolnego miejsca na dysku.</translation>
+    </message>
+    <message>
+        <source>My computer</source>
+        <translation>Mój komputer</translation>
+    </message>
+    <message>
+        <source>My computer, free and unlimited</source>
+        <translation>Mój komputer, darmowy i nielimitowany</translation>
+    </message>
+    <message>
+        <source>My work</source>
+        <translation>Moje prace</translation>
+    </message>
+    <message>
+        <source>No credits left. Each object you save with Cloud AI costs one credit.</source>
+        <translation>Brak kredytów. Każdy obiekt zapisany za pomocą Cloud AI kosztuje jeden kredyt.</translation>
+    </message>
+    <message>
+        <source>No credits left. Each object you save with Cloud AI costs one credit. Switch to the offline AI to keep working for free, or upgrade from the panel.</source>
+        <translation>Brak kredytów. Każdy obiekt zapisany za pomocą Cloud AI kosztuje jeden kredyt. Przełącz się na lokalną AI, aby dalej pracować za darmo, albo przejdź na Pro z panelu.</translation>
+    </message>
+    <message>
+        <source>No credits left. This polygon stays on the map, and Export still works.</source>
+        <translation>Brak kredytów. Ten poligon zostaje na mapie, a Export wciąż działa.</translation>
+    </message>
+    <message>
+        <source>No credits left. This polygon stays on the map, but it cannot be saved.</source>
+        <translation>Brak kredytów. Ten poligon zostaje na mapie, ale nie można go zapisać.</translation>
+    </message>
+    <message>
+        <source>No object found here. Try clicking somewhere else.</source>
+        <translation>Nie znaleziono tu obiektu. Spróbuj kliknąć w innym miejscu.</translation>
+    </message>
+    <message>
+        <source>Not now</source>
+        <translation>Nie teraz</translation>
+    </message>
+    <message>
+        <source>Your project and your files stay on your computer. One credit per object you save.</source>
+        <translation>Twój projekt i Twoje pliki zostają na Twoim komputerze. Jeden kredyt za każdy zapisany obiekt.</translation>
+    </message>
+    <message>
+        <source>One precision level fits {obj} in a zone this size - draw a larger zone for a choice.</source>
+        <translation>Jeden poziom precyzji pasuje do {obj} w strefie tego rozmiaru - narysuj większą strefę, aby mieć wybór.</translation>
+    </message>
+    <message>
+        <source>One-time setup</source>
+        <translation>Jednorazowa konfiguracja</translation>
+    </message>
+    <message>
+        <source>Other detections</source>
+        <translation>Inne detekcje</translation>
+    </message>
+    <message>
+        <source>Pick a raster layer and accept the Terms to start.</source>
+        <translation>Wybierz warstwę rastrową i zaakceptuj Warunki, aby zacząć.</translation>
+    </message>
+    <message>
+        <source>Preparing the install...</source>
+        <translation>Przygotowywanie instalacji...</translation>
+    </message>
+    <message>
+        <source>Pro is active on this account. Your credits are ready.</source>
+        <translation>To konto ma aktywny plan Pro. Twoje kredyty są gotowe.</translation>
+    </message>
+    <message>
+        <source>Read the privacy policy</source>
+        <translation>Przeczytaj politykę prywatności</translation>
+    </message>
+    <message>
+        <source>Right-click a polygon on the map to delete it.</source>
+        <translation>Kliknij prawym przyciskiem poligon na mapie, aby go usunąć.</translation>
+    </message>
+    <message>
+        <source>Running low: {n} credits left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Kończą się: {n} kredytów pozostało, wracają {date}. &lt;a href=&quot;{url}&quot;&gt;Przejdź na Pro&lt;/a&gt;, aby kontynuować.</translation>
+    </message>
+    <message>
+        <source>Running low: {n} credits left. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Kończą się: {n} kredytów pozostało. &lt;a href=&quot;{url}&quot;&gt;Przejdź na Pro&lt;/a&gt;, aby kontynuować.</translation>
+    </message>
+    <message>
+        <source>Save a polygon first. Export writes every polygon you kept to a layer.</source>
+        <translation>Najpierw zapisz poligon. Export zapisuje każdy zachowany poligon w warstwie.</translation>
+    </message>
+    <message>
+        <source>Saving object</source>
+        <translation>Zapisywanie obiektu</translation>
+    </message>
+    <message>
+        <source>Semi-Auto</source>
+        <translation>Semi-Auto</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode installs local components that are not available for this Mac with this version of QGIS. Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
+        <translation>Tryb Semi-Auto instaluje lokalne komponenty, które nie są dostępne dla tego Maca z tą wersją QGIS. Użyj zamiast tego trybu Automatycznego, który działa w pełni w chmurze i nie wymaga lokalnej instalacji.</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode is not supported</source>
+        <translation>Tryb Semi-Auto nie jest obsługiwany</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode is not supported in this QGIS installation</source>
+        <translation>Tryb Semi-Auto nie jest obsługiwany w tej instalacji QGIS</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode needs to install local dependencies, which is not supported inside this sandboxed QGIS installation (Flatpak or Snap). Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
+        <translation>Tryb Semi-Auto musi zainstalować lokalne zależności, co nie jest obsługiwane w tej izolowanej instalacji QGIS (Flatpak lub Snap). Użyj zamiast tego trybu Automatycznego, który działa w pełni w chmurze i nie wymaga lokalnej instalacji.</translation>
+    </message>
+    <message>
+        <source>Semi-Auto mode stays free and unlimited on your computer.</source>
+        <translation>Tryb Semi-Auto pozostaje darmowy i nielimitowany na Twoim komputerze.</translation>
+    </message>
+    <message>
+        <source>Session ended</source>
+        <translation>Sesja zakończona</translation>
+    </message>
+    <message>
+        <source>Set up now</source>
+        <translation>Skonfiguruj teraz</translation>
+    </message>
+    <message>
+        <source>Setting up on your computer {dot} &lt;b&gt;pick Cloud AI to start now&lt;/b&gt;</source>
+        <translation>Konfigurowanie na Twoim komputerze {dot} &lt;b&gt;wybierz Cloud AI, aby zacząć teraz&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Start Semi-Auto AI Segmentation</source>
+        <translation>Uruchom Semi-Auto AI Segmentation</translation>
+    </message>
+    <message>
+        <source>Stop and use my computer instead</source>
+        <translation>Zatrzymaj i użyj zamiast tego mojego komputera</translation>
+    </message>
+    <message>
+        <source>Stop the install</source>
+        <translation>Zatrzymaj instalację</translation>
+    </message>
+    <message>
+        <source>The AI is still loading. Try again in a few seconds.</source>
+        <translation>AI wciąż się ładuje. Spróbuj ponownie za kilka sekund.</translation>
+    </message>
+    <message>
+        <source>The AI was set up but could not start.</source>
+        <translation>AI została skonfigurowana, ale nie mogła się uruchomić.</translation>
+    </message>
+    <message>
+        <source>The click was cancelled.</source>
+        <translation>Kliknięcie zostało anulowane.</translation>
+    </message>
+    <message>
+        <source>The install did not finish. Retry it, or pick Cloud AI.</source>
+        <translation>Instalacja nie została ukończona. Ponów ją, albo wybierz Cloud AI.</translation>
+    </message>
+    <message>
+        <source>The model is unsure about this outline. Click again to correct it, or draw it by hand.</source>
+        <translation>Model nie jest pewien tego konturu. Kliknij ponownie, aby go poprawić, albo narysuj go ręcznie.</translation>
+    </message>
+    <message>
+        <source>The offline AI</source>
+        <translation>Lokalna AI</translation>
+    </message>
+    <message>
+        <source>The offline AI is not installed yet.</source>
+        <translation>Lokalna AI nie jest jeszcze zainstalowana.</translation>
+    </message>
+    <message>
+        <source>The offline AI is still downloading.</source>
+        <translation>Lokalna AI wciąż się pobiera.</translation>
+    </message>
+    <message>
+        <source>The smaller model on your computer. No credits, no limit.</source>
+        <translation>Mniejszy model na Twoim komputerze. Bez kredytów, bez limitu.</translation>
+    </message>
+    <message>
+        <source>This deletes the local AI model files, signs you out, and resets the plugin. Your account and credits are not affected. Semi-Auto mode will download the files again next time you use it.</source>
+        <translation>To usuwa lokalne pliki modelu AI, wylogowuje Cię i resetuje wtyczkę. Twoje konto i kredyty pozostają nietknięte. Tryb Semi-Auto pobierze pliki ponownie przy następnym użyciu.</translation>
+    </message>
+    <message>
+        <source>This drive has {free} GB free, under the {need} GB the install needs. Free some space, or use Cloud AI.</source>
+        <translation>Ten dysk ma {free} GB wolnego miejsca - to mniej niż {need} GB potrzebne do instalacji. Zwolnij trochę miejsca, albo użyj Cloud AI.</translation>
+    </message>
+    <message>
+        <source>This image has no position on the map, so Automatic cannot place what it finds. Give it one with the QGIS Georeferencer, or use Semi-Auto mode on it as is.</source>
+        <translation>Ten obraz nie ma pozycji na mapie, więc Automatyczny nie może umieścić tego, co znajdzie. Ustaw jego pozycję za pomocą QGIS Georeferencer, albo użyj na nim trybu Semi-Auto, tak jak jest.</translation>
+    </message>
+    <message>
+        <source>This model rates every object the same, so filtering by confidence would show all of them or none. Use Size below, or fix objects in the next step.</source>
+        <translation>Ten model ocenia każdy obiekt tak samo, więc filtrowanie według Ufności pokazałoby wszystkie albo żadnego. Użyj Rozmiaru poniżej, albo popraw obiekty w następnym kroku.</translation>
+    </message>
+    <message>
+        <source>This raster is rotated. Run Warp (Reproject) on it to straighten it first. Semi-Auto mode cannot read it either.</source>
+        <translation>Ten raster jest obrócony. Uruchom na nim Warp (Reproject), aby go najpierw wyprostować. Tryb Semi-Auto również nie może go odczytać.</translation>
+    </message>
+    <message>
+        <source>Use Cloud AI instead</source>
+        <translation>Użyj zamiast tego Cloud AI</translation>
+    </message>
+    <message>
+        <source>Use my computer instead</source>
+        <translation>Użyj zamiast tego mojego komputera</translation>
+    </message>
+    <message>
+        <source>Where the segmentation runs:</source>
+        <translation>Gdzie działa segmentacja:</translation>
+    </message>
+    <message>
+        <source>You can close this window and keep working. The install carries on, and the panel shows how far it has got.</source>
+        <translation>Możesz zamknąć to okno i kontynuować pracę. Instalacja trwa dalej, a panel pokazuje, jak daleko zaszła.</translation>
+    </message>
+    <message>
+        <source>Your free credits come back on {date}.</source>
+        <translation>Twoje darmowe kredyty wracają {date}.</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;about 10 minutes to install&lt;/b&gt;</source>
+        <translation>Wszystko zostaje na tym komputerze {dot} &lt;b&gt;około 10 minut na instalację&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;save as many as you like&lt;/b&gt;</source>
+        <translation>Wszystko zostaje na tym komputerze {dot} &lt;b&gt;zapisz tyle, ile chcesz&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;{gb} GB and about 10 minutes to install&lt;/b&gt;</source>
+        <translation>Wszystko zostaje na tym komputerze {dot} &lt;b&gt;{gb} GB i około 10 minut na instalację&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>No setup on this computer {dot} &lt;b&gt;1 credit per object you save&lt;/b&gt;</source>
+        <translation>Bez konfiguracji na tym komputerze {dot} &lt;b&gt;1 kredyt za każdy zapisany obiekt&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>The offline AI answers your clicks on this computer. Your imagery stays here, and every click is free.</source>
+        <translation>Lokalna AI odpowiada na Twoje kliknięcia na tym komputerze. Twoje obrazy zostają tutaj, a każde kliknięcie jest darmowe.</translation>
+    </message>
+    <message>
+        <source>This online layer returned no imagery for this area. Its server refused the request. Check the layer&apos;s URL in Layer Properties, or use another basemap.</source>
+        <translation>Ta warstwa internetowa nie zwróciła obrazu dla tego obszaru. Jej serwer odrzucił żądanie. Sprawdź adres URL we Właściwościach warstwy, albo użyj innej mapy bazowej.</translation>
+    </message>
+    <message>
+        <source>1 credit covers about 0.17 km² at default precision.</source>
+        <translation>1 kredyt pokrywa około 0,17 km² przy domyślnej precyzji.</translation>
+    </message>
+    <message>
+        <source>Clear all {n}</source>
+        <translation>Wyczyść wszystkie {n}</translation>
+    </message>
+    <message>
+        <source>Could not check your AI Segmentation account. If this lasts, sign out and sign in again.</source>
+        <translation>Nie udało się sprawdzić Twojego konta AI Segmentation. Jeśli problem się utrzymuje, wyloguj się i zaloguj ponownie.</translation>
+    </message>
+    <message>
+        <source>Could not load your account. Try again in a moment.</source>
+        <translation>Nie udało się wczytać Twojego konta. Spróbuj ponownie za chwilę.</translation>
+    </message>
+    <message>
+        <source>Could not reach TerraLab. Check your internet connection, then try again.</source>
+        <translation>Nie udało się połączyć z TerraLab. Sprawdź połączenie z internetem, a potem spróbuj ponownie.</translation>
+    </message>
+    <message>
+        <source>Editing by hand could not open on this polygon on its own. Try again, or fix it with the AI.</source>
+        <translation>Edycja ręczna nie mogła się otworzyć na tym poligonie samodzielnie. Spróbuj ponownie, albo popraw go za pomocą AI.</translation>
+    </message>
+    <message>
+        <source>It downloads first, and takes about 10 minutes.</source>
+        <translation>Najpierw się pobiera, a trwa około 10 minut.</translation>
+    </message>
+    <message>
+        <source>It downloads first: {gb} GB and about 10 minutes.</source>
+        <translation>Najpierw się pobiera: {gb} GB i około 10 minut.</translation>
+    </message>
+    <message>
+        <source>Nothing in this category yet.</source>
+        <translation>W tej kategorii nie ma jeszcze niczego.</translation>
+    </message>
+    <message>
+        <source>One run covers up to {cap} tiles. This zone at this precision needs more. Draw a smaller zone, or lower the precision.</source>
+        <translation>Jeden przebieg obejmuje do {cap} kafelków. Ta strefa przy tej precyzji potrzebuje więcej. Narysuj mniejszą strefę, albo zmniejsz precyzję.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser. Open this address to finish signing in, then come back here. It works once:
+{}</source>
+        <translation>QGIS nie mógł otworzyć przeglądarki. Otwórz ten adres, aby dokończyć logowanie, a potem wróć tutaj. Działa tylko raz:
+{}</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser. The sign-in address is copied to your clipboard: paste it into a browser to finish, then come back here. It works once.</source>
+        <translation>QGIS nie mógł otworzyć przeglądarki. Adres logowania został skopiowany do schowka: wklej go w przeglądarce, aby dokończyć, a potem wróć tutaj. Działa tylko raz.</translation>
+    </message>
+    <message>
+        <source>Reading your logs...</source>
+        <translation>Odczytywanie Twoich logów...</translation>
+    </message>
+    <message>
+        <source>Sign in again to fix with the AI. Switched to editing by hand, which needs no account.</source>
+        <translation>Zaloguj się ponownie, aby poprawiać za pomocą AI. Przełączono na edycję ręczną, która nie wymaga konta.</translation>
+    </message>
+    <message>
+        <source>The export did not finish. Your polygons are still on the map, so you can try again.</source>
+        <translation>Export nie został ukończony. Twoje poligony wciąż są na mapie, więc możesz spróbować ponownie.</translation>
+    </message>
+    <message>
+        <source>The install did not finish {dot} &lt;b&gt;retry it, or pick Cloud AI&lt;/b&gt;</source>
+        <translation>Instalacja nie została ukończona {dot} &lt;b&gt;ponów ją, albo wybierz Cloud AI&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>The polygons could not be put into the new layer, so nothing was saved. They are still on the map, so you can try again.</source>
+        <translation>Nie udało się umieścić poligonów w nowej warstwie, więc nic nie zostało zapisane. Wciąż są na mapie, więc możesz spróbować ponownie.</translation>
+    </message>
+    <message>
+        <source>This layer has no usable position on the map. Open it in QGIS and check its extent.</source>
+        <translation>Ta warstwa nie ma użytecznej pozycji na mapie. Otwórz ją w QGIS i sprawdź jej zasięg.</translation>
+    </message>
+    <message>
+        <source>This run found nothing. Add the object yourself below, or press Exit and run again with another word or a smaller zone.</source>
+        <translation>Ten przebieg nic nie znalazł. Dodaj obiekt samodzielnie poniżej, albo naciśnij Wyjdź i uruchom ponownie z innym słowem albo mniejszą strefą.</translation>
+    </message>
+    <message>
+        <source>This zone at this precision needs more tiles than one run covers. Draw a smaller zone, or lower the precision.</source>
+        <translation>Ta strefa przy tej precyzji potrzebuje więcej kafelków niż obejmuje jeden przebieg. Narysuj mniejszą strefę, albo zmniejsz precyzję.</translation>
+    </message>
+    <message>
+        <source>Undo every correction of this round at once. The count is in the label, so you can see what goes.</source>
+        <translation>Cofnij wszystkie poprawki z tej rundy za jednym razem. Liczba jest na etykiecie, więc możesz zobaczyć, co zniknie.</translation>
+    </message>
+    <message>
+        <source>You are out of credits, so the AI fix cannot answer. Switched to editing by hand, which is free.</source>
+        <translation>Skończyły Ci się kredyty, więc poprawianie AI nie może odpowiedzieć. Przełączono na edycję ręczną, która jest darmowa.</translation>
+    </message>
+    <message>
+        <source>You are signed in on this computer, but QGIS cannot read your sign-in until you enter its master password.</source>
+        <translation>Zalogowano Cię na tym komputerze, ale QGIS nie może odczytać Twojego logowania, dopóki nie wpiszesz jego hasła głównego.</translation>
     </message>
 </context>
 </TS>

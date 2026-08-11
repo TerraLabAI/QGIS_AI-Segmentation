@@ -52,6 +52,23 @@ _COLLECTION_OVERHEAD = len('{"type":"FeatureCollection","features":[]}')
 _inflight: list[QgsTask] = []
 
 
+def cancel_inflight_uploads() -> None:
+    """Cancel every queued upload and drop the strong refs. Call from unload.
+
+    A reload re-imports this module, so `_inflight` becomes a fresh list while
+    the tasks started by the previous instance keep resolving `finished()`
+    against the old module dict. Nothing then reaps them, and each one still
+    holds a run's WKB. Never raises: unload must finish whatever happens here.
+    """
+    tasks = list(_inflight)
+    del _inflight[:]
+    for task in tasks:
+        try:
+            task.cancel()
+        except (RuntimeError, AttributeError):
+            pass
+
+
 class _RunExportUploadTask(QgsTask):
     """Encode one run-export body and POST it. Failures swallowed end to end."""
 

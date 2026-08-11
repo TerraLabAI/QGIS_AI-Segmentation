@@ -44,6 +44,7 @@ class ZoneDeleteBadge(QgsMapCanvasItem):
 
     def __init__(self, canvas):
         super().__init__(canvas)
+        self._canvas = canvas
         self._anchor: QgsPointXY | None = None
         self._enabled = True
         self._hovered = False
@@ -77,13 +78,27 @@ class ZoneDeleteBadge(QgsMapCanvasItem):
     def is_enabled(self) -> bool:
         return self._enabled
 
+    def _scene_offset(self) -> tuple[float, float]:
+        """How far the drawn picture is currently slid from square.
+
+        A slide pan offsets the canvas scene rect instead of moving the extent,
+        so what the user sees at a screen pixel is the scene point minus that
+        offset. Zero at rest.
+        """
+        try:
+            rect = self._canvas.sceneRect()
+            return rect.x(), rect.y()
+        except (RuntimeError, AttributeError):
+            return 0.0, 0.0
+
     def hit_test(self, canvas_pt) -> bool:
         """True when a canvas-pixel point lands inside the badge circle."""
         if self._anchor is None or not self.isVisible():
             return False
         center = self.toCanvasCoordinates(self._anchor)
-        dx = canvas_pt.x() - center.x()
-        dy = canvas_pt.y() - center.y()
+        off_x, off_y = self._scene_offset()
+        dx = canvas_pt.x() - (center.x() - off_x)
+        dy = canvas_pt.y() - (center.y() - off_y)
         return (dx * dx + dy * dy) <= (self.RADIUS * self.RADIUS)
 
     def updatePosition(self) -> None:  # noqa: N802 (Qt API)
@@ -143,6 +158,15 @@ class ZoneBadgeClickFilter(QObject):
         self._armed = False  # a press landed on the badge; swallow its release
 
     def eventFilter(self, _obj, event):  # noqa: N802 (Qt API)
+        # Qt calls this from C++ for every viewport event, and the click below
+        # clears the zone through the plugin. A raise would travel back into the
+        # event dispatch, so any failure lets the mouse event through untouched.
+        try:
+            return self._route_mouse_event(event)
+        except Exception:
+            return False
+
+    def _route_mouse_event(self, event) -> bool:
         et = event.type()
         if et == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
             if self._badge.hit_test(event_pos(event)):
@@ -175,6 +199,13 @@ class ZoneEscapeFilter(QObject):
         self._on_escape = on_escape
 
     def eventFilter(self, _obj, event):  # noqa: N802 (Qt API)
-        if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
-            return bool(self._on_escape())
+        # Qt calls this from C++ for every canvas event, and the callback runs
+        # the plugin's whole Escape route (cancel a run, exit a review). A raise
+        # would travel back into the event dispatch, so any failure leaves the
+        # key to QGIS.
+        try:
+            if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
+                return bool(self._on_escape())
+        except Exception:
+            return False
         return False

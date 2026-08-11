@@ -7,7 +7,7 @@ are plain mixin members: widgets/signals live on the dock instance.
 """
 from __future__ import annotations
 
-from qgis.PyQt.QtCore import Qt, QTimer
+from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtWidgets import QSpinBox
 
 from ...core.i18n import tr
@@ -512,9 +512,12 @@ class DockAutoReviewCorrectMixin:
         It is not dismissible: it is the step's only instruction, not a tip
         about it, and hiding it would leave the resting screen blank."""
         try:
-            self.auto_correct_pick_hero.setVisible(
-                self._should_show_correct_selection_hint())
+            show = self._should_show_correct_selection_hint()
+            self.auto_correct_pick_hero.setVisible(show)
             self._apply_correct_hero_mode()
+            # The "or" belongs to the pair: the Add card is up whenever the
+            # edit card is, so the edit card's own gate decides for both.
+            self.auto_correct_or_row.setVisible(show)
         except (RuntimeError, AttributeError):
             pass
 
@@ -545,23 +548,26 @@ class DockAutoReviewCorrectMixin:
             pass
 
     def _correct_info_line_gate(self) -> bool:
-        """The dismissible "two ways to fix" info line shows only in the resting
-        non-zero state on Correct. Also the reshow gate after a guidance
-        reset, so it never flashes into the wrong state."""
+        """The dismissible right-click delete tip shows only in the resting
+        non-zero state on Correct, which is exactly where that gesture works.
+        Also the reshow gate after a guidance reset, so it never flashes into
+        the wrong state."""
         resting = self._mode == Mode.AUTOMATIC and bool(getattr(self, "_auto_review_active", False))
         resting = resting and getattr(self, "_auto_review_step", 0) == 1
         resting = resting and not bool(getattr(self, "_auto_correct_has_selection", False))
         return resting and not bool(getattr(self, "_auto_zero_entry", False))
 
     def _refresh_correct_info_line(self) -> None:
-        """Show the info line only when the gate allows and it is not dismissed."""
+        """Show the right-click delete tip only when the gate allows and the
+        user has not dismissed it."""
         try:
-            hint = self.auto_correct_method_info_hint
+            hint = self.auto_correct_delete_tip
         except AttributeError:
             return
         try:
-            from .guidance import HINT_REVIEW_CORRECT_TARGET, is_hint_dismissed
-            if (self._correct_info_line_gate() and not is_hint_dismissed(HINT_REVIEW_CORRECT_TARGET)):
+            from .guidance import HINT_REVIEW_RIGHT_CLICK_DELETE, is_hint_dismissed
+            if (self._correct_info_line_gate()
+                    and not is_hint_dismissed(HINT_REVIEW_RIGHT_CLICK_DELETE)):
                 hint.show()
             else:
                 hint.hide()
@@ -640,67 +646,43 @@ class DockAutoReviewCorrectMixin:
             pass
 
     def set_correct_status(self, kind: str, text: str,
-                           undo_visible: bool = False,
                            action_text: str = "") -> None:
-        """Per-edit status line on the Correct step: the LAST edit's outcome
-        as one taxonomy message (armed / success / info / neutral / warning),
-        with an optional inline Undo link and an optional secondary ACTION
-        link on its own second line (the merge confirm; routes
-        auto_correct_status_action_requested). Empty text hides the line."""
+        """Per-edit status line on the Correct step: an in-progress state
+        (armed / neutral / warning), with an optional secondary ACTION link
+        on its own second line (the merge confirm; routes
+        auto_correct_status_action_requested). Empty text hides the line.
+        There is no success/outcome message here: the persistent summary row
+        ("N corrections this round · Undo last · Clear all") already reports
+        what happened, so this line only carries what to do next."""
         try:
             lbl = self.auto_correct_status
         except AttributeError:
             return
-        revision = int(getattr(self, "_correct_status_revision", 0)) + 1
-        self._correct_status_revision = revision
         try:
             if not text:
                 lbl.setText("")
                 lbl.setVisible(False)
                 return
             lbl.setStyleSheet(_msg_label_qss(kind))
-            if undo_visible or action_text:
+            if action_text:
                 import html
                 body = _msg_text(kind, html.escape(text))
-                rows = []
-                if undo_visible:
-                    undo = ('<a href="undo" style="color:'
-                            ' rgba(128,128,128,0.9);">{u}</a>').format(
-                                u=tr("Undo"))
-                    rows.append(
-                        f'<tr><td>{body}</td>'
-                        f'<td align="right">{undo}</td></tr>')
-                else:
-                    rows.append(f'<tr><td colspan="2">{body}</td></tr>')
-                if action_text:
-                    act = (f'<a href="action">{html.escape(action_text)}</a>')
-                    rows.append(f'<tr><td colspan="2">{act}</td></tr>')
+                act = f'<a href="action">{html.escape(action_text)}</a>'
+                rows = [f'<tr><td colspan="2">{body}</td></tr>',
+                        f'<tr><td colspan="2">{act}</td></tr>']
                 lbl.setTextFormat(Qt.TextFormat.RichText)
                 lbl.setText('<table width="100%">' + "".join(rows) + "</table>")
             else:
                 lbl.setTextFormat(Qt.TextFormat.PlainText)
                 lbl.setText(_msg_text(kind, text))
             lbl.setVisible(True)
-            if kind == "success":
-                QTimer.singleShot(
-                    3500,
-                    lambda: self._clear_correct_success_status(revision),
-                )
         except (RuntimeError, AttributeError):
             pass
 
-    def _clear_correct_success_status(self, revision: int) -> None:
-        """Success feedback is useful immediately, not as permanent chrome."""
-        if revision == getattr(self, "_correct_status_revision", 0):
-            self.set_correct_status("neutral", "")
-
     def _on_correct_status_link(self, href: str) -> None:
-        """Dispatch the status line's links: 'undo' pops the journal top,
-        'action' fires the secondary action (the merge confirm)."""
+        """Dispatch the status line's action link (the merge confirm)."""
         if href == "action":
             self.auto_correct_status_action_requested.emit()
-        else:
-            self.auto_correction_undo_requested.emit()
 
     def set_correction_summary(self, count: int) -> None:
         """Persistent journal summary line "N corrections this round · Undo
@@ -717,6 +699,13 @@ class DockAutoReviewCorrectMixin:
                 text = ""
             if text:
                 self.auto_correct_summary_label.setText(text)
+            # Name what it takes. "Clear all" beside "Undo last" reads as its
+            # neighbour, and it undoes the whole round in one quiet click.
+            if count > 1:
+                clear_text = tr("Clear all {n}").format(n=count)
+            else:
+                clear_text = tr("Clear all")
+            self.auto_correct_clear_btn.setText(clear_text)
         except (RuntimeError, AttributeError):
             pass
         self._refresh_correct_summary_row()

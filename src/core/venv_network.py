@@ -123,6 +123,34 @@ def windows_trust_store_bundle(cache_dir: str) -> tuple[str | None, int]:
         return None, 0
 
 
+def _host_without_scheme(host: str) -> str:
+    """The bare host part of whatever sits in the QGIS proxy host setting."""
+    host = (host or "").strip()
+    if "://" in host:
+        host = host.split("://", 1)[1]
+    return host.strip("/").split("/", 1)[0]
+
+
+def _bracketed_host(host: str) -> str:
+    """The host as a URL may carry it: an IPv6 address gains its brackets.
+
+    The Network page asks for an address, so a v6 one is typed bare. Without
+    the brackets the colons of the address read as the port separator and the
+    URL is rejected."""
+    if host.startswith("[") or host.count(":") < 2:
+        return host
+    return f"[{host}]"
+
+
+def _host_carries_port(host: str) -> bool:
+    """Does this host string already end in ":port"?
+
+    Only the colon after the closing bracket can be the port on an IPv6
+    address; the ones inside it belong to the address."""
+    tail = host.rsplit("]", 1)[-1] if host.startswith("[") else host
+    return ":" in tail
+
+
 def _get_qgis_proxy_settings() -> str | None:
     """Read proxy configuration from QGIS settings.
 
@@ -164,6 +192,14 @@ def _get_qgis_proxy_settings() -> str | None:
 
         user, password = qgis_proxy_credentials()
 
+        # The Network page asks for a host, but a user who typed a full URL
+        # there stored the scheme with it. Prefixing that again gives
+        # "http://http://proxy", which pip and uv reject with a message
+        # naming neither the setting nor the doubled scheme.
+        host = _bracketed_host(_host_without_scheme(host))
+        if not host:
+            return None
+
         proxy_url = "http://"
         if user:
             proxy_url += url_quote(user, safe="")
@@ -171,7 +207,9 @@ def _get_qgis_proxy_settings() -> str | None:
                 proxy_url += ":" + url_quote(password, safe="")
             proxy_url += "@"
         proxy_url += host
-        if port:
+        # A host typed as a full URL usually carries its port too, and
+        # appending the port setting on top of it gives "proxy:3128:3128".
+        if port and not _host_carries_port(host):
             proxy_url += f":{port}"
 
         return proxy_url

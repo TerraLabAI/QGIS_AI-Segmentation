@@ -21,9 +21,17 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from ...core.i18n import tr
+from ...core.server_dials import dial_copy
 from .font_scale import scale_px_length
 from .styles import (
     _BTN_BLUE_PRIMARY,
+    _CLOUD_EMOJI,
+    _ENGINE_CARD_GLOSS_ON_QSS,
+    _ENGINE_CARD_GLOSS_QSS,
+    _ENGINE_CARD_QSS,
+    _ENGINE_CARD_TITLE_ON_QSS,
+    _ENGINE_CARD_TITLE_QSS,
+    _LAPTOP_EMOJI,
     _METHOD_SWITCH_QSS,
     BRAND_BLUE,
     BRAND_BLUE_HOVER,
@@ -51,6 +59,44 @@ class _WheelGuard(QObject):
             if self._viewport is not None:
                 QApplication.sendEvent(self._viewport, event)
             return True
+        return False
+
+
+class _ShortcutArmingFilter(QObject):
+    """Re-arm the dock's window shortcuts just before Qt matches a key.
+
+    A window shortcut takes its key the moment it matches, whatever its
+    handler decides afterwards, so a gate inside the handler cannot give the
+    key back: Escape stays eaten across QGIS, Delete never reaches the vertex
+    tool, and a second enabled Ctrl+Z in the window makes Qt drop the press
+    for both. Only the enabled flag is read before the key is taken, and the
+    states that decide it are written all over the dock.
+
+    Qt offers the key to the focus widget as a ShortcutOverride first, and an
+    ignored one walks up to the window, so this sees every press that the
+    shortcut map is about to be asked about. Nothing is consumed here.
+    """
+
+    # G is here for the Semi-Auto Start key, which is scoped to the dock
+    # rather than the window: it still matches before the focused drop-down is
+    # offered the letter, so it needs the same re-arm on the press itself.
+    _KEYS = frozenset({
+        Qt.Key.Key_Escape, Qt.Key.Key_Return, Qt.Key.Key_Enter,
+        Qt.Key.Key_Delete, Qt.Key.Key_Backspace, Qt.Key.Key_Z,
+        Qt.Key.Key_G,
+    })
+
+    def __init__(self, dock, parent=None):
+        super().__init__(parent)
+        self._dock = dock
+
+    def eventFilter(self, _obj, event):
+        if event.type() == QEvent.Type.ShortcutOverride:
+            try:
+                if event.key() in self._KEYS:
+                    self._dock.refresh_auto_shortcut_arming()
+            except (RuntimeError, AttributeError):
+                pass  # nosec B110 - a dock being torn down arms nothing
         return False
 
 
@@ -232,18 +278,26 @@ class _Spinner(QWidget):
         self.update()
 
     def paintEvent(self, event):  # noqa: N802 - Qt signature
-        from qgis.PyQt.QtCore import QRectF
-        from qgis.PyQt.QtGui import QColor, QPainter, QPen
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        margin = 2.0
-        rect = QRectF(margin, margin, self._d - 2 * margin, self._d - 2 * margin)
-        pen = QPen(QColor(BRAND_GREEN))
-        pen.setWidthF(2.2)
-        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        painter.setPen(pen)
-        painter.drawArc(rect, int(-self._angle * 16), 270 * 16)
-        painter.end()
+        # Guarded like every other paintEvent in the plugin: an exception
+        # raised here escapes into Qt's own paint dispatch and takes QGIS down
+        # at startup. The imports sit inside the method, so a reload that has
+        # purged sys.modules is enough to raise.
+        try:
+            from qgis.PyQt.QtCore import QRectF
+            from qgis.PyQt.QtGui import QColor, QPainter, QPen
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            margin = 2.0
+            rect = QRectF(margin, margin,
+                          self._d - 2 * margin, self._d - 2 * margin)
+            pen = QPen(QColor(BRAND_GREEN))
+            pen.setWidthF(2.2)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(pen)
+            painter.drawArc(rect, int(-self._angle * 16), 270 * 16)
+            painter.end()
+        except Exception:  # noqa: BLE001 -- a paintEvent must never raise
+            return
 
 
 class _ZoneGestureGlyph(QWidget):
@@ -400,13 +454,15 @@ class _ModeSwitch(QFrame):
         self.setMinimumWidth(scale_px_length(260))
         self.setAccessibleName(tr("Mode selection"))
         self.setAccessibleDescription(
-            tr("Choose between Manual (local) and Automatic (cloud) segmentation"))
+            tr("Choose between Semi-Auto and Automatic segmentation"))
 
         outer = QHBoxLayout(self)
         outer.setContentsMargins(3, 3, 3, 3)
         outer.setSpacing(3)
 
-        self._interactive_btn = QPushButton(tr("Manual"))
+        # The label the user reads. The internal value stays "interactive"
+        # below, because the MCP API is built on it.
+        self._interactive_btn = QPushButton(tr("Semi-Auto"))
         self._interactive_btn.setCheckable(True)
         self._interactive_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self._interactive_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -483,7 +539,7 @@ class _MethodSwitch(QFrame):
 
     method_selected = pyqtSignal(str)  # "ai" | "manual"
 
-    def __init__(self, current: str = "ai", parent=None):
+    def __init__(self, current: str = "manual", parent=None):
         super().__init__(parent)
         self.setObjectName("methodSwitchFrame")
         self.setFixedHeight(scale_px_length(32))
@@ -508,6 +564,11 @@ class _MethodSwitch(QFrame):
         self._btn_group.addButton(self._ai_btn, 0)
         self._btn_group.addButton(self._manual_btn, 1)
 
+        # AI reads first (left half): it is the method the step opens on, and
+        # the default and the reading order must agree. The QButtonGroup ids
+        # above (ai=0, manual=1) are unaffected by layout order, so
+        # _on_id_toggled's id-to-method mapping stays correct as-is, and so
+        # does the tab order, which follows the order widgets are added.
         outer.addWidget(self._ai_btn, 1)
         outer.addWidget(self._manual_btn, 1)
         self.setStyleSheet(_METHOD_SWITCH_QSS)
@@ -546,6 +607,143 @@ class _MethodSwitch(QFrame):
         self._btn_group.blockSignals(False)
 
 
+class _EngineSwitch(QWidget):
+    """Where a Semi-Auto click is answered: two option cards, pick one.
+
+    Not the segmented bar the mode and method switches use. That bar switches
+    a view and a transparent resting half is right for it. This picks where
+    the work runs and what it costs, so both sides carry a fill and a border
+    even unpicked: the one you did not take has to look like something you
+    could take.
+
+    Two builds got this wrong before. A full chooser screen stopped the user
+    before the Start button. A single "Cloud AI" checkbox then hid the
+    alternative, so the choice read as a guess.
+
+    Each card carries the name and the one thing that separates it from the
+    other. The detail goes on the line the caller writes underneath.
+    """
+
+    engine_selected = pyqtSignal(bool)  # True = cloud, False = this computer
+
+    def __init__(self, cloud: bool = True, parent=None):
+        super().__init__(parent)
+        self.setAccessibleName(tr("AI engine"))
+        self.setAccessibleDescription(
+            tr("Choose where the AI runs: on TerraLab servers, or on your "
+               "own computer"))
+
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(6)
+
+        # Filled by _build_card: card button -> (title label, gloss label).
+        self._card_text: dict[QPushButton, tuple[QLabel, QLabel]] = {}
+
+        # The gloss carries the REASON to pick a side, not a feature list.
+        # "Sharper, nothing to install" led on the install, which is the small
+        # half of the difference, and "sharper" is not what the user is buying.
+        # Speed and accuracy are, so they lead; the line under the cards says
+        # what pays for them.
+        #
+        # Both glosses are served, because these two half-sentences are what
+        # the whole choice turns on and a shipped one cannot be retuned until
+        # the user updates. An id the server does not carry falls through to
+        # the shipped English below.
+        self._cloud_btn = self._build_card(
+            "cloud",
+            f"{_CLOUD_EMOJI}  " + tr("Cloud AI"),
+            dial_copy("engine.cloud_gloss", tr("Faster and more accurate")))
+        self._local_btn = self._build_card(
+            "local", f"{_LAPTOP_EMOJI}  " + tr("My computer"),
+            dial_copy("engine.local_gloss", tr("Free, works offline")))
+
+        self._btn_group = QButtonGroup(self)
+        self._btn_group.setExclusive(True)
+        self._btn_group.addButton(self._cloud_btn, 0)
+        self._btn_group.addButton(self._local_btn, 1)
+
+        # Cloud reads first: it is what the mode opens on, and the default and
+        # the reading order must agree.
+        outer.addWidget(self._cloud_btn, 1)
+        outer.addWidget(self._local_btn, 1)
+
+        self._cloud_btn.blockSignals(True)
+        self._local_btn.blockSignals(True)
+        (self._cloud_btn if cloud else self._local_btn).setChecked(True)
+        self._repolish()
+        self._cloud_btn.blockSignals(False)
+        self._local_btn.blockSignals(False)
+
+        self._btn_group.idToggled.connect(self._on_engine_id_toggled)
+
+    def _build_card(self, key: str, title: str, gloss: str) -> QPushButton:
+        """One option card: a checkable button wearing two lines of text.
+
+        Labels rather than a button caption with a newline in it, because the
+        two lines are not the same thing and must not read the same weight.
+        They are transparent to the mouse, so a click anywhere on the card
+        reaches the button under them.
+
+        Both labels are kept in ``_card_text`` so _repolish can recolour them.
+        A label's own stylesheet beats anything the button's QSS says about its
+        children, so the black-on-blue of the picked state has to be written
+        here rather than selected for.
+        """
+        btn = QPushButton()
+        btn.setCheckable(True)
+        btn.setMinimumHeight(scale_px_length(50))
+        btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setProperty("engine", key)
+        btn.setStyleSheet(_ENGINE_CARD_QSS)
+
+        inner = QVBoxLayout(btn)
+        inner.setContentsMargins(9, 7, 9, 7)
+        inner.setSpacing(2)
+        name = QLabel(title)
+        # 11px on the panel's own text colour for the second line, not the 10px
+        # grey it started at. That line is the whole difference between the two
+        # cards, and grey made it the faintest thing on the page: the user was
+        # being asked to choose from two names and a whisper.
+        note = QLabel(gloss)
+        note.setWordWrap(True)
+        for label in (name, note):
+            label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            inner.addWidget(label)
+        self._card_text[btn] = (name, note)
+        return btn
+
+    def _repolish(self) -> None:
+        """Redraw both cards, and recolour their text for the new pick."""
+        for btn in (self._cloud_btn, self._local_btn):
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+            on = btn.isChecked()
+            name, note = self._card_text[btn]
+            name.setStyleSheet(_ENGINE_CARD_TITLE_ON_QSS if on
+                               else _ENGINE_CARD_TITLE_QSS)
+            note.setStyleSheet(_ENGINE_CARD_GLOSS_ON_QSS if on
+                               else _ENGINE_CARD_GLOSS_QSS)
+            btn.update()
+
+    def _on_engine_id_toggled(self, btn_id: int, checked: bool) -> None:
+        if not checked:
+            return
+        self._repolish()
+        self.engine_selected.emit(btn_id == 0)
+
+    def is_cloud(self) -> bool:
+        return self._cloud_btn.isChecked()
+
+    def set_cloud(self, cloud: bool) -> None:
+        """Set the picked card without emitting engine_selected."""
+        self._btn_group.blockSignals(True)
+        (self._cloud_btn if cloud else self._local_btn).setChecked(True)
+        self._repolish()
+        self._btn_group.blockSignals(False)
+
+
 def checkbox_indicator_qss(dock) -> str:
     """QSS fragment that draws a VISIBLE checkbox indicator in both states.
 
@@ -562,42 +760,59 @@ def checkbox_indicator_qss(dock) -> str:
     painted for one display ratio, and the ratio a dock reports before it is
     on screen is 1.0, so on a 125 percent display Qt stretched an 18 pixel
     box over 22.5 and the box came out chewed. The SVG icon engine is already
-    a dependency: every QGIS theme icon the plugin loads is one."""
+    a dependency: every QGIS theme icon the plugin loads is one.
+
+    A temp directory that is full, read-only or redirected under a quota
+    answers with the native indicator instead. This runs inside the dock
+    build, which nothing above it guards, so a raised OSError here is the
+    whole plugin failing to load."""
     import os
     import tempfile
 
     sz = 18
-    icon_dir = getattr(dock, "_checkbox_icon_dir", None)
-    if not icon_dir:
-        icon_dir = tempfile.mkdtemp(prefix="qgis_ai_seg_")
-        dock._checkbox_icon_dir = icon_dir
-    path_off = os.path.join(icon_dir, "cb_off.svg").replace("\\", "/")
-    path_on = os.path.join(icon_dir, "cb_on.svg").replace("\\", "/")
-    if not (os.path.exists(path_off) and os.path.exists(path_on)):
-        head = (
-            f'<svg xmlns="http://www.w3.org/2000/svg" width="{sz}" height="{sz}"'
-            f' viewBox="0 0 {sz} {sz}">'
-        )
-        box = f'<rect x="1" y="1" width="{sz - 3}" height="{sz - 3}" rx="4" ry="4"'
-        # Unchecked: transparent fill + mid-grey outline (legible on both
-        # light and dark backgrounds).
-        svg_off = f'{head}{box} fill="none" stroke="#8c8c8c" stroke-opacity="0.9" stroke-width="1.5"/></svg>'
-        # Checked: brand-blue filled box + white check (the darker hover
-        # shade reads better than the base blue behind a white checkmark).
-        svg_on = (
-            f'{head}{box} fill="{BRAND_BLUE_HOVER}" stroke="{BRAND_BLUE_HOVER}" stroke-width="1.5"/>'
-            '<path d="M5 9 L8 12 L13 5" fill="none" stroke="#ffffff" stroke-width="2.2"'
-            ' stroke-linecap="round" stroke-linejoin="round"/></svg>'
-        )
-        for path, body in ((path_off, svg_off), (path_on, svg_on)):
-            with open(path, "w", encoding="utf-8") as fh:
-                fh.write(body)
+    native_only = "QCheckBox { background: transparent; }"
+    try:
+        icon_dir = getattr(dock, "_checkbox_icon_dir", None)
+        if not icon_dir:
+            icon_dir = tempfile.mkdtemp(prefix="qgis_ai_seg_")
+            dock._checkbox_icon_dir = icon_dir
+        path_off = os.path.join(icon_dir, "cb_off.svg").replace("\\", "/")
+        path_on = os.path.join(icon_dir, "cb_on.svg").replace("\\", "/")
+        if not (os.path.exists(path_off) and os.path.exists(path_on)):
+            head = (
+                f'<svg xmlns="http://www.w3.org/2000/svg" width="{sz}" height="{sz}"'
+                f' viewBox="0 0 {sz} {sz}">'
+            )
+            box = f'<rect x="1" y="1" width="{sz - 3}" height="{sz - 3}" rx="4" ry="4"'
+            # Unchecked: transparent fill + mid-grey outline (legible on both
+            # light and dark backgrounds).
+            svg_off = f'{head}{box} fill="none" stroke="#8c8c8c" stroke-opacity="0.9" stroke-width="1.5"/></svg>'
+            # Checked: brand-blue filled box + white check (the darker hover
+            # shade reads better than the base blue behind a white checkmark).
+            svg_on = (
+                f'{head}{box} fill="{BRAND_BLUE_HOVER}" stroke="{BRAND_BLUE_HOVER}" stroke-width="1.5"/>'
+                '<path d="M5 9 L8 12 L13 5" fill="none" stroke="#ffffff" stroke-width="2.2"'
+                ' stroke-linecap="round" stroke-linejoin="round"/></svg>'
+            )
+            for path, body in ((path_off, svg_off), (path_on, svg_on)):
+                with open(path, "w", encoding="utf-8") as fh:
+                    fh.write(body)
+    except OSError:
+        return native_only
     # Quoted: Qt's CSS scanner only accepts a narrow character set inside an
     # unquoted url(), so a temp path containing a space (a Windows account
     # name with a space in it) would silently drop the whole declaration.
+    #
+    # And escaped inside the quotes, because a double quote is legal in a path
+    # on macOS and Linux (the temp root comes from the environment). One in the
+    # path would close the string early and drop the declaration the quoting
+    # exists to save, leaving a checkbox with no indicator at all. Qt reads the
+    # backslash escape (QCss::Symbol::lexem drops it and keeps the character).
+    css_off = path_off.replace('"', '\\"')
+    css_on = path_on.replace('"', '\\"')
     return (
-        "QCheckBox { background: transparent; }"
-        f"QCheckBox::indicator {{ width: {sz}px; height: {sz}px; border: none;"
-        f' image: url("{path_off}"); }}'
-        f'QCheckBox::indicator:checked {{ image: url("{path_on}"); }}'
+        native_only
+        + f"QCheckBox::indicator {{ width: {sz}px; height: {sz}px; border: none;"
+        f' image: url("{css_off}"); }}'
+        f'QCheckBox::indicator:checked {{ image: url("{css_on}"); }}'
     )

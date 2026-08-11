@@ -5,6 +5,7 @@ AI Segmentation without touching the human UI.
 """
 from __future__ import annotations
 
+import math
 import os
 from datetime import datetime
 
@@ -23,7 +24,7 @@ from qgis.core import (
 )
 
 from .core import run_recipe
-from .core.qt_compat import field_type_double, field_type_string
+from .core.qt_compat import PolygonGeometry, field_type_double, field_type_string
 from .core.review_defaults import AUTO_DEFAULT_CONFIDENCE
 
 # QgsField type args (QGIS 4 rejects raw int, #25/#36): resolved once in
@@ -76,7 +77,10 @@ class SegmentationMCPAPI:
             status.update({
                 "ready": False,
                 "state": "MODEL_NOT_DOWNLOADED",
-                "action_required": "Download the SAM model. Open the AI Segmentation panel and click Download.",
+                "action_required": (
+                    "The AI model is not installed yet. Open the AI Segmentation"
+                    " panel and click Install."
+                ),
                 "register_url": AISEG_REGISTER_URL,
             })
             return status
@@ -85,7 +89,10 @@ class SegmentationMCPAPI:
             status.update({
                 "ready": False,
                 "state": "MODEL_NOT_LOADED",
-                "action_required": "Open the AI Segmentation panel and click 'Load Model'.",
+                "action_required": (
+                    "Open the AI Segmentation panel and click"
+                    " 'Start Semi-Auto AI Segmentation'."
+                ),
             })
             return status
 
@@ -154,45 +161,86 @@ class SegmentationMCPAPI:
 
         return status
 
-    def detect(self, x: float, y: float, layer_name: str | None = None) -> dict:
-        """Run SAM detection at a map point. Returns structured result or error."""
+    def detect(
+        self,
+        x: float,
+        y: float,
+        layer_name: str | None = None,
+        discard_unsaved: bool = False,
+        output_dir: str | None = None,
+    ) -> dict:
+        """Run SAM detection at a map point. Returns structured result or error.
+
+        This call exports what it detects, so the export IS the save and the
+        save rule applies: one object saved while TerraLab's servers answer the
+        clicks costs one credit. On an empty balance the call refuses with
+        ``_error`` and writes nothing. A session that runs on this computer
+        costs nothing and is never refused.
+
+        Parameters
+        ----------
+        x, y : float
+            Point in the canvas CRS. Both must be finite numbers.
+        layer_name : str | None
+            Optional raster layer name. None uses the live session's layer, or
+            the first raster in the project.
+        discard_unsaved : bool
+            Switching to another layer restarts the session, which throws away
+            every polygon a person saved but has not exported. The call refuses
+            instead, unless this is True. Additive, default False.
+        output_dir : str | None
+            Folder for the GeoPackage this call writes. None keeps the project
+            folder. Additive, default None.
+        """
         plugin = self._plugin
 
         if plugin.predictor is None:
-            return {"_error": "SAM model not loaded. Open the AI Segmentation panel and click 'Load Model'."}
+            return {"_error": (
+                "AI model not loaded. Open the AI Segmentation panel and click"
+                " 'Start Semi-Auto AI Segmentation'."
+            )}
+
+        # A string, a None or a NaN reaches QgsPointXY and the transform below
+        # as an exception the caller cannot read, so refuse it by name here.
+        try:
+            px, py = float(x), float(y)
+        except (TypeError, ValueError):
+            return {"_error": f"x and y must be numbers, got ({x!r}, {y!r})."}
+        if not (math.isfinite(px) and math.isfinite(py)):
+            return {"_error": f"x and y must be finite numbers, got ({x}, {y})."}
 
         # Ensure session
-        raster_layer, err = self._ensure_session(layer_name)
+        raster_layer, err = self._ensure_session(layer_name, discard_unsaved)
         if err:
             return err
-
-        point = QgsPointXY(x, y)
-        raster_pt = plugin._transform_to_raster_crs(point)
-        if raster_pt is None:
-            # No image in the raster CRS: the point sits outside the projection
-            # domain. Guard both layer kinds here, the extent check below only
-            # runs for file-based layers.
-            return {
-                "_error": f"Point ({x}, {y}) cannot be projected into the raster CRS "
-                f"({raster_layer.crs().authid()}). Pick a point closer to the imagery."
-            }
-
-        # Check bounds for file-based layers
-        is_online = getattr(plugin, "_is_online_layer", False)
-        if not is_online and hasattr(plugin, "_is_point_in_raster_extent"):
-            if not plugin._is_point_in_raster_extent(raster_pt):
-                ext = raster_layer.extent()
-                return {
-                    "_error": f"Point ({x}, {y}) is outside the raster extent. "
-                    f"Extent: xmin={ext.xMinimum():.2f}, ymin={ext.yMinimum():.2f}, "
-                    f"xmax={ext.xMaximum():.2f}, ymax={ext.yMaximum():.2f} "
-                    f"(CRS: {raster_layer.crs().authid()})."
-                }
 
         # Enter headless mode
         plugin._headless = True
         plugin._headless_error = None
         try:
+            point = QgsPointXY(px, py)
+            raster_pt = plugin._transform_to_raster_crs(point)
+            if raster_pt is None:
+                # No image in the raster CRS: the point sits outside the
+                # projection domain. Guard both layer kinds here, the extent
+                # check below only runs for file-based layers.
+                return {
+                    "_error": f"Point ({px}, {py}) cannot be projected into the raster CRS "
+                    f"({raster_layer.crs().authid()}). Pick a point closer to the imagery."
+                }
+
+            # Check bounds for file-based layers
+            is_online = getattr(plugin, "_is_online_layer", False)
+            if not is_online and hasattr(plugin, "_is_point_in_raster_extent"):
+                if not plugin._is_point_in_raster_extent(raster_pt):
+                    ext = raster_layer.extent()
+                    return {
+                        "_error": f"Point ({px}, {py}) is outside the raster extent. "
+                        f"Extent: xmin={ext.xMinimum():.2f}, ymin={ext.yMinimum():.2f}, "
+                        f"xmax={ext.xMaximum():.2f}, ymax={ext.yMaximum():.2f} "
+                        f"(CRS: {raster_layer.crs().authid()})."
+                    }
+
             # Check/encode crop
             crop_status = plugin._check_crop_status(raster_pt)
             if crop_status != "ok":
@@ -272,8 +320,38 @@ class SegmentationMCPAPI:
 
             wkt = combined.asWkt()
 
+            # This call exports as it detects, so the export IS the save and the
+            # same rule applies: an object whose click TerraLab's servers
+            # answered costs one credit. Refused before the export rather than
+            # after, so nothing is written that the account did not pay for.
+            billing_id = plugin._next_handoff_det_id()
+            if self._save_refused_for_credits_quiet(billing_id):
+                return {
+                    "_error": "No credits left. Saving an object costs one credit "
+                              "while TerraLab's servers answer the clicks. Turn "
+                              "cloud processing off in the panel to work on this "
+                              "computer, or add credits."
+                }
+
             # Auto-export
-            export_result = self.export_polygon(wkt, crs_authid, raster_layer.name())
+            export_result = self.export_polygon(
+                wkt, crs_authid, raster_layer.name(), output_dir)
+            if export_result and "_error" not in export_result:
+                # The GeoPackage is on disk by now. Never report a failure past
+                # this line: the caller would retry, write the object a second
+                # time and pay for it a second time. So the charge carries its
+                # own handler and stays out of the outer one.
+                try:
+                    plugin._charge_manual_saved_object(billing_id)
+                    ledger = getattr(plugin, "_manual_credit_ledger", None)
+                    if ledger is not None:
+                        ledger.start_next_object()
+                except Exception as charge_err:  # noqa: BLE001
+                    from qgis.core import QgsMessageLog
+                    QgsMessageLog.logMessage(
+                        f"MCP detect: the object charge did not go out ({charge_err})",
+                        "AI Segmentation", level=Qgis.MessageLevel.Warning
+                    )
 
             result = {
                 "detected": True,
@@ -286,13 +364,19 @@ class SegmentationMCPAPI:
             if export_result and "_error" not in export_result:
                 result["exported_layer"] = export_result.get("layer_name")
                 result["exported_file"] = export_result.get("file_path")
+            elif export_result:
+                # The detection stands and the caller can still read its WKT,
+                # so this is a key beside the result, not an _error over it.
+                result["export_error"] = export_result["_error"]
 
             return result
 
         except Exception as e:
             import traceback
 
-            from qgis.core import Qgis, QgsMessageLog
+            # Qgis comes from the module import: rebinding it here would make
+            # it a local for the whole method, including the charge handler.
+            from qgis.core import QgsMessageLog
             QgsMessageLog.logMessage(
                 f"MCP detect failed: {e}\n{traceback.format_exc()}",
                 "AI Segmentation", level=Qgis.MessageLevel.Critical
@@ -301,18 +385,31 @@ class SegmentationMCPAPI:
         finally:
             plugin._headless = False
 
-    def export_polygon(self, geometry_wkt: str, crs: str, raster_name: str) -> dict:
-        """Export a polygon to GeoPackage layer in the project."""
+    def export_polygon(
+        self,
+        geometry_wkt: str,
+        crs: str,
+        raster_name: str,
+        output_dir: str | None = None,
+    ) -> dict:
+        """Export a polygon to a GeoPackage layer in the project.
+
+        ``output_dir`` is the folder the GeoPackage goes in. None keeps the
+        project folder, and a project that was never saved has none, so the
+        call refuses rather than dropping the file where nobody looks for it.
+        Additive, default None.
+        """
         try:
             crs_obj = QgsCoordinateReferenceSystem(crs)
+            if not crs_obj.isValid():
+                return {"_error": f"Invalid CRS '{crs}'."}
             geom = QgsGeometry.fromWkt(geometry_wkt)
             if geom is None or geom.isEmpty():
                 return {"_error": "Invalid geometry WKT"}
-
-            # Determine output directory
-            output_dir = QgsProject.instance().absolutePath()
-            if not output_dir:
-                output_dir = os.path.expanduser("~")
+            # A POINT or a LINESTRING passes the empty test and stores nothing,
+            # so it has to be refused by type rather than reported as saved.
+            if geom.type() != PolygonGeometry:
+                return {"_error": "Geometry must be a POLYGON or a MULTIPOLYGON."}
 
             # Find existing segmentation layer to append to
             seg_group_name = f"{raster_name} (AI Segmentation)"
@@ -361,9 +458,17 @@ class SegmentationMCPAPI:
                         existing_layer.fields(), g, existing_layer.crs(),
                         raster_name, timestamp,
                     ))
-                    existing_layer.dataProvider().addFeatures([feature])
+                    added = existing_layer.dataProvider().addFeatures([feature])
                     existing_layer.updateExtents()
                     existing_layer.triggerRepaint()
+                    if not added:
+                        # The provider refused the row. Saying "appended" here
+                        # tells the caller its object is on disk when it is not.
+                        return {
+                            "_error": "Could not append the polygon to layer "
+                                      f"'{existing_layer.name()}'.",
+                            "appended": False,
+                        }
                     return {
                         "layer_name": existing_layer.name(),
                         "file_path": existing_layer.source().split("|")[0],
@@ -376,7 +481,12 @@ class SegmentationMCPAPI:
                         "AI Segmentation", level=Qgis.MessageLevel.Warning
                     )
 
-            # Create new layer
+            # Create new layer. Only this path writes a file, so only this path
+            # needs a folder to write it in.
+            out_dir, dir_err = self._resolve_output_dir(output_dir)
+            if dir_err:
+                return dir_err
+
             mask_num = 1
             for lyr in QgsProject.instance().mapLayers().values():
                 if lyr.name().startswith("mask_"):
@@ -387,10 +497,10 @@ class SegmentationMCPAPI:
                         pass
 
             layer_name = f"mask_{mask_num}"
-            gpkg_path = os.path.join(output_dir, f"{layer_name}.gpkg")
+            gpkg_path = os.path.join(out_dir, f"{layer_name}.gpkg")
             counter = 1
             while os.path.exists(gpkg_path):
-                gpkg_path = os.path.join(output_dir, f"{layer_name}_{counter}.gpkg")
+                gpkg_path = os.path.join(out_dir, f"{layer_name}_{counter}.gpkg")
                 counter += 1
 
             temp_layer = QgsVectorLayer("MultiPolygon", layer_name, "memory")
@@ -421,12 +531,19 @@ class SegmentationMCPAPI:
                 round_measure(geodesic_area_m2(g, crs_obj)),
                 round_measure(perimeter),
             ])
-            pr.addFeatures([feature])
+            if not pr.addFeatures([feature]):
+                return {"_error": "Could not add the polygon to the new layer."}
             temp_layer.updateExtents()
 
             options = QgsVectorFileWriter.SaveVectorOptions()
             options.driverName = "GPKG"
             options.fileEncoding = "UTF-8"
+            # Saved layers are written in ground metres, like every other export
+            # path. Without it, a length read off a file saved over a web
+            # basemap is wrong by the latitude factor.
+            out_xform = self._output_crs_transform(crs_obj, temp_layer.extent())
+            if out_xform is not None:
+                options.ct = out_xform
             from .core.layer_conventions import write_vector_layer
             error = write_vector_layer(
                 temp_layer, gpkg_path, options,
@@ -542,15 +659,33 @@ class SegmentationMCPAPI:
                 )
             }
 
+        # A blank zone means the whole raster, and the run caps only a zone it
+        # was handed, so the free-tier cap is applied here to the extent that
+        # blank stands for. Otherwise the API starts a run the panel refuses.
+        if not (zone_wkt and str(zone_wkt).strip()):
+            over_cap = self._full_extent_over_free_cap(layer_name)
+            if over_cap is not None:
+                return over_cap
+
         # _run_auto_detect_headless switches mode itself; no need to refuse
         # just because the dock was in Interactive mode.
-        return plugin._run_auto_detect_headless(
-            zone_wkt=zone_wkt,
-            object_class=(object_class or "").strip(),
-            layer_name=layer_name,
-            exemplars=exemplars,
-            detail=detail,
-        )
+        try:
+            return plugin._run_auto_detect_headless(
+                zone_wkt=zone_wkt,
+                object_class=(object_class or "").strip(),
+                layer_name=layer_name,
+                exemplars=exemplars,
+                detail=detail,
+            )
+        except Exception as e:
+            import traceback
+
+            from qgis.core import QgsMessageLog
+            QgsMessageLog.logMessage(
+                f"MCP detect_auto failed: {e}\n{traceback.format_exc()}",
+                "AI Segmentation", level=Qgis.MessageLevel.Critical
+            )
+            return {"_error": f"Automatic detection failed: {str(e)}"}
 
     def set_mode(self, mode: str) -> dict:
         """Switch the dock between interactive and automatic modes.
@@ -565,6 +700,8 @@ class SegmentationMCPAPI:
         dict with key "mode" (new mode string) or "_error".
         """
         plugin = self._plugin
+        if mode is not None and not isinstance(mode, str):
+            return {"_error": "mode must be a string, 'interactive' or 'automatic'"}
         mode_lower = mode.strip().lower() if mode else ""
         if mode_lower not in ("interactive", "automatic"):
             return {"_error": "mode must be 'interactive' or 'automatic'"}
@@ -608,8 +745,11 @@ class SegmentationMCPAPI:
         """
         plugin = self._plugin
 
+        if zone_wkt is not None and not isinstance(zone_wkt, str):
+            return {"_error": "zone_wkt must be a WKT string, or None to clear the zone"}
+
         if not zone_wkt or not zone_wkt.strip():
-            plugin._auto_zone = None
+            plugin._store_auto_zone(None)
             try:
                 dock = getattr(plugin, "dock_widget", None)
                 if dock:
@@ -649,6 +789,9 @@ class SegmentationMCPAPI:
             from .ui.plugin.shared import zone_over_free_cap_message
             return {"_error": zone_over_free_cap_message(cap_area)}
 
+        # None means canvas numbers, and it only stays None while the
+        # conversion below actually reaches the canvas.
+        bbox_crs = None
         if active_layer is not None:
             try:
                 from qgis.utils import iface as _iface
@@ -658,9 +801,13 @@ class SegmentationMCPAPI:
                     xform = QgsCoordinateTransform(layer_crs, canvas_crs, QgsProject.instance())
                     bbox = xform.transformBoundingBox(bbox)
             except Exception:  # nosec B110 -- antimeridian, invalid CRS
-                pass
+                # The box never left the layer's CRS. Calling it canvas numbers
+                # would tile, bill and clip ground nobody asked for.
+                bbox_crs = active_layer.crs()
 
-        plugin._auto_zone = bbox
+        # Stored with the CRS its numbers are actually in, so a project CRS
+        # change between this call and Detect cannot reinterpret them.
+        plugin._store_auto_zone(bbox, crs=bbox_crs)
         try:
             dock = getattr(plugin, "dock_widget", None)
             if dock:
@@ -710,18 +857,42 @@ class SegmentationMCPAPI:
         }
 
     def cancel_auto(self) -> dict:
-        """Cancel any running automatic detection.
+        """Cancel any running automatic detection, keeping what it already paid for.
+
+        Takes the same route as the panel's Cancel button: the worker is asked
+        to stop and the tiles it already delivered go on into the review. The
+        hard teardown keeps nothing, so cancelling a nearly finished run there
+        threw away every tile the account had been billed for.
+
+        The tiles are salvaged asynchronously, so the count below is what the
+        worker had delivered at the moment of the call.
 
         Returns
         -------
-        dict with key "cancelled" (True).
+        dict with keys:
+            "cancelled"      -- bool, always True.
+            "tiles_salvaged" -- int, tiles already delivered and kept.
         """
         plugin = self._plugin
+
+        # Read the count before cancelling: the soft path drops the worker
+        # reference once it winds down.
+        salvaged = 0
         try:
-            plugin._stop_auto_detection()
+            worker = getattr(plugin, "_auto_worker", None)
+            if worker is not None:
+                salvaged = int(getattr(worker, "tiles_succeeded", 0) or 0)
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            salvaged = 0
+
+        try:
+            if hasattr(plugin, "_on_auto_cancel_clicked"):
+                plugin._on_auto_cancel_clicked()
+            else:
+                plugin._stop_auto_detection()
         except (RuntimeError, AttributeError):
             pass
-        return {"cancelled": True}
+        return {"cancelled": True, "tiles_salvaged": salvaged}
 
     def export_recipe(
         self,
@@ -772,6 +943,8 @@ class SegmentationMCPAPI:
         -------
         dict with key "recipe" (the token string) or "_error".
         """
+        if zone_wkt is not None and not isinstance(zone_wkt, str):
+            return {"_error": "zone_wkt must be a WKT string"}
         if not zone_wkt or not zone_wkt.strip():
             return {"_error": "zone_wkt is required to export a recipe"}
         geom = QgsGeometry.fromWkt(zone_wkt)
@@ -788,18 +961,36 @@ class SegmentationMCPAPI:
         if len(ring) < 3:
             return {"_error": "zone must be a polygon with at least 3 points"}
 
-        conf = AUTO_DEFAULT_CONFIDENCE if confidence is None else float(confidence)
+        if confidence is None:
+            conf = AUTO_DEFAULT_CONFIDENCE
+        else:
+            try:
+                conf = float(confidence)
+            except (TypeError, ValueError):
+                return {"_error": f"confidence must be a number in [0, 1], got {confidence!r}"}
+            if not math.isfinite(conf) or not 0.0 <= conf <= 1.0:
+                return {"_error": f"confidence must be in [0, 1], got {confidence!r}"}
+
+        # Detail sets the tile count, and the tile count is what a rerun of this
+        # recipe costs, so hold it inside the levels the slider can reach.
+        from .core.tile_manager import MAX_DETAIL_LEVEL
+        try:
+            detail_level = int(detail or 1)
+        except (TypeError, ValueError):
+            return {"_error": f"detail must be a whole number, got {detail!r}"}
+        detail_level = max(1, min(MAX_DETAIL_LEVEL, detail_level))
+
         try:
             token = run_recipe.encode(
                 run_recipe.RunRecipe(
                     prompt=(object_class or "").strip(),
-                    detail=max(1, int(detail or 1)),
+                    detail=detail_level,
                     zone_lonlat=ring,
                     confidence=conf,
                     refine=dict(refine or {}),
                 )
             )
-        except run_recipe.RecipeError as err:
+        except (run_recipe.RecipeError, TypeError, ValueError, AttributeError) as err:
             return {"_error": f"Could not encode recipe: {err}"}
         return {"recipe": token}
 
@@ -890,8 +1081,15 @@ class SegmentationMCPAPI:
             out.append((p.x(), p.y()))
         return out
 
-    def _ensure_session(self, layer_name: str | None = None):
-        """Ensure plugin has an active session. Returns (layer, error_dict_or_None)."""
+    def _ensure_session(self, layer_name: str | None = None,
+                        discard_unsaved: bool = False):
+        """Ensure plugin has an active session. Returns (layer, error_dict_or_None).
+
+        ``discard_unsaved`` allows a restart on another layer while a person
+        has polygons saved but not exported. Default False, which refuses: the
+        panel asks the user before throwing that work away, and this path has
+        nobody to ask.
+        """
         plugin = self._plugin
 
         # Already active on the right layer?
@@ -902,6 +1100,10 @@ class SegmentationMCPAPI:
                 if layer_name and current.name() != layer_name:
                     pass  # need different layer
                 else:
+                    # A session opened by a path that started no ledger would
+                    # pass the save gate and export cloud-answered objects for
+                    # free, so this path checks for one as well.
+                    self._open_manual_ledger_if_missing()
                     return current, None
             except RuntimeError:
                 pass
@@ -928,6 +1130,16 @@ class SegmentationMCPAPI:
         if target_layer is None:
             return None, {"_error": "No raster layer available. The user needs to load one first."}
 
+        # Starting a session clears every polygon the live one saved, and their
+        # rubber bands with them. The panel asks before doing that; refuse here
+        # instead, because the caller may be working over someone's shoulder.
+        if not discard_unsaved and getattr(plugin, "saved_polygons", None):
+            return None, {"_error": (
+                f"{len(plugin.saved_polygons)} polygon(s) saved in the open "
+                "session would be lost by starting a new one. Export them "
+                "first, or call again with discard_unsaved=True."
+            )}
+
         # Setup session programmatically (no UI)
         try:
             layer_name_safe = target_layer.name().replace(" ", "_")
@@ -951,17 +1163,20 @@ class SegmentationMCPAPI:
 
             plugin._current_raster_path = raster_path
 
+            # Headless QGIS has no iface and so no canvas CRS to convert from:
+            # the caller's coordinates are then the raster's own.
             from qgis.utils import iface
-            canvas_crs = iface.mapCanvas().mapSettings().destinationCrs()
-            raster_crs = target_layer.crs()
             plugin._canvas_to_raster_xform = None
             plugin._raster_to_canvas_xform = None
-            if raster_crs and canvas_crs.isValid() and raster_crs.isValid():
-                if canvas_crs != raster_crs:
-                    plugin._canvas_to_raster_xform = QgsCoordinateTransform(
-                        canvas_crs, raster_crs, QgsProject.instance())
-                    plugin._raster_to_canvas_xform = QgsCoordinateTransform(
-                        raster_crs, canvas_crs, QgsProject.instance())
+            if iface is not None:
+                canvas_crs = iface.mapCanvas().mapSettings().destinationCrs()
+                raster_crs = target_layer.crs()
+                if raster_crs and canvas_crs.isValid() and raster_crs.isValid():
+                    if canvas_crs != raster_crs:
+                        plugin._canvas_to_raster_xform = QgsCoordinateTransform(
+                            canvas_crs, raster_crs, QgsProject.instance())
+                        plugin._raster_to_canvas_xform = QgsCoordinateTransform(
+                            raster_crs, canvas_crs, QgsProject.instance())
 
         except Exception as e:
             return None, {"_error": f"Failed to start session: {str(e)}"}
@@ -969,4 +1184,124 @@ class SegmentationMCPAPI:
         if getattr(plugin, "_current_layer", None) is None:
             return None, {"_error": "Session failed to start."}
 
+        self._open_manual_ledger_if_missing()
+
         return plugin._current_layer, None
+
+    def _open_manual_ledger_if_missing(self) -> None:
+        """Open the session's billing ledger, and only when there is none.
+
+        This path builds its session by hand rather than through the panel, so
+        it has to open the ledger itself. Without one a click routed to
+        TerraLab's servers exports an object nobody paid for. Opening a second
+        one over a live session would zero the spend and make every object it
+        already charged billable again, so an open ledger is left alone. Opens
+        nothing when the predictor in the slot is the on-device one.
+        """
+        plugin = self._plugin
+        try:
+            if getattr(plugin, "_manual_credit_ledger", None) is not None:
+                return
+            plugin._start_manual_credit_session()
+        except Exception:  # nosec B110 -- a missing ledger never breaks a call
+            pass
+
+    def _save_refused_for_credits_quiet(self, billing_id) -> bool:
+        """The panel's Save refusal, without the warning it puts on screen.
+
+        The panel path ends in a message-bar warning and a full rebuild of the
+        dock. A machine caller reads the refusal in ``_error``, so an agent's
+        call must not make a warning pop up on someone's screen.
+        """
+        plugin = self._plugin
+        try:
+            from .core.manual_object_credit import save_affordable
+
+            if not plugin._manual_save_is_billable(billing_id):
+                return False
+            if save_affordable(plugin._manual_credit_balance()):
+                return False
+        except (RuntimeError, AttributeError, ImportError):
+            # Nothing to judge on quietly: take the panel gate rather than let
+            # a billable save through unpaid.
+            try:
+                return bool(plugin._manual_save_refused_for_credits(billing_id))
+            except (RuntimeError, AttributeError):
+                return False
+        # The balance behind this refusal can be minutes old, and the usual
+        # reason it is wrong is the user having just paid. Read it again so the
+        # next call is judged on a fresh one.
+        try:
+            plugin._refresh_auto_credits()
+        except (RuntimeError, AttributeError):
+            pass
+        return True
+
+    def _resolve_output_dir(self, output_dir: str | None):
+        """Folder the GeoPackage goes in, as (path, error_dict_or_None).
+
+        A project that was never saved has no folder of its own. Writing to the
+        user's home folder instead puts the file where nobody looks for it, so
+        the caller has to name one.
+        """
+        if output_dir:
+            path = os.path.expanduser(str(output_dir))
+            try:
+                os.makedirs(path, exist_ok=True)
+            except OSError as err:
+                return None, {"_error": f"Cannot use output directory '{path}': {err}"}
+            if not os.path.isdir(path):
+                return None, {"_error": f"Output directory '{path}' is not a folder."}
+            return path, None
+
+        project_dir = QgsProject.instance().absolutePath()
+        if project_dir:
+            return project_dir, None
+        return None, {"_error": (
+            "This project has never been saved, so there is no folder to write "
+            "to. Save the project, or pass output_dir."
+        )}
+
+    def _output_crs_transform(self, source_crs, extent):
+        """Transform onto the CRS a saved layer is written in, or None.
+
+        None when the source CRS already measures in ground metres, which is
+        the common case. See layer_conventions.pick_output_crs.
+        """
+        try:
+            from .core.layer_conventions import pick_output_crs
+
+            target = pick_output_crs(source_crs, extent)
+            if target is None or not target.isValid() or target == source_crs:
+                return None
+            return QgsCoordinateTransform(source_crs, target, QgsProject.instance())
+        except (RuntimeError, AttributeError, TypeError):
+            return None
+
+    def _full_extent_over_free_cap(self, layer_name: str | None):
+        """Error dict when the full raster is over the free-tier zone cap, else None.
+
+        A blank zone means the whole raster, and the run guard caps only a zone
+        it was handed, so the derived extent is measured here instead.
+        """
+        plugin = self._plugin
+        try:
+            layer = self._resolve_raster_layer(layer_name)
+            if layer is None:
+                return None
+            extent = layer.extent()
+            if extent is None or extent.isEmpty():
+                return None
+            cap_area = plugin._free_zone_cap_exceeded_km2(
+                QgsGeometry.fromRect(extent), crs=layer.crs())
+        except (RuntimeError, AttributeError, TypeError):
+            return None
+        if cap_area is None:
+            return None
+        try:
+            from .core import telemetry_run_events
+            telemetry_run_events.track_auto_zone_too_large(area_km2=cap_area)
+        except Exception:
+            pass  # nosec B110
+        from .ui.plugin.shared import zone_over_free_cap_message
+        return {"_error": zone_over_free_cap_message(cap_area)}

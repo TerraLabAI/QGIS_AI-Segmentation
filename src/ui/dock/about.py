@@ -174,8 +174,10 @@ class DockAboutMixin:
         footer_row.setContentsMargins(0, 4, 0, 4)
         footer_row.setSpacing(6)
 
-        # Automatic mode only: compact credit gauge (ring + "remaining / total")
-        # plus a discreet Subscribe pill, bottom-left like AI Edit. Replaces
+        # Both modes: compact credit gauge (ring + "remaining / total")
+        # plus a discreet Subscribe pill, bottom-left like AI Edit. The balance
+        # belongs to the account, so it reads the same wherever the user
+        # is, and it is hidden only while signed out. Replaces
         # the old always-on upsell card that ate half the Automatic page. The
         # ring and its label sit in one clickable strip: the number is the
         # first place a user looks for their balance, so it is also the way to
@@ -200,7 +202,7 @@ class DockAboutMixin:
         gauge_row.addWidget(self._footer_credits_label)
 
         self._subscribe_pill = QPushButton(tr("Upgrade to Pro"))
-        self._subscribe_pill.setToolTip(tr("10,000 credits a month."))
+        self._subscribe_pill.setToolTip(tr("5,000 credits a month."))
         self._subscribe_pill.setCursor(Qt.CursorShape.PointingHandCursor)
         # Filled brand-blue pill (stronger than the old ghost outline): white
         # text on a solid blue, lighter blue on hover. Kept small.
@@ -217,6 +219,11 @@ class DockAboutMixin:
         # Cross-promo CTA, pinned bottom-left (before the stretch) so it sits
         # beside the gear/help icons without crowding them (#30). Always opens
         # the AI Edit product page in the browser.
+        #
+        # SURFACED NOWHERE (2026-08-10): the credit gauge took the bottom-left
+        # slot in both modes, and signed out the footer shows neither. Every
+        # setVisible on this button is now False. It is built and wired so the
+        # slot can be given back without rebuilding the footer.
         from ..cross_plugin_discovery import open_ai_edit_page
         # Eliding, not plain: the label is the longest thing in the row, and a
         # button that refuses to shrink sets the minimum width of the whole
@@ -408,7 +415,7 @@ class DockAboutMixin:
             _section(tr("General")),
             _row(keys("G"), tr("Start (the visible mode's Start button)")),
 
-            _section(tr("Manual")),
+            _section(tr("Semi-Auto")),
             _row(keys(tr("Left-click")), tr("Add area")),
             _row(keys(tr("Right-click")), tr("Remove area")),
             _row(keys(undo_key, backspace_key), tr("Undo last point")),
@@ -458,9 +465,9 @@ class DockAboutMixin:
 
         dlg = QDialog(self)
         dlg.setWindowTitle(tr("Keyboard shortcuts"))
-        # Same width as before; fixed, so the two columns keep their rhythm
-        # whatever the platform key names are.
-        dlg.setFixedWidth(scale_px_length(460))
+        # A floor, not a cap. The same rows run about a third longer in French
+        # and in German, and a fixed width cut their right-hand column off.
+        dlg.setMinimumWidth(scale_px_length(460))
         layout = QVBoxLayout(dlg)
         layout.setContentsMargins(16, 14, 16, 12)
         layout.setSpacing(10)

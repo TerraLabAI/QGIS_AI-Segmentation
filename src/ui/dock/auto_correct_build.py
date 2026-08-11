@@ -35,8 +35,10 @@ from ...core.review_defaults import (
 from ...core.review_defaults import (
     AUTO_REVIEW_SIMPLIFY_DEFAULT as _AUTO_REVIEW_SIMPLIFY_DEFAULT,
 )
+from ...core.server_dials import dial_copy
 from .correct_gesture_art import CorrectGestureArt
-from .guidance import BLUE_TINT, HINT_REVIEW_CORRECT_TARGET, DismissibleHint
+from .correct_method_default import correct_ai_method_enabled, correct_default_method
+from .guidance import BLUE_TINT, HINT_REVIEW_RIGHT_CLICK_DELETE, DismissibleHint
 from .styles import (
     _BTN_GHOST,
     _BTN_GREEN,
@@ -48,6 +50,7 @@ from .styles import (
     _SUBCARD_MARGINS,
     _SUBCARD_QSS,
     _card_divider,
+    _choice_divider,
     _msg_card_qss,
     _msg_label_qss,
     _msg_text,
@@ -67,34 +70,6 @@ _REVIEW_HEADING_NOTE_QSS = (
 _MUTED_LINE_QSS = (
     "font-size: 11px; color: rgba(128,128,128,0.95);"
     " background: transparent; border: none;")
-
-
-def correct_ai_method_enabled() -> bool:
-    """Whether the review offers the AI fix method at all.
-
-    A kill switch, not a preference: picking a polygon with AI armed can start
-    the on-device install, and that holds the whole review until it finishes.
-    Off, every fix is a Manual one. Fail-open, so an absent or damaged
-    configuration leaves both methods exactly as shipped.
-    """
-    try:
-        from ...core.server_dials import feature_enabled
-
-        return feature_enabled("correct_ai_method")
-    except Exception:  # noqa: BLE001 -- a kill switch is best-effort
-        return True
-
-
-def correct_default_method() -> str:
-    """Which fix method the Correct step opens on: "ai" or "manual"."""
-    if not correct_ai_method_enabled():
-        return "manual"
-    try:
-        from ...core.detection_policy import review_correct_default_method
-
-        return review_correct_default_method()
-    except Exception:  # noqa: BLE001 -- a served default is best-effort
-        return "ai"
 
 
 class _CorrectMethodSwitch(_MethodSwitch):
@@ -265,8 +240,18 @@ class DockAutoCorrectBuildMixin:
 
         # Zero-detection count line: an empty run lands here directly. Kept as
         # the dock's own line, no new count plumbing.
-        self.auto_correct_zero_line = QLabel(_msg_text("neutral", tr(
-            "Nothing cleared the confidence bar in this zone.")))
+        #
+        # It says what happened and the two things that can be done about it,
+        # both on this screen: the Add card right below, and Exit at the foot
+        # of the review. It used to name Confidence, a control that lives on a
+        # step this entry never opens, and to stop there.
+        #
+        # Served copy: this is what a user reads after paying for a run that
+        # gave them nothing, so the advice has to be fixable the same day.
+        self.auto_correct_zero_line = QLabel(_msg_text("neutral", dial_copy(
+            "correct.zero_detection",
+            tr("This run found nothing. Add the object yourself below, or press "
+               "Exit and run again with another word or a smaller zone."))))
         self.auto_correct_zero_line.setWordWrap(True)
         self.auto_correct_zero_line.setStyleSheet(_msg_label_qss("neutral"))
         self.auto_correct_zero_line.setVisible(False)
@@ -302,24 +287,31 @@ class DockAutoCorrectBuildMixin:
         _hero.addWidget(self.auto_correct_pick_hint)
         lay.addWidget(self.auto_correct_pick_hero)
 
-        # One dismissible info line under the hero, shown only in the resting
-        # non-zero state (a visibility gate keeps a guidance reset from
-        # flashing it elsewhere).
-        self.auto_correct_method_info_hint = DismissibleHint(
-            HINT_REVIEW_CORRECT_TARGET,
-            tr("AI and Manual are two ways to fix the same polygon."),
-            tint=BLUE_TINT,
-            show_glyph=True,
-            visibility_gate=self._correct_info_line_gate,
-        )
-        self.auto_correct_method_info_hint.setVisible(False)
-        lay.addWidget(self.auto_correct_method_info_hint)
+        # The word between the two branches. They are alternatives, not a list,
+        # and two identical cards stacked read as steps to do in order.
+        self.auto_correct_or_row = _choice_divider(tr("or"))
+        self.auto_correct_or_row.setVisible(False)
+        lay.addWidget(self.auto_correct_or_row)
 
         self._build_correct_select_card(lay)
         self._build_add_lane(lay)
 
-        # Per-edit status: the LAST edit's outcome as one taxonomy message,
-        # with an inline Undo affordance (set_correct_status).
+        # The one gesture the step has no button for. Under both branch cards,
+        # because it works on any polygon on the map whichever method is live,
+        # and dismissible like every other tip.
+        self.auto_correct_delete_tip = DismissibleHint(
+            HINT_REVIEW_RIGHT_CLICK_DELETE,
+            tr("Right-click a polygon on the map to delete it."),
+            tint=BLUE_TINT,
+            show_glyph=True,
+            visibility_gate=self._correct_info_line_gate,
+        )
+        self.auto_correct_delete_tip.setVisible(False)
+        lay.addWidget(self.auto_correct_delete_tip)
+
+        # Per-edit status: an in-progress state (armed / neutral / warning),
+        # with an optional secondary action link (set_correct_status). The
+        # persistent summary row below reports outcomes and carries Undo.
         self.auto_correct_status = QLabel("")
         self.auto_correct_status.setWordWrap(True)
         self.auto_correct_status.setTextInteractionFlags(
@@ -676,8 +668,7 @@ class DockAutoCorrectBuildMixin:
         self.auto_add_lane_btn = _action_tile(
             "＋", tr("Point at it on the map"), tr(
                 "Add an object the AI missed. In AI, point at it and the "
-                "on-device model outlines it, free; in Manual, draw its "
-                "corners."))
+                "model outlines it, free; in Manual, draw its corners."))
         self.auto_add_lane_btn.clicked.connect(self._on_add_lane_clicked)
         _col.addWidget(self.auto_add_lane_btn)
 
@@ -723,6 +714,9 @@ class DockAutoCorrectBuildMixin:
         self.auto_correct_clear_btn = QPushButton(tr("Clear all"))
         self.auto_correct_clear_btn.setStyleSheet(_BTN_LINK_MUTED)
         self.auto_correct_clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.auto_correct_clear_btn.setToolTip(tr(
+            "Undo every correction of this round at once. The count is in the "
+            "label, so you can see what goes."))
         self.auto_correct_clear_btn.clicked.connect(
             self.auto_correction_clear_requested.emit)
         _sum_row.addWidget(self.auto_correct_summary_label)

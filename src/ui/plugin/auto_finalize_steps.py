@@ -380,6 +380,11 @@ class AutoFinalizeStepsMixin:
                         hist.set_range(conf_slider.minimum() / 100.0, 0.95)
                         hist.set_scores([s for (_g, s, _a) in objects])
                         hist.set_cutoff(start_conf)
+                    # Last, because it can take the controls seeded just above
+                    # off the step: a run whose objects are all rated the same
+                    # has no ranking for Confidence to filter on.
+                    self.dock_widget.set_auto_review_score_useful(
+                        self._run_scores_rank_objects())
                 except (RuntimeError, AttributeError):
                     pass
             # Enumerate so each visible geom remembers WHICH canonical object it

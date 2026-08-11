@@ -34,7 +34,8 @@ from ...core.review_defaults import (
 )
 from .font_scale import scale_px_length
 from .styles import (
-    _CARD_QSS,
+    _CARD_JOINED_QSS,
+    _SECTION_TOGGLE_OPEN_QSS,
     _SECTION_TOGGLE_QSS,
     _settings_zone,
 )
@@ -66,7 +67,10 @@ class DockRefineMixin:
 
         The panel is a framed header-BUTTON (chevron + title) over a card of
         controls, the design-system collapsible pattern shared with the
-        Automatic review. The title is contextual: base Manual calls it "Refine
+        Automatic review. Open, the two share one border and read as a single
+        box: the card is what the header opens, not a neighbour of it.
+
+        The title is contextual: base Manual calls it "Refine
         selection"; a Refine-in-Manual handoff retitles it "Shape settings"
         (per-polygon controls). ``refine_group`` stays the container name that
         state.py shows/hides.
@@ -79,7 +83,9 @@ class DockRefineMixin:
         self.refine_group = QWidget()
         self.refine_group.setVisible(False)  # Hidden until segmentation active
         refine_layout = QVBoxLayout(self.refine_group)
-        refine_layout.setSpacing(6)
+        # No gap: open, the header and the card below it are one box, and a gap
+        # would cut the box in half (see _apply_refine_toggle).
+        refine_layout.setSpacing(0)
         refine_layout.setContentsMargins(0, 0, 0, 0)
 
         # Framed header-button with a chevron: a full-width control that reads
@@ -92,7 +98,7 @@ class DockRefineMixin:
         self.refine_toggle_btn.clicked.connect(self._on_refine_toggle_clicked)
         refine_layout.addWidget(self.refine_toggle_btn)
 
-        # Content card (standard _CARD_QSS look) shown/hidden by the header.
+        # Content card shown/hidden by the header, and drawn joined to it.
         self.refine_content_widget = QWidget()
         self.refine_content_widget.setObjectName("refineContentWidget")
         self.refine_content_widget.setAttribute(
@@ -104,7 +110,7 @@ class DockRefineMixin:
         from .widgets import checkbox_indicator_qss
         _cb_qss = checkbox_indicator_qss(self)
 
-        _refine_qss = _CARD_QSS.format(name="refineContentWidget")
+        _refine_qss = _CARD_JOINED_QSS.format(name="refineContentWidget")
         _refine_qss += "QLabel { background: transparent; border: none; }"
         _refine_qss += _cb_qss
         self.refine_content_widget.setStyleSheet(_refine_qss)
@@ -326,8 +332,7 @@ class DockRefineMixin:
             ]))
 
         refine_layout.addWidget(self.refine_content_widget)
-        self.refine_content_widget.setVisible(self._refine_expanded)
-        self._refresh_refine_header()
+        self._apply_refine_toggle(self._refine_expanded)
 
         # Connect signals
         self.points_spinbox.valueChanged.connect(self._on_refine_changed)
@@ -423,8 +428,15 @@ class DockRefineMixin:
         self._apply_refine_toggle(self._refine_expanded)
 
     def _apply_refine_toggle(self, expanded):
-        """Show/hide the content card and sync the header chevron."""
+        """Show/hide the content card and sync the header chevron.
+
+        The header swaps stylesheet with it. Open, it drops its bottom edge and
+        its bottom corners so it and the card draw as a single box: the settings
+        ARE what this header opens, and two separate cards said otherwise.
+        """
         self.refine_content_widget.setVisible(expanded)
+        self.refine_toggle_btn.setStyleSheet(
+            _SECTION_TOGGLE_OPEN_QSS if expanded else _SECTION_TOGGLE_QSS)
         self._refresh_refine_header()
 
     def _on_refine_changed(self, value=None):

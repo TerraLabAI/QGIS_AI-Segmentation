@@ -8,6 +8,7 @@ import numpy as np
 from qgis.core import Qgis, QgsMessageLog
 
 from .i18n import tr
+from .tile_read_completeness import online_read_is_complete
 
 # Raster formats that pip-installed rasterio may not support reliably.
 # These go through GDAL windowed read instead.
@@ -60,9 +61,15 @@ def _normalize_to_uint8(bands, nodata_value=None):
 
     is_float = np.issubdtype(bands.dtype, np.floating)
 
-    # Build nodata mask: True where pixel is valid
+    # Build nodata mask: True where pixel is valid. A pixel counts as nodata
+    # only when EVERY band read carries the nodata value. Testing band 1 alone
+    # drops a real pixel whose red channel happens to be the nodata value,
+    # which on a Byte ortho with nodata 0 is every deep shadow, every blue roof
+    # and most water, and the zeroing below then paints them pure black.
     if nodata_value is not None:
-        valid_mask = bands[0] != nodata_value
+        valid_mask = np.zeros(bands.shape[1:], dtype=bool)
+        for b in range(num_bands):
+            valid_mask |= (bands[b] != nodata_value)
     else:
         valid_mask = None
 
@@ -128,7 +135,13 @@ def _normalize_to_uint8(bands, nodata_value=None):
                     stretched = np.nan_to_num(
                         stretched, nan=0.0, posinf=255.0, neginf=0.0)
                 result[b] = stretched.astype(np.uint8)
-            # else: stays zeros
+            else:
+                # One value across the whole band. There is no stretch to
+                # apply and no way to place that value on a 0-255 scale, so
+                # the channel takes the middle of it. Leaving it at zero
+                # hands the model a pure black picture, and the uint8 branch
+                # above keeps its constant rather than blacking it out.
+                result[b] = 128
 
     # Zero out nodata pixels
     if valid_mask is not None:
@@ -219,7 +232,28 @@ def _read_palette_rgb_gdal(ds, col_off, row_off, actual_w, actual_h, out_w, out_
         return None
 
 
-def _fetch_online_bands(provider, extent, width, height):
+def _argb_to_rgb(argb, premultiplied: bool):
+    """Qt (H, W, 4) BGRA -> (H, W, 3) RGB uint8, C-contiguous.
+
+    A premultiplied buffer stores each colour already scaled by its own alpha,
+    so a half-transparent pixel is half as dark as the colour it draws. Divide
+    that back out, or every soft edge and every overlay reaches the model
+    darkened. Alpha 0 carries no colour and stays black.
+    """
+    if not premultiplied:
+        # ascontiguousarray already allocates the output, so copying the
+        # 4-channel buffer first only to drop its alpha would be a whole extra
+        # pass over the crop.
+        return np.ascontiguousarray(argb[:, :, 2::-1])
+    alpha = argb[:, :, 3].astype(np.float32)[:, :, None]
+    rgb = argb[:, :, 2::-1].astype(np.float32) * 255.0
+    np.divide(rgb, alpha, out=rgb, where=alpha > 0)
+    rgb[np.broadcast_to(alpha == 0, rgb.shape)] = 0.0
+    return np.ascontiguousarray(np.clip(rgb, 0.0, 255.0).astype(np.uint8))
+
+
+def _fetch_online_bands(provider, extent, width, height, first_block=None,
+                        read_band=None):
     """Fetch raw band data from an online raster provider.
 
     Handles ARGB32 formats directly and fetches individual bands for
@@ -230,6 +264,14 @@ def _fetch_online_bands(provider, extent, width, height):
         extent: QgsRectangle for the area to fetch
         width: pixel width to request
         height: pixel height to request
+        first_block: a band-1 read of this same extent and size that the caller
+            already has and has checked. Passed in so the crop is built from
+            the picture that passed rather than from a fresh read, which on a
+            tiled source can carry different tiles.
+        read_band: optional ``(band_index) -> block`` used for every read this
+            call makes. The interactive fetch passes its budgeted reader so
+            these reads are charged and capped like the rest; None reads
+            straight off the provider.
 
     Returns:
         (bands_array, is_argb, error) where:
@@ -237,7 +279,12 @@ def _fetch_online_bands(provider, extent, width, height):
         - is_argb: True if result is already RGB uint8 (H, W, 3)
         - error: error string or None
     """
-    block = provider.block(1, extent, width, height)
+    def read_from_provider(band_index):
+        return provider.block(band_index, extent, width, height)
+
+    read = read_band or read_from_provider
+
+    block = first_block if first_block is not None else read(1)
     if block is None or not block.isValid():
         return None, False, "Provider block fetch failed"
 
@@ -260,11 +307,7 @@ def _fetch_online_bands(provider, extent, width, height):
     if is_argb:
         arr = np.frombuffer(raw_data, dtype=np.uint8).reshape(
             block_h, block_w, 4)
-        # Qt BGRA byte order -> RGB. ascontiguousarray already allocates the
-        # output, so copying the 4-channel buffer first only to drop its alpha
-        # would be a whole extra pass over the crop.
-        image_np = np.ascontiguousarray(arr[:, :, 2::-1])
-        return image_np, True, None
+        return _argb_to_rgb(arr, is_argb32_pre), True, None
 
     # Map Qgis data types to numpy dtypes
     dtype_map = {
@@ -283,8 +326,7 @@ def _fetch_online_bands(provider, extent, width, height):
         if len(raw_data) == block_w * block_h * 4:
             arr = np.frombuffer(raw_data, dtype=np.uint8).reshape(
                 block_h, block_w, 4)
-            image_np = np.ascontiguousarray(arr[:, :, 2::-1])
-            return image_np, True, None
+            return _argb_to_rgb(arr, False), True, None
         return None, False, f"Unsupported data type: {dt}"
 
     band_count = min(provider.bandCount(), 3)
@@ -295,16 +337,22 @@ def _fetch_online_bands(provider, extent, width, height):
         block_h, block_w).copy()
     bands.append(band1)
 
-    # Fetch remaining bands
+    # Fetch remaining bands. A band that does not come back ends the fetch. It
+    # used to be skipped, which shortened the stack silently: on a three-band
+    # source whose band 2 failed, band 3 landed in the green channel and the
+    # crop went to the model with its colours moved.
+    band_bytes = block_w * block_h * np.dtype(np_dtype).itemsize
     for band_idx in range(2, band_count + 1):
-        b = provider.block(band_idx, extent, block_w, block_h)
-        if b is not None and b.isValid():
-            b_data = bytes(b.data())
-            if len(b_data) > 0:
-                band_arr = np.frombuffer(
-                    b_data, dtype=np_dtype
-                ).reshape(block_h, block_w).copy()
-                bands.append(band_arr)
+        b = read(band_idx)
+        if b is None or not b.isValid():
+            return None, False, f"Provider band {band_idx} fetch failed"
+        b_data = bytes(b.data())
+        if len(b_data) != band_bytes:
+            return None, False, (
+                f"Provider band {band_idx} returned {len(b_data)} bytes, "
+                f"expected {band_bytes}")
+        bands.append(np.frombuffer(
+            b_data, dtype=np_dtype).reshape(block_h, block_w).copy())
 
     bands_array = np.stack(bands, axis=0)
     return bands_array, False, None
@@ -314,6 +362,31 @@ def _fetch_online_bands(provider, extent, width, height):
 # host is slow, it waits on the calling thread, and that thread is the GUI one,
 # so the wait needs its own stop and cannot rely on the provider's.
 _RENDER_FALLBACK_TIMEOUT_MS: int = 30000
+
+
+def _apply_render_fallback_flags(settings) -> None:
+    """Set the render flags the fallback below cannot work without.
+
+    Without the blocking fetch, an offscreen render of an online basemap
+    returns EMPTY cells for every tile the provider had not cached: it queues
+    a download and a canvas refresh that a one-shot job never sees. The
+    fallback is reached exactly when nothing is cached, so it came back blank
+    on the first click over an area never viewed at that zoom, which is what a
+    new user does. The quality flags stop the same render resampling the
+    imagery nearest-neighbour.
+
+    Best-effort: the helpers skip a flag this QGIS does not carry, and a build
+    that cannot supply them at all still renders, as it did before.
+    """
+    try:
+        from .cloud_detection import (
+            _set_blocking_remote_fetch,
+            _set_quality_render_flags,
+        )
+    except Exception:  # noqa: BLE001 -- the render matters more than its flags
+        return
+    _set_quality_render_flags(settings)
+    _set_blocking_remote_fetch(settings)
 
 
 def _render_layer_to_image(layer, extent, width, height,
@@ -337,7 +410,13 @@ def _render_layer_to_image(layer, extent, width, height,
         timeout_ms: hard cap on the wait
 
     Returns:
-        (image_np, error) where image_np is (H, W, 3) uint8 or None
+        (image_np, actual_extent, error). ``image_np`` is (H, W, 3) uint8 or
+        None. ``actual_extent`` is the ground the image really covers, which is
+        what the caller must file it under: QgsMapSettings GROWS the requested
+        extent until it matches the output aspect ratio, and an online crop
+        asks for a non-square rectangle on a square image, so the two differ by
+        the cosine of the latitude. File the image under the requested extent
+        and every outline comes out stretched and shifted in y.
     """
     try:
         from qgis.core import QgsMapRendererParallelJob, QgsMapSettings
@@ -352,6 +431,8 @@ def _render_layer_to_image(layer, extent, width, height,
         settings.setLayers([layer])
         settings.setDestinationCrs(layer.crs())
         settings.setBackgroundColor(QColor(0, 0, 0))
+        _apply_render_fallback_flags(settings)
+        actual_extent = settings.visibleExtent()
 
         job = QgsMapRendererParallelJob(settings)
         loop = QEventLoop()
@@ -363,11 +444,12 @@ def _render_layer_to_image(layer, extent, width, height,
 
         if job.isActive():
             job.cancelWithoutBlocking()
-            return None, f"Renderer fallback timed out after {int(timeout_ms)} ms"
+            return (None, None,
+                    f"Renderer fallback timed out after {int(timeout_ms)} ms")
 
         img = job.renderedImage()
         if img is None or img.isNull():
-            return None, "Renderer fallback produced no image"
+            return None, None, "Renderer fallback produced no image"
 
         # QImage -> numpy, on the image's own size (the job owns the buffer).
         img = img.convertToFormat(QImage.Format.Format_RGB32)
@@ -380,10 +462,10 @@ def _render_layer_to_image(layer, extent, width, height,
         # BGRA -> RGB. The reversed slice is not contiguous, so this always
         # allocates its own buffer and never keeps the QImage alive.
         image_np = np.ascontiguousarray(arr[:, :, 2::-1])
-        return image_np, None
+        return image_np, actual_extent, None
 
     except Exception as e:
-        return None, f"Renderer fallback failed: {str(e)}"
+        return None, None, f"Renderer fallback failed: {str(e)}"
 
 
 def _needs_gdal_conversion(raster_path):
@@ -948,6 +1030,129 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
         )
 
 
+# Smallest QNetworkReply error value that means the host did answer. Below it
+# (1 to 99) the request never got there: no route, no such host, refused,
+# timed out. That line decides whether a failed crop blames the connection or
+# the layer, so it must not be read as a severity.
+_SERVER_REPLIED_ERROR_FLOOR: int = 100
+# QNetworkReply::ContentNotFoundError, the 404 a tile host sends where it
+# publishes no imagery. It reads as a failure but means "nothing here", so it
+# gets the no-coverage answer rather than the broken-layer one.
+_TILE_NOT_PUBLISHED_ERROR: int = 203
+
+
+def online_no_coverage_message() -> str:
+    """What to tell a user whose online layer holds no imagery at this zoom.
+
+    One wording for the two ways we find that out: a read that came back blank,
+    and tile requests the host answered with 404.
+    """
+    return tr(
+        "Online layer returned blank tiles for this area. The "
+        "current zoom level may be outside the service's range, "
+        "or this area has no coverage. Zoom to a level where the "
+        "layer is visible on the map, then try again."
+    )
+
+
+def failed_tile_request_error(reply_error: int) -> tuple[str, str]:
+    """Message and error code for a crop whose tile requests all failed,
+    picked on the reply error so the user is pointed at the side that broke."""
+    if reply_error < _SERVER_REPLIED_ERROR_FLOOR:
+        return (
+            tr("Failed to fetch tiles from the online layer. "
+               "Check your network connection."),
+            "crop_error_online_fetch_failed",
+        )
+    if reply_error == _TILE_NOT_PUBLISHED_ERROR:
+        return online_no_coverage_message(), "crop_error_online_blank_tiles"
+    return (
+        tr("This online layer returned no imagery for this area. Its "
+           "server refused the request. Check the layer's URL in Layer "
+           "Properties, or use another basemap."),
+        "crop_error_online_tiles_refused",
+    )
+
+
+def online_layer_tile_host(layer) -> str:
+    """Host the layer's tiles come from, read off its data source.
+
+    Empty when the source names no host, which switches the refused-tile check
+    below off rather than letting it guess.
+    """
+    try:
+        from qgis.core import QgsDataSourceUri
+        from qgis.PyQt.QtCore import QUrl
+
+        uri = QgsDataSourceUri()
+        uri.setEncodedUri(layer.source())
+        url = uri.param("url") or ""
+        if not url:
+            return ""
+        return QUrl(url).host() or ""
+    except Exception:  # noqa: BLE001 -- no host means the check stays off
+        return ""
+
+
+class TileRequestErrorWatch:
+    """Counts tile requests the host refused while one provider read runs.
+
+    A refused tile leaves no trace on the provider: block() still returns a
+    valid, fully transparent image, and the provider's own error stays empty,
+    so a source that cannot answer and one that is merely slow look identical
+    from the outside. The reply status is the only evidence in the process.
+
+    Replies are matched on the layer's own host, so another plugin's failing
+    request never counts. The network manager is per thread, so this sees the
+    requests made by the read on this thread and no others.
+    """
+
+    def __init__(self, host: str):
+        self._host = host
+        self._manager = None
+        self.failed = False
+        # First non-zero QNetworkReply error seen, kept so the caller can tell
+        # a connection that never reached the host from a reply the host sent.
+        self.reply_error = 0
+
+    def __enter__(self):
+        if not self._host:
+            return self
+        try:
+            from qgis.core import QgsNetworkAccessManager
+
+            self._manager = QgsNetworkAccessManager.instance()
+            self._manager.finished.connect(self._on_reply_finished)
+        except Exception:  # noqa: BLE001 -- watching is best effort
+            self._manager = None
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        if self._manager is not None:
+            try:
+                self._manager.finished.disconnect(self._on_reply_finished)
+            except (TypeError, RuntimeError):
+                pass
+            self._manager = None
+        return False
+
+    def _on_reply_finished(self, reply):
+        """The signal has two overloads and hands over a QNetworkReply on one,
+        a QgsNetworkReplyContent on the other. Only request() is on both, so
+        the host is read through it."""
+        try:
+            error = int(reply.error())
+            if error == 0:
+                return
+            host = reply.request().url().host()
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return
+        if host == self._host:
+            self.failed = True
+            if not self.reply_error:
+                self.reply_error = error
+
+
 class OnlineCropFetcher:
     """Step-driven online-tile crop fetch.
 
@@ -967,11 +1172,12 @@ class OnlineCropFetcher:
 
     _MAX_RETRIES = 8
     _RETRY_DELAY = 1.0
-    # Ceiling on the time one fetch may spend INSIDE provider.block(). On an
-    # online provider that call is a synchronous network read on the calling
-    # thread, and it carries the network stack's own timeout, so the retry
-    # ladder would otherwise let one unresponsive host hold that thread for
-    # minutes. Only the reads are charged here: the back-off waits between them
+    # Ceiling on the time one fetch may hold the calling thread. On an online
+    # provider a block() call is a synchronous network read on that thread, and
+    # it carries the network stack's own timeout, so the retry ladder would
+    # otherwise let one unresponsive host hold it for minutes. It covers the
+    # ladder's reads, finish()'s band reads and finish()'s renderer wait, which
+    # are the three ways this class blocks. The back-off waits between reads
     # belong to the caller, and the interactive path takes them off the event
     # loop. A read already running cannot be interrupted, so the real bound is
     # this budget plus the one read in flight when it runs out.
@@ -989,11 +1195,28 @@ class OnlineCropFetcher:
         self._mutated = False
         self._orig_in = None
         self._orig_out = None
-        self._orig_enabled = None
+        # Provider resampling as it was before the fetch forced it on. False,
+        # never None: the provider ships with it off, so a build whose getter
+        # is missing restores to off. Left unknown, restore() skipped the call
+        # and the user's layer kept the resampling this fetch turned on.
+        self._orig_enabled = False
         self._attempt = 0
         self._prev_data = None
+        # The last read that carried no pixel at all, kept so two matching
+        # empty reads can settle instead of spending the whole ladder.
+        self._prev_empty = None
         self._reload_pending = False
         self._read_seconds = 0.0
+        # Host of the layer's tiles, plus whether it has refused one. A refusal
+        # is the difference between a source that cannot answer and one that is
+        # still working, and the retry ladder is worth nothing against the
+        # first.
+        self._tile_host = online_layer_tile_host(layer)
+        self._tile_request_failed = False
+        self._tile_error_code = 0
+        # The read that passed the checks, kept so finish() builds the crop
+        # from the picture that was checked and not from a fresh one.
+        self._settled_block = None
 
         provider = layer.dataProvider()
         self._provider = provider
@@ -1038,13 +1261,14 @@ class OnlineCropFetcher:
             # nothing to revert.
             return
         # isProviderResamplingEnabled() is the getter paired with
-        # enableProviderResampling(); on a build that lacks it the enabled flag
-        # stays unknown (None) and restore() leaves it on.
+        # enableProviderResampling(). Without it the flag keeps its default of
+        # False, which is the provider's own default and what restore() then
+        # puts back.
         if hasattr(provider, "isProviderResamplingEnabled"):
             try:
-                self._orig_enabled = provider.isProviderResamplingEnabled()
+                self._orig_enabled = bool(provider.isProviderResamplingEnabled())
             except (AttributeError, RuntimeError):
-                self._orig_enabled = None
+                self._orig_enabled = False
         # Past this point a revert is owed regardless of what the setters do.
         self._mutated = True
         try:
@@ -1067,8 +1291,7 @@ class OnlineCropFetcher:
         try:
             provider.setZoomedInResamplingMethod(self._orig_in)
             provider.setZoomedOutResamplingMethod(self._orig_out)
-            if self._orig_enabled is not None:
-                provider.enableProviderResampling(self._orig_enabled)
+            provider.enableProviderResampling(self._orig_enabled)
         except (AttributeError, RuntimeError):
             pass
 
@@ -1079,26 +1302,92 @@ class OnlineCropFetcher:
         return self._read_seconds >= self._READ_BUDGET_S
 
     def _timed_block(self, band):
-        """One provider.block() read, charged to the read budget."""
+        """One provider.block() read, charged to the read budget. A tile the
+        host refuses during it is recorded, because the provider reports
+        nothing at all about it."""
+        watch = TileRequestErrorWatch(self._tile_host)
         started = time.monotonic()
         try:
-            return self._provider.block(
-                band, self._extent, self._crop_size, self._crop_size)
+            with watch:
+                return self._provider.block(
+                    band, self._extent, self._crop_size, self._crop_size)
         finally:
             self._read_seconds += time.monotonic() - started
+            if watch.failed:
+                self._tile_request_failed = True
+                if not self._tile_error_code:
+                    self._tile_error_code = watch.reply_error
+
+    def _budgeted_block(self, band):
+        """One band read for finish(), refused once the budget is spent.
+
+        finish() runs on the same thread the ladder does, and on the
+        interactive path that is the GUI thread, so a band read that nobody
+        charges holds the window just as long as one of the ladder's. None ends
+        the band stack with an error, which routes to the renderer under what
+        is left of the same budget.
+        """
+        if self.read_budget_spent():
+            return None
+        return self._timed_block(band)
+
+    def _render_fallback(self):
+        """Render the extent through QGIS, under what is left of the read
+        budget. Returns the same (image, extent, error) as the renderer.
+
+        The renderer waits on a nested event loop on the calling thread, so a
+        fixed timeout stacked on top of the reads: three band reads plus a
+        thirty second render held the window for about forty seconds. The whole
+        of finish() now fits inside the one ceiling the reads already carry.
+        """
+        remaining_ms = int(
+            max(0.0, self._READ_BUDGET_S - self._read_seconds) * 1000)
+        if remaining_ms <= 0:
+            return None, None, "Renderer fallback has no time budget left"
+        return _render_layer_to_image(
+            self._layer, self._extent, self._crop_size, self._crop_size,
+            timeout_ms=remaining_ms)
+
+    def _read_brought_nothing(self, image_np, from_renderer: bool) -> bool:
+        """Did this crop come back with no imagery in it at all?
+
+        The alpha byte of the provider read answers it: it says whether a tile
+        landed, which is the actual question. The RGB sum cannot, because a
+        black picture is still a picture. Night imagery, dark water and a black
+        nodata fill were all reported to the user as an area with no coverage.
+
+        Falls back to the RGB sum when there is no alpha to read (a numeric
+        coverage band, or a crop the renderer produced).
+        """
+        block = self._settled_block
+        if block is not None and not from_renderer:
+            try:
+                from .tile_read_completeness import read_alpha_plane
+
+                alpha = read_alpha_plane(
+                    bytes(block.data()), block.width(), block.height(),
+                    block.dataType())
+                if alpha is not None:
+                    return not bool(alpha.any())
+            except Exception:  # noqa: BLE001 -- no alpha falls back below
+                pass  # nosec B110
+        return int(image_np.sum()) == 0
 
     def step(self):
         """Perform one block read + stabilization check. Returns (action,
         delay_seconds):
 
-        - ("stabilized", 0.0): two equal non-blank reads; go to finish().
-        - ("refetch", 0.5): first valid non-blank read; reload issued, wait
-          then step() again.
+        - ("stabilized", 0.0): the read has every pixel, or it has stopped
+          changing and that is evidence here (see _read_has_settled); go to
+          finish(), which builds the crop from this very read.
+        - ("refetch", 0.5): a first non-blank read that is still missing
+          pixels; wait, then step() again.
         - ("retry", delay): not stable yet; wait ``delay`` then step() again
           (the reload is issued at the START of the next step, matching the
           blocking loop's wait-then-reload order).
-        - ("exhausted", 0.0): retry budget or read budget spent; go to finish()
-          with whatever the provider returned.
+        - ("exhausted", 0.0): retry budget or read budget spent, or the host
+          refused the tiles and no read has ever carried a pixel; go to
+          finish() with whatever the provider returned.
         """
         provider = self._provider
         if self.read_budget_spent():
@@ -1115,21 +1404,47 @@ class OnlineCropFetcher:
         if block is not None and block.isValid():
             cur_data = bytes(block.data())
             # An all-zero block means the tiles have not downloaded yet (or the
-            # area has no coverage). Two blank reads in a row must NOT count as
-            # "stabilized": a slow network would trip the equality check and
-            # abandon the retry budget after ~1s, shipping a blank crop. Only
-            # real pixel content can end the loop early; blank reads always
-            # fall through to the progressive retry branch.
+            # area has no coverage). A slow network would otherwise trip the
+            # equality check and abandon the retry budget after ~1s, shipping a
+            # blank crop, so an empty read gets its own narrower test below.
             if cur_data.strip(b"\x00"):
-                if self._prev_data is not None and cur_data == self._prev_data:
-                    return ("stabilized", 0.0)
+                # Pixels arrived, so no earlier emptiness stands any more. Kept,
+                # it would pair with a later blank read across this one and
+                # settle a crop the layer does have coverage for.
+                self._prev_empty = None
+                if online_read_is_complete(cur_data, block.width(),
+                                           block.height(), block.dataType()):
+                    # Nothing is missing, so this read IS the final picture and
+                    # the wait below would only re-read the same bytes. The
+                    # check is exact on the tile path (see
+                    # tile_read_completeness).
+                    return self._accept(block)
+                if self._read_has_settled(block, cur_data):
+                    return self._accept(block)
                 self._prev_data = cur_data
                 if attempt == 0:
-                    # First valid fetch: reload once and re-check whether the
-                    # tiles are still loading/updating.
-                    provider.reloadData()
+                    # First valid fetch: wait, then read again and see whether
+                    # the picture stopped changing.
+                    #
+                    # Deliberately WITHOUT dropping the provider's tiles. This
+                    # is the user's live layer, so throwing its tiles away
+                    # makes the map re-download everything on screen, and the
+                    # re-check does not need it: tiles still arriving land in
+                    # the provider's own cache during the wait and show up in
+                    # the next read either way. Dropping them also cancels the
+                    # downloads that were already on their way. The retry
+                    # branch below still reloads, because there the read gave
+                    # nothing usable and a fresh fetch is the point.
                     self._attempt = attempt + 1
                     return ("refetch", 0.5)
+            elif self._empty_read_has_settled(block, cur_data, attempt):
+                return self._accept(block)
+        if self._tile_request_failed and self._prev_data is None:
+            # The host refused this read's tiles, and no read has yet carried a
+            # single pixel. The picture is not on its way, so every further
+            # attempt asks the same question and pays the same seconds for the
+            # same answer. Stop and let finish() name the layer as the problem.
+            return ("exhausted", 0.0)
         if attempt < self._MAX_RETRIES - 1:
             delay = self._RETRY_DELAY * (1 + attempt * 0.5)  # 1.0, 1.5, 2.0, ...
             QgsMessageLog.logMessage(
@@ -1142,24 +1457,125 @@ class OnlineCropFetcher:
             return ("retry", delay)
         return ("exhausted", 0.0)
 
+    def _accept(self, block):
+        """Keep the read that passed, so finish() encodes THAT picture.
+
+        finish() used to fetch the extent again, which is a different read: on
+        a tiled source the tiles can move between the two, and the crop that
+        went to the model was then one nobody had checked.
+        """
+        self._settled_block = block
+        return ("stabilized", 0.0)
+
+    def _read_has_settled(self, block, cur_data: bytes) -> bool:
+        """Has a read that carries pixels stopped changing since the last one?
+
+        On a read that carries alpha the transparent pixels answer it. A tile
+        on its way fills in between two reads, so its hole moves; a hole that
+        survives both is the layer's own edge (an ocean tile, the border of the
+        service's coverage, a transparent overlay). Those holes never fill, so
+        the ladder used to spend a reload and about two seconds per click
+        waiting for them, and the reload drops the live layer's tiles and makes
+        the map re-download everything on screen.
+
+        On a read with no alpha there is no such evidence, so two identical
+        reads settle it. That is the path this class has always taken, and the
+        only one a numeric coverage read has.
+        """
+        if self._prev_data is None:
+            return False
+        try:
+            from .tile_read_completeness import holes_are_the_same, read_carries_alpha
+
+            if read_carries_alpha(block.dataType()):
+                return holes_are_the_same(
+                    self._prev_data, cur_data, block.width(), block.height(),
+                    block.dataType())
+        except Exception:  # noqa: BLE001 -- unknown evidence settles the old way
+            pass  # nosec B110
+        return cur_data == self._prev_data
+
+    def _empty_read_has_settled(self, block, cur_data: bytes,
+                                attempt: int) -> bool:
+        """Is a read with no pixel at all the picture the layer really has?
+
+        Only on a read that carries alpha, and only once a reload and a further
+        read have brought back the same emptiness. There the transparency IS
+        the answer: nothing is coming. Such a crop never reached any check, so
+        it spent all eight attempts and a reload each, about fourteen seconds,
+        to end up saying the same thing.
+
+        Without alpha an empty read is just a slow one, and the ladder keeps
+        every retry it has.
+        """
+        try:
+            from .tile_read_completeness import read_carries_alpha
+
+            if not read_carries_alpha(block.dataType()):
+                return False
+        except Exception:  # noqa: BLE001 -- no evidence keeps the full ladder
+            return False
+        if attempt >= 1 and cur_data == self._prev_empty:
+            return True
+        self._prev_empty = cur_data
+        return False
+
     def finish(self):
         """Read the band data for the stabilized extent and build the crop.
         Returns the extract_crop_from_raster-style 4-tuple (image_np,
         crop_info, error, error_code)."""
         provider = self._provider
-        if self.read_budget_spent():
+        settled = self._settled_block
+        if settled is None and self._tile_request_failed and self._prev_data is None:
+            # The tile requests came back with an error and never brought a
+            # pixel. The renderer still gets one try before this becomes an
+            # error: it draws from the tile cache QGIS already holds for the
+            # canvas, so imagery the user can SEE on screen can answer a click
+            # even when fresh requests are refused. The reply error travels to
+            # the log by number, because "refused" covers a 403, a 429 and a
+            # 400, and they point at three different fixes.
+            QgsMessageLog.logMessage(
+                f"Online tiles refused (network reply error "
+                f"{self._tile_error_code}), trying the renderer fallback...",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning
+            )
+            image_np, render_extent, render_err = self._render_fallback()
+            if (render_err is not None or image_np is None
+                    or int(image_np.sum()) == 0):
+                message, code = failed_tile_request_error(self._tile_error_code)
+                return None, None, message, code
+            QgsMessageLog.logMessage(
+                "Refused tiles rescued by the renderer fallback",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning
+            )
+            return image_np, {
+                "bounds": (render_extent.xMinimum(), render_extent.yMinimum(),
+                           render_extent.xMaximum(), render_extent.yMaximum()),
+                "img_shape": (image_np.shape[0], image_np.shape[1]),
+            }, None, None
+        if settled is None and self.read_budget_spent():
             # The reads already held the calling thread for their whole
             # ceiling, so the provider is not answering usably: report the
             # network failure instead of starting one more synchronous fetch.
+            # A read that already passed is different: it is in hand, and the
+            # crop is built from it without touching the network again.
             return None, None, tr(
                 "Failed to fetch tiles from the online layer. "
                 "Check your network connection."
             ), "crop_error_online_fetch_failed"
-        # Fetch bands using unified helper
-        read_started = time.monotonic()
+        # Fetch bands using unified helper, reusing the read that passed the
+        # checks when there is one: a second read of the same extent is a
+        # different picture on a source whose tiles are still moving. Every
+        # read it makes goes through the budgeted reader, so the bands cannot
+        # hold the window past the ceiling the ladder already respects.
         bands_result, is_argb, fetch_err = _fetch_online_bands(
-            provider, self._extent, self._crop_size, self._crop_size)
-        self._read_seconds += time.monotonic() - read_started
+            provider, self._extent, self._crop_size, self._crop_size,
+            first_block=settled, read_band=self._budgeted_block)
+
+        # The ground the crop really covers. The provider reads it exactly as
+        # asked; the renderer grows it to the output aspect ratio, so a crop
+        # that comes from there is filed under what the renderer returned.
+        crop_extent = self._extent
 
         # If provider fetch failed, try canvas renderer fallback
         from_renderer = False
@@ -1169,13 +1585,13 @@ class OnlineCropFetcher:
                 "fallback...",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning
             )
-            image_np, render_err = _render_layer_to_image(
-                self._layer, self._extent, self._crop_size, self._crop_size)
+            image_np, render_extent, render_err = self._render_fallback()
             if render_err is not None:
                 return None, None, tr(
                     "Failed to fetch tiles from the online layer. "
                     "Check your network connection."
                 ), "crop_error_online_fetch_failed"
+            crop_extent = render_extent
             from_renderer = True
         elif is_argb:
             # Already RGB uint8 (H, W, 3) from ARGB32 path
@@ -1192,19 +1608,16 @@ class OnlineCropFetcher:
         height = image_np.shape[0]
         width = image_np.shape[1]
 
-        # Check for blank tiles
-        total_sum = int(image_np.sum())
-        if total_sum == 0:
-            # Tiles fetched but all-zero: stale provider cache, zoom outside
-            # the service's range, or genuinely no coverage. The canvas
-            # renderer reads what QGIS actually displays, so one render-path
-            # retry rescues the stale-cache case before giving up. A crop that
-            # already came from the renderer has nothing left to try, so it
-            # never pays for a second identical render.
+        if self._read_brought_nothing(image_np, from_renderer):
+            # Nothing arrived: stale provider cache, zoom outside the service's
+            # range, or genuinely no coverage. The canvas renderer reads what
+            # QGIS actually displays, so one render-path retry rescues the
+            # stale-cache case before giving up. A crop that already came from
+            # the renderer has nothing left to try, so it never pays for a
+            # second identical render.
             rendered = None
             if not from_renderer:
-                rendered, render_err = _render_layer_to_image(
-                    self._layer, self._extent, self._crop_size, self._crop_size)
+                rendered, rendered_extent, render_err = self._render_fallback()
                 if render_err is not None:
                     rendered = None
             if rendered is not None and int(rendered.sum()) > 0:
@@ -1213,19 +1626,16 @@ class OnlineCropFetcher:
                     "AI Segmentation", level=Qgis.MessageLevel.Warning
                 )
                 image_np = rendered
+                crop_extent = rendered_extent
                 height = image_np.shape[0]
                 width = image_np.shape[1]
             else:
-                return None, None, tr(
-                    "Online layer returned blank tiles for this area. The "
-                    "current zoom level may be outside the service's range, "
-                    "or this area has no coverage. Zoom to a level where the "
-                    "layer is visible on the map, then try again."
-                ), "crop_error_online_blank_tiles"
+                return (None, None, online_no_coverage_message(),
+                        "crop_error_online_blank_tiles")
 
         crop_info = {
-            "bounds": (self._extent.xMinimum(), self._extent.yMinimum(),
-                       self._extent.xMaximum(), self._extent.yMaximum()),
+            "bounds": (crop_extent.xMinimum(), crop_extent.yMinimum(),
+                       crop_extent.xMaximum(), crop_extent.yMaximum()),
             "img_shape": (height, width),
         }
         return image_np, crop_info, None, None

@@ -10,8 +10,10 @@ from __future__ import annotations
 from qgis.PyQt.QtCore import Qt
 
 from ...core.credit_gate import insufficient as _credit_insufficient
+from ...core.credit_gate import low_credit_ceiling as _low_credit_ceiling
 from ...core.credit_gate import low_credit_threshold as _low_credit_threshold
 from ...core.i18n import tr
+from ...core.server_dials import dial_copy
 from .font_scale import scale_qss_font_px
 from .styles import (
     ERROR_TEXT,
@@ -103,6 +105,35 @@ class DockAutoCreditsMixin:
         except Exception:  # noqa: BLE001 -- served copy is best-effort
             return fallback
 
+    def _auto_zone_too_large_tooltip(self) -> str:
+        """The numbers the cost row has no width for.
+
+        The row sits in the Detail header and can only carry "Zone too large",
+        so the ceiling and the two ways back under it live here. The count
+        itself never reaches the dock: the grid stops counting once it passes
+        the ceiling. Never raises: a slider move calls it.
+
+        Served copy, like the row above it, with one id per form: the sentence
+        with the ceiling in it and the sentence for when no ceiling is known.
+        The ceiling is filled with str.replace, never format(), so a stray
+        brace in a served sentence cannot raise on a slider move.
+        """
+        try:
+            from ..plugin.shared import max_tiles_per_run_cap
+            cap = int(max_tiles_per_run_cap())
+        except Exception:  # noqa: BLE001 -- a tooltip must never break a paint
+            cap = 0
+        if cap > 0:
+            return dial_copy(
+                "zone.too_large_tooltip",
+                tr("One run covers up to {cap} tiles. This zone at this precision "
+                   "needs more. Draw a smaller zone, or lower the precision."),
+            ).replace("{cap}", str(cap))
+        return dial_copy(
+            "zone.too_large_tooltip_no_cap",
+            tr("This zone at this precision needs more tiles than one run "
+               "covers. Draw a smaller zone, or lower the precision."))
+
     def set_auto_credit_estimate(self, credits: int) -> None:
         # Remember the estimate so a later balance change (e.g. after a run
         # consumes credits) can re-run the gate against it, see set_auto_credits.
@@ -111,7 +142,11 @@ class DockAutoCreditsMixin:
             self.auto_credit_cost_label.setText(self._auto_zone_too_large_text())
             self.auto_credit_cost_label.setStyleSheet(scale_qss_font_px(
                 f"color: {ERROR_TEXT}; font-size: 11px;"))
-            self.auto_credit_cost_label.setToolTip("")
+            # By how much. The row can only fit "Zone too large", so the
+            # tooltip carries the two numbers that say what a smaller zone has
+            # to reach. Clearing it left nothing anywhere on screen saying it.
+            self.auto_credit_cost_label.setToolTip(
+                self._auto_zone_too_large_tooltip())
             self._auto_zone_too_large = True
             self._auto_insufficient_credits = False
             self.set_auto_credit_block(None)
@@ -175,7 +210,16 @@ class DockAutoCreditsMixin:
                 "Automatic mode scans your zone tile by tile. 1 tile = 1 credit, "
                 "so this run costs about {n} credits. More precision splits the "
                 "zone into more tiles, which costs more credits.").format(n=credits)
-            _extra_tip = tr("1 credit ~ 0.17 km² at default precision.")
+            # One way of saying "about" per surface: the row carries the
+            # symbol, the tooltip carries the word. It used to run both, and a
+            # third spelling of the same idea, inside one pair of sentences.
+            #
+            # Served, because the area it quotes follows the seed the server
+            # already sets: retune that seed and this sentence has to move with
+            # it, in the same deploy and without a plugin release.
+            _extra_tip = dial_copy(
+                "credit_estimate.area_hint",
+                tr("1 credit covers about 0.17 km² at default precision."))
             # Say which way the estimate can be wrong. It counts every tile of
             # the grid, and tiles the layer holds no image for are dropped
             # before they are sent, so the run can cost less than this and never
@@ -300,7 +344,19 @@ class DockAutoCreditsMixin:
         total = self._auto_credits_total
         show = self._mode == Mode.AUTOMATIC and self._plugin_activated
         show = show and not self._auto_is_subscriber
+        # The line sits at the foot of the dock now, not on the step-0 page, so
+        # the page no longer hides it when the user moves on. Kept to Start on
+        # purpose: mid-run and in the review the balance is not a decision.
+        try:
+            show = show and self.auto_steps.currentIndex() == 0
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110 -- no stack yet means no run either
         show = show and remaining is not None and total and total > 0
+        # Both rules, and the ceiling first: a fifth of a large allowance is
+        # still dozens of runs, so the share alone started selling far too
+        # early. Read from credit_gate, so Semi auto's line turns on at the same
+        # moment (`_manual_engine_credits_low`).
+        show = show and remaining is not None and remaining <= _low_credit_ceiling()
         show = show and 0 < remaining <= total * _low_credit_threshold()
         line = getattr(self, "_auto_low_credit_line", None)
         if not show:
@@ -341,15 +397,11 @@ class DockAutoCreditsMixin:
                 pass
 
     def _build_auto_low_credit_line(self):
-        """Lazily create the step-0 low-credit note (amber card) and slot it
-        under the free-trial line. Returns the label, or None if the step-0
-        page is not built yet."""
+        """Lazily create the low-credit note (amber card) and seat it in the
+        dock's bottom slot, beside the credit ring it is talking about. Returns
+        the label, or None if the slot is not built yet."""
         from qgis.PyQt.QtWidgets import QLabel
-        try:
-            page = self.auto_steps.widget(0)
-            layout = page.layout()
-        except (RuntimeError, AttributeError):
-            return None
+        layout = getattr(self, "low_credit_slot", None)
         if layout is None:
             return None
         label = QLabel()
@@ -360,12 +412,7 @@ class DockAutoCreditsMixin:
         label.setOpenExternalLinks(False)
         label.setStyleSheet(_msg_label_qss("warning"))
         label.linkActivated.connect(self._on_low_credit_link_activated)
-        anchor = getattr(self, "auto_start_caption", None)
-        idx = layout.indexOf(anchor) if anchor is not None else -1
-        if idx >= 0:
-            layout.insertWidget(idx + 1, label)
-        else:
-            layout.addWidget(label)
+        layout.addWidget(label)
         self._auto_low_credit_line = label
         return label
 

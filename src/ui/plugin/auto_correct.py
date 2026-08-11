@@ -48,9 +48,10 @@ class AutoCorrectMixin:
         self._auto_retry_guard = RetryLinkState()
         # The Correct step's fix method, mirrored from the dock's AI | Manual
         # switch: "ai" (on-device point refine) or "manual" (QGIS vertices).
-        # The dock defaults a fresh review to "ai"; the plugin tracks it here so
-        # a selection routes to the right session without asking the dock.
-        self._correct_method = "ai"
+        # The dock opens a fresh review on the served default (Manual unless the
+        # server says otherwise); the plugin tracks it here so a selection routes
+        # to the right session without asking the dock.
+        self._correct_method = "manual"
         # AI-assisted Add lane state: True while a click on empty ground starts a
         # fresh outline, and True while a background install for Add is running.
         # Cleared on every session exit so it never leaks into the next one.
@@ -91,8 +92,16 @@ class AutoCorrectMixin:
                 dock.reset_review_steps()
             except (RuntimeError, AttributeError):
                 pass
-        # reset_review_steps() puts the dock switch back to "ai" (no signal), so
-        # the plugin mirror already matches; name the polygon by the run class.
+        # reset_review_steps() puts the dock switch back to the served default
+        # WITHOUT emitting, so read the mirror back instead of assuming it. The
+        # seed above is a plain constant and the served value can disagree with
+        # it, which would route a click to the wrong session for a whole review.
+        if dock is not None:
+            try:
+                self._correct_method = dock.get_correct_method()
+            except (RuntimeError, AttributeError):
+                pass
+        # Name the polygon by the run class.
         self._apply_correct_class_label()
 
     def _apply_correct_class_label(self) -> None:
@@ -271,6 +280,12 @@ class AutoCorrectMixin:
             # to select it), unless a reshape is open or a worker is running.
             self._arm_correct_select()
             self._warm_local_ai_for_correct()
+            if self._correct_ai_route_is_remote():
+                # The AI fix will answer off the machine. Ask for one now, so
+                # a review reopened after an idle gap does not spend its first
+                # fix click waiting out the machine start. Debounced and
+                # silent like every other caller of the ping.
+                self._maybe_warmup_auto()
         if step not in self._auto_review_steps_seen:
             self._auto_review_steps_seen.add(step)
             try:
@@ -338,6 +353,13 @@ class AutoCorrectMixin:
             try:
                 dock.set_auto_review_active(True)
                 dock.set_zero_detection_entry(True)
+                # Put Confidence back. Only the finalize build and the restore
+                # path ever set this, so a zero-detection review inherited
+                # whatever the LAST run decided: after a flat-scored run it
+                # opened carrying "this model rates every object the same"
+                # about a run with no objects, and a polygon drawn here then
+                # left a normal review with no Confidence control at all.
+                dock.set_auto_review_score_useful(True)
             except (RuntimeError, AttributeError):
                 pass
         # Land on Correct (step 1): a run that found nothing needs the "add
@@ -370,11 +392,11 @@ class AutoCorrectMixin:
         if self._shape_edit_mode == KIND_MERGE:
             self._commit_merge_picks()
 
-    def _set_correct_status(self, kind: str, text: str, undo: bool = False,
+    def _set_correct_status(self, kind: str, text: str,
                             action: str = "") -> None:
         try:
             self.dock_widget.set_correct_status(
-                kind, text, undo_visible=undo, action_text=action)
+                kind, text, action_text=action)
         except (RuntimeError, AttributeError, TypeError):
             pass
 
@@ -410,10 +432,15 @@ class AutoCorrectMixin:
             self.undo_qgis_bridge_edit()
             return
         # During a live AI fix session, Undo unwinds the last session gesture
-        # (point, reshape, delete); only once the session has nothing left to
-        # undo does it fall through to the review's edit journal.
+        # (point, reshape, delete).
         if self._ai_session_has_undo():
             self._on_undo()
+            return
+        # A live AI session with nothing placed yet owns Undo all the same: the
+        # journal below belongs to the polygons corrected BEFORE it, and undoing
+        # one of those under an open session reverts a shape the user is not
+        # looking at. Same rule as the bridge branch above.
+        if getattr(self, "_refine_handoff_active", False):
             return
         entry = self._auto_correct_journal.undo()
         if entry is None:
@@ -540,6 +567,14 @@ class AutoCorrectMixin:
                 features.append((QgsGeometry(geom), score, det_id))
         except (RuntimeError, AttributeError):
             return 0
+        # The read above is the last thing that needs the Manual session's
+        # subset (plugin/bridge_isolation.py). Everything below republishes the
+        # layer and has to see every detection, so the isolation comes off here
+        # rather than at the end of the teardown. Idempotent and a no-op when no
+        # session was running.
+        clear_isolation = getattr(self, "_clear_bridge_isolation", None)
+        if callable(clear_isolation):
+            clear_isolation()
         from ...core.review_corrections import unique_object_ids
 
         existing_objects = list(getattr(self, "_auto_objects", None) or [])

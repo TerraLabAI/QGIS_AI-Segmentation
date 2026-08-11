@@ -98,6 +98,19 @@ class DockAutoReviewPanelMixin:
         # The View-as block sits at the dock bottom, outside the panel, so it
         # no longer inherits the panel's visibility: drive it here.
         self.auto_review_view_row.setVisible(active)
+        # Credits can hit zero DURING the run, and the paywall swap hides the
+        # section this panel is built inside. Claim the page as the review
+        # opens rather than waiting for the next full refresh, or the user
+        # meets a price list where their paid results should be. On the way
+        # out, the full refresh puts the paywall back if it is owed.
+        try:
+            if active:
+                self.auto_upsell_card.setVisible(False)
+                self.auto_controls_section.setVisible(True)
+            else:
+                self._update_auto_page_state()
+        except (RuntimeError, AttributeError):
+            pass
         # The locked, greyed layer header is dead weight during review (the
         # raster cannot change until the review ends anyway): hide it so the
         # result + filters own the panel. Restored on review end and, for hard
@@ -200,6 +213,39 @@ class DockAutoReviewPanelMixin:
             # the dials reach Shapes/Export freely from there.
             self.set_auto_review_step(1)
         self._update_auto_detect_enabled()
+
+    def set_auto_review_score_useful(self, useful: bool) -> None:
+        """Show or drop the whole Confidence group on the Keep step.
+
+        A run whose objects all came back rated the same carries no ranking to
+        filter on: every cutoff under the shared score keeps all of them, and
+        the next step up keeps none. The control is a cliff wearing the clothes
+        of a dial, and the strip above it sells one bar as a distribution. So
+        the group leaves the step and one line takes its place. Size stays: it
+        is the filter that still means something there.
+        """
+        from .guidance import HINT_REVIEW_CONFIDENCE, is_hint_dismissed
+        from .styles import _msg_label_qss, _msg_text
+        try:
+            for widget in (self.auto_review_confidence_header,
+                           self.auto_conf_histogram,
+                           self.auto_review_confidence_slider,
+                           self.auto_review_confidence_ends):
+                widget.setVisible(useful)
+            # The tip is dismissible, so it may only come back for a user who
+            # never closed it: a plain setVisible(True) would resurrect it.
+            self.auto_confidence_hint.setVisible(
+                useful and not is_hint_dismissed(HINT_REVIEW_CONFIDENCE))
+            if not useful:
+                self.auto_review_flat_score_note.setStyleSheet(
+                    _msg_label_qss("info"))
+                self.auto_review_flat_score_note.setText(_msg_text("info", tr(
+                    "This model rates every object the same, so filtering by "
+                    "confidence would show all of them or none. Use Size "
+                    "below, or fix objects in the next step.")))
+            self.auto_review_flat_score_note.setVisible(not useful)
+        except (RuntimeError, AttributeError):
+            pass
 
     def _format_auto_review_count(self, visible: int, total: int, pct: int,
                                   size_bound: bool = False) -> str:
@@ -497,9 +543,10 @@ class DockAutoReviewPanelMixin:
         try:
             self._qgis_bridge_active_ui = False
             # Re-read, never hardcode: the dock is built before the first
-            # configuration fetch lands, so opening a review is the moment the
-            # served choice can actually take effect.
-            from .auto_correct_build import correct_default_method
+            # configuration fetch lands, and a sign-in or a finished install
+            # since the last review changes which method is ready, so opening a
+            # review is the moment the choice can actually take effect.
+            from .correct_method_default import correct_default_method
             self.set_correct_method(correct_default_method())
             self.set_correct_selection(0)
             self.set_correct_session_active(False)

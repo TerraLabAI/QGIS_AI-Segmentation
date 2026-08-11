@@ -1,0 +1,294 @@
+"""Spending one credit for one object saved in Semi-Auto on TerraLab's servers.
+
+The rule is in ``core/manual_object_credit.py``; what is here is the wiring:
+when a session opens a ledger, when a Save is refused for want of credits, and
+when the charge goes out.
+
+Three properties this file exists to keep true:
+
+- **A session answered on the user's own machine never reaches any of it.** No
+  ledger, no gate, no request. The offline mode stays free and unlimited.
+- **The charge follows the save, it never blocks it.** The request goes out on a
+  background task, so the polygon lands on the canvas at the speed it always
+  did. The gate that CAN refuse runs before the save and reads a balance the
+  plugin already holds, so it costs no network either.
+- **The server's answer is what moves the credit ring.** Nothing here subtracts
+  one locally: a figure the user reads has to be one the account agrees with.
+
+Part of AISegmentationPlugin (see ai_segmentation_plugin.py); methods here are
+plain mixin members and state lives on the plugin instance.
+"""
+from __future__ import annotations
+
+from qgis.core import Qgis, QgsMessageLog
+
+from ...core.i18n import tr
+
+
+class ManualObjectBillingMixin:
+    """Opens the session ledger, gates a Save, and sends the charge."""
+
+    # -- session lifetime ---------------------------------------------------
+
+    def _start_manual_credit_session(self) -> None:
+        """Open a ledger for a Semi-Auto session whose clicks travel.
+
+        Called at Start, after the route is decided. A session that stays on the
+        machine gets no ledger at all, which is what makes every question below
+        answer "free" without a single check of its own.
+        """
+        self._manual_credit_ledger = None
+        # The engine row counts what THIS session spent, so it starts at zero
+        # even when the account balance did not move.
+        self._manual_cloud_objects_charged = 0
+        self._tell_dock_manual_spend(0)
+        if not self._manual_cloud_predictor_active():
+            return
+        try:
+            from ...core.manual_object_credit import ManualObjectLedger
+
+            self._manual_credit_ledger = ManualObjectLedger()
+        except Exception as err:  # noqa: BLE001 -- no ledger means no billing
+            QgsMessageLog.logMessage(
+                f"Semi-Auto: the object ledger did not open ({err})",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            return
+        # The gate below judges against the balance the plugin already holds, so
+        # a session that starts on a figure from an hour ago would refuse a Save
+        # the account can afford. One read at Start, off the GUI thread.
+        try:
+            self._refresh_auto_credits()
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _end_manual_credit_session(self) -> None:
+        """Close the ledger. What it recorded is spent and does not carry over:
+        a new session is a new key, and an object saved again in it is a new
+        object as far as the account is concerned."""
+        self._manual_credit_ledger = None
+
+    def _note_manual_cloud_answer(self) -> None:
+        """One click came back from the network. Runs on the thread that
+        answered the click, so it writes one bool and nothing else."""
+        ledger = getattr(self, "_manual_credit_ledger", None)
+        if ledger is not None:
+            ledger.note_remote_answer()
+
+    # -- the gate -----------------------------------------------------------
+
+    def _manual_credit_balance(self):
+        """Credits this account has left, or ``None`` when it is not known.
+
+        Read from the usage payload the plugin already holds, never from the
+        network: this answers inside a Save handler, and a Save may not wait on
+        a request.
+        """
+        try:
+            from ...core.credit_gate import credit_snapshot
+
+            balance, _is_free = credit_snapshot(getattr(self, "_last_usage", None) or {})
+            return balance
+        except Exception:  # noqa: BLE001 -- an unreadable balance is unknown
+            return None
+
+    def _manual_save_is_billable(self, det_id) -> bool:
+        """Whether saving this object right now would spend a credit."""
+        ledger = getattr(self, "_manual_credit_ledger", None)
+        if ledger is None:
+            return False
+        # The Automatic review's Correct step commits through this same Save.
+        # A correction has never cost a credit and must not start now: the tile
+        # that produced the object was already paid for once.
+        if getattr(self, "_refine_handoff_active", False):
+            return False
+        try:
+            return bool(ledger.object_is_billable(det_id))
+        except Exception:  # noqa: BLE001 -- an unreadable ledger bills nothing
+            return False
+
+    def _manual_save_refused_for_credits(self, det_id) -> bool:
+        """True when this Save must not happen because the balance is empty.
+
+        The shape on screen is left exactly where it is. The user has three ways
+        on from here and the line below names two of them: put the clicks back
+        on their own computer, or add credits. The third is to do nothing, and
+        nothing is lost by it.
+        """
+        if not self._manual_save_is_billable(det_id):
+            return False
+        from ...core.manual_object_credit import save_affordable
+
+        if save_affordable(self._manual_credit_balance()):
+            return False
+        # The figure this refusal stands on can be minutes old, and the usual
+        # reason it is wrong is the user having just paid. Read it again so the
+        # next attempt is judged on a fresh one.
+        try:
+            self._refresh_auto_credits()
+        except (RuntimeError, AttributeError):
+            pass
+        self._say_manual_credits_exhausted()
+        return True
+
+    def _say_manual_credits_exhausted(self) -> None:
+        """Refuse the save, in the panel and once in the message bar.
+
+        The panel is what carries it: the refusal box names the price and the
+        offer under it names the two ways on. The message bar line stays as the
+        thing that catches an eye already on the map, where the click was.
+        Never a dialog: the shape is still there and nothing is lost.
+        """
+        try:
+            self.dock_widget._update_full_ui()
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110 -- no dock, or one being torn down
+        try:
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation",
+                tr("No credits left. Each object you save with Cloud AI costs "
+                   "one credit. Switch to the offline AI to keep working for "
+                   "free, or upgrade from the panel."),
+                level=Qgis.MessageLevel.Warning,
+                duration=8,
+            )
+        except (RuntimeError, AttributeError):
+            pass
+
+    # -- the charge ---------------------------------------------------------
+
+    def _charge_manual_saved_object(self, det_id) -> None:
+        """Send the credit for an object that has just been saved.
+
+        Fire and forget by design: the polygon is already on the canvas, and a
+        user waiting on a request to see their own shape is the thing this mode
+        exists to avoid. A charge that never lands leaves the object billable,
+        so the next Save of it tries again.
+        """
+        ledger = getattr(self, "_manual_credit_ledger", None)
+        if ledger is None or not self._manual_save_is_billable(det_id):
+            return
+        try:
+            from ...core.activation_manager import get_auth_header
+
+            # Read on the GUI thread. The key store is not something to reach
+            # for from the task below.
+            auth = get_auth_header()
+        except Exception:  # noqa: BLE001 -- no key, no charge
+            auth = None
+        if not auth:
+            return
+        try:
+            from qgis.core import QgsApplication
+
+            from ...api.terralab_client import TerraLabClient
+            from ...workers.generic_request_task import GenericRequestTask
+
+            client = TerraLabClient()
+            session_id = ledger.session_id
+            index = ledger.wire_index(det_id)
+            task = GenericRequestTask(
+                tr("Saving object"),
+                lambda: client.charge_saved_object(auth, session_id, index),
+                hidden=True,
+            )
+            task.succeeded.connect(
+                lambda payload, oid=det_id: self._on_manual_charge_done(oid, payload))
+            task.failed.connect(
+                lambda message, code, oid=det_id:
+                    self._on_manual_charge_failed(oid, message, code))
+            self._manual_charge_tasks.append(task)
+            QgsApplication.taskManager().addTask(task)
+        except Exception as err:  # noqa: BLE001 -- a charge never breaks a save
+            QgsMessageLog.logMessage(
+                f"Semi-Auto: the object charge did not go out ({err})",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+
+    def _tell_dock_manual_spend(self, saved: int) -> None:
+        """Push the session's billed count to the engine row. Best-effort: a
+        counter is never a reason for a save to fail."""
+        try:
+            self.dock_widget.set_manual_cloud_session_spend(int(saved))
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110 -- no dock, or one being torn down
+
+    def _on_manual_charge_done(self, det_id, payload) -> None:
+        """The account took the credit. Record it and show the new balance."""
+        self._forget_manual_charge_tasks()
+        ledger = getattr(self, "_manual_credit_ledger", None)
+        if ledger is not None:
+            ledger.mark_charged(det_id)
+            # Count the charges the account CONFIRMED, never the saves we sent:
+            # the row is a spend figure, and a figure the user reads has to be
+            # one the account agrees with.
+            self._manual_cloud_objects_charged = int(
+                getattr(self, "_manual_cloud_objects_charged", 0)) + 1
+            self._tell_dock_manual_spend(self._manual_cloud_objects_charged)
+        usage = (payload or {}).get("usage") if isinstance(payload, dict) else None
+        if isinstance(usage, dict) and usage:
+            try:
+                self._apply_usage_payload(usage)
+            except (RuntimeError, AttributeError):
+                pass
+
+    def _on_manual_charge_failed(self, det_id, message: str, code: str) -> None:
+        """The charge did not stand.
+
+        A network or server failure is left alone: the object stays billable and
+        the user keeps their polygon. An account that is out of credits is the
+        one case worth acting on, because every click after it would be GPU
+        nobody is paying for. The session's clicks go back to the machine, and
+        the user is told in one line.
+        """
+        self._forget_manual_charge_tasks()
+        exhausted = code in ("FREE_DETECTIONS_EXHAUSTED", "QUOTA_EXCEEDED",
+                             "TRIAL_EXHAUSTED")
+        QgsMessageLog.logMessage(
+            f"Semi-Auto: object charge refused ({code or 'unknown'})",
+            "AI Segmentation",
+            level=Qgis.MessageLevel.Warning if exhausted else Qgis.MessageLevel.Info)
+        if not exhausted:
+            return
+        try:
+            self._end_cloud_click_session()
+        except Exception:  # noqa: BLE001 -- the session stands either way  # nosec B110
+            pass
+        self._end_manual_credit_session()
+        self._say_manual_credits_exhausted()
+        try:
+            self._refresh_auto_credits()
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _cancel_manual_charge_tasks(self) -> None:
+        """Teardown: let go of every charge still out.
+
+        Signals first, so a result landing after the controller has come apart
+        cannot reach a torn-down dock. The task itself is only asked to stop and
+        is never terminated: the manager drains a network-bound task on its own,
+        and killing one wedged in a socket crashes QGIS.
+        """
+        from ...core.qt_compat import safe_disconnect
+
+        for task in getattr(self, "_manual_charge_tasks", []) or []:
+            safe_disconnect(task, "succeeded")
+            safe_disconnect(task, "failed")
+            try:
+                if task.is_active():
+                    task.cancel()
+            except Exception:  # nosec B110 -- teardown must never raise
+                pass
+        self._manual_charge_tasks = []
+
+    def _forget_manual_charge_tasks(self) -> None:
+        """Drop the references to charges that have finished.
+
+        The plugin holds them only so a task is not garbage-collected while the
+        task manager still owns it. Anything no longer running is free to go.
+        """
+        try:
+            self._manual_charge_tasks = [
+                task for task in getattr(self, "_manual_charge_tasks", [])
+                if task.is_active()
+            ]
+        except (RuntimeError, AttributeError):
+            self._manual_charge_tasks = []

@@ -29,6 +29,11 @@ _TIMEOUT_WARMUP = 5_000              # ms: warmup is a tiny best-effort ping
 _TIMEOUT_TRANSLATE = 6_000
 # ms: final-output upload can carry a few MB of geometry; background task only.
 _TIMEOUT_RUN_EXPORT = 60_000
+# ms past a request's own deadline before the wall-clock backstop ends the wait.
+# setTransferTimeout restarts on every byte, so a server that drips can hold a
+# thread for good; this bounds the whole round trip instead. Sits past Qt's own
+# deadline so it never fires first on a healthy slow answer.
+_WALL_CLOCK_GUARD_MS = 5_000
 
 # Qt6 (QGIS 4) uses scoped enums; Qt5 uses flat. Resolve at import time.
 _NE = getattr(QNetworkReply, "NetworkError", QNetworkReply)
@@ -87,6 +92,42 @@ _SAME_ORIGIN_REDIRECT = getattr(_RedirectPolicy, "SameOriginRedirectPolicy",
 
 def _log_warning(msg: str):
     QgsMessageLog.logMessage(msg, "AI Segmentation", level=Qgis.MessageLevel.Warning)
+
+
+class _WallClockGuard:
+    """End a blocking request that outlives its whole deadline.
+
+    ``QgsBlockingNetworkRequest`` spins its own event loop, so the timer runs
+    inside that loop, on the same thread, and the abort stays thread-affine.
+    Built and stopped around the one call it guards; a timer with no event
+    dispatcher behind it simply never fires, which is the same as not having
+    one.
+    """
+
+    def __init__(self, blocker, timeout_ms: int) -> None:
+        from qgis.PyQt.QtCore import QTimer
+
+        self._blocker = blocker
+        self._timer = QTimer()
+        self._timer.setSingleShot(True)
+        self._timer.setInterval(max(1_000, int(timeout_ms)) + _WALL_CLOCK_GUARD_MS)
+        self._timer.timeout.connect(self._end_it)
+        try:
+            self._timer.start()
+        except (RuntimeError, TypeError):
+            pass  # nosec B110 - no dispatcher on this thread, nothing to time with
+
+    def _end_it(self) -> None:
+        try:
+            self._blocker.abort()
+        except (AttributeError, RuntimeError) as err:
+            _log_warning(f"Could not end a stalled request: {err}")
+
+    def stop(self) -> None:
+        try:
+            self._timer.stop()
+        except RuntimeError:
+            pass  # nosec B110 - already gone with its thread
 
 
 # How long one real answer keeps counting as proof the service is reachable.
@@ -425,12 +466,9 @@ class TerraLabClient:
         the rollback: set the default back to "" to send everyone through
         the backend again).
 
-        The rollback is billing-safe as of 2026-07-27, and was not before: the
-        backend route charged per submission with no key, so each retry of a
-        tile cost another credit, and this client retries a tile up to eight
-        times on a flaky link. Both paths now key the charge on the same
-        (subscription, run, tile), so a tile is paid for once whichever way it
-        is sent."""
+        Either path is safe to switch between: both key the charge on the same
+        (subscription, run, tile), so a tile that is sent twice on a flaky link
+        is still paid for once."""
         # Shipped default: the neutral direct detection domain. Rollback stays
         # a one-line change: set back to "".
         _DEFAULT_DETECTION_DIRECT_URL = "https://inference.terra-lab.ai"
@@ -486,6 +524,165 @@ class TerraLabClient:
             return f"{self.detection_base_url}/predict"
         return f"{self.detection_base_url}/api/ai-segmentation/predict"
 
+    def _detection_refine_url(self) -> str:
+        """Absolute URL for one point-refine round trip. Same host split as the
+        predict call, so the route follows whichever host the run itself used."""
+        if self.detection_direct:
+            return f"{self.detection_base_url}/refine"
+        return f"{self.detection_base_url}/api/ai-segmentation/refine"
+
+    def submit_refine(self, payload: dict, auth: dict, cancel_check=None) -> dict:
+        """One point-refine call: a crop (or the token standing for it) plus the
+        clicks, answered with masks, scores and the mask logits.
+
+        Returns the parsed answer, or {"error", "code"} like every other route.
+        The caller reads the code, because a crop the far side no longer holds
+        is retried with the pixels rather than reported.
+
+        ``cancel_check`` is an optional callable the drawing wait polls: as soon
+        as it answers True the round trip ends and the answer is a refusal, so a
+        session that ends mid-click is not left waiting on it.
+
+        Shares the submit window with the per-tile call: both wait on the same
+        inference, and it is already a server dial, so a slow day moves them
+        together.
+        """
+        body = json.dumps(payload, allow_nan=False).encode("utf-8")
+        # A click is answered on the thread that draws, so the ordinary wait
+        # would stop the map for the length of the round trip. Try the wait
+        # that keeps drawing first; it declines on any thread but that one, and
+        # on anything it cannot do, and then this is the same call as ever.
+        kept = self._refine_while_drawing(body, auth, cancel_check)
+        if kept is not None:
+            return kept
+        return self._request(
+            "POST",
+            self._detection_refine_url(),
+            auth=auth,
+            body=body,
+            timeout_ms=self._submit_timeout(),
+        )
+
+    def _refine_while_drawing(self, body: bytes, auth: dict,
+                              cancel_check=None) -> dict | None:
+        """One click round trip taken without freezing the map, or None when
+        the caller should take its ordinary blocking path.
+
+        Reads the answer exactly the way ``_request`` reads it, so a caller
+        cannot tell which wait it got: the parsed body on success, and the
+        parsed body on a refusal too.
+
+        None is returned ONLY while nothing has been sent. Once the request is
+        out, a wait that ends without an answer comes back as a refusal rather
+        than as None, because the ordinary path would send the same click a
+        second time and the far side may already be working on the first.
+        """
+        try:
+            from .click_transport import ClickPostAbandoned
+        except Exception:  # noqa: BLE001 -- the ordinary path still answers
+            return None
+        try:
+            from qgis.core import QgsApplication
+            from qgis.PyQt.QtCore import QThread
+
+            app = QgsApplication.instance()
+            if app is None or QThread.currentThread() is not app.thread():
+                # Off the drawing thread there is nothing to keep alive, and
+                # the crop hand-over already runs there.
+                return None
+            from .click_transport import post_and_keep_painting
+
+            taken = post_and_keep_painting(
+                self._resolve_url(self._detection_refine_url()), body, auth,
+                self._submit_timeout(), _apply_redirect_policy,
+                cancel_check=cancel_check)
+        except ClickPostAbandoned as gone:
+            return self._refine_abandoned(gone)
+        except Exception:  # noqa: BLE001 -- the ordinary path still answers
+            return None
+        if taken is None:
+            return None
+        raw, http_status, qt_error = taken
+        raw_body = raw.decode("utf-8", "replace")
+        if http_status is not None:
+            note_server_contact()
+
+        if qt_error != _NoError:
+            if http_status is not None and http_status >= 400 and raw_body:
+                try:
+                    parsed = _parse_json_body(raw_body)
+                    if parsed is not None:
+                        return parsed
+                except Exception:  # noqa: BLE001  # nosec B110
+                    pass
+            code, msg = _classify_qt_error(
+                qt_error, "", http_status,
+                service_reachable=server_reached_recently())
+            return {"error": msg, "code": code}
+
+        if http_status is not None and http_status >= 400:
+            # Status only: error bodies can echo request URLs and the message
+            # log must stay free of them.
+            _log_warning(f"HTTP {http_status} error response")
+            try:
+                error_body = _parse_json_body(raw_body)
+            except Exception:  # noqa: BLE001 - any unparsable body is a server error
+                error_body = None
+            if error_body is None:
+                return {"error": f"Server error (HTTP {http_status})", "code": "SERVER_ERROR"}
+            if "error" in error_body:
+                return error_body
+            return {"error": error_body.get("detail", raw_body[:200]),
+                    "code": "SERVER_ERROR"}
+        if not raw_body:
+            return {}
+        try:
+            parsed = _parse_json_body(raw_body)
+        except json.JSONDecodeError:
+            parsed = None
+        if parsed is None:
+            _log_warning(f"Invalid JSON response ({len(raw_body)} bytes)")
+            return {"error": "Invalid server response", "code": "SERVER_ERROR"}
+        return parsed
+
+    @staticmethod
+    def _refine_abandoned(gone) -> dict:
+        """The refusal for a click whose request went out and came back with
+        nothing. A refusal and not a retry: the far side may already be working
+        on it, and a second send would set two operations going on one crop."""
+        if getattr(gone, "cancelled", False):
+            return {"error": tr("The click was cancelled."), "code": "CANCELLED"}
+        message = tr("Request timed out. Check your connection or try again.")
+        try:
+            from ..core.server_dials import dial_copy
+
+            message = dial_copy("network.request_timed_out", message)
+        except Exception:  # noqa: BLE001 -- served copy is best-effort  # nosec B110
+            pass
+        return {"error": message, "code": "TIMEOUT"}
+
+    def submit_refine_register(self, payload: dict, auth: dict) -> dict:
+        """Hand over a crop before any click, answered with the token for it.
+
+        The click path calls this while the user is still choosing where to
+        click, so the click itself sends points and not pixels. A failure here
+        costs nothing: the caller falls back to sending the crop with the click.
+
+        Nobody waits on this one, which is exactly why it needs the wall-clock
+        backstop: a server that answers a byte at a time keeps Qt's own
+        deadline alive for good, and the thread it holds is still running when
+        unload comes to join it.
+        """
+        body = json.dumps(payload, allow_nan=False).encode("utf-8")
+        return self._request(
+            "POST",
+            self._detection_refine_url() + "/register",
+            auth=auth,
+            body=body,
+            timeout_ms=self._submit_timeout(),
+            wall_clock=True,
+        )
+
     def _detection_run_export_url(self) -> str:
         """Absolute URL for the end-of-run export summary. Same host split as
         the predict call."""
@@ -527,6 +724,28 @@ class TerraLabClient:
             return submit_timeout_ms(_TIMEOUT_SUBMIT_DETECTION_DIRECT)
         except Exception:  # noqa: BLE001 -- a dial must never break a submit
             return _TIMEOUT_SUBMIT_DETECTION_DIRECT
+
+    def charge_saved_object(self, auth: dict, session_id: str,
+                            polygon_index: int) -> dict:
+        """Spend one credit for one object saved with its clicks answered here.
+
+        Always the account host, never the direct inference one: the balance
+        lives on the account side, and a session using the direct route still
+        pays on this one.
+
+        Keyed on (session, index) so the server dedupes: a Save re-sent after a
+        dropped answer costs nothing more. The answer carries the account's own
+        usage payload, so the caller sets the credit ring from the server's
+        figure rather than a local subtraction. Off-GUI-thread only.
+        """
+        body = json.dumps(
+            {"session_id": str(session_id), "polygon_index": int(polygon_index)},
+            allow_nan=False,
+        ).encode("utf-8")
+        return self._request(
+            "POST", "/api/ai-segmentation/save-polygon", auth=auth, body=body,
+            timeout_ms=_TIMEOUT_INTERACTIVE, require_body=True,
+        )
 
     def get_usage(self, auth: dict) -> dict:
         return self._request(
@@ -1469,6 +1688,7 @@ class TerraLabClient:
         timeout_ms: int = _TIMEOUT_API,
         allow_list: bool = False,
         require_body: bool = False,
+        wall_clock: bool = False,
     ) -> dict | list:
         """One blocking round trip, returning the parsed body or {"error", "code"}.
 
@@ -1479,7 +1699,13 @@ class TerraLabClient:
         sign-in page, would otherwise be handed to callers as a valid empty
         answer and rendered as a blank plan and no credits. Left off, an
         unreadable 2xx keeps the older behaviour, so nothing on the detection
-        hot path changes shape."""
+        hot path changes shape.
+
+        ``wall_clock`` bounds the WHOLE round trip, not each transfer. Qt's own
+        deadline restarts on every byte received, so a server that answers one
+        byte at a time holds the calling thread for as long as it likes, past
+        the join unload gives it. Set it on any route a background thread takes
+        and nobody waits on."""
         url = self._resolve_url(path)
         req = QNetworkRequest(QUrl(url))
         req.setRawHeader(b"Content-Type", b"application/json")
@@ -1493,13 +1719,18 @@ class TerraLabClient:
                 req.setRawHeader(key.encode("utf-8"), value.encode("utf-8"))
 
         blocker = QgsBlockingNetworkRequest()
-        if method == "GET":
-            err = blocker.get(req, forceRefresh=True)
-        elif method == "POST":
-            payload = QByteArray(body) if body else QByteArray()
-            err = blocker.post(req, payload)
-        else:
-            return {"error": f"Unsupported method: {method}", "code": "CLIENT_ERROR"}
+        guard = _WallClockGuard(blocker, timeout_ms) if wall_clock else None
+        try:
+            if method == "GET":
+                err = blocker.get(req, forceRefresh=True)
+            elif method == "POST":
+                payload = QByteArray(body) if body else QByteArray()
+                err = blocker.post(req, payload)
+            else:
+                return {"error": f"Unsupported method: {method}", "code": "CLIENT_ERROR"}
+        finally:
+            if guard is not None:
+                guard.stop()
 
         if err != QgsBlockingNetworkRequest.ErrorCode.NoError:
             reply = blocker.reply()

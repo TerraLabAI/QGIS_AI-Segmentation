@@ -255,6 +255,27 @@ class AutoReviewParamsMixin:
         pct = max(0, min(_REVIEW_CONF_MAX, pct))
         return pct / 100.0
 
+    def _run_scores_rank_objects(self) -> bool:
+        """Whether this run's scores can order its objects at all.
+
+        False when every object came back rated the same, which some detection
+        paths produce by construction: they answer with a structure rather than
+        a per-object confidence and label every piece of it identically. The
+        review asks this to decide whether its Confidence control is a filter
+        or a cliff, since on a flat run every cutoff under the shared score
+        keeps all the objects and the next one keeps none.
+
+        The tolerance is half of the Confidence spinbox's own 1% step: closer
+        than that and no cutoff the user can dial separates two objects, so the
+        scores do not rank them in any way the control can express. Fewer than
+        two objects ranks by convention, leaving the one-object review exactly
+        as it was.
+        """
+        scores = [s for (_g, s, _a) in self._auto_objects]
+        if len(scores) < 2:
+            return True
+        return (max(scores) - min(scores)) > 0.005
+
     def _review_start_confidence(self) -> float:
         """Starting review cutoff. The default (0.30) unless either
 

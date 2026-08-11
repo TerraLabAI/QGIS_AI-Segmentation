@@ -56,6 +56,10 @@ class SamPredictor:
     _MAX_FOREIGN_LINES = 4
 
     def __init__(self, sam_config: dict, device: str | None = None) -> None:
+        # First statement: __del__ calls cleanup(), which opens on this lock, so
+        # a raise anywhere below would turn every collection of this object into
+        # an AttributeError inside __del__.
+        self._cleanup_lock = threading.Lock()
         self.venv_python = sam_config["venv_python"]
         self.worker_script = sam_config["worker_script"]
         self.checkpoint = sam_config["checkpoint"]
@@ -66,7 +70,14 @@ class SamPredictor:
         self.is_image_set = False
         self.original_size = None
         self.input_size = None  # Only set by SAM1 path
-        self._cleanup_lock = threading.Lock()
+        # The side of the low-resolution logits this model works in. Fixed here
+        # because every checkpoint the on-device path loads uses 256; the
+        # remote path learns its own from the answer, since the model behind it
+        # can change without the plugin.
+        self.low_res_side = 256
+        # This one is the machine, always. Read by anything calibrated on one
+        # model and not the other, the unsure hint first.
+        self.last_answer_was_remote = False
 
         QgsMessageLog.logMessage(
             "SAM Predictor initialized (subprocess mode)",
@@ -239,8 +250,41 @@ class SamPredictor:
             "Click again to restart it.")
 
     def __del__(self):
-        """Ensure subprocess is cleaned up on garbage collection."""
-        self.cleanup()
+        """Drop the subprocess without ever blocking the caller.
+
+        This runs on whatever thread frees the last reference, and a cyclic
+        collection pass makes that the GUI thread. cleanup() takes a mutex and
+        can hold for seconds on its quit handshake, which freezes QGIS with
+        nothing on screen to explain it. So here the lock is only TRIED, the
+        child is only killed, and nothing is waited on. Every explicit
+        cleanup() caller runs on its own thread and still gets the handshake.
+
+        Reads its own attributes through getattr: __init__ can raise before any
+        of them exist, and a raise inside __del__ is only ever a printed
+        warning nobody sees.
+        """
+        lock = getattr(self, "_cleanup_lock", None)
+        if lock is None or not lock.acquire(blocking=False):
+            return  # another thread owns the cleanup: let it finish the work
+        try:
+            proc = getattr(self, "process", None)
+            self.process = None
+            if proc is not None:
+                try:
+                    proc.kill()
+                except Exception:  # noqa: BLE001
+                    pass  # nosec B110
+            stderr_file = getattr(self, "_stderr_file", None)
+            self._stderr_file = None
+            if stderr_file is not None:
+                try:
+                    stderr_file.close()
+                except Exception:  # noqa: BLE001
+                    pass  # nosec B110
+            self._warming_up = False
+            self.is_image_set = False
+        finally:
+            lock.release()
 
     def _launch_process(self) -> bool:
         """Launch the subprocess and send init, but do NOT wait for response."""

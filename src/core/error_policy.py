@@ -23,6 +23,7 @@ the worker thread, the controller and the headless path all import it freely.
 """
 from __future__ import annotations
 
+import re
 from itertools import islice
 
 from .server_dials import ServerDialSet, read_value
@@ -93,6 +94,22 @@ RUN_ERROR_CLASSES = frozenset({
 _MAX_RULES = 32
 _MAX_MARKERS_PER_RULE = 16
 _MAX_MARKER_CHARS = 64
+
+# A backend code as it travels: letters, digits and underscores, read as whole
+# words. The scan is capped, so a long message costs a fixed amount of work.
+_CODE_WORD_RE = re.compile(r"[a-z][a-z0-9_]{2,63}")
+_MAX_CODE_WORDS = 32
+
+
+def _codes_named_in(low: str) -> list[str]:
+    """The whole words of an already lower-cased message, upper-cased.
+
+    Whole words, because a code set is matched by identity. "exhausted" is the
+    tail of the out-of-credits codes AND the last word of the worker's own
+    "submit retries exhausted", and only one of those is a balance the user has
+    to top up.
+    """
+    return [word.upper() for word in islice(_CODE_WORD_RE.findall(low), _MAX_CODE_WORDS)]
 
 
 def _served_classifier_rules() -> list[tuple[tuple[str, ...], str]]:
@@ -170,14 +187,17 @@ def _shipped_error_class(low: str) -> str:
     # user with a good link to check their connection.
     if "internal error" in low:
         return "UNKNOWN"
-    # "exhausted" is here because the free-tier code says nothing else: it
-    # carries neither "credit" nor "quota".
-    if "credit" in low or "quota" in low or "402" in low or "exhausted" in low:
+    # The code the backend sent, matched whole. The free-tier code says nothing
+    # but "exhausted", and reading that word out of free text told a user whose
+    # network died that they had run out of credits.
+    if any(code in EXHAUSTED_CODES for code in _codes_named_in(low)):
+        return "CREDITS_EXHAUSTED"
+    if "credit" in low or "quota" in low or "402" in low:
         return "CREDITS_EXHAUSTED"
     # Transient service-side rejections carry AUTH in their code but are not
     # authentication failures: the session is valid and signing in again
     # changes nothing.
-    if "backend_unavailable" in low or "warming" in low:
+    if "warming" in low:
         return "SERVER"
     if "auth" in low or "401" in low or "403" in low or "sign in" in low:
         return "AUTH"

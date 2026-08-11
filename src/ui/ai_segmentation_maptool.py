@@ -126,7 +126,9 @@ class AISegmentationMapTool(QgsMapTool):
                 pass
         self._markers.clear()
         try:
-            self.canvas.refresh()
+            # update(), not refresh(), for the reason given in
+            # remove_last_marker: refreshing refetches every basemap tile.
+            self.canvas.update()
         except RuntimeError:
             pass
 
@@ -171,8 +173,14 @@ class AISegmentationMapTool(QgsMapTool):
     def start_space_pan(self):
         """Called when Space is pressed - enable temporary pan mode."""
         self._space_panning = True
-        # Record current cursor position as pan reference
-        self._slide_pan.begin_at(self.canvas.mapFromGlobal(QCursor.pos()))
+        # Anchor only when the pointer is over the canvas. Space is caught on
+        # the main window, so a press with the cursor over the dock would
+        # otherwise anchor far outside the viewport and jump the picture by
+        # that distance on the first move. With no anchor the first move over
+        # the canvas sets it.
+        pos = self.canvas.mapFromGlobal(QCursor.pos())
+        if self.canvas.rect().contains(pos):
+            self._slide_pan.begin_at(pos)
         self.canvas.setCursor(QCursor(Qt.CursorShape.OpenHandCursor))
 
     def stop_space_pan(self):
@@ -181,6 +189,10 @@ class AISegmentationMapTool(QgsMapTool):
         self._slide_pan.commit()
         if self._active:
             self.canvas.setCursor(QCursor(Qt.CursorShape.CrossCursor))
+
+    def is_space_panning(self) -> bool:
+        """True between start_space_pan and stop_space_pan."""
+        return self._space_panning
 
     def wheelEvent(self, event):
         # Let the canvas handle wheel events for zoom

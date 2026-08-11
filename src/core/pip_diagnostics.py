@@ -23,6 +23,25 @@ import sys
 
 from .install_config import classifier_markers
 
+
+# The one control a user has to restart an install, named exactly as the panel
+# spells it. Every dead end below ends on this line, so all of them point at
+# the same button.
+def install_again_step() -> str:
+    """The 'press this' line every failed install message ends on.
+
+    The translator is imported inside the call, so this module keeps importing
+    with no QGIS around and a lookup can never break an install message.
+    """
+    text = "Open the AI Segmentation panel and click Install"
+    try:
+        from .i18n import tr
+
+        return tr(text)
+    except Exception:  # noqa: BLE001 -- English is a fine answer here
+        return text
+
+
 # ---------------------------------------------------------------------------
 # SSL / certificate errors
 # ---------------------------------------------------------------------------
@@ -91,7 +110,7 @@ def is_ssl_module_missing(error_text: str) -> bool:
         "can't connect to https url because the ssl module is not available",
         "the ssl module in python is not available",
     ]
-    return any(p in lower for p in patterns)
+    return any(p in lower for p in classifier_markers("ssl_module", patterns))
 
 
 def is_untrusted_certificate_error(error_text: str) -> bool:
@@ -111,7 +130,8 @@ def is_untrusted_certificate_error(error_text: str) -> bool:
         "invalid peer certificate",
         "certificate is not trusted",
     ]
-    return any(p in lower for p in patterns)
+    return any(
+        p in lower for p in classifier_markers("untrusted_certificate", patterns))
 
 
 def get_ssl_error_help(error_text: str = "", cache_dir: str = "") -> str:
@@ -306,6 +326,24 @@ def get_disk_full_help(cache_dir: str = "") -> str:
 # Linux glibc-too-old errors (Ubuntu 18.04, CentOS 7, ...)
 # ---------------------------------------------------------------------------
 
+# "there is no build for this machine", in both installers' words. pip talks
+# about a distribution or a version it could not find; uv names the platform
+# tag instead, so a table with only the pip half reads a uv failure as generic
+# and sends the user back to a button that cannot work.
+_NO_WHEEL_PHRASES = (
+    # pip vocabulary
+    "no matching distribution",
+    "could not find a version",
+    "is not a supported wheel",
+    # uv (rustls) vocabulary: it names the platform tag instead
+    "no wheels",
+    "none of the wheels",
+    "matching platform tag",
+    "compatible with your platform",
+    "compatible with the current platform",
+)
+
+
 def is_glibc_too_old(output: str) -> bool:
     """Detect a glibc older than what modern PyTorch wheels require.
 
@@ -317,20 +355,8 @@ def is_glibc_too_old(output: str) -> bool:
     if re.search(r"glibc_2\.\d+'? not found", lower):
         return True
     has_manylinux = "manylinux" in lower
-    no_match_phrases = (
-        # pip vocabulary
-        "no matching distribution",
-        "could not find a version",
-        "is not a supported wheel",
-        # uv (rustls) vocabulary: it names the platform tag instead
-        "no wheels",
-        "none of the wheels",
-        "matching platform tag",
-        "compatible with your platform",
-        "compatible with the current platform",
-    )
     has_no_match = any(
-        phrase in lower for phrase in classifier_markers("glibc", no_match_phrases))
+        phrase in lower for phrase in classifier_markers("glibc", _NO_WHEEL_PHRASES))
     if has_manylinux and has_no_match:
         return True
     return bool("requires a newer" in lower and "glibc" in lower)
@@ -359,7 +385,9 @@ def is_macos_intel_no_wheel(output: str) -> bool:
 
     PyTorch's last Intel-mac release is 2.2.2 (cp38-cp312). With a newer
     Python (3.13+), no wheel exists and pip/uv report no matching
-    distribution while naming the macosx_x86_64 platform tag.
+    distribution while naming the macosx_x86_64 platform tag. Both
+    vocabularies are read, because uv runs almost every install now and words
+    the same refusal differently.
     """
     if sys.platform != "darwin":
         return False
@@ -367,7 +395,7 @@ def is_macos_intel_no_wheel(output: str) -> bool:
     mentions_torch = "torch" in lower
     no_match = any(
         phrase in lower
-        for phrase in ("no matching distribution", "could not find a version")
+        for phrase in classifier_markers("macos_intel", _NO_WHEEL_PHRASES)
     )
     mentions_x86 = "macosx" in lower and ("x86_64" in lower or "x86-64" in lower)
     return mentions_torch and no_match and mentions_x86
@@ -413,7 +441,7 @@ def is_dll_init_error(output: str) -> bool:
         "dll load failed",
         "_load_dll_libraries",
     ]
-    if not any(p in lower for p in patterns):
+    if not any(p in lower for p in classifier_markers("dll_init", patterns)):
         return False
     # A policy/antivirus block is not a missing-runtime error; let the
     # antivirus classifier own it (it carries the whitelist guidance).
@@ -428,8 +456,8 @@ def get_vcpp_help() -> str:
         "  1. Install the latest VC++ Redistributable (x64):\n"
         "     https://aka.ms/vs/17/release/vc_redist.x64.exe\n"
         "  2. Restart your computer after installing\n"
-        "  3. If the error persists after reboot, click 'Reinstall Dependencies'\n"
-        "     to force a clean reinstall of PyTorch\n"
+        "  3. If the error is still there after the reboot:\n"
+        f"     {install_again_step()} to build the AI engine again\n"
         "  4. Check that no other Python (Anaconda, Miniconda, standalone Python)\n"
         "     puts conflicting torch DLLs on your system PATH.\n"
         "     Open a terminal and run: where python\n"
@@ -704,7 +732,7 @@ def get_crash_help(venv_dir: str) -> str:
         "  1. Temporarily disable real-time antivirus scanning\n"
         "  2. Add an exclusion for the plugin folder:\n"
         f"     {venv_dir}\n"
-        "  3. Click 'Reinstall Dependencies' to recreate the environment\n"
+        f"  3. {install_again_step()} to build it again\n"
         "  4. If the issue persists, run QGIS as administrator"
     )
 
@@ -714,17 +742,17 @@ def get_crash_help(venv_dir: str) -> str:
 # ---------------------------------------------------------------------------
 
 _INVALID_PATH_PATTERNS = [
-    # pip: "OSError: [Errno 22] Invalid argument: 'C:\\Users\\...'"
-    "errno 22",
     # Windows "The filename, directory name, or volume label syntax is
-    # incorrect", numeric forms first (locale-independent).
-    "winerror 123",
-    "os error 123",
+    # incorrect". The numeric form of the same refusal is in the regex below.
     "volume label syntax is incorrect",
-    # Windows path-length limit (260 chars) hit inside a deep venv tree.
-    "winerror 206",
-    "os error 206",
 ]
+
+# The numeric forms: 22 is the rejected path itself (pip prints "[Errno 22]",
+# uv "(os error 22)" for the same thing), 123 is the Windows bad-syntax code
+# and 206 the 260-character path limit. Anchored with a word boundary so a code
+# is never read as the prefix of a longer one.
+_INVALID_PATH_CODE_RE = re.compile(
+    r"(?:errno|os error|winerror)\s+(?:22|123|206)\b")
 
 
 def is_invalid_path_error(output: str) -> bool:
@@ -737,7 +765,10 @@ def is_invalid_path_error(output: str) -> bool:
     260-character path limit.
     """
     lower = output.lower()
-    return any(p in lower for p in _INVALID_PATH_PATTERNS)
+    if _INVALID_PATH_CODE_RE.search(lower):
+        return True
+    return any(
+        p in lower for p in classifier_markers("invalid_path", _INVALID_PATH_PATTERNS))
 
 
 def get_invalid_path_help(cache_dir: str = "") -> str:
@@ -755,7 +786,7 @@ def get_invalid_path_help(cache_dir: str = "") -> str:
         "  2. Or set the AI_SEGMENTATION_CACHE_DIR environment variable to a\n"
         "     short local folder outside any synced area (e.g. C:\\qgis_ai),\n"
         "     then restart QGIS\n"
-        "  3. Click 'Install Dependencies' again"
+        f"  3. {install_again_step()} again"
     )
 
 
@@ -796,7 +827,7 @@ def get_broken_python_runtime_help(cache_dir: str = "") -> str:
         "Please try:\n"
         "  1. Add an antivirus exclusion for the folder:\n"
         f"     {location}\n"
-        "  2. Click 'Install Dependencies' again to rebuild everything"
+        f"  2. {install_again_step()} to build everything again"
     )
 
 
@@ -828,8 +859,7 @@ def get_corrupt_venv_help() -> str:
     return (
         "The plugin's Python environment is damaged (files are missing "
         "inside it).\n\n"
-        "Click 'Install Dependencies' again: the environment will be "
-        "rebuilt from scratch automatically."
+        f"{install_again_step()}. The plugin builds it again from scratch."
     )
 
 
@@ -859,7 +889,7 @@ def get_dependency_conflict_help() -> str:
         "This usually comes from stale cached package data or a Python\n"
         "version the AI packages no longer support.\n\n"
         "Please try:\n"
-        "  1. Click 'Reinstall Dependencies' to rebuild with fresh data\n"
+        f"  1. {install_again_step()} to build again with fresh data\n"
         "  2. If it persists, update QGIS to the latest LTR release\n"
         "     (newer QGIS ships a newer Python) and try again"
     )

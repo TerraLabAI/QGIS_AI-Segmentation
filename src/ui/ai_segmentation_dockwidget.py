@@ -35,6 +35,9 @@ from .dock.auto_run_status import DockAutoRunStatusMixin
 from .dock.build import DockBuildMixin
 from .dock.handoff import DockHandoffMixin
 from .dock.install_lock import DockInstallLockMixin
+from .dock.manual_credit_gate import DockManualCreditGateMixin
+from .dock.manual_engine import DockManualEngineMixin
+from .dock.manual_local_install import DockManualLocalInstallMixin
 from .dock.qgis_bridge import DockQgisBridgeMixin
 from .dock.refine import DockRefineMixin
 from .dock.server_switches import DockServerSwitchesMixin
@@ -100,6 +103,9 @@ class AISegmentationDockWidget(
     DockQgisBridgeMixin,
     DockAboutMixin,
     DockServerSwitchesMixin,
+    DockManualEngineMixin,
+    DockManualLocalInstallMixin,
+    DockManualCreditGateMixin,
     DockActivationMixin,
     DockAutoPromptBoxMixin,
     DockAutoPromptGateMixin,
@@ -151,6 +157,7 @@ class AISegmentationDockWidget(
     # (store-only handler).
     clean_edges_changed = pyqtSignal(float)
     mode_changed = pyqtSignal(object)          # emits Mode value
+    manual_engine_changed = pyqtSignal(bool)   # Semi-Auto engine picked (True = cloud)
     auto_detect_requested = pyqtSignal()       # user clicked Detect in Automatic mode
     auto_library_requested = pyqtSignal()      # user clicked Library (open prompt gallery)
     auto_demo_requested = pyqtSignal()         # first-run hero: load the demo basemap and select it (user runs flow)
@@ -189,6 +196,7 @@ class AISegmentationDockWidget(
     auto_qgis_bridge_undo_requested = pyqtSignal()   # banner: undo the last native edit
     auto_qgis_bridge_gesture_requested = pyqtSignal(str)  # banner buttons: finish / undo_point / cancel / delete_corner
     auto_qgis_bridge_points_changed = pyqtSignal(int)  # banner Points dial: thin the target before hand edits (percent)
+    auto_qgis_bridge_delete_requested = pyqtSignal()  # banner: delete the polygon being hand-edited
     # Correct step, selection-first: act on the one detection picked on the map.
     auto_reshape_ai_requested = pyqtSignal()     # Refine with AI (in-place point-and-click)
     auto_reshape_done_requested = pyqtSignal()   # Done reshaping: fold back into the review
@@ -349,6 +357,15 @@ class AISegmentationDockWidget(
         # setup_group.isVisible(), which an Automatic round trip would wipe -
         # leaving the Manual page empty over a still-running background install.
         self._setup_section_wanted = False
+        # The offline-install window, while one is up. It is the door to the
+        # download in Semi-Auto (see dock/manual_local_install.py), and the
+        # panel reads it to know whether the install is already on screen.
+        self._manual_install_dialog = None
+        # True once an offline install has actually run and come back short.
+        # The panel's install card is hidden while a second engine is on offer,
+        # and this is the one state that brings it back: the card carries the
+        # real message and the Retry button.
+        self._manual_install_failed = False
         self._segmentation_active = False
         self._has_mask = False
         self._saved_polygon_count = 0

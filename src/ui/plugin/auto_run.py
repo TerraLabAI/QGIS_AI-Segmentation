@@ -93,17 +93,18 @@ class AutoRunMixin:
                 return tr(
                     "This image has no position on the map, so Automatic "
                     "cannot place what it finds. Give it one with the QGIS "
-                    "Georeferencer, or use Manual mode on it as is."
+                    "Georeferencer, or use Semi-Auto mode on it as is."
                 )
             if self._raster_is_rotated(layer):
-                # Never offer Manual here: manual_workflow refuses a rotated
-                # raster on the same detector, so the old "or use Manual mode"
-                # sent the user to a second refusal. "Warp (Reproject)" is the
-                # Processing algorithm name and has been stable across every
-                # supported QGIS.
+                # Never offer the other mode here: manual_workflow refuses a
+                # rotated raster on the same detector, so the old "or use the
+                # other mode" sent the user to a second refusal. "Warp
+                # (Reproject)" is the Processing algorithm name and has been
+                # stable across every supported QGIS.
                 return tr(
                     "This raster is rotated. Run Warp (Reproject) on it to "
-                    "straighten it first. Manual mode cannot read it either."
+                    "straighten it first. Semi-Auto mode cannot read it "
+                    "either."
                 )
         return None
 
@@ -217,6 +218,30 @@ class AutoRunMixin:
         finally:
             ds = None
 
+    def _offer_automatic_setup(self, reason: str) -> None:
+        """Offer the light setup right where Automatic hits the wall.
+
+        The dock hides the install card in Automatic, so pointing at a panel
+        button was pointing at nothing. This is the door. What it starts is the
+        short install: Automatic needs numpy and rasterio to read the imagery
+        and nothing else, because the model answers off the machine.
+        """
+        from qgis.PyQt.QtWidgets import QMessageBox
+
+        box = QMessageBox(self.iface.mainWindow())
+        box.setWindowTitle(tr("One-time setup"))
+        box.setText(reason)
+        setup_btn = box.addButton(tr("Set up now"), QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(tr("Not now"), QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(setup_btn)
+        box.exec()
+        if box.clickedButton() is not setup_btn:
+            return
+        # Spelled out rather than inferred: the dock's mode is what
+        # _install_wants_local_model would read, and it is right here today,
+        # but this call site knows the answer and should not depend on that.
+        self._on_install_requested(include_local_model=False)
+
     def _start_auto_detection(self) -> None:
         """Start an automatic cloud detection run for the current zone + layer.
 
@@ -250,9 +275,8 @@ class AutoRunMixin:
             # load rather than its import on some platforms.
             self._tel_detect_blocked("deps_missing")
             deps_msg = tr(
-                "Automatic mode needs the AI environment, and it is missing or "
-                "incomplete. Install the dependencies from the plugin panel, "
-                "then run Detect again."
+                "Automatic mode needs a small one-time setup before it can "
+                "read your imagery. It takes about a minute."
             )
             # The headless/MCP caller only sees a generic "did not start"
             # unless the precise reason is handed back through this field.
@@ -261,11 +285,11 @@ class AutoRunMixin:
                 self.dock_widget.set_auto_status("error", deps_msg)
             except (RuntimeError, AttributeError):
                 pass
-            self.iface.messageBar().pushWarning("AI Segmentation", deps_msg)
             QgsMessageLog.logMessage(
                 f"Auto detection: local packages unavailable ({err})",
                 "AI Segmentation", level=Qgis.MessageLevel.Critical,
             )
+            self._offer_automatic_setup(deps_msg)
             return
 
         # Guard: a worker is still alive (running, or a cancelled one winding
@@ -1837,6 +1861,9 @@ class AutoRunMixin:
                     pass  # nosec B110
                 from .shared import zone_over_free_cap_message
                 return {"_error": zone_over_free_cap_message(cap_area)}
+            # None means canvas numbers. It only stays None while the
+            # conversion below actually reaches the canvas.
+            bbox_crs = None
             if active_layer is not None:
                 try:
                     layer_crs = active_layer.crs()
@@ -1845,15 +1872,19 @@ class AutoRunMixin:
                         xform = QgsCoordinateTransform(layer_crs, canvas_crs, QgsProject.instance())
                         bbox = xform.transformBoundingBox(bbox)
                 except Exception:  # nosec B110 -- antimeridian, invalid CRS
-                    pass
-            self._auto_zone = bbox
+                    # The box never left the layer's CRS. Calling it canvas
+                    # numbers would tile, bill and clip ground nobody asked for.
+                    bbox_crs = active_layer.crs()
+            # Stored with the CRS its numbers are actually in, so a project CRS
+            # change before the run cannot reinterpret them.
+            self._store_auto_zone(bbox, crs=bbox_crs)
             try:
                 if self.dock_widget:
                     self.dock_widget.set_auto_zone_state("zone_set")
             except (RuntimeError, AttributeError):
                 pass
         else:
-            self._auto_zone = None
+            self._store_auto_zone(None)
             self._auto_zone_polygon = None
             try:
                 if self.dock_widget:
@@ -2024,8 +2055,15 @@ class AutoRunMixin:
                 # still returns a saved layer name, not None.
                 if self._auto_review is not None:
                     exported = self._export_auto_review()
-                    if exported is not None:
+                    if exported and exported[0]:
                         result["layer_name"] = exported[0]
+                    else:
+                        # Every write target refused. The contract promises a
+                        # saved layer name, so reporting "completed" with none
+                        # would read as a run whose results are safe somewhere.
+                        return {"_error": "The detections could not be written "
+                                          "to a layer. Check the project folder "
+                                          "is writable and run Finish again."}
                 return {
                     "instances": result.get("instances", 0),
                     "credits_used": result.get("tiles_processed", 0),

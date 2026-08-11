@@ -61,7 +61,45 @@ class ManualHandoffMixin:
         except (RuntimeError, AttributeError):
             pass
 
-    def _manual_env_ready(self) -> bool:
+    def _settle_refine_cloud_consent(self) -> bool:
+        """Ask the cloud notice before the review hands a session to Semi-Auto.
+
+        The review's own lanes answer on imagery Automatic already sent, so
+        they carry no new question. The session this handoff opens is a
+        Semi-Auto session: every click in it uploads a crop, and it outlives
+        the review. That is what the notice covers, so it is asked here.
+
+        False only when the user refuses, which puts the handoff back on the
+        on-device path it took before the remote route existed. Silent and
+        True when the route is not remote or the answer is already yes. A
+        notice that cannot be shown counts as a refusal.
+        """
+        try:
+            if not self._correct_ai_route_is_remote():
+                return True
+            from ...core.manual_engine_choice import (
+                cloud_consent_given,
+                set_cloud_consent,
+            )
+
+            if cloud_consent_given():
+                return True
+            from ..dock.manual_cloud_consent import ask_cloud_consent
+
+            accepted = bool(ask_cloud_consent(self.iface.mainWindow()))
+            set_cloud_consent(accepted)
+        except Exception:  # noqa: BLE001 -- an unaskable notice is a no
+            accepted = False
+        if not accepted:
+            # The hover warm-up may already have put a remote predictor in the
+            # slot. Hand it back, or the session starts on it anyway.
+            try:
+                self._drop_cloud_correct_predictor()
+            except Exception:  # noqa: BLE001 -- teardown never raises  # nosec B110
+                pass
+        return accepted
+
+    def _manual_env_ready(self, allow_remote: bool = True) -> bool:
         """Best-effort 'the local AI is fully installed, or install/load is in
         flight'. Requires BOTH the venv AND the model checkpoint: deps-ready with
         a missing checkpoint leaves the predictor unable to load, which used to
@@ -69,14 +107,31 @@ class ManualHandoffMixin:
         treated as authoritative (it is a one-way cache that never re-validates
         false), so on the click path we re-run the cheap status checks and clear
         a stale positive if the env broke since. Fail-open on any check error so
-        Refine is never wrongly blocked."""
+        Refine is never wrongly blocked.
+
+        The remote route comes first and answers for BOTH review lanes, because
+        this is the gate they share: with it in force there is no venv, no
+        model, no download and nothing to check. ``allow_remote`` is how the
+        Refine handoff says the user refused the cloud notice: the remote route
+        is then not an answer, and the on-device checks below decide, exactly
+        as they did before the route existed."""
+        if allow_remote and self._ensure_cloud_correct_predictor():
+            return True
         if self.predictor is not None:
             return True
         # An install/download/load already in flight counts as ready-in-progress:
         # the deferred handoff completes when it finishes.
-        for w in (self.deps_install_worker, self._verify_worker,
-                  self.download_worker, self._predictor_worker,
-                  self._startup_check_worker):
+        #
+        # Except an install that is not fetching the on-device model. Automatic
+        # asks for one of those, it can run for minutes, and reading it as
+        # ready would open a fix session waiting on a predictor that is never
+        # going to arrive. The verify pass belongs to the same install, so it
+        # follows the same answer.
+        in_flight = [self.download_worker, self._predictor_worker,
+                     self._startup_check_worker]
+        if getattr(self, "_install_includes_local_model", True):
+            in_flight += [self.deps_install_worker, self._verify_worker]
+        for w in in_flight:
             if w is not None and w.isRunning():
                 return True
         # The local model packages must be there. get_venv_status below no
@@ -160,10 +215,15 @@ class ManualHandoffMixin:
             self._reshape_open_anchor = (pt.x(), pt.y())
         else:
             self._reshape_open_anchor = None
+        # Cloud gate first: this opens a Semi-Auto session, and on the remote
+        # route every click in it uploads a crop. Asked before the env gate so
+        # a refusal is a plain on-device handoff, offer of the setup included,
+        # instead of a session with no model in the slot.
+        cloud_ok = self._settle_refine_cloud_consent()
         # Env gate: without the local AI the predictor never arrives. Offer the
         # one-time setup, which takes the review until it ends and then opens
         # this polygon itself.
-        if not self._manual_env_ready():
+        if not self._manual_env_ready(allow_remote=cloud_ok):
             if self._local_ai_install_pending():
                 return  # a setup is already running for this review
             # A setup already ran this session and the model still would not
@@ -236,7 +296,11 @@ class ManualHandoffMixin:
         # the old _on_mode_changed handoff branch. _enter_manual_refine_session
         # imports the detections (or defers on a still-loading predictor); the
         # target object is opened afterwards, here or from _on_predictor_loaded.
-        self._ensure_interactive_setup()
+        # Skipped on the remote route: its only job is to open the on-device
+        # install UI, and asking for it there is the install prompt this route
+        # exists to remove.
+        if not self._cloud_correct_predictor_active():
+            self._ensure_interactive_setup()
         self._enter_manual_refine_session()
         self._open_reshape_target()
 
@@ -769,9 +833,11 @@ class ManualHandoffMixin:
                 QgsMessageLog.logMessage(
                     f"Refine handoff: save fold error: {e}",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning)
-            # The save no-ops while a crop encode is in flight: an object still
-            # OPEN for editing was popped from saved_polygons at open time, so
-            # without this fold it would vanish from the harvest entirely.
+            # An object still OPEN for editing was popped from saved_polygons at
+            # open time, so it only reaches the harvest through this fold. The
+            # save above normally closes it; this covers the case where it held
+            # no shape the save could take (it raised, or the object carried no
+            # geometry yet).
             if self._is_refining_saved_object:
                 self._close_active_edit_to_pending()
             entries = []
@@ -991,6 +1057,9 @@ class ManualHandoffMixin:
         layer = getattr(self, "_handoff_source_layer", None)
         self._refine_handoff_active = False
         self._handoff_source_layer = None
+        # The session is over, so the remote predictor and the crop it holds go
+        # with it. The next fix builds its own; construction costs nothing.
+        self._drop_cloud_correct_predictor()
         # Bring the Automatic canvas overlays back (hidden for the hand-edit).
         self._set_exemplar_bands_visible(True)
         self._set_auto_zone_overlays_visible(True)
@@ -1198,12 +1267,17 @@ class ManualHandoffMixin:
         if self._is_online_layer:
             # An online crop is described by a ground size per pixel rather than
             # a zoom-out factor on native pixels, so the same grid is asked for
-            # in that unit: one ground unit per pixel, floored at the canvas
-            # resolution. Sharing matters more here than anywhere else, since a
-            # crop the model already holds is a set of map tiles NOT fetched.
+            # in that unit: one ground unit per pixel, floored at the resolution
+            # the read itself will use, in the RASTER's units like the bounds.
+            # Sharing matters more here than anywhere else, since a crop the
+            # model already holds is a set of map tiles NOT fetched.
+            try:
+                _canvas_mupp, raster_mupp = self._online_crop_mupp_now(None)
+            except Exception:  # noqa: BLE001 -- an unusable floor is checked downstream
+                raster_mupp = 0.0
             return crop_window_for_object(
                 bounds, 1.0, held_window=held,
-                min_scale=self.iface.mapCanvas().mapUnitsPerPixel(),
+                min_scale=raster_mupp,
                 max_scale=float("inf"))
         return crop_window_for_object(
             bounds, self._get_native_pixel_size(), held_window=held)
@@ -1776,6 +1850,17 @@ class ManualHandoffMixin:
         self.current_score = 0.0
         self.current_transform_info = None
         self.current_low_res_mask = None
+        # What this object cost dies with it. The flag says "the network
+        # answered a click on the object being traced", so an object dropped
+        # here must not leave it standing: the NEXT object would inherit it and
+        # be charged a credit even when this computer traced every one of its
+        # clicks.
+        ledger = getattr(self, "_manual_credit_ledger", None)
+        if ledger is not None:
+            try:
+                ledger.start_next_object()
+            except (RuntimeError, AttributeError):
+                pass
         # Geometry-based edit session state dies with the active object too.
         self._unfrozen_display_polygon = None
         self._refine_geom_history = []
@@ -2195,19 +2280,17 @@ class ManualHandoffMixin:
             return None
 
     def _rasterize_geom_to_crop(self, geom, bounds, img_shape):
-        """Rasterize a raster-CRS geometry onto the crop pixel grid (bool
-        mask), for pixel-space overlap scoring. None on any failure."""
-        try:
-            import json as _json
+        """The shape so far, on the crop's pixel grid. None only when there is
+        no usable geometry or window.
 
-            from rasterio import features
-            from rasterio.transform import from_bounds as transform_from_bounds
-            minx, miny, maxx, maxy = bounds
-            h, w = img_shape
-            tfm = transform_from_bounds(minx, miny, maxx, maxy, w, h)
-            shape = _json.loads(geom.asJson())
-            m = features.rasterize(
-                [(shape, 1)], out_shape=(h, w), transform=tfm, fill=0)
-            return m.astype(bool)
-        except Exception:  # noqa: BLE001 -- scoring aid only, never fatal
+        This started as a scoring aid and became load bearing: it is the prior
+        every anti-shrink rule on a click reads, and each of them gives up
+        quietly without it. It no longer needs rasterio, because the route that
+        needs it most is the one where rasterio is absent by design.
+        """
+        try:
+            from ...core.geometry_raster import rasterize_geometry_to_grid
+
+            return rasterize_geometry_to_grid(geom, bounds, img_shape)
+        except Exception:  # noqa: BLE001 -- a missing prior is never fatal here
             return None

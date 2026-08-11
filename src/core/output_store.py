@@ -231,17 +231,27 @@ def friendly_layer_name(prompt: str) -> str:
 
 
 def _existing_tables(gpkg_path: str) -> set[str] | None:
-    """Tables already present in the GeoPackage, or None when unknown."""
+    """Tables already present in the GeoPackage, or None when unknown.
+
+    A file on disk that reads back with no tables answers "unknown", not
+    "empty". A GeoPackage held by another writer, or half written, lists
+    nothing without raising, and reading that as an empty file hands
+    ``snake_table_name`` a name that is already in use. The write then REPLACES
+    an earlier run's table. "Unknown" costs one probe per candidate name and
+    keeps the run.
+    """
     if not os.path.exists(gpkg_path):
         return set()
     try:
         metadata = QgsProviderRegistry.instance().providerMetadata("ogr")
         if metadata is not None:
-            return {
+            names = {
                 details.name()
                 for details in metadata.querySublayers(gpkg_path)
                 if details.name()
             }
+            if names:
+                return names
     except Exception:  # nosec B110
         pass
     return None
@@ -249,7 +259,11 @@ def _existing_tables(gpkg_path: str) -> set[str] | None:
 
 def _table_exists(gpkg_path: str, table: str, tables: set[str] | None) -> bool:
     if tables is not None:
-        return table in tables
+        # A GeoPackage table name is case-insensitive, so a case-sensitive
+        # match reads "Buildings_20260703" as free for "buildings_20260703".
+        # The write then REPLACES that table and an earlier run is gone.
+        folded = table.lower()
+        return any(name.lower() == folded for name in tables)
     # querySublayers unavailable: probe the single candidate directly.
     try:
         probe = QgsVectorLayer(f"{gpkg_path}|layername={table}", "probe", "ogr")

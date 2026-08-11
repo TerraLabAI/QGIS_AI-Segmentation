@@ -415,8 +415,12 @@ class DockAutoReviewBuildMixin:
         lay.setSpacing(6)
 
         # This label IS the step's head, so it wears the shared heading style
-        # and lines up with the titles on the other two steps.
-        _conf_hdr = QHBoxLayout()
+        # and lines up with the titles on the other two steps. The row is a
+        # widget rather than a bare layout so the whole Confidence group can be
+        # taken off the step in one call (see set_auto_review_score_useful).
+        self.auto_review_confidence_header = QWidget()
+        _conf_hdr = QHBoxLayout(self.auto_review_confidence_header)
+        _conf_hdr.setContentsMargins(0, 0, 0, 0)
         _conf_review_lbl = QLabel(tr("Confidence"))
         _conf_review_lbl.setStyleSheet(_REVIEW_HEADING_QSS)
         _conf_hdr.addWidget(_conf_review_lbl)
@@ -435,7 +439,7 @@ class DockAutoReviewBuildMixin:
         self.auto_review_confidence_spin.setMinimumWidth(62)
         self.auto_review_confidence_spin.setMaximumWidth(78)
         _conf_hdr.addWidget(self.auto_review_confidence_spin)
-        lay.addLayout(_conf_hdr)
+        lay.addWidget(self.auto_review_confidence_header)
 
         # Live readout of the cutoff, INSIDE the group it describes: ONE compact
         # line ("✓ 158 of 352 shown · 194 below 65%", built by
@@ -447,6 +451,16 @@ class DockAutoReviewBuildMixin:
         self._auto_review_count_label.setStyleSheet(
             "font-size: 11px; color: palette(text);")
         lay.addWidget(self._auto_review_count_label)
+
+        # Stands in for the whole Confidence group on a run whose objects all
+        # came back rated the same. There the control is not a filter but a
+        # cliff (every cutoff under the shared score shows all of them, the
+        # next step shows none), so the step drops it and says why. Hidden on
+        # every ordinary run.
+        self.auto_review_flat_score_note = QLabel("")
+        self.auto_review_flat_score_note.setWordWrap(True)
+        self.auto_review_flat_score_note.setVisible(False)
+        lay.addWidget(self.auto_review_flat_score_note)
 
         # Score distribution strip above the slider: bars right of the cutoff are
         # bright (kept), left are dimmed (filtered out). Visual only.
@@ -476,8 +490,10 @@ class DockAutoReviewBuildMixin:
         lay.addWidget(self.auto_review_confidence_slider)
 
         # End labels so the slider direction reads at a glance (mirrors the
-        # detail slider's Coarse/Fine ends).
-        _conf_ends = QHBoxLayout()
+        # detail slider's Coarse/Fine ends). A widget, not a bare layout, for
+        # the same reason as the header row above.
+        self.auto_review_confidence_ends = QWidget()
+        _conf_ends = QHBoxLayout(self.auto_review_confidence_ends)
         _conf_ends.setContentsMargins(2, 0, 2, 0)
         _conf_left = QLabel(tr("More objects"))
         _conf_left.setStyleSheet(
@@ -488,7 +504,7 @@ class DockAutoReviewBuildMixin:
         _conf_ends.addWidget(_conf_left)
         _conf_ends.addStretch()
         _conf_ends.addWidget(_conf_right)
-        lay.addLayout(_conf_ends)
+        lay.addWidget(self.auto_review_confidence_ends)
 
         # What the number on the spinbox actually is. Nothing on the step said
         # it: a user reading "30%" had no way to know it is the AI rating its

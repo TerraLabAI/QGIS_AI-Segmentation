@@ -33,6 +33,7 @@ from .tile_manager import (
     AUTO_SEED_TILE_CAP,
     DEFAULT_AUTO_TILE_BUDGET,
     DEFAULT_SEED_MUPP_M,
+    DETAIL_MAX_OBJECT_TILE_FRAC,
     MASK_SCALE_MIN_WIDTH_PX,
     NATIVE_OVERSAMPLE_MAX,
     QUALITY_FLOOR_MUPP_M,
@@ -101,7 +102,26 @@ def review_correct_default_method(policy: dict | None = None) -> str:
     there can never be moved by a deploy however the server is edited.
     """
     val = review_policy(policy).get("correct_default_method")
-    return val if val in ("ai", "manual") else "ai"
+    return val if val in ("ai", "manual") else "manual"
+
+
+def review_correct_default_method_ready(policy: dict | None = None) -> str:
+    """Which fix method the Correct step opens on when the AI one is already
+    usable: ``"ai"`` or ``"manual"``.
+
+    A SECOND key beside ``correct_default_method``, never a replacement. The
+    plain one answers for every plugin version and must keep its meaning, so
+    this one carries the case the older versions cannot judge: the AI method in
+    reach with nothing left to install. The caller decides that part locally
+    and only asks here when the answer is yes.
+
+    One generic fallback, and it is the plain default: an absent key leaves the
+    step exactly where it opens today.
+    """
+    val = review_policy(policy).get("correct_default_method_ready")
+    if val in ("ai", "manual"):
+        return val
+    return review_correct_default_method(policy)
 
 
 def review_noise_floor(policy: dict | None = None) -> float:
@@ -116,6 +136,27 @@ def review_noise_floor(policy: dict | None = None) -> float:
         if 0.0 <= f < 1.0:
             return f
     return 0.05
+
+
+def click_unsure_below(policy: dict | None = None) -> float:
+    """Predicted-IoU floor under which a click's answer is called unsure.
+
+    The model returns a score with every mask, and that score is a real but
+    weak failure signal: it ranks bad answers above good ones more often than
+    not, and no floor separates them cleanly. Any floor tight enough to be
+    worth showing also marks some good outlines for nothing.
+
+    Weak enough that the number belongs on the server, not in a release: this
+    reads ``review.click_unsure_below`` and falls back to 0.0, which marks
+    nothing. Turning it on is a blob edit, and turning it off again is another.
+    Never a gate: the answer is always shown, it is only said to be uncertain.
+    """
+    val = review_policy(policy).get("click_unsure_below")
+    if _is_finite_policy_value(val):
+        f = float(val)
+        if 0.0 <= f < 1.0:
+            return f
+    return 0.0
 
 
 def _review_float(key: str, fallback: float, policy: dict | None) -> float:
@@ -404,6 +445,10 @@ def max_concurrent(policy: dict | None = None) -> int:
 
 # Generic client fallbacks for the review.merge scalars. One value per key, the
 # single fallback source when the server policy omits or malforms a scalar.
+#
+# A key here says what it gates, never how it was tuned: the merger has to run
+# with no config at all, so every key needs a shipped number, and this file is
+# public. The tuning lives with the server table that owns these values.
 _MERGE_SCALAR_DEFAULTS: dict[str, float] = {
     "merge_ios": 0.15,
     "dedup_ios": 0.5,
@@ -422,15 +467,11 @@ _MERGE_SCALAR_DEFAULTS: dict[str, float] = {
     # Detection pixels of erosion the added area must survive for a stitched
     # member to count as a real seam complement rather than outline jitter.
     # The sibling above is the fallback when no pixel size is known; this is
-    # the test a real run takes. Too small and cross-tile jitter unions in and
-    # dilates every outline; too large and genuine complements are dropped, so
-    # a building comes back cut flat along the tile grid.
+    # the test a real run takes.
     "jitter_erode_px": 1.0,
     # Share of its own area an object must have painted over by LARGER objects
     # before the end-of-run sweep drops it as a leftover partial reading. It
-    # outscoring every coverer still saves it. Too low and a real small object
-    # squeezed between two sloppy big masks leaves the count; too high and
-    # strip debris survives on top of big roofs.
+    # outscoring every coverer still saves it.
     "cover_threshold": 0.40,
     # Area share of the largest member above which a member counts as a
     # co-extensive reading and may carry the group's score.
@@ -541,6 +582,34 @@ def _profile_pair(entry: object, fallback: tuple[float, float]) -> tuple[float, 
             return float(size_m), float(target_mupp)
         return fallback
     return fallback
+
+
+def object_tile_floor_m(prompt: str, policy: dict | None = None) -> float:
+    """Smallest tile ground side (metres) this object is known to detect at,
+    or 0.0 when the server names none.
+
+    Not the object's own size. Some objects need a fixed amount of ground in
+    frame whatever their width, and under it the detection quietly degrades,
+    so no per-object-size rule can express the bound. Read off the SAME seed
+    tier ``object_profile`` resolves, so one prompt cannot take one tier's
+    resolution and another tier's floor.
+
+    0.0 is the shipped fallback and means the object-size rule alone bounds the
+    fine end of the Precision slider, which is exactly the behaviour before
+    this key existed.
+    """
+    seed = seed_policy(policy)
+    entry: object = seed.get("default_object")
+    tiers = seed.get("object_tiers")
+    if isinstance(tiers, list):
+        tier = first_entry_match(normalize_prompt(prompt), tiers)
+        if tier is not None:
+            entry = tier
+    if isinstance(entry, dict):
+        val = entry.get("min_tile_ground_m")
+        if _is_finite_policy_value(val) and val > 0:
+            return float(val)
+    return 0.0
 
 
 def mask_scale_policy(policy: dict | None = None) -> dict:
@@ -735,10 +804,12 @@ def free_monthly_allowance(policy: dict | None = None) -> int:
     Only the per-run share cap (``free_run_fraction``) is derived from it;
     nothing here grants or spends anything. Read from
     ``seed.free_monthly_allowance`` so the number can move without a plugin
-    release. Fallback 300, the value every shipped client already assumes.
+    release. Fallback 200, the allowance a new free key gets since the
+    2026-08-11 cutover (keys minted before it keep 300, and their real number
+    reaches the UI through the server's ``free_detections_total``).
     Must stay positive."""
-    val = int(_seed_float("free_monthly_allowance", 300.0, policy))
-    return val if val > 0 else 300
+    val = int(_seed_float("free_monthly_allowance", 200.0, policy))
+    return val if val > 0 else 200
 
 
 def free_zone_max_km2(fallback: float, policy: dict | None = None) -> float:
@@ -773,6 +844,21 @@ def tile_jpeg_quality(fallback: int, policy: dict | None = None) -> int:
 def object_min_px(policy: dict | None = None) -> int:
     """Minimum pixels across for an object to count as resolvable."""
     return int(_seed_float("object_min_px", AUTO_OBJECT_MIN_PX, policy))
+
+
+def detail_max_object_tile_frac(policy: dict | None = None) -> float:
+    """Share of a tile's ground side an object may take before extra detail
+    stops paying for it. Bounds the fine end of the Precision slider.
+
+    Its own key, not the sibling `max_object_tile_frac`: that one guards the
+    SEED, so borrowing it would tie how far a user may push the slider to what
+    a default run costs and returns. `split_risk_tile_frac` marks a later point
+    again, where pieces stop being stitchable, which is what the amber warning
+    claims. Three limits, three keys.
+    """
+    val = _seed_float("detail_max_object_tile_frac",
+                      DETAIL_MAX_OBJECT_TILE_FRAC, policy)
+    return val if 0 < val <= 1 else DETAIL_MAX_OBJECT_TILE_FRAC
 
 
 def sweet_spot_max_mupp(policy: dict | None = None) -> float:
@@ -1260,6 +1346,16 @@ def min_keep_px(fallback: float, policy: dict | None = None) -> float:
     detection pixels so it follows the run's resolution. Fallback: client
     constant; must stay non-negative (0 = never drop)."""
     val = _sat_float("min_keep_px", fallback, policy)
+    return val if val >= 0 else fallback
+
+
+def min_keep_floor_m2(fallback: float, policy: dict | None = None) -> float:
+    """Ground floor under the anti-sliver drop, in square metres. The pixel
+    floor above scales with resolution squared, so on very fine imagery it
+    stops removing anything; this floor keeps a resolution-independent
+    minimum. 0 = the pixel floor alone decides. Fallback: client constant;
+    must stay non-negative."""
+    val = _sat_float("min_keep_floor_m2", fallback, policy)
     return val if val >= 0 else fallback
 
 

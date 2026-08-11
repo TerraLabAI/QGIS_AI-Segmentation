@@ -38,9 +38,13 @@ from .styles import _SUBCARD_MARGINS, _btn_hint_action_qss, _msg_text
 _SETTINGS_PREFIX = "AISegmentation/hints/"
 
 # Hint ids. Listed here so settings can reset them all at once.
-HINT_START_MANUAL = "start_manual_info"
+#
+# There is no Semi-Auto one. Its caption under the Start button was removed on
+# 2026-08-11: the panel already carries the two engine cards and a line saying
+# what a click costs, and a third block of prose on an idle screen was the one
+# thing Yvann kept striking out. The stored key "start_manual_info" is left
+# unclaimed rather than recycled, since it sits dismissed in real profiles.
 HINT_START_AUTO = "start_auto_info"
-HINT_TRY_AUTOMATIC = "try_automatic"
 # Tutorial-discovery nudges: a post-sign-in first-steps banner and
 # a zero-result friction banner, both pointing at the step-by-step guide.
 HINT_TUTORIAL_FIRST_STEPS = "tutorial_first_steps"
@@ -61,9 +65,10 @@ HINT_REVIEW_SHARED_BORDERS = "review_shared_borders"
 # resting hero, which must never be dismissible.
 HINT_REVIEW_QGIS_EDIT = "review_qgis_edit"
 HINT_REVIEW_RESHAPE_GESTURES = "review_reshape_gestures"
-# Which shape the selected-detection actions act on. One line under the action
-# grid, gone for good once the user has read it.
-HINT_REVIEW_CORRECT_TARGET = "review_correct_target"
+# Right-click deletes the polygon under the cursor. Both fix methods have it and
+# neither shows it anywhere else: the gesture has no button and no glyph on the
+# map, so without this line it is only in a tooltip nobody opens.
+HINT_REVIEW_RIGHT_CLICK_DELETE = "review_right_click_delete"
 # The server asks builds older than a floor version to update. Discreet and
 # dismissible: it is guidance, never a wall.
 HINT_UPDATE_RECOMMENDED = "update_recommended"
@@ -79,18 +84,18 @@ HINT_PROMPT_SILENT_SWAP = "prompt_silent_swap"
 HINT_PROMPT_EXAMPLES_DRIVE = "prompt_examples_drive"
 HINT_PROMPT_RUN_PLAN = "prompt_run_plan"
 # The two armed example-draw instructions, on the example card's message line.
-# The amber too-small warning shares that line and stays non-dismissible.
+# The amber too-small warning shares that line and stays non-dismissible, and
+# since 2026-08-11 so do these two: the line is the only place on screen that
+# says how to trace an example, so closing it left every later arming with
+# nothing to read. They keep their ids for the served copy.
 # The stored id carries the GESTURE, not the card: the draw went from dragging a
 # box to tracing a polygon, so a user who dismissed the box wording had never
-# been told the new one. Changing the id shows the new instruction once, which
-# is the whole point of the line. Do not recycle these two ids for a later
+# been told the new one. Do not recycle these two ids for a later
 # rewording that leaves the gesture alone.
 HINT_EXEMPLAR_DRAW_BOX = "exemplar_draw_polygon"
 HINT_EXEMPLAR_EXCLUDE_BOX = "exemplar_exclude_polygon"
 ALL_HINTS = [
-    HINT_START_MANUAL,
     HINT_START_AUTO,
-    HINT_TRY_AUTOMATIC,
     HINT_TUTORIAL_FIRST_STEPS,
     HINT_TUTORIAL_ZERO_RESULTS,
     HINT_EXEMPLAR_TIP,
@@ -99,7 +104,7 @@ ALL_HINTS = [
     HINT_REVIEW_SHARED_BORDERS,
     HINT_REVIEW_QGIS_EDIT,
     HINT_REVIEW_RESHAPE_GESTURES,
-    HINT_REVIEW_CORRECT_TARGET,
+    HINT_REVIEW_RIGHT_CLICK_DELETE,
     HINT_UPDATE_RECOMMENDED,
     HINT_PROMPT_TREE_OR_FOREST,
     HINT_PROMPT_ONE_OBJECT_PER_RUN,
@@ -281,11 +286,18 @@ class DismissibleHint(QWidget):
         visibility_gate=None,
         action_color: tuple[int, int, int] | None = None,
         show_glyph: bool = True,
+        closable: bool = True,
         parent=None,
     ):
         super().__init__(parent)
         self._hint_id = hint_id
         self._show_glyph = bool(show_glyph)
+        # ``closable=False`` for a line that is the ONLY place a gesture is
+        # written down. A tip about a control can go; the sentence saying how
+        # to work the control cannot, or the next time it arms, the screen
+        # explains nothing. It keeps its card and its served copy, and the
+        # server can still suppress it.
+        self._closable = bool(closable)
         body = hint_body(hint_id, body)
         # Optional callable -> bool. When set, a guidance reset only re-shows the
         # hint if the gate allows it. Banners pinned to the dock bottom (always
@@ -311,13 +323,15 @@ class DismissibleHint(QWidget):
         col.setContentsMargins(*_SUBCARD_MARGINS)
         col.setSpacing(4)
 
-        close_btn = QToolButton(card)
-        close_btn.setText("✕")  # x glyph
-        close_btn.setToolTip(tr("Got it - hide this tip"))
-        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.setStyleSheet(_CLOSE_STYLE)
-        close_btn.setFixedSize(scale_px_length(24), scale_px_length(24))
-        close_btn.clicked.connect(self._on_close)
+        close_btn = None
+        if self._closable:
+            close_btn = QToolButton(card)
+            close_btn.setText("✕")  # x glyph
+            close_btn.setToolTip(tr("Got it - hide this tip"))
+            close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            close_btn.setStyleSheet(_CLOSE_STYLE)
+            close_btn.setFixedSize(scale_px_length(24), scale_px_length(24))
+            close_btn.clicked.connect(self._on_close)
 
         # Tip prefix from the taxonomy (the lightbulb, the one emoji kind).
         # show_glyph=False for mode DESCRIPTIONS (what Manual/Automatic do):
@@ -346,11 +360,21 @@ class DismissibleHint(QWidget):
             act_btn.setStyleSheet(_btn_hint_action_qss((r, g, b)))
             act_btn.clicked.connect(self.action.emit)
             head.addWidget(act_btn, 0, Qt.AlignmentFlag.AlignVCenter)
-        head.addWidget(close_btn, 0, Qt.AlignmentFlag.AlignTop)
+        if close_btn is not None:
+            head.addWidget(close_btn, 0, Qt.AlignmentFlag.AlignTop)
         col.addLayout(head)
 
-        self.setVisible(not is_hint_dismissed(hint_id))
+        self.setVisible(not self.is_dismissed())
         _LIVE_HINTS.append(weakref.ref(self))
+
+    def is_dismissed(self) -> bool:
+        """Whether the user closed this card for good.
+
+        Always False on a card with no close button: it never had a way to be
+        dismissed, and a stored dismissal from a build where it did must not
+        keep it off the screen.
+        """
+        return bool(self._closable and is_hint_dismissed(self._hint_id))
 
     def setVisible(self, visible: bool) -> None:  # noqa: N802 -- Qt override
         """Show the card, unless the server asked for this hint to stop.
@@ -408,7 +432,7 @@ class DismissibleHint(QWidget):
             self._card.setStyleSheet(_card_qss(tint, dense))
         self.body_label.setTextFormat(Qt.TextFormat.PlainText)
         self.set_body_text(body, copy_id=hint_id)
-        return not is_hint_dismissed(hint_id)
+        return not self.is_dismissed()
 
     def reshow(self) -> None:
         """Re-show after a guidance reset, honoring the optional visibility gate.

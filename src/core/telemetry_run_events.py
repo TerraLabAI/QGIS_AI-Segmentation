@@ -10,7 +10,7 @@ telemetry.py, and every function here ends in its track() call.
 from __future__ import annotations
 
 from . import telemetry_events as ev
-from .telemetry import track
+from .telemetry import scrub_payload_value, track
 
 
 def track_auto_start_clicked(layer_kind: str, has_credits_known: bool = False) -> None:
@@ -42,10 +42,17 @@ def track_auto_prompt_committed(prompt: str, from_library: bool = False) -> None
     Detect-time guard, so free-form text reaches this call unchanged. That is
     deliberate: the demand mining behind the object catalogue and the pricing
     work reads these rows, and a cleaned value would answer a different
-    question. It does mean the "no PII by construction" guarantee does not hold
-    here, and the privacy FAQ has to keep covering it.
+    question.
+
+    Verbatim, but not raw. The scrubber takes out coordinate tuples, URLs and
+    email addresses and leaves ordinary words alone, so "solar panel" arrives
+    as itself and a pasted address or contact does not arrive at all. That is
+    what makes the row answer the demand question without carrying the one
+    class of content the telemetry contract refuses.
     """
-    track(ev.AUTO_PROMPT_COMMITTED, {"prompt": prompt, "from_library": bool(from_library)})
+    track(ev.AUTO_PROMPT_COMMITTED,
+          {"prompt": scrub_payload_value(prompt),
+           "from_library": bool(from_library)})
 
 
 def track_auto_prompt_steered(prompt: str, suggestion: str = "") -> None:
@@ -89,9 +96,25 @@ def track_exemplar_removed(count_after: int) -> None:
     track(ev.EXEMPLAR_REMOVED, {"count_after": count_after})
 
 
-def track_detail_changed(detail: int, tiles: int, source: str) -> None:
-    """source: "auto_seeded" or "user"."""
-    track(ev.DETAIL_CHANGED, {"detail": detail, "tiles": tiles, "source": source})
+def track_detail_changed(detail: int, tiles: int, source: str,
+                         band_lo: int = 0, band_hi: int = 0,
+                         object_bound: bool = False) -> None:
+    """source: "auto_seeded" or "user".
+
+    band_lo/band_hi are the levels the slider offered when this landed, and
+    object_bound says the fine end came from the named object rather than from
+    the zone or the source resolution. Together they answer the only question
+    the shipped band cannot answer on its own: whether users pile up against
+    the fine end (the wall is too tight) or never reach it (it is not the
+    binding limit). All three are additive; the registry's listed properties
+    stay detail, tiles and source.
+    """
+    track(ev.DETAIL_CHANGED, {
+        "detail": detail, "tiles": tiles, "source": source,
+        "band_lo": band_lo, "band_hi": band_hi,
+        "at_fine_end": bool(band_hi) and detail >= band_hi,
+        "object_bound": bool(object_bound),
+    })
 
 
 def track_auto_detect_started(run_id: str, tiles: int, zone_km2: float,
@@ -251,7 +274,10 @@ def track_zero_assist_clicked(kind: str, from_prompt: str,
                               to_prompt: str = "") -> None:
     track(ev.ZERO_ASSIST_CLICKED, {
         "kind": kind,
-        "from_prompt": from_prompt,
+        # The user's own typed words. Scrubbed like every other prompt that
+        # leaves the machine: the object word is the signal, a pasted address
+        # or contact is not.
+        "from_prompt": scrub_payload_value(from_prompt),
         "to_prompt": to_prompt,
     })
 

@@ -13,11 +13,13 @@ from __future__ import annotations
 import time
 
 from qgis.core import (
+    Qgis,
     QgsCategorizedSymbolRenderer,
     QgsCoordinateReferenceSystem,
     QgsDistanceArea,
     QgsFillSymbol,
     QgsGeometry,
+    QgsMessageLog,
     QgsPointXY,
     QgsProject,
     QgsRendererCategory,
@@ -69,6 +71,12 @@ GROUND_ASPECT_DEAD_BAND = 0.01
 # so a zone wider than this, or one this close to a pole, cannot use one.
 RUN_CRS_MAX_SPAN_DEG = 3.0
 RUN_CRS_MAX_LATITUDE = 80.0
+
+# Where the UTM grid itself stops being defined. Asymmetric, and not the same
+# question as the run bound above: this one says whether a UTM zone exists at
+# all, that one says whether a run's tiles may ride in one.
+UTM_MAX_LATITUDE_N = 84.0
+UTM_MIN_LATITUDE_S = -80.0
 
 # The frame a geographic run falls back to when no local projected CRS holds
 # over its zone. Mercator stretches both axes by the same factor, so one of its
@@ -244,6 +252,11 @@ def pick_output_crs(source_crs, extent, project_crs=None):
     the project CRS when that one is metric, otherwise to the UTM zone under
     the data. Returns the source CRS unchanged if nothing better can be built.
 
+    The project CRS is taken only when its metre is a ground metre HERE, the
+    same test ``pick_run_crs`` applies. A national grid belonging to another
+    part of the world still reports metres, and reading its numbers under this
+    data gives an area and a length that the file's own ``$area`` contradicts.
+
     ``extent`` is a QgsRectangle in ``source_crs``; its centre picks the zone.
     """
     if crs_measures_in_ground_metres(source_crs):
@@ -253,35 +266,44 @@ def pick_output_crs(source_crs, extent, project_crs=None):
             project_crs = QgsProject.instance().crs()
         except (RuntimeError, AttributeError):
             project_crs = None
-    if crs_measures_in_ground_metres(project_crs):
+    if (crs_measures_in_ground_metres(project_crs)
+            and _crs_holds_ground_scale(project_crs, source_crs, extent)):
         return project_crs
     return _utm_crs_for_extent(source_crs, extent) or source_crs
 
 
 def _utm_crs_for_extent(source_crs, extent):
-    """The WGS84 UTM zone covering the centre of ``extent``, or None.
+    """The WGS84 UTM zone covering ``extent``, or None.
 
     UTM is the fallback because it exists everywhere and its scale error stays
     around 1 part in 2500, which is finer than the imagery this plugin reads.
-    """
-    from qgis.core import QgsCoordinateTransform, QgsPointXY
+    That only holds near the zone's own meridian, so the same two bounds
+    ``pick_run_crs`` puts on a local projected zone apply here: a zone wider
+    than the span bound, or one this close to a pole, gets no UTM CRS at all.
+    Transverse Mercator runs away from the ground far from its meridian, and a
+    rectangle drawn across the antimeridian arrives spanning the long way
+    round, which is what the width test catches: without it the zone comes from
+    a centre on the far side of the planet and the coordinates land nowhere.
 
+    ``_wgs84_bounds`` transforms every source, geographic ones included,
+    because a geographic CRS need not count degrees from Greenwich.
+    """
+    bounds = _wgs84_bounds(source_crs, extent)
+    if bounds is None:
+        return None
+    lon_min, lat_min, lon_max, lat_max = bounds
+    if (lon_max - lon_min) > run_crs_max_span_deg():
+        return None
+    # UTM's OWN validity, not the run bound. A run's tiles are held to a tighter
+    # latitude than this, because a run measures ground per pixel and a saved
+    # file measures area; borrowing that tighter bound here refused UTM between
+    # 80 and 84 north, where UTM is defined, and left the file in the degrees or
+    # the Mercator it came in with.
+    if lat_max > UTM_MAX_LATITUDE_N or lat_min < UTM_MIN_LATITUDE_S:
+        return None
     try:
-        if extent is None or extent.isEmpty():
-            return None
-        centre = QgsPointXY(extent.center())
-        wgs84 = QgsCoordinateReferenceSystem("EPSG:4326")
-        # Every source is transformed, geographic ones included. "Geographic"
-        # does not mean "degrees counted from Greenwich": a handful of national
-        # CRS still in use count grads, or count from Paris or Rome, and
-        # reading those numbers as if they were longitudes picks a zone a
-        # continent away.
-        if source_crs is not None and source_crs.isValid() and source_crs != wgs84:
-            centre = QgsCoordinateTransform(
-                source_crs, wgs84, QgsProject.instance()).transform(centre)
-        lon, lat = centre.x(), centre.y()
-        if not (-180.0 <= lon <= 180.0 and -90.0 <= lat <= 90.0):
-            return None
+        lon = (lon_min + lon_max) / 2.0
+        lat = (lat_min + lat_max) / 2.0
         zone = int((lon + 180.0) / 6.0) + 1
         zone = min(max(zone, 1), 60)
         code = (32600 if lat >= 0 else 32700) + zone
@@ -817,6 +839,22 @@ def to_multipolygon(geom: QgsGeometry) -> QgsGeometry | None:
     return combined
 
 
+def _log_convention_failure(step: str, err: Exception) -> None:
+    """One Warning line for a convention step that could not be applied.
+
+    Every step here is best-effort, so none of them stops the export. Written
+    down all the same: a GeoPackage delivered without its column headers or its
+    style otherwise looks like the plugin never tried.
+    """
+    try:
+        QgsMessageLog.logMessage(
+            f"Export conventions: {step} failed: {err}",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning,
+        )
+    except Exception:  # noqa: BLE001 -- logging must never raise  # nosec B110
+        pass
+
+
 def apply_output_conventions(
     layer: QgsVectorLayer,
     source_raster_name: str,
@@ -873,8 +911,10 @@ def apply_output_conventions(
         )
         md.setHistory(history)
         layer.setMetadata(md)
-    except Exception:  # nosec B110
-        pass  # metadata is cosmetic, never block an export
+    except Exception as err:  # noqa: BLE001 -- metadata never blocks an export
+        # Never blocks the export, but never silent either: a delivered file
+        # that lost its provenance has to leave a trace somewhere.
+        _log_convention_failure("provenance metadata", err)
     try:
         # setMetadata() only fills the in-memory layer property, which dies with
         # the QGIS session. Write it down as well so the provenance is still
@@ -882,12 +922,12 @@ def apply_output_conventions(
         save_metadata = getattr(layer, "saveDefaultMetadata", None)
         if save_metadata is not None:
             save_metadata()
-    except Exception:  # nosec B110
-        pass  # a read-only output keeps the in-memory metadata
+    except Exception as err:  # noqa: BLE001 -- a read-only output keeps the in-memory copy
+        _log_convention_failure("saving the metadata into the file", err)
     try:
         layer.saveStyleToDatabase(layer.name(), "AI Segmentation", True, "")
-    except Exception:  # nosec B110
-        pass  # style persistence is cosmetic, never block an export
+    except Exception as err:  # noqa: BLE001 -- style persistence never blocks an export
+        _log_convention_failure("saving the style into the file", err)
 
 
 def attribute_values_for_fields(fields, geom: QgsGeometry, crs, raster_name: str, timestamp: str) -> list:

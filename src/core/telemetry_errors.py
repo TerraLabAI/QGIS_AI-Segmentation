@@ -12,9 +12,62 @@ telemetry.py, and every function here ends in its track() call.
 from __future__ import annotations
 
 import functools
+import re
+import threading
 
 from . import telemetry_events as ev
-from .telemetry import on_main_thread, scrub_payload_value, track
+from .telemetry import current_session_id, on_main_thread, scrub_payload_value, track
+
+# A path up to and including its last separator: a root we recognise, or a
+# separator that starts a token, then everything to the last separator. Folder
+# names hold spaces, so the run crosses them; the lookbehinds keep it off
+# ordinary prose, where a slash sits between two word characters (3/4, km/h).
+# Applied AFTER the scrubbers, which have already replaced the home prefix, the
+# URLs and the auth material.
+_PATH_PREFIX_RE = re.compile(
+    r"(?:<USER>|~(?=[\\/])|(?<![\w.])[A-Za-z]:(?=[\\/])|\\\\|(?<![\w.:)\]])/)"
+    r"[^\r\n'\"<>,;()=]*[\\/]"
+)
+
+# One report per distinct traceback per session, guarded because a worker
+# thread is where an exception repeats fastest.
+_reported_lock = threading.Lock()
+_reported_tracebacks: set[str] = set()
+_reported_session = ""
+
+
+def keep_path_basenames(text: str) -> str:
+    """Cut every path in ``text`` down to its last segment.
+
+    Anonymizing the home prefix hides the user and nothing else: the folders
+    under it are named by the user, and a project tree is often named after
+    their client. The file name answers the support question, the path above
+    it never does, so only the file name travels."""
+    if not text:
+        return text
+    return _PATH_PREFIX_RE.sub("", text)
+
+
+def _traceback_already_reported(traceback_hash: str) -> bool:
+    """True when this exact traceback has already gone out this session.
+
+    A slot that raises on every repaint would otherwise post one immediate
+    event per occurrence, each with its own network task."""
+    global _reported_session
+    if not traceback_hash:
+        return False
+    try:
+        session = current_session_id()
+    except Exception:  # noqa: BLE001 -- telemetry must never break a caller
+        session = ""
+    with _reported_lock:
+        if session != _reported_session:
+            _reported_session = session
+            _reported_tracebacks.clear()
+        if traceback_hash in _reported_tracebacks:
+            return True
+        _reported_tracebacks.add(traceback_hash)
+    return False
 
 
 def track_plugin_error(
@@ -29,17 +82,22 @@ def track_plugin_error(
 
     stage: install | download | activate | segment | export | other
     error_code: short machine-friendly id (e.g. "PIP_TIMEOUT", "RUNTIME_ERROR")
-    message: first line of the error, truncated to 500 chars, path + coord scrubbed
+    message: first line of the error, truncated to 500 chars, scrubbed of
+        coords and of everything above a file name
     include_log_tail: OFF by default. When True, the last 20 anonymized log lines
         are capped to ~4KB and coordinate-scrubbed before being sent.
     traceback_hash: optional short sha of the normalized traceback (groups
-        recurrences of the same crash). Additive; omitted when unknown.
+        recurrences of the same crash). Additive; omitted when unknown. A hash
+        already reported this session is dropped here: the first occurrence
+        carries the crash, the rest only cost network.
     module: optional source module the exception was caught in. Additive.
     """
+    if traceback_hash and _traceback_already_reported(traceback_hash):
+        return
     props = {
         "stage": stage,
         "error_code": error_code,
-        "message": scrub_payload_value((message or "")[:500]),
+        "message": keep_path_basenames(scrub_payload_value((message or "")[:500])),
     }
     if traceback_hash:
         props["traceback_hash"] = traceback_hash
@@ -49,7 +107,7 @@ def track_plugin_error(
         try:
             from .log_scrub import get_recent_logs
             tail_lines = get_recent_logs().splitlines()[-20:]
-            scrubbed = scrub_payload_value("\n".join(tail_lines))
+            scrubbed = keep_path_basenames(scrub_payload_value("\n".join(tail_lines)))
             props["last_log_lines"] = scrubbed.encode("utf-8")[:4096].decode(
                 "utf-8", errors="ignore"
             )

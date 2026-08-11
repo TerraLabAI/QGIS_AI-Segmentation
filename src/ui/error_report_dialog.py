@@ -9,7 +9,7 @@ import os
 import platform
 import sys
 
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal
 from qgis.PyQt.QtWidgets import (
     QApplication,
     QDialog,
@@ -271,6 +271,32 @@ def _collect_diagnostic_info(error_message: str) -> str:
     return _scrub_report(report)
 
 
+class _DiagnosticsCollector(QThread):
+    """Gathers the report away from the window.
+
+    Two probes run inside the isolated environment and can take 25 seconds
+    together. On the drawing thread that marks QGIS as not responding, inside
+    the very dialog the user opened because something had already failed.
+    """
+
+    collected = pyqtSignal(str)
+
+    def __init__(self, error_message: str):
+        super().__init__()
+        self._error_message = error_message
+
+    def run(self):
+        try:
+            report = _collect_diagnostic_info(self._error_message)
+        except Exception as err:  # noqa: BLE001 -- a partial report still helps
+            report = _scrub_report(
+                "=== AI Segmentation - Error Report ===\n\n"
+                f"{self._error_message}\n\n"
+                f"(The rest could not be collected: {str(err)[:120]})"
+            )
+        self.collected.emit(report)
+
+
 class ErrorReportDialog(QDialog):
     """
     Minimal error report dialog.
@@ -287,15 +313,48 @@ class ErrorReportDialog(QDialog):
         self._error_title = error_title
         self._error_message = error_message
         # Diagnostics run two subprocesses in the isolated environment (up to
-        # 25 s together). Collected on the copy click, not here: gathering them
-        # up front froze QGIS before the dialog even painted, so the user saw
-        # nothing at all after the failure.
+        # 25 s together), so they are gathered on their own thread while the
+        # user reads the message. The copy button waits for them: on the
+        # drawing thread this froze the window, and gathering them up front
+        # froze it before the dialog had even painted.
         self._diagnostic_info: str | None = None
 
         self._setup_ui()
+        self._start_collecting()
+
+    def _start_collecting(self) -> None:
+        """Start the gather, and let the copy button wait for it.
+
+        The thread is parked, so it stays alive and joinable even when the
+        dialog closes first. The signal is bound to the dialog, so Qt drops the
+        delivery once the dialog is gone.
+        """
+        try:
+            collector = _DiagnosticsCollector(self._error_message)
+            collector.collected.connect(self._on_diagnostics_collected)
+            from .plugin.shared import park_orphaned_worker
+
+            park_orphaned_worker(collector)
+            collector.start()
+        except Exception:  # noqa: BLE001 -- no thread: collect on the click
+            self._set_copy_ready(True)
+
+    def _on_diagnostics_collected(self, report: str) -> None:
+        self._diagnostic_info = report
+        self._set_copy_ready(True)
+
+    def _set_copy_ready(self, ready: bool) -> None:
+        """Whether the copy button can be pressed yet."""
+        try:
+            self._copy_btn.setEnabled(ready)
+            self._copy_btn.setText(
+                tr("1. Click to copy logs") if ready
+                else tr("Reading your logs..."))
+        except RuntimeError:
+            pass  # nosec B110 - the dialog closed, nothing left to update
 
     def _get_diagnostic_info(self) -> str:
-        """Collect the diagnostics once, on first use."""
+        """The report. Gathered here only when the thread could not run."""
         if self._diagnostic_info is None:
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             try:
@@ -326,8 +385,11 @@ class ErrorReportDialog(QDialog):
         help_label.setStyleSheet("font-size: 11px; color: palette(text);")
         layout.addWidget(help_label)
 
-        # Step 1: Copy logs button (full width) - green primary
-        self._copy_btn = QPushButton(tr("1. Click to copy logs"))
+        # Step 1: Copy logs button (full width) - green primary. It opens
+        # disabled and waits for the gather thread, because a button that
+        # freezes the window for 25 seconds is worse than one that says wait.
+        self._copy_btn = QPushButton(tr("Reading your logs..."))
+        self._copy_btn.setEnabled(False)
         self._copy_btn.setStyleSheet(_BTN_GREEN)
         self._copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._copy_btn.clicked.connect(self._on_copy)

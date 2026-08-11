@@ -124,7 +124,17 @@ def start_log_collector():
             return
         try:
             from qgis.core import QgsApplication
-            QgsApplication.messageLog().messageReceived.connect(_on_log_message)
+            log = QgsApplication.messageLog()
+            # The flag is a module global, so a reload reads False while the
+            # old connection is still live on the same signal. Qt would then
+            # hold two, and every line would be buffered twice for the rest of
+            # the session. Dropping first makes this connect idempotent whatever
+            # the flag says; a disconnect with nothing to drop raises TypeError.
+            try:
+                log.messageReceived.disconnect(_on_log_message)
+            except (TypeError, RuntimeError):
+                pass
+            log.messageReceived.connect(_on_log_message)
             _log_collector_connected = True
         except Exception:
             pass  # nosec B110

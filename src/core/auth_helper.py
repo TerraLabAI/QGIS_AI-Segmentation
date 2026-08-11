@@ -67,6 +67,13 @@ def _store_to_auth_manager(key: str) -> str:
 
 
 def get_activation_key(settings=None) -> str:
+    """The stored key, or "" when there is none to read right now.
+
+    Nothing is cached, so a key that is unreadable at plugin load (see
+    activation_key_is_locked) is read on the next call, once the auth database
+    is open. An empty answer alone never means the user signed out: ask
+    activation_key_is_locked before reporting that.
+    """
     s = settings or QgsSettings()
     authcfg_id = s.value(_AUTHCFG_KEY, "", type=str)
     if authcfg_id and _can_use_auth_manager():
@@ -74,6 +81,22 @@ def get_activation_key(settings=None) -> str:
         if key:
             return key
     return s.value(_LEGACY_KEY, "", type=str)
+
+
+def activation_key_is_locked(settings=None) -> bool:
+    """True when a key is stored but the auth database has not been opened yet.
+
+    QGIS keeps the master password in memory only after the user types it, so
+    a session that never opened the auth database reads the stored key as
+    empty. That user is signed in and has to stay signed in on screen: the key
+    comes back on its own the moment the database opens.
+    """
+    s = settings or QgsSettings()
+    if not s.value(_AUTHCFG_KEY, "", type=str):
+        return False
+    if s.value(_LEGACY_KEY, "", type=str):
+        return False
+    return not _can_use_auth_manager()
 
 
 def save_activation(key: str, settings=None) -> None:

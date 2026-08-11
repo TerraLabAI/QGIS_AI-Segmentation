@@ -274,7 +274,65 @@ PENDING_DELETE_DIR = os.path.join(PLUGIN_CACHE_DIR, ".pending_delete")
 #     package (torch, torchvision, the local model) no longer ends the run;
 #     re-run so an environment left half-built by one blocked download comes
 #     back usable for Automatic.
+# NOT bumped for the disk-space split below, on purpose: it only changes what
+# an install DOES, and the users it helps have no environment to invalidate.
+# Bumping would push every healthy environment through a network reinstall to
+# reach machines that will run the install anyway.
+# NOT bumped for the 2026-08-11 install fixes either (pip redirection variables
+# scrubbed, uv verified with the clean environment and moved with the retry
+# ladder, a proxy host that already carries its scheme, the old-venv sweep left
+# conservative). None of them can leave a WRONG environment on disk: an install
+# that hit any of these never reached verify_venv, so no deps hash was written
+# and the next run reinstalls anyway. A bump would hand every healthy user a
+# multi-GB reinstall that repairs nothing.
+# NOT bumped for include_local_model either, for the same reason and one more:
+# the split changes what a NEW install fetches, and every existing environment
+# already holds everything. An environment left without the local model reaches
+# the full install through local_model_ready, which no hash is involved in, so
+# a bump would push every healthy environment through a network reinstall that
+# repairs nothing. tests/test_venv_local_model_gate.py holds this line.
 _INSTALL_LOGIC_VERSION = "7"
+
+# Free space the whole install wants, local model included, in GB.
+MIN_FREE_GB_FULL = 5.0
+# Free space below which even numpy and rasterio cannot land. They are a few
+# hundred MB installed, and the pip cache and extraction temp sit on the same
+# volume, so 1.5 GB leaves the same kind of margin the full figure does.
+MIN_FREE_GB_AUTOMATIC = 1.5
+
+
+def resolved_min_free_gb_full() -> float:
+    """MIN_FREE_GB_FULL with any server correction applied."""
+    try:
+        return install_config.min_free_gb_full(MIN_FREE_GB_FULL)
+    except Exception:  # noqa: BLE001 -- a bad config must never block an install
+        return MIN_FREE_GB_FULL
+
+
+def resolved_min_free_gb_automatic() -> float:
+    """MIN_FREE_GB_AUTOMATIC with any server correction applied."""
+    try:
+        return install_config.min_free_gb_automatic(MIN_FREE_GB_AUTOMATIC)
+    except Exception:  # noqa: BLE001 -- a bad config must never block an install
+        return MIN_FREE_GB_AUTOMATIC
+
+
+def packages_skipped_for_disk_space() -> set[str]:
+    """Manual-only packages this volume has no room for, empty when it has.
+
+    Returns a set, never raises: an unreadable disk means "do not skip
+    anything" so the install behaves exactly as it did before.
+    """
+    try:
+        os.makedirs(PLUGIN_CACHE_DIR, exist_ok=True)
+        free_gb = shutil.disk_usage(PLUGIN_CACHE_DIR).free / (1024 ** 3)
+    except OSError:
+        return set()
+    # Same reasoning as the preflight: a ~0 GB reading is a misreporting path,
+    # not a full disk, so it must not silently strip Manual mode.
+    if free_gb < 0.001 or free_gb >= resolved_min_free_gb_full():
+        return set()
+    return set(MANUAL_ONLY_PACKAGES)
 
 
 def resolved_packages() -> list[tuple[str, str]]:
@@ -412,32 +470,104 @@ def _check_rosetta_warning() -> str | None:
     )
 
 
+# How long a foreign venv is left alone. The cache is shared by every QGIS on
+# the machine, one venv per Python version, and nothing on any platform records
+# "in use": the install lock covers a venv being BUILT, never one another window
+# merely has open. So a complete tree that was written to inside this window is
+# treated as somebody's working environment. Wide on purpose: deleting 4 GB
+# somebody depends on costs far more than keeping it.
+_FOREIGN_VENV_KEEP_DAYS = 90
+
+# Name a venv is moved to before it is deleted, so a delete that stops part way
+# never leaves something the scan reads as a venv again.
+_VENV_REMOVAL_PREFIX = "_removing_venv_"
+
+
+def _venv_may_be_another_qgis(venv_dir: str) -> bool:
+    """True when this venv could still be another QGIS's working environment.
+
+    Two readable signals stand in for the one the OS does not publish: the
+    interpreter is on disk (so the tree is complete, not a half-built one), and
+    something wrote inside it recently (its own install, or a package update).
+    """
+    if not venv_exists(venv_dir):
+        return False
+    newest = 0.0
+    for probe in (venv_dir, get_venv_python_path(venv_dir),
+                  os.path.join(venv_dir, "lib"),
+                  os.path.join(venv_dir, "Lib")):
+        try:
+            newest = max(newest, os.path.getmtime(probe))
+        except OSError:
+            continue
+    return (time.time() - newest) < _FOREIGN_VENV_KEEP_DAYS * 86400
+
+
+def _remove_dead_venv(venv_dir: str) -> bool:
+    """Delete one venv nobody can be using. True once it is gone.
+
+    Renamed as a unit first, in the same parent so the move never crosses a
+    volume. Windows refuses to rename a directory holding a file another
+    process has open, so a venv whose libraries are loaded in a second QGIS
+    stays whole here instead of losing every file that happened to be free.
+    """
+    parent = os.path.dirname(venv_dir)
+    staged = os.path.join(
+        parent, f"{_VENV_REMOVAL_PREFIX}{os.path.basename(venv_dir)}.{os.getpid()}")
+    try:
+        os.replace(_win_extended_path(venv_dir), _win_extended_path(staged))
+    except OSError as e:
+        _log(f"Left {venv_dir} in place, it is open elsewhere: {e}",
+             Qgis.MessageLevel.Warning)
+        return False
+    shutil.rmtree(_win_extended_path(staged), ignore_errors=True)
+    return True
+
+
+def _sweep_venv_removals(scan_dir: str) -> None:
+    """Delete what an earlier sweep renamed but could not finish removing."""
+    pattern = os.path.join(_win_extended_path(scan_dir), f"{_VENV_REMOVAL_PREFIX}*")
+    for leftover in glob.glob(pattern):
+        shutil.rmtree(leftover, ignore_errors=True)
+
+
 def cleanup_old_venv_directories() -> list[str]:
+    """Remove venv_pyX.Y directories no QGIS on this machine can still be using.
+
+    Scans both the external cache dir (new location) and the plugin dir
+    (legacy). A venv that still looks like somebody's working environment is
+    kept, whatever Python version it holds: QGIS 3.34 and QGIS 3.40 run side by
+    side on one cache with one venv each, and this used to delete whichever one
+    was not the running QGIS's. Returns the directories actually removed, which
+    the disk-space preflight counts on to reclaim room.
     """
-    Remove old venv_pyX.Y directories that don't match current Python version.
-    Scans both the external cache dir (new location) and the plugin dir (legacy).
-    Returns list of removed directories.
-    """
-    current_venv_name = f"venv_{PYTHON_VERSION}"
+    current_cmp = os.path.normcase(f"venv_{PYTHON_VERSION}")
+    venv_prefix = os.path.normcase("venv_py")
     removed = []
 
     for scan_dir in [PLUGIN_CACHE_DIR, SRC_DIR]:
         try:
             if not os.path.exists(scan_dir):
                 continue
+            _sweep_venv_removals(scan_dir)
             for entry in os.listdir(scan_dir):
                 entry_cmp = os.path.normcase(entry)
-                current_cmp = os.path.normcase(current_venv_name)
-                if entry_cmp.startswith(os.path.normcase("venv_py")) and entry_cmp != current_cmp:
-                    old_path = os.path.join(scan_dir, entry)
-                    if os.path.isdir(old_path):
-                        try:
-                            shutil.rmtree(_win_extended_path(old_path))
-                            _log(f"Cleaned up old venv: {old_path}",
-                                 Qgis.MessageLevel.Info)
-                            removed.append(old_path)
-                        except Exception as e:
-                            _log(f"Failed to remove old venv {old_path}: {e}", Qgis.MessageLevel.Warning)
+                if not entry_cmp.startswith(venv_prefix) or entry_cmp == current_cmp:
+                    continue
+                old_path = os.path.join(scan_dir, entry)
+                if not os.path.isdir(old_path):
+                    continue
+                try:
+                    if _venv_may_be_another_qgis(old_path):
+                        _log(f"Kept {old_path}: another QGIS may be using it.",
+                             Qgis.MessageLevel.Info)
+                        continue
+                    if _remove_dead_venv(old_path):
+                        _log(f"Cleaned up old venv: {old_path}",
+                             Qgis.MessageLevel.Info)
+                        removed.append(old_path)
+                except Exception as e:
+                    _log(f"Failed to remove old venv {old_path}: {e}", Qgis.MessageLevel.Warning)
         except Exception as e:
             _log(f"Error scanning for old venvs in {scan_dir}: {e}", Qgis.MessageLevel.Warning)
 
@@ -576,22 +706,24 @@ def _add_windows_dll_directories(site_packages: str) -> None:
 
     Without this, importing torch from a foreign venv inside QGIS fails
     with 'DLL load failed' (WinError 126/127).
+
+    Registered for the loader only. These directories used to go on the front
+    of the whole process's PATH as well, which is the global poisoning the
+    sibling helper below forbids: torch ships its own zlib and libiomp, so
+    every later DLL lookup anywhere in QGIS resolved torch's copy first.
+    add_dll_directory already covers the import, and it covers only it.
     """
     dll_dirs = [
         os.path.join(site_packages, "torch", "lib"),
         os.path.join(site_packages, "torch", "bin"),
         os.path.join(site_packages, "torchvision"),
     ]
-    path_parts = os.environ.get("PATH", "").split(os.pathsep)
     for dll_dir in dll_dirs:
         if os.path.isdir(dll_dir):
             try:
                 os.add_dll_directory(dll_dir)
             except OSError as exc:
                 _log(f"add_dll_directory({dll_dir}) failed: {exc}", Qgis.MessageLevel.Warning)
-            if dll_dir not in path_parts:
-                path_parts.insert(0, dll_dir)
-    os.environ["PATH"] = os.pathsep.join(path_parts)
 
 
 _rasterio_data_scoped = False
@@ -1812,10 +1944,13 @@ def _build_install_cmd(python_path: str, pip_args: list) -> list:
             cmd.append(arg)
         cmd.extend(["--python", _win_short_path(python_path)])
         return cmd
-    # Pure-Python pip fallback (no uv): pip's own file writes under a deep
-    # torch venv tree can exceed Windows' legacy 260-char MAX_PATH, so route
-    # the interpreter path through the extended-length form as cheap insurance.
-    return [_win_extended_path(python_path), "-m", "pip"] + pip_args
+    # Pure-Python pip fallback (no uv). The interpreter path goes through
+    # UNTOUCHED: launching it in \\?\ extended-length form poisons sys.prefix
+    # inside pip, and pip's legacy-script installs (site-packages\..\..\Scripts)
+    # then die with OSError 22, because \\?\ paths are never normalized (field
+    # report 2026-08-07, v2.1.9, sam2 step). It never helped MAX_PATH either:
+    # pip's own file writes do not inherit argv[0]'s path form.
+    return [python_path, "-m", "pip"] + pip_args
 
 
 def _repin_numpy(venv_dir: str):
@@ -2244,6 +2379,7 @@ def install_dependencies(
     venv_dir: str = None,
     progress_callback: Callable[[int, str], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    include_local_model: bool = True,
 ) -> tuple[bool, str]:
     if venv_dir is None:
         venv_dir = VENV_DIR
@@ -2290,6 +2426,20 @@ def install_dependencies(
                  Qgis.MessageLevel.Warning)
 
     packages = resolved_packages()
+    # Re-measure rather than trust the preflight: the volume is shared, and a
+    # multi-GB download that runs the disk to zero fails as a machine-level
+    # error, which aborts the whole install including the packages Automatic
+    # still needs. Dropping the local model here keeps the cheap half.
+    skipped_for_space = packages_skipped_for_disk_space()
+    left_out = set(skipped_for_space)
+    if not include_local_model:
+        # An install asked for by Automatic. It runs its inference off the
+        # machine and imports none of these, so they are not fetched at all.
+        # Nothing is short here, which is why they stay out of
+        # degraded_packages below: the user asked for the light half.
+        left_out |= set(MANUAL_ONLY_PACKAGES)
+    if left_out:
+        packages = [(n, s) for n, s in packages if n not in left_out]
     total_packages = len(packages)
     base_progress = 20
     progress_range = 80  # from 20% to 100%
@@ -2352,7 +2502,9 @@ def install_dependencies(
 
         # Manual-only packages that failed. The install still succeeds for
         # Automatic; the caller names these so the user knows what is short.
-        degraded_packages: list[str] = []
+        # The ones the disk had no room for start in here, so a short volume
+        # reports through the same channel as a blocked download.
+        degraded_packages: list[str] = list(skipped_for_space)
 
         for i, (package_name, version_spec) in enumerate(packages):
             if cancel_check and cancel_check():
@@ -2840,8 +2992,8 @@ def install_dependencies(
                 # of the local model.
                 install_error_msg = _scrub_credentials(install_error_msg)
                 _log(
-                    f"{package_name} failed to install, so Manual mode stays "
-                    f"unavailable. Automatic mode does not need it and is "
+                    f"{package_name} failed to install, so Semi-Auto mode "
+                    f"stays unavailable. Automatic mode does not need it and is "
                     f"unaffected. Reason: {install_error_msg[-300:]}",
                     Qgis.MessageLevel.Warning,
                 )
@@ -2851,7 +3003,7 @@ def install_dependencies(
                         "which is usually a company or campus network "
                         "filtering it. Ask your IT administrator to allow "
                         "pypi.org and files.pythonhosted.org, then install "
-                        "again to turn Manual mode on.",
+                        "again to turn Semi-Auto mode on.",
                         Qgis.MessageLevel.Warning,
                     )
                 degraded_packages.append(package_name)
@@ -3034,7 +3186,8 @@ def install_dependencies(
             _log("=" * 50, Qgis.MessageLevel.Warning)
             _log(
                 f"Installed everything except {short}. Automatic (cloud) mode "
-                "is ready. Manual mode and the AI correction tool stay off "
+                "is ready. Semi-Auto mode and the AI correction tool stay "
+                "off "
                 "until that package installs.",
                 Qgis.MessageLevel.Warning,
             )
@@ -3042,7 +3195,7 @@ def install_dependencies(
             _log("=" * 50, Qgis.MessageLevel.Warning)
             return True, (
                 f"Automatic mode is ready. {short} could not be installed, so "
-                "Manual mode and the AI correction tool are unavailable. "
+                "Semi-Auto mode and the AI correction tool are unavailable. "
                 "Everything else works."
             )
 
@@ -3244,7 +3397,8 @@ def _remove_torch_dirs(site_pkgs: str) -> bool:
 
 def verify_venv(
     venv_dir: str = None,
-    progress_callback: Callable[[int, str], None] | None = None
+    progress_callback: Callable[[int, str], None] | None = None,
+    include_local_model: bool = True,
 ) -> tuple[bool, str]:
     if venv_dir is None:
         venv_dir = VENV_DIR
@@ -3257,6 +3411,12 @@ def verify_venv(
     subprocess_kwargs = _get_subprocess_kwargs()
 
     packages = resolved_packages()
+    if not include_local_model:
+        # The install that just ran never fetched these, so there is nothing
+        # to verify: three subprocesses whose only possible answer is an
+        # import error, reported as a mode the user did not ask for.
+        packages = [(n, s) for n, s in packages
+                    if n not in MANUAL_ONLY_PACKAGES]
     # Manual-only packages that did not verify. They do not fail the venv:
     # Automatic never loads them, so the caller is told which mode is short
     # instead of the user losing a cloud mode over a local one.
@@ -3327,8 +3487,8 @@ def verify_venv(
                         and "no module named" in full_error.lower()
                         and not _failure_is_machine_level(full_error, None)):
                     _log(
-                        f"Package {package_name} did not verify, so Manual mode "
-                        "and the AI correction tool stay unavailable. Automatic "
+                        f"Package {package_name} did not verify, so Semi-Auto "
+                        "mode and the AI correction tool stay unavailable. Automatic "
                         "(cloud) mode does not use it and is unaffected.",
                         Qgis.MessageLevel.Warning
                     )
@@ -3682,12 +3842,12 @@ def verify_venv(
         short = ", ".join(unavailable_manual)
         _log(
             f"Virtual environment verified for Automatic mode. {short} did not "
-            "verify, so Manual mode and the AI correction tool stay off.",
+            "verify, so Semi-Auto mode and the AI correction tool stay off.",
             Qgis.MessageLevel.Warning,
         )
         return True, (
-            f"Ready for Automatic mode. {short} is unavailable, so Manual mode "
-            "and the AI correction tool are off."
+            f"Ready for Automatic mode. {short} is unavailable, so "
+            "Semi-Auto mode and the AI correction tool are off."
         )
 
     _log("✓ Virtual environment verified successfully", Qgis.MessageLevel.Success)
@@ -3714,6 +3874,7 @@ def cleanup_old_libs() -> bool:
 def create_venv_and_install(
     progress_callback: Callable[[int, str], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    include_local_model: bool = True,
 ) -> tuple[bool, str]:
     """
     Complete installation: download Python standalone + download uv + create venv + install packages.
@@ -3724,6 +3885,12 @@ def create_venv_and_install(
     - 13-18%:  Create virtual environment
     - 18-95%:  Install packages (~800MB)
     - 95-100%: Verify installation
+
+    ``include_local_model`` False leaves MANUAL_ONLY_PACKAGES out. Automatic
+    runs its inference off the machine and imports none of them, so an install
+    asked for from that side is a few hundred MB instead of most of a
+    gigabyte, and the caller skips the model weights on top. It defaults True
+    so every Manual path installs what it always did.
     """
     # Cross-process install lock (try-once, never blocks the GUI). PLUGIN_CACHE_DIR is
     # shared across QGIS instances/profiles, so a second window installing at
@@ -3748,7 +3915,20 @@ def create_venv_and_install(
         # the retained download cache (compressed wheels, up to ~1.5 GB when
         # pip is used since it does not hardlink from cache) + transient
         # extraction temp (~0.5 GB). 5 GB covers that with a small margin.
-        min_free_gb = 5.0
+        #
+        # That budget is almost entirely the local model. Automatic loads only
+        # numpy and rasterio, a few hundred MB, so refusing the whole install
+        # at the full figure took the cloud mode away from users who had ample
+        # room for it. Below the full figure the install now runs without the
+        # Manual-only packages instead of refusing; only the smaller floor
+        # stops it outright.
+        min_free_gb = resolved_min_free_gb_full()
+        min_free_gb_auto = resolved_min_free_gb_automatic()
+        if not include_local_model:
+            # This run downloads no local model, so the budget that exists for
+            # one does not apply, and the "installing the Automatic packages
+            # only" warning below would name a loss the user did not take.
+            min_free_gb = min_free_gb_auto
         try:
             os.makedirs(PLUGIN_CACHE_DIR, exist_ok=True)
             free_gb = shutil.disk_usage(PLUGIN_CACHE_DIR).free / (1024 ** 3)
@@ -3787,17 +3967,25 @@ def create_venv_and_install(
                     free_gb = shutil.disk_usage(PLUGIN_CACHE_DIR).free / (1024 ** 3)
                 except OSError:
                     free_gb = None
-        if free_gb is not None and free_gb < min_free_gb:
+        if free_gb is not None and free_gb < min_free_gb_auto:
             hint = (
                 f"Not enough free disk space to install dependencies: "
                 f"{free_gb:.1f} GB available at {PLUGIN_CACHE_DIR}, "
-                f"at least {min_free_gb:.0f} GB is required.\n\n"
+                f"at least {min_free_gb_auto:.1f} GB is required.\n\n"
                 "Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR "
                 "environment variable to a directory on a larger drive, "
                 "then restart QGIS."
             )
             _log(hint, Qgis.MessageLevel.Critical)
             return False, hint
+        if free_gb is not None and free_gb < min_free_gb:
+            _log(
+                f"{free_gb:.1f} GB free at {PLUGIN_CACHE_DIR}, under the "
+                f"{min_free_gb:.0f} GB the local model needs. Installing the "
+                "Automatic packages only. Free up space and install again to "
+                "turn Semi-Auto mode on.",
+                Qgis.MessageLevel.Warning,
+            )
 
         # A leftover marker means QGIS was killed mid-install: the venv may be
         # half-built yet pass superficial checks, so rebuild it from scratch.
@@ -3812,7 +4000,8 @@ def create_venv_and_install(
 
         _write_install_marker()
         try:
-            return _create_venv_and_install(progress_callback, cancel_check)
+            return _create_venv_and_install(
+                progress_callback, cancel_check, include_local_model)
         finally:
             # Any normal return or exception here is reported to the user; the
             # marker only needs to survive a hard crash, where finally never runs.
@@ -3824,6 +4013,7 @@ def create_venv_and_install(
 def _create_venv_and_install(
     progress_callback: Callable[[int, str], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    include_local_model: bool = True,
 ) -> tuple[bool, str]:
     """Run the actual install flow (see create_venv_and_install)."""
     from .python_manager import (
@@ -4020,6 +4210,7 @@ def _create_venv_and_install(
     success, msg = install_dependencies(
         progress_callback=deps_progress,
         cancel_check=cancel_check,
+        include_local_model=include_local_model,
     )
 
     if not success:
@@ -4033,7 +4224,9 @@ def _create_venv_and_install(
             mapped = 95 + int(percent * 0.04)
             progress_callback(min(mapped, 99), msg)
 
-    is_valid, verify_msg = verify_venv(progress_callback=verify_progress)
+    is_valid, verify_msg = verify_venv(
+        progress_callback=verify_progress,
+        include_local_model=include_local_model)
 
     if not is_valid:
         return False, f"Verification failed: {verify_msg}"

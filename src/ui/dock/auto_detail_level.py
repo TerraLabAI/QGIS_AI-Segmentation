@@ -130,21 +130,46 @@ class DockAutoDetailLevelMixin:
         self.auto_detail_warning.setVisible(coarse)
         self.auto_detail_hint.setVisible(not coarse)
 
-    def set_auto_detail_max(self, n: int) -> None:
-        """Cap the detail slider at ``n`` useful levels (1-MAX_DETAIL_LEVEL).
+    def set_auto_detail_range(
+        self, lo: int, hi: int, object_bound: bool = False
+    ) -> None:
+        """Set the detail slider's travel to the useful band ``lo``-``hi``.
 
-        Clamps the current value down if it now exceeds the cap. Signal-free
-        on purpose: the plugin calls this from _update_credit_estimate right
-        before recomputing the grid, so the clamped value is picked up
-        immediately without a re-entrant signal.
+        The band is the levels worth offering for the object the user named
+        (see ``ui/plugin/auto_detail_window.py``): under ``lo`` the object is
+        too few pixels across to spot, past ``hi`` it stops fitting in a tile
+        and comes back in fragments. ``object_bound`` says the fine end came
+        from the OBJECT rather than from the zone or the source resolution,
+        which is what the hint at the top of the travel explains.
+
+        Clamps the current value into the band. Signal-free on purpose: the
+        plugin calls this from _update_credit_estimate right before recomputing
+        the grid, so the clamped value is picked up without a re-entrant signal.
         """
-        n = max(1, min(MAX_DETAIL_LEVEL, int(n)))
+        hi = max(1, min(MAX_DETAIL_LEVEL, int(hi)))
+        lo = max(1, min(hi, int(lo)))
+        self._auto_detail_object_bound = bool(object_bound)
         slider = self.auto_detail_slider
         slider.blockSignals(True)
-        slider.setMaximum(n)
-        if slider.value() > n:
-            slider.setValue(n)
+        # Widen, then set the ends. Qt clamps each end against the CURRENT
+        # other one, so a band sitting entirely above the old maximum (or below
+        # the old minimum) collapses to a point unless the room is made first.
+        slider.setMaximum(max(hi, slider.maximum()))
+        slider.setMinimum(lo)
+        slider.setMaximum(hi)
+        value = min(max(slider.value(), lo), hi)
+        if slider.value() != value:
+            slider.setValue(value)
         slider.blockSignals(False)
+        # One useful level is no choice, and a slider pinned to a single tick
+        # reads as broken. Hide the control and its cost line; the hint below
+        # says why and what would give the user a choice back.
+        self._auto_detail_single_level = lo >= hi
+        try:
+            self.auto_detail_slider_row.setVisible(lo < hi)
+            self.auto_detail_sub.setVisible(lo < hi)
+        except (RuntimeError, AttributeError):
+            pass
         self._refresh_auto_detail_hint()
 
     def set_auto_free_run_cap(self, cap: int | None) -> None:
@@ -235,9 +260,12 @@ class DockAutoDetailLevelMixin:
             _hint += "</a>"
             self.auto_detail_hint.setText(_hint)
             _cap = getattr(self, "_auto_free_run_cap", None)
+            # Plain replace, never format(): a translated sentence is outside
+            # data too, and one stray brace in any of the catalogues would
+            # raise here, on the path that paints the dock.
             self.auto_detail_hint.setToolTip(
                 tr("A free run covers up to {cap} credits. This one costs "
-                   "more.").format(cap=int(_cap)) if _cap else
+                   "more.").replace("{cap}", str(int(_cap))) if _cap else
                 tr("This run costs more credits than a free run covers."))
             # The gate blocks Detect, so its box must be the one on screen
             # whatever the coarse-imagery guard decided on the previous pass.
@@ -245,6 +273,29 @@ class DockAutoDetailLevelMixin:
             self.auto_detail_hint.setVisible(True)
             return
         self.auto_detail_hint.setToolTip("")
+        if getattr(self, "_auto_detail_single_level", False):
+            word = feedback[1] if feedback else ""
+            obj = f'"{word}"' if word else tr("your object")
+            self.auto_detail_hint.setStyleSheet(_plain_hint)
+            self.auto_detail_hint.setText(_detail_hint_copy(
+                "single", tr(
+                    "One precision level fits {obj} in a zone this size - draw"
+                    " a larger zone for a choice."), obj))
+            return
+        if capped and getattr(self, "_auto_detail_object_bound", False):
+            # The travel stops here because the OBJECT stops fitting in a tile,
+            # not because the zone or the imagery ran out. That outranks the
+            # live verdict below: a user who dragged to the end is asking why
+            # it ends, and "draw a larger zone" (the other capped branch) would
+            # send them to spend credits on the fragmenting they just avoided.
+            word = feedback[1] if feedback else ""
+            obj = f'"{word}"' if word else tr("your object")
+            self.auto_detail_hint.setStyleSheet(_plain_hint)
+            self.auto_detail_hint.setText(_detail_hint_copy(
+                "objcap",
+                tr("As fine as {obj} benefits from - finer splits them into"
+                   " pieces."), obj))
+            return
         if feedback and not (capped and feedback[0] in ("coarse", "below")):
             # "Raise the detail" advice is a dead end at a capped maximum;
             # the capped branch below gives the actionable fix instead.

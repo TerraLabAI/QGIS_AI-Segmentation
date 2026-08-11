@@ -94,6 +94,27 @@ def low_credit_threshold() -> float:
         return 0.20
 
 
+def low_credit_ceiling() -> int:
+    """Above this many credits left, nothing reads as low, whatever the share.
+
+    The share alone opened the warning far too early on a large allowance: a
+    fifth of the free trial is sixty credits, which is dozens of objects still
+    to save, and a user with that much left was already being asked to pay. The
+    two rules are an AND, so the warning needs a small share AND a small
+    number.
+
+    Served, because when to start selling is the kind of number that gets
+    retuned on what users do, and a plugin release is days away from the
+    decision.
+    """
+    try:
+        from .server_dials import dial_in_range
+
+        return int(dial_in_range("gate.low_credit_ceiling", 30, 0, 100_000))
+    except Exception:  # noqa: BLE001 -- a badge colour must never break a paint
+        return 30
+
+
 def credit_snapshot(usage: dict) -> tuple[int | None, bool]:
     """Return ``(credits_before, is_free_tier)`` from a usage dict.
 
@@ -142,7 +163,7 @@ def _default_monthly_allowance() -> int:
         from .detection_policy import free_monthly_allowance
         return free_monthly_allowance()
     except Exception:  # noqa: BLE001 - policy is optional, never break the gate
-        return 300
+        return 200
 
 
 def run_affordable(tiles: int, balance) -> bool:

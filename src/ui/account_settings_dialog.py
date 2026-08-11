@@ -62,6 +62,14 @@ _REMOVAL_WATCHDOG_MS = 600_000
 # of desktop, and keeps the window from looking wedged between the two edges.
 _SCREEN_MARGIN_PX = 48
 
+# Failure codes that mean the request never reached a server, so the card can
+# tell "you are offline" from "something else went wrong". Anything outside it
+# gets the general sentence.
+_ACCOUNT_OFFLINE_CODES = frozenset({
+    "NO_INTERNET", "DNS_ERROR", "CONNECTION_REFUSED", "PROXY_ERROR",
+    "TIMEOUT", "SSL_ERROR",
+})
+
 _STATUS_DISPLAY = {
     "active": (tr("Active"), BRAND_GREEN_TEXT),
     # Design-system warning amber (taxonomy _MSG_TINTS['warning'] hue). No named
@@ -126,7 +134,7 @@ _CARD_STYLE = (
 
 # Last-resort denominator for a paid plan when neither the usage response nor
 # the account row carries one. Never used to grant or spend anything.
-_PRO_MONTHLY_CREDITS_FALLBACK = 10000
+_PRO_MONTHLY_CREDITS_FALLBACK = 5000
 
 
 class PlanCredits(NamedTuple):
@@ -233,6 +241,10 @@ def _load_account_and_usage(client, auth) -> dict:
 class AccountSettingsDialog(QDialog):
 
     sign_out_requested = pyqtSignal()
+    # The usage payload this window just read, handed to whoever else shows a
+    # balance. Without it the dock's footer ring keeps its own older figure and
+    # the two surfaces contradict each other in front of the user.
+    usage_loaded = pyqtSignal(dict)
 
     def __init__(self, client, auth, activation_key, parent=None,
                  on_remove_ai_data=None, is_busy_check=None):
@@ -405,6 +417,11 @@ class AccountSettingsDialog(QDialog):
         # as well as the legacy flat account dict format.
         account_data = data.get("account", data)
         usage_data = data.get("usage", {})
+        # Emitted before the cards are built, so a slow rebuild never delays
+        # the figure reaching the dock. An empty dict means the usage call
+        # failed (the window survives that), and carries nothing to share.
+        if isinstance(usage_data, dict) and usage_data:
+            self.usage_loaded.emit(usage_data)
 
         while self._content_layout.count():
             item = self._content_layout.takeAt(0)
@@ -536,6 +553,15 @@ class AccountSettingsDialog(QDialog):
 
     def _on_failed(self, message: str, code: str = ""):
         self._loading_label.setVisible(False)
+        # The client's own text can be an HTTP status, raw server output or a
+        # Python exception string. None of the three tells the user what to do,
+        # so the detail goes to the log and the card gets one plain sentence.
+        from qgis.core import Qgis
+
+        from ..core.logging_utils import log
+
+        log(f"Account load failed ({code or 'unknown'}): {str(message)[:200]}",
+            Qgis.MessageLevel.Warning)
         # A payment failure / lapsed subscription authenticates locally (the key
         # is still stored) but every server call is rejected. The raw
         # "Subscription expired" + Retry read as a mysterious outage; show a
@@ -550,12 +576,44 @@ class AccountSettingsDialog(QDialog):
                 "method or review your plan."))
             self._retry_btn.setVisible(False)
             self._error_manage_btn.setVisible(True)
+        elif (code or "").strip().upper() in _ACCOUNT_OFFLINE_CODES:
+            self._error_label.setText(tr(
+                "Could not reach TerraLab. Check your internet connection, "
+                "then try again."))
+            self._retry_btn.setVisible(True)
+            self._error_manage_btn.setVisible(False)
         else:
-            self._error_label.setText(message)
+            self._error_label.setText(tr(
+                "Could not load your account. Try again in a moment."))
             self._retry_btn.setVisible(True)
             self._error_manage_btn.setVisible(False)
         self._error_widget.setVisible(True)
-        self._content_scroll.setVisible(False)
+        self._show_local_cards()
+
+    def _show_local_cards(self) -> None:
+        """Keep what works with no network on screen after a failed load.
+
+        Hiding the whole content area took the telemetry opt-out and the
+        Remove-AI-data action away with the account card. The privacy control
+        is the one thing that must never depend on a server answering.
+        """
+        while self._content_layout.count():
+            item = self._content_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        two_up_row = QWidget()
+        two_up = QHBoxLayout(two_up_row)
+        two_up.setContentsMargins(0, 0, 0, 0)
+        two_up.setSpacing(10)
+        two_up.addWidget(self._build_dependencies_card(), 1)
+        two_up.addWidget(self._build_privacy_card(), 1)
+        self._content_layout.addWidget(two_up_row)
+        self._content_scroll.setVisible(True)
+        from .dock.font_scale import apply_font_scale_to_tree
+
+        apply_font_scale_to_tree(self)
+        self.adjustSize()
+        self._fit_to_screen()
 
     @staticmethod
     def _find_subscription(data: dict) -> dict | None:
@@ -730,7 +788,13 @@ class AccountSettingsDialog(QDialog):
         remaining = plan.remaining
         total = plan.total
         reset_date = plan.reset_date
-        free_left = usage.get("free_detections_remaining") or sub.get("free_detections_remaining")
+        # First source that answers at all, not first that answers non-zero:
+        # `or` read a fresh 0 as "absent" and fell back to the account row, so
+        # a user who had just spent their last free detection was shown the
+        # figure from before the run.
+        free_left = _as_int(usage.get("free_detections_remaining"))
+        if free_left is None:
+            free_left = _as_int(sub.get("free_detections_remaining"))
 
         # One quiet status line under the header (the old two-row labeled grid
         # read as a form; this is a summary, not a form).
@@ -818,7 +882,7 @@ class AccountSettingsDialog(QDialog):
                 tr("Opens terra-lab.ai in your browser."))
             upgrade_btn.clicked.connect(self._on_upgrade_clicked)
             card_layout.addWidget(upgrade_btn)
-            benefit = QLabel(tr("10,000 credits every month. Cancel anytime."))
+            benefit = QLabel(tr("5,000 credits every month. Cancel anytime."))
             benefit.setAlignment(Qt.AlignmentFlag.AlignHCenter)
             benefit.setStyleSheet(
                 "font-size: 10px; color: rgba(128,128,128,0.9);")
@@ -972,8 +1036,9 @@ class AccountSettingsDialog(QDialog):
         box.setText(tr("Remove the downloaded AI data from this computer?"))
         box.setInformativeText(tr(
             "This deletes the local AI model files, signs you out, and resets "
-            "the plugin. Your account and credits are not affected. Manual mode "
-            "will download the files again next time you use it."))
+            "the plugin. Your account and credits are not affected. "
+            "Semi-Auto mode will download the files again next time you "
+            "use it."))
         box.setStandardButtons(
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         box.setDefaultButton(QMessageBox.StandardButton.No)

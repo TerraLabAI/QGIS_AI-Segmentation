@@ -156,6 +156,9 @@ WriteOnly = resolve_qt_enum(QIODevice, "OpenModeFlag", "WriteOnly")
 
 # QImage.Format
 FormatARGB32 = resolve_qt_enum(QImage, "Format", "Format_ARGB32")
+# 3 bytes per pixel, so a row is not 4-byte aligned: every QImage built on this
+# format has to be given an explicit bytesPerLine.
+FormatRGB888 = resolve_qt_enum(QImage, "Format", "Format_RGB888")
 
 # QTextCursor.MoveOperation
 CursorEnd = resolve_qt_enum(QTextCursor, "MoveOperation", "End")

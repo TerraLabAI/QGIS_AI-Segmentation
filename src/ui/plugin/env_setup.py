@@ -149,6 +149,15 @@ class EnvSetupMixin:
             self._update_check_delays[0], self._check_for_plugin_update)
 
     def _on_startup_check_finished(self, venv_ready: bool, message: str, checkpoint_ok: bool):
+        try:
+            self._apply_startup_check(venv_ready, message, checkpoint_ok)
+        finally:
+            # Unconditional: the key check and the balance read used to sit
+            # inside the local-install branch, so a user on the cloud engine
+            # never revalidated and never saw a balance all session.
+            self._refresh_activation_async()
+
+    def _apply_startup_check(self, venv_ready: bool, message: str, checkpoint_ok: bool):
         # Cache the venv-installed state for the Refine-in-Manual env gate.
         self._env_ready = bool(venv_ready)
         if not self.dock_widget:
@@ -171,7 +180,7 @@ class EnvSetupMixin:
             return
 
         if venv_ready:
-            self.dock_widget.set_dependency_status(True, "✓ " + tr("Dependencies ready"))
+            self.dock_widget.set_dependency_status(True, "✓ " + tr("AI ready"))
             QgsMessageLog.logMessage(
                 "✓ Virtual environment verified successfully",
                 "AI Segmentation",
@@ -179,13 +188,29 @@ class EnvSetupMixin:
             )
             self._start_device_info_worker()
             if checkpoint_ok:
-                self.dock_widget.set_checkpoint_status(True, "SAM model ready")
+                self.dock_widget.set_checkpoint_status(True, tr("AI ready"))
                 self._load_predictor()
-                self._refresh_activation_async()
             else:
+                # An install asked for by Automatic leaves the on-device
+                # packages out, so "deps ready, model not downloaded" would
+                # offer a download of weights nothing here can load. Report it
+                # as the setup it is: ok=False is what puts the Install button
+                # back with its own label, and the string below never reaches
+                # the user (set_dependency_status shows it for a DLL fault
+                # only), same as every other status this call carries.
+                model_ok = True
+                try:
+                    from ...core.venv_manager import local_model_ready
+                    model_ok, _why = local_model_ready()
+                except Exception:  # noqa: BLE001 -- never block on the probe
+                    pass  # nosec B110
+                if not model_ok:
+                    self.dock_widget.set_dependency_status(
+                        False, "Local model packages are not installed")
+                    return
                 # Model missing but deps ok.
                 self.dock_widget.set_dependency_status(
-                    True, tr("Dependencies ready, model not downloaded"))
+                    True, tr("Almost ready: the AI file is still missing."))
                 # A pending Refine handoff / background install is waiting on the
                 # model: download it now so the deferred import can complete,
                 # instead of stranding the user behind a manual Download button.
@@ -231,10 +256,54 @@ class EnvSetupMixin:
 
     def _load_predictor(self):
         """Kick off predictor initialization in the background (#34)."""
+        # A session the network is already serving must not start an on-device
+        # load. On a machine with no venv the load fails, and the failure path
+        # tears the live fix session down with "the on-device AI could not
+        # start", which is a sentence about something the user never asked for.
+        if self._cloud_correct_predictor_active():
+            return
         # Re-entry while a load is in flight must not drop the running thread's
         # last reference (GC of a live QThread hard-aborts QGIS).
         worker = getattr(self, "_predictor_worker", None)
         if worker is not None and worker.isRunning():
+            return
+        # The on-device packages must be on disk before a worker is spawned.
+        # get_venv_status does not cover them by design: it answers "can the
+        # plugin run", and Automatic is a cloud mode needing none of them. Since
+        # MANUAL_ONLY_PACKAGES made a failed torch/SAM install non-fatal, such
+        # an install writes the deps hash and reads ready forever, so every
+        # start path here spawned a worker that died on the import ("No module
+        # named 'segment_anything'"), once per QGIS start, with nothing the user
+        # could do about it. local_model_ready is the gate the Manual click path
+        # already uses; this is the funnel, so it belongs here too.
+        # Fails CLOSED, not open. local_model_ready is filesystem-only, so it
+        # raises when site-packages cannot be read at all, and a venv we cannot
+        # read is exactly the one whose worker dies on import: opening the gate
+        # there would recreate the crash loop this guard exists to stop. The one
+        # exception is the import itself, which is what an older build without
+        # the helper would hit, and that build has nothing to gate anyway.
+        try:
+            from ...core.venv_manager import local_model_ready
+        except ImportError:
+            local_model_ready = None
+        if local_model_ready is not None:
+            try:
+                model_ok, why = local_model_ready()
+            except Exception as exc:  # noqa: BLE001 - unreadable venv, treat as not ready
+                model_ok, why = False, f"cannot read the environment: {exc}"
+        else:
+            model_ok, why = True, ""
+        if not model_ok:
+            # Report it through the SAME handler a real load failure uses, never
+            # a hand-rolled block. That handler is the only place that logs the
+            # reason, sets _local_ai_load_failed so the Correct step stops
+            # offering the AI method, reads the install lane and calls
+            # _release_local_ai_install. Skipping it left the pending flag set
+            # for the whole session, which makes every later Fix click return
+            # silently ("a setup is already running"), and left nothing on
+            # screen, in the log or in telemetry: a silent failure in place of a
+            # loud one, and no way to measure whether this fix worked.
+            self._on_predictor_loaded(None, why)
             return
         from ..background_workers import PredictorLoadWorker
         if self.dock_widget:
@@ -338,14 +407,21 @@ class EnvSetupMixin:
             self._abandon_local_ai_session(err_msg, from_install=was_install)
             return
         self._local_ai_load_failed = False
-        self.predictor = predictor
+        if self._cloud_correct_predictor_active():
+            # A load already in flight when a remote route took the slot. The
+            # model is loaded and must not be thrown away: park it where the
+            # route's fallback and the next session both read it, and leave the
+            # slot alone.
+            self._local_predictor_held = predictor
+        else:
+            self.predictor = predictor
         QgsMessageLog.logMessage(
             "SAM predictor initialized (subprocess mode)",
             "AI Segmentation",
             level=Qgis.MessageLevel.Info
         )
         if self.dock_widget:
-            self.dock_widget.set_checkpoint_status(True, tr("SAM model ready"))
+            self.dock_widget.set_checkpoint_status(True, tr("AI ready"))
             self.dock_widget.set_install_progress(100, tr("Ready"))
         # Warm the model NOW when Manual use is predictable, so the first
         # session's first click never waits out the model load: right after a
@@ -504,7 +580,38 @@ class EnvSetupMixin:
                 continue
         return False
 
-    def _on_install_requested(self):
+    def _install_wants_local_model(self) -> bool:
+        """Does the install being asked for have to carry the on-device AI?
+
+        Automatic runs its inference off the machine, so an install asked for
+        from that side takes the light packages only and skips the weights.
+        Manual is the on-device mode, and so is every review lane that falls
+        back to it, so those take everything.
+
+        Answers yes on anything it cannot read: the full install is what every
+        version before this one did, and a wrong yes only costs bytes, while a
+        wrong no leaves a mode unable to start.
+        """
+        # A review lane asked for this: the fix and Add lanes fall back to the
+        # on-device model when the network route is off, which is the only
+        # reason they ever start an install.
+        for flag in ("_refine_install_pending", "_ai_add_install_pending",
+                     "_refine_handoff_active", "_pending_refine_import"):
+            if getattr(self, flag, False):
+                return True
+        try:
+            from ..ai_segmentation_dockwidget import Mode
+            return self.dock_widget._mode != Mode.AUTOMATIC
+        except (RuntimeError, AttributeError):
+            return True
+
+    def _on_install_requested(self, include_local_model: bool | None = None):
+        # Which half of the install this is. Read once, here, and remembered
+        # for the workers and for every status the run reports: the mode can
+        # change while an install runs, and the answer must not change with it.
+        if include_local_model is None:
+            include_local_model = self._install_wants_local_model()
+        self._install_includes_local_model = bool(include_local_model)
         # The install deletes the environment the SAM subprocess runs in, and
         # this method now hands that subprocess to the worker to be shut down.
         # Doing either while a crop encode owns the pipe kills it mid round
@@ -515,9 +622,14 @@ class EnvSetupMixin:
         if self._sam_pipe_busy():
             waited = getattr(self, "_install_pipe_waits", 0)
             if waited < _INSTALL_PIPE_WAIT_MAX:
+                from functools import partial
+
                 from qgis.PyQt.QtCore import QTimer as _QTimer
                 self._install_pipe_waits = waited + 1
-                _QTimer.singleShot(1500, self._on_install_requested)
+                # Carry the decision through the wait: re-deciding on the
+                # retry would read whatever mode the dock is on by then.
+                _QTimer.singleShot(1500, partial(
+                    self._on_install_requested, include_local_model))
                 return
             QgsMessageLog.logMessage(
                 "Starting the install with the local AI pipe still busy: "
@@ -536,13 +648,14 @@ class EnvSetupMixin:
                 "Manual install blocked: running inside a Flatpak/Snap sandbox",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning)
             self.dock_widget.set_dependency_status(
-                False, tr("Manual mode is not supported in this QGIS installation"))
+                False,
+                tr("Semi-Auto mode is not supported in this QGIS installation"))
             show_error_report(
                 self.iface.mainWindow(),
-                tr("Manual Mode Not Supported"),
+                tr("Semi-Auto mode is not supported"),
                 tr(
-                    "Manual mode needs to install local dependencies, which is "
-                    "not supported inside this sandboxed QGIS installation "
+                    "Semi-Auto mode needs to install local dependencies, "
+                    "which is not supported inside this sandboxed QGIS installation "
                     "(Flatpak or Snap). Please use Automatic mode instead, "
                     "which runs fully in the cloud and needs no local install."
                 ),
@@ -554,19 +667,23 @@ class EnvSetupMixin:
         # (the Intel-Mac fallback has no build for this Python). Fail fast with a
         # clear message instead of a cryptic dependency-resolver error; Automatic
         # mode runs in the cloud and needs no local install.
+        # Only the local model has no build here. numpy and rasterio do, so an
+        # install that carries neither must not be refused: refusing it is what
+        # left Automatic with no environment at all on these machines.
         from ...core.model_config import MACOS_X86_NO_LOCAL_INFERENCE
-        if MACOS_X86_NO_LOCAL_INFERENCE:
+        if MACOS_X86_NO_LOCAL_INFERENCE and include_local_model:
             QgsMessageLog.logMessage(
                 "Manual install blocked: no local inference build for this Mac + Python",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning)
             self.dock_widget.set_dependency_status(
-                False, tr("Manual mode is not supported in this QGIS installation"))
+                False,
+                tr("Semi-Auto mode is not supported in this QGIS installation"))
             show_error_report(
                 self.iface.mainWindow(),
-                tr("Manual Mode Not Supported"),
+                tr("Semi-Auto mode is not supported"),
                 tr(
-                    "Manual mode installs local components that are not available "
-                    "for this Mac with this version of QGIS. Please use Automatic "
+                    "Semi-Auto mode installs local components that are not "
+                    "available for this Mac with this version of QGIS. Please use Automatic "
                     "mode instead, which runs fully in the cloud and needs no "
                     "local install."
                 ),
@@ -601,7 +718,7 @@ class EnvSetupMixin:
                     False, tr("Removing the downloaded AI data..."))
                 return
 
-        from ...core.venv_manager import get_venv_status
+        from ...core.venv_manager import get_venv_status, local_model_ready
 
         # This runs on the UI thread, on a button click: no subprocess probe,
         # which could freeze the window for a minute. An environment whose
@@ -609,9 +726,25 @@ class EnvSetupMixin:
         # has not run yet, so a healthy install is not re-downloaded from
         # scratch; the background startup check does the real verification.
         is_ready, message = get_venv_status(allow_subprocess_probe=False)
-        if is_ready:
+        # get_venv_status answers "can the plugin run", and it says yes without
+        # the local model because Automatic is a cloud mode. Taking the
+        # shortcut on that alone stranded every environment installed without
+        # torch (blocked download, or a disk too small for it): the button that
+        # exists to repair Manual mode skipped straight to the model download
+        # and never installed the package that mode needs. Clicking Install
+        # must reach the installer whenever the local model is missing.
+        model_ready, _model_msg = local_model_ready()
+        if is_ready and not include_local_model:
+            # Automatic asked, and everything Automatic loads is already on
+            # disk. The weights below belong to the on-device model, so this
+            # stops here rather than downloading a file this mode never opens.
+            self.dock_widget.set_dependency_status(
+                True, "✓ " + tr("Ready for Automatic mode"))
+            self._refresh_activation_async()
+            return
+        if is_ready and model_ready:
             # Deps already installed, just need model download
-            self.dock_widget.set_dependency_status(True, "✓ " + tr("Dependencies ready"))
+            self.dock_widget.set_dependency_status(True, "✓ " + tr("AI ready"))
             self._auto_download_checkpoint()
             return
 
@@ -645,7 +778,8 @@ class EnvSetupMixin:
         # binaries. Cleared here on the main thread so nothing else uses it.
         predictor = getattr(self, "predictor", None)
         self.predictor = None
-        self.deps_install_worker = DepsInstallWorker(predictor)
+        self.deps_install_worker = DepsInstallWorker(
+            predictor, include_local_model=include_local_model)
         self.deps_install_worker.progress.connect(self._on_deps_install_progress)
         self.deps_install_worker.done.connect(self._on_deps_install_finished)
         self.deps_install_worker.start()
@@ -679,6 +813,8 @@ class EnvSetupMixin:
         if not self.dock_widget:
             return
         if not is_plugin_activated():
+            if self._report_locked_activation_key():
+                return
             if not self.dock_widget.is_activated():
                 self.dock_widget._update_full_ui()
             return
@@ -710,6 +846,41 @@ class EnvSetupMixin:
         self._key_revalidate_task.failed.connect(self._on_key_revalidate_failed)
         QgsApplication.taskManager().addTask(self._key_revalidate_task)
 
+    def _report_locked_activation_key(self) -> bool:
+        """True when the key is stored but the auth database is still shut.
+
+        A QGIS master password keeps the key unreadable until the user types
+        it, and the plain copy was blanked when the key moved into the auth
+        database. Read as a sign-out, that put a paying account back on the
+        sign-in page with nothing said. So say it, leave the account signed in
+        on screen, and look again in a minute: the key comes back on its own
+        once the database opens.
+        """
+        from ...core.auth_helper import activation_key_is_locked
+        if not activation_key_is_locked():
+            return False
+        self.dock_widget.set_activation_message(
+            tr("You are signed in on this computer, but QGIS cannot read your "
+               "sign-in until you enter its master password."),
+            is_error=False,
+        )
+        if not getattr(self, "_locked_key_recheck_armed", False):
+            self._locked_key_recheck_armed = True
+            from qgis.PyQt.QtCore import QTimer
+            QTimer.singleShot(60000, self._recheck_locked_activation_key)
+        return True
+
+    def _recheck_locked_activation_key(self) -> None:
+        """Look again for a key that was unreadable, and stop once it is not.
+
+        A single-shot timer cannot be called off, so this can land after the
+        plugin is unloaded: no dock, nothing to do.
+        """
+        self._locked_key_recheck_armed = False
+        if getattr(self, "dock_widget", None) is None:
+            return
+        self._refresh_activation_async()
+
     def _on_key_revalidate_ok(self, _usage: object) -> None:
         import time
         self._key_revalidate_task = None
@@ -717,15 +888,20 @@ class EnvSetupMixin:
 
     def _on_key_revalidate_failed(self, message: str, code: str) -> None:
         self._key_revalidate_task = None
-        from ...core.activation_manager import is_rejection_code
-        # Only a genuine auth rejection signs the user out. A network blip must
+        normalized = (code or "").strip().upper()
+        # Only a key the server refuses signs the user out. A network blip must
         # NOT clear the stored key (that was the old bug that logged users out
-        # offline); we keep the session and surface a non-blocking notice.
-        if is_rejection_code(code):
+        # offline), and neither must a payment problem: the key is still the
+        # user's own and works again as soon as the card does. Deleting it there
+        # cost them the whole browser sign-in for a card they had already fixed,
+        # and it disagreed with the account window, which keeps the key.
+        if normalized == "INVALID_KEY":
             from ...core.activation_manager import clear_auth
             clear_auth()
             _drop_untagged_account_history()
             self._last_key_validation_unix = 0.0
+            # The account is gone, so nothing may keep travelling under it.
+            self._end_cloud_click_session()
             if self.dock_widget:
                 self.dock_widget.set_activated_state(False)
             # A forced sign-out is a churn-grade moment (device limit hit,
@@ -740,16 +916,73 @@ class EnvSetupMixin:
             except Exception:
                 pass  # nosec B110
             return
-        self._notify_connection_issue(code, message)
+        if normalized == "SUBSCRIPTION_INACTIVE":
+            self._notify_billing_problem()
+            return
+        self._notify_revalidate_failure(normalized, message)
+
+    def _notify_billing_problem(self) -> None:
+        """One notice per session for a subscription the server calls inactive.
+
+        The same flag guards the credits refresh, so the two paths cannot tell
+        the user twice about one lapsed payment.
+        """
+        if getattr(self, "_billing_warning_shown", False):
+            return
+        self._billing_warning_shown = True
+        try:
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation",
+                tr("There's a problem with your subscription. Open Settings "
+                   "to update your payment method or review your plan."),
+                level=Qgis.MessageLevel.Warning,
+            )
+        except (RuntimeError, AttributeError):  # nosec B110
+            pass
+
+    def _notify_revalidate_failure(self, code: str, message: str) -> None:
+        """Say something for a failure that is neither a refused key nor a
+        billing problem.
+
+        A connectivity code keeps its own notice. Everything else used to be
+        swallowed, so the dock went on saying "signed in" while the server
+        rejected every call, and nothing on screen ever named it.
+        """
+        if (code or "").strip().upper() in self._CONNECTIVITY_CODES:
+            self._notify_connection_issue(code, message)
+            return
+        import time
+
+        now = time.monotonic()
+        last = getattr(self, "_last_auth_notice_monotonic", 0.0)
+        if now - last < self._CONN_NOTICE_MIN_GAP_S:
+            return
+        self._last_auth_notice_monotonic = now
+        QgsMessageLog.logMessage(
+            f"Key revalidation failed ({code or 'unknown'})",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning)
+        try:
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation",
+                tr("Could not check your AI Segmentation account. If this "
+                   "lasts, sign out and sign in again."),
+                level=Qgis.MessageLevel.Warning,
+                duration=8,
+            )
+        except (RuntimeError, AttributeError):  # nosec B110
+            pass
 
     # --- One-click connect (browser pairing handoff) ------------------------
 
     def _on_pairing_requested(self, code: str):
-        """Open the browser to /connect and start polling for the key.
+        """Start polling for the key, then open the browser to /connect.
 
-        Re-entrant: if a poll is already running (the user clicked "open the
-        page again"), we only re-open the browser instead of starting a second
-        worker.
+        The poll starts FIRST. On a machine where QGIS cannot open a browser
+        the user is handed the address to paste, and that sign-in only lands if
+        something here is already listening for the answer.
+
+        Re-entrant: the same code keeps the running poll (the user clicked
+        "open the page again"); a different code replaces it.
         """
         from qgis.PyQt.QtCore import QUrl
         from qgis.PyQt.QtGui import QDesktopServices
@@ -757,6 +990,7 @@ class EnvSetupMixin:
         from ...api.terralab_client import TerraLabClient
 
         client = TerraLabClient()
+        self._start_pairing_poll(client, code)
         # Build the connect URL from the client base so .env.local
         # TERRALAB_BASE_URL is honored in dev. Never log the code or full URL.
         url = (
@@ -764,54 +998,30 @@ class EnvSetupMixin:
             "&utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
             "&utm_content=connect"
         )
-        opened = QDesktopServices.openUrl(QUrl(url))
-        if not opened:
-            # Browser pairing is the ONLY way in, so this branch used to end
-            # the product: clicking again calls the same failing openUrl. On
-            # Linux it goes through xdg-open, which returns False when that is
-            # absent, when no browser is registered, or when a sandbox has no
-            # portal, and none of those is a connection problem. So hand the
-            # user the address instead of a diagnosis. It carries a short-lived
-            # pairing code and lands on their own clipboard, which is no wider
-            # than the browser we were trying to open it in.
-            self.dock_widget.show_pairing_idle()
-            copied = False
+        if not QDesktopServices.openUrl(QUrl(url)):
+            self._show_pairing_address(url)
+
+    def _start_pairing_poll(self, client, code: str) -> None:
+        """Wait on this code, replacing a poll that waits on an older one.
+
+        cancel() is cooperative, so a cancelled task keeps reading as running
+        for seconds. Trusting that alone left the code minted by the next
+        Connect click with no listener at all, and the user watched a spinner
+        that could never end.
+        """
+        worker = self._pairing_worker
+        if worker is not None and worker.is_active():
+            if worker.pairing_code == code:
+                return  # same code: the browser was just re-opened
+            # Older code: cut its signals before cancelling, so its wind-down
+            # cannot report a failure against the sign-in now under way.
+            for signal_name in ("pairing_succeeded", "pairing_failed",
+                                "pairing_timeout", "pairing_stalled"):
+                safe_disconnect(worker, signal_name)
             try:
-                from qgis.PyQt.QtWidgets import QApplication
-
-                clipboard = QApplication.clipboard()
-                if clipboard is not None:
-                    clipboard.setText(url)
-                    copied = True
-            except (RuntimeError, AttributeError, ImportError):
-                copied = False
-            try:
-                # Selectable, so the address can still be read and copied by
-                # hand when the clipboard itself is unavailable.
-                from qgis.PyQt.QtCore import Qt
-
-                label = self.dock_widget.activation_message_label
-                label.setWordWrap(True)
-                label.setTextInteractionFlags(
-                    Qt.TextInteractionFlag.TextSelectableByMouse)
-            except (RuntimeError, AttributeError, ImportError):
-                pass
-            if copied:
-                message = tr(
-                    "QGIS could not open a browser. The sign-in address is "
-                    "copied to your clipboard: paste it into a browser to "
-                    "finish, then come back here.")
-            else:
-                message = tr(
-                    "QGIS could not open a browser. Open this address to "
-                    "finish signing in, then come back here:\n{}").format(url)
-            self.dock_widget.set_activation_message(message, is_error=True)
-            return
-
-        if self._pairing_worker is not None and self._pairing_worker.is_active():
-            # Already polling for this code; the browser was just re-opened.
-            return
-
+                worker.cancel()
+            except RuntimeError:
+                pass  # nosec B110 - already gone
         from qgis.core import QgsApplication
 
         from ...workers.pairing_poll_task import PairingPollTask
@@ -834,6 +1044,69 @@ class EnvSetupMixin:
         QgsMessageLog.logMessage(
             "Pairing started", "AI Segmentation", level=Qgis.MessageLevel.Info)
 
+    def _show_pairing_address(self, url: str) -> None:
+        """QGIS could not open a browser: hand the user the address instead.
+
+        Browser pairing is the ONLY way in, so a diagnosis ends the product
+        here. On Linux the open goes through xdg-open, which returns False when
+        that is absent, when no browser is registered, or when a sandbox has no
+        portal, and none of those is a connection problem. The address carries
+        a short-lived code and lands on the user's own clipboard, which is no
+        wider than the browser we were trying to open it in.
+
+        The panel stays in its waiting state on purpose: the poll started
+        before this, and Cancel is the way out. Idle would offer a Connect
+        button that mints a second code and retires the one just pasted.
+        """
+        if not self.dock_widget:
+            return
+        copied = False
+        try:
+            from qgis.PyQt.QtWidgets import QApplication
+
+            clipboard = QApplication.clipboard()
+            if clipboard is not None:
+                clipboard.setText(url)
+                copied = True
+        except (RuntimeError, AttributeError, ImportError):
+            copied = False
+        try:
+            # Selectable, so the address can still be read and copied by
+            # hand when the clipboard itself is unavailable.
+            from qgis.PyQt.QtCore import Qt
+
+            label = self.dock_widget.activation_message_label
+            label.setWordWrap(True)
+            label.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByMouse)
+        except (RuntimeError, AttributeError, ImportError):
+            pass
+        if copied:
+            message = tr(
+                "QGIS could not open a browser. The sign-in address is "
+                "copied to your clipboard: paste it into a browser to "
+                "finish, then come back here. It works once.")
+        else:
+            message = tr(
+                "QGIS could not open a browser. Open this address to finish "
+                "signing in, then come back here. It works once:\n{}").format(url)
+        self.dock_widget.set_activation_message(message, is_error=True)
+
+    def _clear_pairing_address(self) -> None:
+        """Take a retired sign-in address off the dock.
+
+        The line holds a single-use code. Once that code is cancelled or spent,
+        leaving it on screen offers the user an address that cannot work.
+        """
+        if not self.dock_widget:
+            return
+        try:
+            label = self.dock_widget.activation_message_label
+            label.clear()
+            label.setVisible(False)
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110 - the dock is being torn down
+
     def _pairing_elapsed_ms(self) -> int | None:
         """Elapsed ms since the current browser sign-in poll started."""
         try:
@@ -846,6 +1119,8 @@ class EnvSetupMixin:
     def _on_pairing_succeeded(self, key: str):
         from ...core.activation_manager import save_auth_token
         save_auth_token(key)
+        # The code is spent, so the address the fallback may have shown is dead.
+        self._clear_pairing_address()
         # Whoever was signed in before must leave nothing behind in the library.
         _drop_untagged_account_history()
         # Fresh sign-in: clear the revalidation throttle so the next dock event
@@ -984,6 +1259,8 @@ class EnvSetupMixin:
 
     def _on_cancel_pairing(self, code: str = ""):
         self._cancel_pairing_worker()
+        # The code is being retired: the address that carries it goes with it.
+        self._clear_pairing_address()
         try:
             from ...core import telemetry_session_events
             telemetry_session_events.track_pairing_cancelled(duration_ms=self._pairing_elapsed_ms())
@@ -1022,7 +1299,17 @@ class EnvSetupMixin:
             is_busy_check=self.is_local_ai_busy,
         )
         dlg.sign_out_requested.connect(self._on_sign_out_requested)
+        # This window reads the balance for its own card; the dock takes the
+        # same payload instead of firing a second call and staying behind.
+        dlg.usage_loaded.connect(self._on_account_usage_loaded)
         dlg.exec()
+        # The window is a child of the QGIS main window, so C++ keeps it alive
+        # after this method drops its only Python reference. Without this every
+        # Settings open left one more hidden dialog on the main window, each
+        # holding its loader task, its avatar reader and its live connections
+        # for the rest of the session. done() has already cancelled both, and
+        # nothing reads dlg past this point, so the delete is safe here.
+        dlg.deleteLater()
 
     def is_local_ai_busy(self) -> bool:
         """True while any local install/download/verify/model-load worker or a
@@ -1166,6 +1453,8 @@ class EnvSetupMixin:
             errors.append(str(err)[:80])
         _drop_untagged_account_history()
         self._last_key_validation_unix = 0.0
+        # The account is gone, so nothing may keep travelling under it.
+        self._end_cloud_click_session()
 
         # Wipe this plugin's own QSettings groups. Leave the shared TerraLab/
         # keys (telemetry opt-out, device seed) untouched: they are shared with
@@ -1230,6 +1519,15 @@ class EnvSetupMixin:
         clear_auth()
         _drop_untagged_account_history()
         self._last_key_validation_unix = 0.0
+        # Both reads were started under the account that just left. Left alone,
+        # a late answer wrote its balance back into the cache, and the next
+        # account to sign in opened on the previous one's numbers.
+        self._cancel_task("_usage_fetch_task")
+        self._cancel_task("_key_revalidate_task")
+        # The account is gone, so nothing may keep travelling under it.
+        self._end_cloud_click_session()
+        # The object ledger belongs to the account that opened it.
+        self._end_manual_credit_session()
         if self.dock_widget:
             self.dock_widget.set_activated_state(False)
 
@@ -1255,7 +1553,9 @@ class EnvSetupMixin:
             # drop the last reference to a live QThread, which aborts QGIS.
             if self._verify_worker is not None and self._verify_worker.isRunning():
                 return
-            self._verify_worker = VerifyWorker()
+            self._verify_worker = VerifyWorker(
+                include_local_model=getattr(
+                    self, "_install_includes_local_model", True))
             self._verify_worker.progress.connect(self._on_verify_progress)
             self._verify_worker.done.connect(self._on_verify_finished)
             self._verify_worker.start()
@@ -1608,19 +1908,25 @@ class EnvSetupMixin:
                 pass  # nosec B110
             if model_ok:
                 self.dock_widget.set_dependency_status(
-                    True, "✓ " + tr("Dependencies ready"))
+                    True, "✓ " + tr("AI ready"))
             else:
                 self.dock_widget.set_dependency_status(
                     True, "✓ " + tr("Ready for Automatic mode"))
-                try:
-                    self.iface.messageBar().pushWarning(
-                        "AI Segmentation",
-                        tr("Automatic mode is ready. The on-device AI could "
-                           "not be installed, so Manual mode and the AI fix "
-                           "are off until it is. Everything else works."),
-                    )
-                except (RuntimeError, AttributeError):
-                    pass
+                # The warning belongs to the install that TRIED and could not.
+                # An install asked for by Automatic left the on-device AI out
+                # on purpose, and reporting that as a failure would name a loss
+                # the user never took.
+                if getattr(self, "_install_includes_local_model", True):
+                    try:
+                        self.iface.messageBar().pushWarning(
+                            "AI Segmentation",
+                            tr("Automatic mode is ready. The on-device AI could "
+                               "not be installed, so Semi-Auto mode and the "
+                               "AI fix are off until it is. Everything else "
+                               "works."),
+                        )
+                    except (RuntimeError, AttributeError):
+                        pass
             if message and not message.startswith("device_error"):
                 QgsMessageLog.logMessage(
                     f"Device info: {message}",
@@ -1638,7 +1944,7 @@ class EnvSetupMixin:
                     "AI Segmentation", level=Qgis.MessageLevel.Warning)
                 self.dock_widget.set_install_progress(100, "Failed")
                 self.dock_widget.set_dependency_status(
-                    True, tr("Dependencies ready, model download failed"))
+                    True, tr("Almost ready: the AI file did not download."))
                 self._release_local_ai_install()
         else:
             self.dock_widget.set_install_progress(100, "Failed")
@@ -1657,7 +1963,7 @@ class EnvSetupMixin:
             error_title = tr("Verification Failed")
             error_code = "verification_failed"
             body = "{}\n{}".format(
-                tr("Virtual environment was created but verification failed:"),
+                tr("The AI was set up but could not start."),
                 message)
             low = (message or "").lower()
             if is_app_control_error(low):
@@ -1733,6 +2039,28 @@ class EnvSetupMixin:
         if self.download_worker is not None and self.download_worker.isRunning():
             return
 
+        # The checkpoint is the local model's weights and nothing else loads
+        # them. Without the packages that read it the download is a wasted
+        # gigabyte, and on the machine that skipped those packages for lack of
+        # room it is the download that fills the disk. Stop here and leave
+        # Automatic working rather than end onboarding on a failure the user
+        # cannot act on.
+        from ...core.venv_manager import local_model_ready
+        model_ready, _model_msg = local_model_ready()
+        if not model_ready:
+            QgsMessageLog.logMessage(
+                "Skipping the AI model download: the packages that load it are "
+                "not installed. Automatic mode is unaffected.",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            self.dock_widget.set_dependency_status(
+                True, "✓ " + tr("Automatic mode ready"))
+            # Nothing else is coming, so a review lane waiting on this install
+            # has to be let go here or its banner holds the review for the rest
+            # of the session.
+            self._release_local_ai_install()
+            self._refresh_activation_async()
+            return
+
         # This path only runs at the tail of a fresh install/repair: the user
         # is onboarding and will click Start within moments, so ask
         # _on_predictor_loaded to warm the model as soon as it is ready.
@@ -1762,7 +2090,7 @@ class EnvSetupMixin:
                 "AI Segmentation", level=Qgis.MessageLevel.Warning)
             self.dock_widget.set_install_progress(100, "Failed")
             self.dock_widget.set_dependency_status(
-                True, tr("Dependencies ready, model download failed"))
+                True, tr("Almost ready: the AI file did not download."))
             self._release_local_ai_install()
 
     def _on_download_progress(self, percent: int, message: str):
@@ -1798,13 +2126,13 @@ class EnvSetupMixin:
                 self._download_cancelled = False
                 self.dock_widget.set_install_progress(100, tr("Cancelled"))
                 self.dock_widget.set_dependency_status(
-                    True, tr("Dependencies ready, model not downloaded"))
+                    True, tr("Almost ready: the AI file is still missing."))
                 self._release_local_ai_install()
                 return
 
             self.dock_widget.set_install_progress(100, "Failed")
             self.dock_widget.set_dependency_status(
-                True, tr("Dependencies ready, model download failed"))
+                True, tr("Almost ready: the AI file did not download."))
             self._release_local_ai_install()
 
             show_error_report(

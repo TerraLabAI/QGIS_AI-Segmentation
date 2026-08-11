@@ -13,8 +13,13 @@
 
 ## Data & privacy
 
-AI Segmentation has two modes with different privacy profiles. **Manual mode runs
-locally**: your imagery and clicks never leave your computer. **Automatic mode is
+AI Segmentation has two modes with different privacy profiles. **Semi-Auto mode
+asks you where the segmentation runs**, on the page you start it from. Pick *My
+computer* and your imagery and clicks never leave it. Pick *Cloud AI* and a
+small image crop around each click goes to our servers. Cloud AI is the offered
+choice, because it needs no download, and nothing is sent until you have read
+and accepted the notice that says so.
+**Automatic mode is
 cloud-powered**: the imagery tiles inside the zone you draw are sent to our
 detection service for processing during the run. If you sign in, the plugin
 also contacts our server to verify your license, plus optional anonymous usage

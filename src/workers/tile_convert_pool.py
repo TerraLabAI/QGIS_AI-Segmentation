@@ -117,8 +117,12 @@ class TileConvertPool:
 
         ``wait`` False cancels conversions that have not started yet: on a hard
         teardown the thread must become joinable at once. Results already in the
-        queue are always returned, so a cancel never throws away geometry the
-        user was billed for.
+        queue are always returned.
+
+        Those cancelled conversions ARE billed tiles whose geometry is lost, so
+        the caller drains this pool before closing it and only reaches here on
+        what its budget could not cover. Waiting here instead would not save
+        them: the stop has a fixed window before the GUI gives up on the run.
         """
         if self._closed:
             return self.drain()

@@ -309,6 +309,27 @@ def _run_start_confidence(run: dict, tiles: list) -> float:
     return snapped
 
 
+def _confidence_showing_an_object(conf: float, objects: list) -> float:
+    """``conf`` lowered to the highest 5% step at or below the best score, when
+    the cutoff would otherwise hide every object.
+
+    Same rule as the live review's _review_start_confidence (auto_review_params),
+    which restore cannot call because that one re-derives the run's default
+    instead of reading the run's own stored threshold. Without it a restored run
+    can open on an empty map, and a run whose objects all share one score has no
+    Confidence control on screen to lower.
+    """
+    import math
+
+    scores = [s for (_g, s, _a) in objects if s is not None]
+    if not scores:
+        return conf
+    best = max(scores)
+    if best >= conf:
+        return conf
+    return max(0, int(math.floor(best * 100 / 5.0)) * 5) / 100.0
+
+
 def _make_restore_selection_layer(crs_authid: str):
     """In-memory review layer for the restored detections (the run CRS variant
     of the plugin's _create_auto_selection_layer, which needs a raster layer;
@@ -415,7 +436,10 @@ def export_decoded_run(decoded: dict, confidence: float, path: str,
     ``decoded``: per feature the exporter repairs the geometry and measures it
     geodesically, which is seconds of frozen GUI at a few thousand objects.
 
-    Returns {"count": objects above the cutoff, "written": the file exists}.
+    Returns {"count": polygons that reached the file, "written": the file
+    exists}. The count comes from the exporter, not from the objects above the
+    cutoff: a geometry no repair can save is left out, and reporting the input
+    names a number the file contradicts.
     The QgsVectorLayer the exporter loads back is dropped HERE, on the thread
     that created it (a map layer must never be destroyed from another thread);
     the GUI re-opens the finished file with ``load_exported_layer``.
@@ -428,12 +452,13 @@ def export_decoded_run(decoded: dict, confidence: float, path: str,
              if g is not None and not g.isEmpty() and s >= confidence]
     if not geoms:
         return {"count": 0, "written": False}
+    stats: dict = {}
     layer = export_geometries_to_file(
         geoms, QgsCoordinateReferenceSystem(decoded.get("crs_authid") or "EPSG:4326"),
-        path, driver=driver)
+        path, driver=driver, stats=stats)
     written = layer is not None
     del layer
-    return {"count": len(geoms), "written": written}
+    return {"count": int(stats.get("written") or 0), "written": written}
 
 
 def load_exported_layer(path: str, driver: str):
@@ -577,6 +602,13 @@ def restore_run(plugin, run: dict, tiles: list, decoded: dict) -> bool:
     plugin._auto_objects = plugin._build_auto_objects(merged_scored)
     if not plugin._auto_objects:
         return False
+    # The stored threshold can sit above every score this run kept, which opens
+    # the review on nothing to see and an Export it cannot enable. Lower it to a
+    # step that shows at least one object, exactly as a live run does. Every
+    # reader below (the dock seed, the filter params, the histogram) takes the
+    # value from here.
+    conf = _confidence_showing_an_object(conf, plugin._auto_objects)
+    plugin._auto_confidence = conf
 
     # Dock state: prompt box, the confidence seed the review slider reads, and
     # land on the prompt step (the review panel lives there).
@@ -588,6 +620,9 @@ def restore_run(plugin, run: dict, tiles: list, decoded: dict) -> bool:
         spin.blockSignals(False)
         dock._auto_started = True
         dock.set_auto_zone_state("zone_set")
+        # A restored run answers the same question as a fresh one: scores that
+        # cannot order the objects give the review nothing to filter on.
+        dock.set_auto_review_score_useful(plugin._run_scores_rank_objects())
     except (RuntimeError, AttributeError):
         pass
 

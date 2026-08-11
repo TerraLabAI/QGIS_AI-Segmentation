@@ -34,13 +34,6 @@ from ...core.i18n import tr
 from ...core.model_config import _IS_MACOS_X86, USE_SAM2
 from ...core.qt_compat import QShortcut
 from ..layer_tree_combobox import LayerTreeComboBox
-from .guidance import (
-    BLUE_TINT,
-    GREEN_TINT,
-    HINT_START_MANUAL,
-    HINT_TRY_AUTOMATIC,
-    DismissibleHint,
-)
 from .styles import (
     _BTN_BLUE,
     _BTN_EXPORT_DISABLED,
@@ -54,7 +47,6 @@ from .styles import (
     _CARD_QSS,
     _INSTRUCTIONS_CARD_QSS,
     _PROGRESS_THIN_QSS,
-    _RECAP_CARD_QSS,
     BRAND_BLUE,
     BTN_GREEN,
     _btn_start_qss,
@@ -63,6 +55,7 @@ from .styles import (
 from .widgets import (
     Mode,
     _ModeSwitch,
+    _ShortcutArmingFilter,
     _Spinner,
     build_no_imagery_hero,
 )
@@ -123,17 +116,17 @@ class DockBuildMixin:
         self._setup_setup_section()
         self._setup_activation_section()
         self._setup_segmentation_section()
+        # Runs after the section above, because it inserts itself into that
+        # section's start_container, touching the Start button.
+        self._setup_manual_engine()
+        self._setup_manual_credit_gate()
         self._setup_automatic_page()
         self.main_layout.addStretch()
-        # Both nudges sit AFTER the stretch, pinned to the dock bottom just
-        # above the footer icons: the Manual Try-Automatic band and the
-        # Automatic first-steps guide. Stacking them under the Start content
-        # crowded the top of the panel, and a promo belongs at the end of the
-        # page, not in the middle of the flow. They stay main_layout items (NOT
-        # inside start_container), so their show/hide keeps running through
-        # _update_try_automatic_hint_visibility and
-        # _update_auto_tutorial_banner_visibility.
-        self.main_layout.addWidget(self.try_automatic_hint)
+        self._setup_low_credit_slot()
+        # After the stretch, pinned to the dock bottom just above the footer
+        # icons: a guide banner belongs at the end of the page, not in the
+        # middle of the flow. It is a main_layout item, so its show and hide
+        # run through _update_auto_tutorial_banner_visibility.
         self.main_layout.addWidget(self.auto_tutorial_banner)
         self._setup_update_notification()
         self._setup_update_recommendation()
@@ -141,6 +134,34 @@ class DockBuildMixin:
         # A configuration left on disk by an earlier session is already
         # readable here, so the switches apply before the dock is ever shown.
         self.apply_server_feature_switches()
+
+    def _setup_low_credit_slot(self):
+        """One bottom slot for both modes' running-low warnings.
+
+        The warning used to sit where the balance ran out: under the engine
+        cards in Semi-Auto, on the Start page in Automatic. That put an amber
+        card in the middle of the decision the user was making, and it pushed
+        everything under it down the panel. It reads the same at the foot of
+        the dock, next to the credit ring it is talking about, and the space it
+        was taking goes back to the flow.
+
+        A holder rather than a bare layout, so the slot collapses to nothing
+        when neither mode has anything to say. Both modes still own their own
+        line: the wording, the visibility and the click count stay where they
+        were, only the seat moved.
+        """
+        holder = QWidget()
+        holder.setObjectName("lowCreditSlot")
+        slot = QVBoxLayout(holder)
+        slot.setContentsMargins(0, 0, 0, 0)
+        slot.setSpacing(6)
+        self.low_credit_slot = slot
+        self.main_layout.addWidget(holder)
+        # Semi-Auto builds its line with the engine card, which runs before
+        # this; Automatic builds its own lazily and finds the slot waiting.
+        line = getattr(self, "manual_engine_low_line", None)
+        if line is not None:
+            slot.addWidget(line)
 
     def _setup_mode_switch(self):
         """Create the Interactive / Automatic segmented control at the dock top."""
@@ -313,7 +334,7 @@ class DockBuildMixin:
 
         if not USE_SAM2:
             if _IS_MACOS_X86:
-                sam1_text = tr("Intel Mac: using SAM1 (compatible with PyTorch 2.2)")
+                sam1_text = tr("Intel Mac: using the older AI model.")
             else:
                 sam1_text = tr("Update QGIS to 3.34+ for the latest AI model")
             sam1_info = QLabel(sam1_text)
@@ -515,6 +536,22 @@ class DockBuildMixin:
         self._stop_pairing_wait()
         self._connect_section.setVisible(True)
 
+    def _on_start_shortcut_key(self):
+        """G starts a session, unless the user is picking from a list.
+
+        The shortcut is scoped to the dock and its children, so it also fires
+        while the layer combo holds focus, where typing a letter is how a user
+        jumps to a layer by name. Returning from here was not enough: the
+        shortcut had already taken the letter, so the combo never got it and
+        the type-ahead did nothing. The shortcut stands DOWN for a list now
+        (refresh_auto_shortcut_arming, re-run on the press itself by
+        _ShortcutArmingFilter), and this check stays as the belt for a machine
+        where that filter never installed.
+        """
+        if self._dock_combo_has_focus():
+            return
+        self._on_start_shortcut()
+
     def _setup_segmentation_section(self):
         self.seg_widget = QWidget()
         layout = QVBoxLayout(self.seg_widget)
@@ -623,7 +660,7 @@ class DockBuildMixin:
             self.tos_container.setVisible(False)
         start_layout.addWidget(self.tos_container)
 
-        self.start_button = QPushButton(tr("Start Manual AI Segmentation"))
+        self.start_button = QPushButton(tr("Start Semi-Auto AI Segmentation"))
         self.start_button.setEnabled(False)
         self.start_button.clicked.connect(self._on_start_clicked)
         self.start_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -635,70 +672,36 @@ class DockBuildMixin:
         )
         start_layout.addWidget(self.start_button)
 
-        # "What is this mode for" caption: a quiet framed card
-        # under the Start button. One plain sentence; no free/paid wording,
-        # no cloud/local wording. Dismissible (small x), so a
-        # returning user can clear the guidance; re-enable from Account Settings.
-        # Lives inside start_container so it hides with the button once a
-        # session starts.
-        self.manual_start_caption = DismissibleHint(
-            HINT_START_MANUAL,
-            tr("Click an object and the AI outlines it. You check and save "
-               "each polygon yourself, one at a time. Use Automatic mode to "
-               "get every object in a zone at once."),
-            tint=GREEN_TINT,
-            show_glyph=False,  # a mode description, not a tip
-        )
-        start_layout.addWidget(self.manual_start_caption)
+        # Three things used to live here and no longer do, all removed on
+        # 2026-08-11. Two filled the panel after the work was over: the export
+        # recap said what the last session produced, which the saved layer in
+        # the legend already says, and the Try-Automatic band sold the other
+        # mode to somebody who had just finished using this one.
+        #
+        # The third was a dismissible caption describing the mode ("click an
+        # object and the AI outlines it, one at a time"). It went because the
+        # engine cards now sit here and carry the screen: with them above it,
+        # the caption was a fourth block of prose explaining a gesture the user
+        # cannot perform until they press Start, and it hid the moment they
+        # did. The instructions card takes over the live guidance.
+        #
+        # Do not bring any of the three back without a reason that is not "the
+        # space is empty".
 
-        # Last-session value recap (mirrors the Automatic Start page card):
-        # one quiet line under the caption summarizing what
-        # the last Manual export produced, so the value does not vanish when
-        # the session closes. When the caption is dismissed Qt collapses it and
-        # the recap sits right under the Start button. Lives in start_container
-        # so it hides with the button during a session. Session only; filled by
-        # set_manual_last_run_recap().
-        self.manual_last_run_recap = QLabel()
-        self.manual_last_run_recap.setWordWrap(True)
-        # Rich text: the layer name is a link back to the layer. It is not a
-        # web address, so external opening stays off and the dock resolves the
-        # href itself (_on_manual_recap_link). Everything from the project is
-        # escaped where the text is built (manual_recap.py).
-        self.manual_last_run_recap.setTextFormat(Qt.TextFormat.RichText)
-        self.manual_last_run_recap.setOpenExternalLinks(False)
-        self.manual_last_run_recap.linkActivated.connect(
-            self._on_manual_recap_link)
-        self.manual_last_run_recap.setStyleSheet(_RECAP_CARD_QSS)
-        self.manual_last_run_recap.setVisible(False)
-        start_layout.addWidget(self.manual_last_run_recap)
-
-        # Cross-sell nudge: a compact dismissible blue band pointing at Automatic
-        # mode. Built here with the rest of the Manual page but added to
-        # main_layout in _setup_ui (NOT to start_container), just under the
-        # Manual content and above the stretch, so it clusters with the Start
-        # view without a void above it. Because it lives outside start_container
-        # it is not auto-hidden by session/mode state, so its visibility is
-        # driven explicitly by _update_try_automatic_hint_visibility (Manual
-        # Start view only, never during a session or in Automatic mode).
-        self.try_automatic_hint = DismissibleHint(
-            HINT_TRY_AUTOMATIC,
-            tr("New: Automatic mode finds every object in a zone at once."),
-            tint=BLUE_TINT,
-            action_text=tr("Try Automatic"),
-            visibility_gate=self._should_show_try_automatic,
-        )
-        self.try_automatic_hint.action.connect(
-            lambda: self._on_mode_selected(Mode.AUTOMATIC))
-
-        # Keyboard shortcut G to start segmentation (scoped to dock + children)
+        # Keyboard shortcut G to start segmentation (scoped to dock +
+        # children). Armed like the others, from refresh_auto_shortcut_arming:
+        # it stands down while a drop-down holds focus, where the letter is the
+        # user jumping to a layer by name.
         self.start_shortcut = QShortcut(QKeySequence("G"), self)
         self.start_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        self.start_shortcut.activated.connect(self._on_start_shortcut)
+        self.start_shortcut.activated.connect(self._on_start_shortcut_key)
 
         # Automatic-flow keyboard parity (mirrors AI Edit): Escape exits the
         # selection view back to Start; Enter detects. WindowShortcut so they
-        # work whether focus is in the dock or on the canvas; a focus/mode guard
-        # (_is_auto_for_us) keeps them from hijacking unrelated QGIS tools.
+        # work whether focus is in the dock or on the canvas, and each one is
+        # armed only while the flow owns its key (refresh_auto_shortcut_arming):
+        # a window shortcut eats its key on the match, so a guard inside the
+        # handler leaves QGIS's own Escape and Undo silent all the same.
         self.auto_escape_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         self.auto_escape_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
         self.auto_escape_shortcut.activated.connect(self._on_auto_escape_shortcut)
@@ -708,19 +711,18 @@ class DockBuildMixin:
         self.auto_enter_shortcut_kp = QShortcut(QKeySequence(Qt.Key.Key_Enter), self)
         self.auto_enter_shortcut_kp.setContext(Qt.ShortcutContext.WindowShortcut)
         self.auto_enter_shortcut_kp.activated.connect(self._on_auto_enter_shortcut)
-        # Correct-step shortcuts are intentionally scoped in their handlers:
-        # they only act while the review is on Correct, so they never shadow
-        # QGIS or the prompt field elsewhere in the flow.
-        # Delete (and Ctrl+Backspace) remove the selected polygon. Their gate,
-        # _is_auto_correct_shortcut_active, stands down while the QGIS edit
-        # bridge is armed (_qgis_bridge_active_ui) or an AI fix session is
-        # running (_refine_handoff): those are exactly the states where the
-        # vertex tool claims Delete for the picked CORNER, so the polygon-delete
-        # binding and the corner-delete tool never collide. While the on-device
-        # session tool is armed, ShortcutFilter accepts the ShortcutOverride for
-        # these keys (and Ctrl+Z), so they reach the session (delete the open
-        # object, undo the last gesture) instead of this window-level pair,
-        # which would otherwise consume the key even with its gate down.
+        # Correct-step shortcuts. Delete (and Ctrl+Backspace) remove the
+        # selected polygon, and Ctrl+Z undoes the last change. All three are
+        # ARMED on their state, not merely gated on it inside the handler: a
+        # shortcut left enabled with its gate down still eats the key, and two
+        # enabled Ctrl+Z in one window make Qt fire neither. Both predicates
+        # stand down while the QGIS edit bridge is armed (_qgis_bridge_active_ui)
+        # or an AI fix session is running (_refine_handoff), which are exactly
+        # the states where the vertex tool wants Delete for the picked CORNER
+        # and QGIS wants Ctrl+Z for its own edit. While the on-device session
+        # tool is armed, ShortcutFilter accepts the ShortcutOverride for these
+        # keys, so they reach the session (delete the open object, undo the
+        # last gesture).
         self.auto_correct_remove_backspace_shortcut = QShortcut(
             QKeySequence("Ctrl+Backspace"), self)
         self.auto_correct_remove_backspace_shortcut.setContext(
@@ -739,6 +741,24 @@ class DockBuildMixin:
             Qt.ShortcutContext.WindowShortcut)
         self.auto_correct_undo_shortcut.activated.connect(
             self._on_auto_correct_undo_shortcut)
+
+        # Nothing is armed at rest, and the states that arm each key are
+        # written from half the dock, so the filter re-arms them on the press
+        # itself (see _ShortcutArmingFilter). Parented to the dock: Qt drops
+        # the filter with it, so unload leaves nothing behind on the window.
+        self.refresh_auto_shortcut_arming()
+        self._shortcut_arming_filter = _ShortcutArmingFilter(self, self)
+        # On the dock too, for the floating case: a key pressed in a floating
+        # dock never walks up to the main window.
+        self.installEventFilter(self._shortcut_arming_filter)
+        try:
+            from qgis.utils import iface
+
+            window = iface.mainWindow() if iface is not None else None
+            if window is not None:
+                window.installEventFilter(self._shortcut_arming_filter)
+        except (ImportError, AttributeError, RuntimeError):
+            pass  # nosec B110 - step changes still re-arm without the filter
 
         layout.addWidget(self.start_container)
 

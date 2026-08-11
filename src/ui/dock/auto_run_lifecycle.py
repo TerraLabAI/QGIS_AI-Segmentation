@@ -255,59 +255,20 @@ class DockAutoRunLifecycleMixin:
             except (RuntimeError, AttributeError):
                 pass
 
-    def set_last_run_recap(self, count: int, object_word: str,
-                           credits_used, layer_name: str | None = None,
-                           layer_id: str | None = None) -> None:
-        """Store the session-only value recap for the Automatic Start page: one
-        quiet line summarizing what the last run produced.
-
-        One message per state: right after a Finish the success line already
-        tells the whole story, so while it is visible the recap only STORES its
-        text and stays hidden; dismissing the success line (next Start click or
-        mode switch) reveals it as the session memory. Best-effort by contract
-        (the export already committed): never raises, so a recap problem can
-        never surface as a failed Finish."""
-        try:
-            recap = getattr(self, "auto_last_run_recap", None)
-            if recap is None:
-                return
-            from .auto_recap import auto_last_run_html
-            self._auto_recap_layer_id = layer_id or ""
-            recap.setText(auto_last_run_html(
-                count, object_word or tr("object"), layer_name or "",
-                credits_used, linked=bool(layer_id)))
-            recap.setToolTip(
-                tr("Click the layer name to see it on the map")
-                if layer_id else "")
-            # isHidden (the widget's OWN flag), not isVisible: the latter is
-            # False whenever an ancestor is hidden, which would wrongly show
-            # both messages when this runs while the dock is not on screen.
-            success = getattr(self, "auto_export_success", None)
-            recap.setVisible(success is None or success.isHidden())
-        except Exception:  # nosec B110 -- recap is best-effort, never break Finish
-            pass
-
-    def clear_last_run_recap(self) -> None:
-        """Retire the last-run recap card (text included, so a later success
-        dismissal cannot resurface a stale run's numbers). Called when a new
-        run starts. Safe to call when the card was never built."""
-        try:
-            recap = getattr(self, "auto_last_run_recap", None)
-            if recap is not None:
-                recap.setText("")
-                recap.setVisible(False)
-        except (RuntimeError, AttributeError):
-            pass
+    # set_last_run_recap and clear_last_run_recap were removed on 2026-08-11
+    # with the card they drove. What a finished run produced is in the legend
+    # and on the footer credit ring; the Start page is about the next run. The
+    # success line below is what survives, because it answers "where did it go"
+    # at the one moment the user asks it.
 
     def set_auto_export_success(self, count: int, layer_name: str,
                                 object_word=None, layer_id=None) -> None:
         """Show the post-export success line on the Start page: how many objects
         were saved and the layer they went to, as a link that frames it on the
-        map. It is the ONE message right after a Finish (the recap card stays
-        hidden until this line is dismissed). Set AFTER reset_auto_to_start
-        (which clears it), so it survives the return to Start; dismissed on the
-        next Start click or mode switch. Best-effort; never raises into a
-        committed export."""
+        map. The one message on the page right after a Finish. Set AFTER
+        reset_auto_to_start (which clears it), so it survives the return to
+        Start; dismissed on the next Start click or mode switch. Best-effort;
+        never raises into a committed export."""
         try:
             lbl = getattr(self, "auto_export_success", None)
             if lbl is None:
@@ -321,33 +282,23 @@ class DockAutoRunLifecycleMixin:
                 tr("Click the layer name to see it on the map")
                 if layer_id else "")
             lbl.setVisible(True)
-            # One message per state: the recap card repeats this story, so it
-            # waits behind the success line (see clear_auto_export_success).
-            recap = getattr(self, "auto_last_run_recap", None)
-            if recap is not None:
-                recap.setVisible(False)
         except Exception:  # nosec B110 -- success line is best-effort
             pass
 
     def clear_auto_export_success(self) -> None:
         """Hide the post-export success line (a new Start, a mode switch, any
-        reset), and let the stored last-run recap take over as the quiet
-        session memory. Safe to call when the labels were never built."""
+        reset). Safe to call when the label was never built."""
         try:
             lbl = getattr(self, "auto_export_success", None)
             if lbl is not None:
                 lbl.setVisible(False)
-            recap = getattr(self, "auto_last_run_recap", None)
-            if recap is not None and bool(recap.text()):
-                recap.setVisible(True)
         except (RuntimeError, AttributeError):
             pass
 
     def _on_auto_recap_link(self, _href: str) -> None:
         """Reveal the layer the last run exported to: make it the active layer
-        and frame it. Both Automatic recap lines carry the same href and the
-        same run, so one handler serves them. A layer removed since the export
-        resolves to nothing, so the click is simply ignored."""
+        and frame it. A layer removed since the export resolves to nothing, so
+        the click is simply ignored."""
         try:
             from qgis.core import QgsProject
             from qgis.utils import iface

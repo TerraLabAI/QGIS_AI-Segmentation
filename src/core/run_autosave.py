@@ -116,7 +116,8 @@ def _open_writer(path: str, table: str, fields: QgsFields, crs):
 def write_autosave(merged_ided: list, crs_authid: str, prompt: str,
                    run_id: str, source_layer=None) -> dict | None:
     """Stream the merged scored set ((fid, geom, score) triples) to a
-    GeoPackage table in one pass, no temp memory layer.
+    GeoPackage table in one pass, no temp memory layer. A None score is written
+    as NULL, for a polygon no model scored.
 
     Lands in the project's shared GeoPackage next to the committed runs; if
     that file cannot be written, falls back to a standalone per-run file in
@@ -183,7 +184,11 @@ def write_autosave(merged_ided: list, crs_authid: str, prompt: str,
                     multi.transform(ground_metre_xform)
                 feat = QgsFeature(fields)
                 feat.setGeometry(multi)
-                feat.setAttributes(["", object_class, round(float(score), 3)])
+                # No score means no model scored this polygon (a hand save), so
+                # the column stays NULL rather than claiming a confidence.
+                feat.setAttributes([
+                    "", object_class,
+                    None if score is None else round(float(score), 3)])
                 writer.addFeature(feat)
                 count += 1
             except Exception:  # nosec B112 -- one bad geometry never stops the save

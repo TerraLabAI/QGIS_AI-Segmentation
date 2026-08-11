@@ -713,6 +713,11 @@ class AutoReviewMixin:
         export. Shared by the interactive Export button and the headless MCP
         path so both commit the review identically.
 
+        The review state is cleared only when the write produced a layer name.
+        A write every target refused comes back as (None, count) with the
+        review, the objects and the selection layer left alone, so the user can
+        free the file and press Finish again.
+
         ``include_hidden`` is set ONLY on the safety-net exit paths (teardown
         autosave, the review Exit dialog's Save): a paid detection hidden by the
         Confidence cutoff must not be silently lost, so when the visible set is
@@ -774,6 +779,14 @@ class AutoReviewMixin:
                 clear_pending(self._auto_run_id or None)
             except Exception:  # nosec B110
                 pass
+        else:
+            # Every write target refused. Keep the review, the objects and the
+            # selection layer exactly as they are, and report the failure with
+            # the count: the teardown below would take a paid run off the screen
+            # and leave the user no Finish to press, which is what the caller's
+            # message asks them to do. The autosave pointer stays too, so the
+            # run is still recoverable.
+            return None, len(refined)
         # Capture the run's REAL outcome (chosen confidence, refine settings,
         # the kept geometry - even after a Refine-in-Manual detour) on a hidden
         # background task. Best-effort: queued only after the local export
@@ -864,22 +877,22 @@ class AutoReviewMixin:
                 error_code="export_failed",
             )
             return
-        # Capture the remaining recap facts while the run context still exists
-        # (the reset clears it). credits_used = billed tiles of the run; the
-        # layer id is what makes the layer name a link on both recap lines.
+        # Capture the layer id while the run context still exists (the reset
+        # clears it). It is what makes the layer name a link on the success
+        # line.
         try:
-            recap_used = (self._auto_run_ctx or {}).get("total")
             recap_layer_id = getattr(self, "_auto_export_layer_id", "")
-        except Exception:  # nosec B110 -- recap is best-effort
-            recap_used, recap_layer_id = None, ""
+        except Exception:  # nosec B110 -- the success line is best-effort
+            recap_layer_id = ""
         self._reset_auto_for_new_run()
-        # ONE message right after Finish: the success line says how many objects
-        # were saved and where; the value recap is only STORED and takes over
-        # once the success line is dismissed (next Start click or mode switch),
-        # so the two never show together. Both are entirely best-effort: the
-        # export already succeeded, so nothing here may raise. Set AFTER the
-        # reset, which clears the Start page, so the success line survives the
-        # return to Start.
+        # ONE message right after Finish, saying how many objects were saved and
+        # where. Entirely best-effort: the export already succeeded, so nothing
+        # here may raise. Set AFTER the reset, which clears the Start page, so
+        # the line survives the return to Start.
+        #
+        # A second, quieter card used to carry the same run plus its credit cost
+        # for the rest of the session. Removed 2026-08-11: it repeated the
+        # legend and the footer ring on the page about the NEXT run.
         try:
             if self.dock_widget:
                 self.dock_widget.set_auto_export_success(
@@ -888,17 +901,6 @@ class AutoReviewMixin:
                     layer_id=recap_layer_id,
                 )
         except Exception:  # nosec B110 -- never break Finish on the success line
-            pass
-        try:
-            if self.dock_widget and recap_used is not None:
-                self.dock_widget.set_last_run_recap(
-                    count=count,
-                    object_word=recap_prompt or tr("Example match"),
-                    credits_used=recap_used,
-                    layer_name=name or "",
-                    layer_id=recap_layer_id,
-                )
-        except Exception:  # nosec B110 -- never break Finish on the recap
             pass
 
     def _reset_auto_for_new_run(self) -> None:
@@ -1025,7 +1027,13 @@ class AutoReviewMixin:
                 # Safety net: the dialog offered to save detections hidden by
                 # Confidence, so export the FULL found set, not the (possibly
                 # empty) visible one, or the promise silently drops paid work.
-                self._export_auto_review(include_hidden=True)
+                saved = self._export_auto_review(include_hidden=True)
+                if not saved or not saved[0]:
+                    # Every write target refused. The export already told the
+                    # user and left the review standing; resetting here would
+                    # take the paid run off the screen right after promising to
+                    # save it, with no Finish left to press.
+                    return
                 self._reset_auto_for_new_run()
                 return
             if clicked is not drop_btn:

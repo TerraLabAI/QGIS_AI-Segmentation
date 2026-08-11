@@ -24,7 +24,6 @@ from .font_scale import scale_qss_font_px, widget_pixel_ratio
 from .guidance import (
     HINT_EXEMPLAR_DRAW_BOX,
     HINT_EXEMPLAR_EXCLUDE_BOX,
-    HINT_TRY_AUTOMATIC,
     HINT_TUTORIAL_FIRST_STEPS,
     is_hint_dismissed,
 )
@@ -42,6 +41,15 @@ from .styles import (
 from .widgets import (
     Mode,
 )
+
+# The two signs of the click legend: extend and trim, the same pair
+# `styles._sign_badge` draws. As quiet text here, because the instruction card
+# is one QLabel (see dock/build.py) and a badge is a widget, so it cannot be
+# seated inside it. They replace a green circle and a red cross emoji, which
+# painted themselves in the platform's colours rather than ours and read as
+# cheap beside the rest of the panel.
+_SIGN_ADD = "+"
+_SIGN_TRIM = "−"
 
 
 class DockStateMixin:
@@ -74,7 +82,15 @@ class DockStateMixin:
                 self.setup_status_label.setVisible(True)
                 self.install_button.setText(tr("Retry"))
             else:
-                self.setup_status_label.setVisible(False)
+                # Show what came in. Three callers report a refused install
+                # through this line and nowhere else (a sandboxed QGIS, a Mac
+                # with no local runtime, a removal of the downloaded AI data),
+                # so hiding it left the panel saying nothing at all about a
+                # click that had just done nothing.
+                self.setup_status_label.setText(message)
+                self.setup_status_label.setStyleSheet(
+                    "font-weight: bold; color: palette(text);")
+                self.setup_status_label.setVisible(bool(message))
                 if is_update:
                     self.install_button.setText(tr("Update"))
                 else:
@@ -85,6 +101,15 @@ class DockStateMixin:
             # The setup section is now the interactive content: remember it so a
             # switch to Automatic and back restores it (see _setup_section_wanted).
             self._setup_section_wanted = True
+            # An install that refused to start reports itself here and starts
+            # no worker, so nothing will ever tick. With nothing on the wire
+            # the offline-install window has nothing left to show: hand the
+            # page back now rather than after a watchdog. Guarded on the
+            # running install so a status arriving mid-download cannot close a
+            # window that is doing its job.
+            if not self._manual_install_running():
+                self._manual_install_wants_model = False
+                self._finish_manual_install_window(False)
 
         self._update_full_ui()
 
@@ -139,6 +164,13 @@ class DockStateMixin:
             self._last_percent = percent
 
         self.setup_progress_label.setText(f"{message}{time_info}")
+        # The same line, mirrored into the offline-install window when one is
+        # up. Here rather than at the top of the method, so the window gets the
+        # estimate with it: "how long is left" is the whole reason anybody
+        # watches an install. A no-op for every install this window did not ask
+        # for (the review's lanes, Automatic's light setup), which carry their
+        # own progress.
+        self._mirror_manual_install_progress(percent, f"{message}{time_info}")
 
         is_update = self.install_button.text() in (
             tr("Update"), tr("Updating..."))
@@ -147,6 +179,9 @@ class DockStateMixin:
             # An install just started: the setup section owns the interactive
             # content until it completes, so a mode round trip must restore it.
             self._setup_section_wanted = True
+            # A fresh attempt clears the last one's verdict. Without this the
+            # panel keeps the failed install's card up over a running one.
+            self._manual_install_failed = False
             self._install_start_time = time.time()
             self._current_progress = 0
             self._last_percent = 0
@@ -155,9 +190,13 @@ class DockStateMixin:
             self.setup_progress.setValue(0)
             self.setup_progress.setVisible(True)
             self.setup_progress_label.setVisible(True)
-            self.cancel_toggle.setVisible(True)
-            self.cancel_toggle.setArrowType(Qt.ArrowType.RightArrow)
-            self.cancel_button.setVisible(False)
+            # The Cancel button, straight away. It used to hide behind a
+            # disclosure arrow, so stopping an install took three actions and
+            # two of them said nothing: open the arrow, press the button that
+            # appears, then confirm. The confirm is the one that matters.
+            self.cancel_toggle.setVisible(False)
+            self.cancel_button.setText(tr("Cancel installation"))
+            self.cancel_button.setVisible(True)
             self.install_button.setVisible(False)
             self.setup_status_label.setVisible(False)
             self.welcome_title.setText(tr("Installing AI Segmentation..."))
@@ -165,6 +204,9 @@ class DockStateMixin:
         elif percent >= 100 or "cancel" in message.lower() or "failed" in message.lower():
             self._progress_timer.stop()
             self._install_start_time = None
+            # Whatever this install carried, it is over. The next one says for
+            # itself whether it brings the on-device AI.
+            self._manual_install_wants_model = False
             self.setup_progress.setValue(percent)
             self.setup_progress.setVisible(False)
             self.setup_progress_label.setVisible(False)
@@ -184,8 +226,16 @@ class DockStateMixin:
                 self.setup_status_label.setVisible(True)
                 self.setup_status_label.setText(tr("Installation failed"))
                 self.welcome_title.setText(tr("Click Install to set up AI Segmentation"))
+                # The one state that hands the page back to the install card:
+                # it carries the real message and the Retry button, which a
+                # window closing on the failure would take away with it.
+                self._manual_install_failed = True
             else:
                 self.welcome_title.setText(tr("Click Install to set up AI Segmentation"))
+            # The install is over, whichever way. The window goes with it, and
+            # a failure asks the panel to take over.
+            self._finish_manual_install_window(
+                "failed" not in message.lower())
         else:
             # Intermediate tick (1..99). The deps phase hides the bar via
             # set_dependency_status once deps are validated; the very next
@@ -195,6 +245,14 @@ class DockStateMixin:
             # visibility here keeps the hand-off seamless.
             self.setup_progress.setVisible(True)
             self.setup_progress_label.setVisible(True)
+            # An install does not always open at 0. With the packages already
+            # on disk only the model file is left, and that one starts at 80,
+            # so the timer the rest of the dock reads to answer "is a download
+            # on the wire" never started: the offline-install window's watchdog
+            # called a live download failed, and Start offered to run a second
+            # install over the same environment.
+            if not self._progress_timer.isActive():
+                self._progress_timer.start(500)
             if self._current_progress < percent:
                 self._current_progress = percent
                 self.setup_progress.setValue(percent)
@@ -224,6 +282,17 @@ class DockStateMixin:
 
     def set_checkpoint_status(self, ok: bool, message: str):
         self._checkpoint_ok = ok
+        if not ok:
+            # The one caller is the model refusing to load, which is the end of
+            # that install and sends no further tick. Nothing else would stop
+            # the timer, and a timer left running says a download is on the
+            # wire for the rest of the session: Start stays grey behind "the
+            # offline AI is still downloading" with nothing downloading.
+            try:
+                self._progress_timer.stop()
+            except (RuntimeError, AttributeError):
+                pass  # nosec B110 -- teardown
+            self._manual_install_wants_model = False
         if ok:
             self.setup_status_label.setText(message)
             self.setup_status_label.setStyleSheet("font-weight: bold; color: palette(text);")
@@ -231,6 +300,11 @@ class DockStateMixin:
             # Model ready = setup done: the setup section is no longer the
             # interactive content, so a later mode round trip must not resurrect it.
             self._setup_section_wanted = False
+            self._manual_install_failed = False
+            self._manual_install_wants_model = False
+            # The offline AI is on the machine, so the window that was asking
+            # for it has nothing left to say.
+            self._finish_manual_install_window(True)
         self._update_full_ui()
 
     def set_segmentation_active(self, active: bool, layer=None):
@@ -251,6 +325,12 @@ class DockStateMixin:
         # Starting/stopping a Manual session crosses the Start screen boundary,
         # so re-evaluate whether the mode switch belongs on screen.
         self._refresh_mode_switch_visibility()
+        # Same boundary for the engine box: the route is fixed for the life of
+        # a session, so a box that could still be ticked would promise
+        # something it cannot do. Driven here rather than from _update_full_ui
+        # because that one does not run on a session start or stop.
+        self._refresh_manual_engine_ui()
+        self._refresh_manual_credit_gate()
         if active:
             self._update_instructions()
 
@@ -317,38 +397,6 @@ class DockStateMixin:
             self.secondary_buttons_widget.setVisible(False)
             self.batch_info_widget.setVisible(False)
 
-        # The bottom-pinned nudges follow the Start view: they live outside
-        # start_container (in main_layout, above the footer) so their visibility
-        # must be driven explicitly whenever a session starts/stops.
-        self._update_try_automatic_hint_visibility()
-
-    def _should_show_try_automatic(self) -> bool:
-        """True only on the Manual Start view: signed in, Manual (Interactive)
-        mode, setup complete, no active session, hint not dismissed.
-
-        The Try-Automatic nudge belongs to Manual ONLY - it must NEVER appear in
-        the Automatic section, which the mode check enforces.
-        """
-        setup_complete = self._dependencies_ok and self._checkpoint_ok
-        is_manual_mode = self._mode == Mode.INTERACTIVE
-        base_ready = self._plugin_activated and is_manual_mode and setup_complete and not self._segmentation_active
-        # Empty state shows ONLY the hero (one info per state): the
-        # cross-sell band waits until imagery exists, like the Automatic
-        # tutorial gate below.
-        has_rasters = self.layer_combo.count_layers() > 0
-        return bool(base_ready and has_rasters and not is_hint_dismissed(HINT_TRY_AUTOMATIC))
-
-    def _update_try_automatic_hint_visibility(self):
-        """Drive the bottom-pinned Try-Automatic nudge from its Start-view gate.
-
-        The band is pinned to the dock bottom (main_layout, above the footer),
-        so unlike start_container it is not naturally hidden by mode/session
-        state and must be gated explicitly.
-        """
-        hint = getattr(self, "try_automatic_hint", None)
-        if hint is not None:
-            hint.setVisible(self._should_show_try_automatic())
-
     def _should_show_auto_tutorial(self) -> bool:
         """True only on the Automatic Start step: signed in, Automatic mode, on
         step 0, hint not dismissed. Hidden mid-flow, during a run/review, and in
@@ -408,7 +456,11 @@ class DockStateMixin:
         else:
             self.export_button.setEnabled(False)
             self.export_button.setStyleSheet(_BTN_EXPORT_DISABLED)
-            self.export_button.setToolTip("")
+            # A dead primary with an empty tooltip is the most hovered control
+            # on this page. Say what would turn it on.
+            self.export_button.setToolTip(
+                tr("Save a polygon first. Export writes every polygon you "
+                   "kept to a layer."))
 
     def set_point_count(self, positive: int, negative: int):
         self._positive_count = positive
@@ -490,17 +542,17 @@ class DockStateMixin:
             text = (
                 tr("Polygon saved ({n} total). Click another element, or export "
                    "when done.").format(n=self._saved_polygon_count) + "\n\n"
-                "\U0001F7E2 " + tr("Left-click to select")
+                + _SIGN_ADD + "  " + tr("Left-click to select")
             )
         elif total == 0:
             text = (
-                tr("Click on the element you want to segment:") + "\n\n"
-                "\U0001F7E2 " + tr("Left-click to select")
+                tr("Click the object you want to segment:") + "\n\n"
+                + _SIGN_ADD + "  " + tr("Left-click to select")
             )
         else:
             text = (
-                "\U0001F7E2 " + tr("Left-click to add more") + "\n"
-                "\u274C " + tr("Right-click to exclude from selection")
+                _SIGN_ADD + "  " + tr("Left-click to add more") + "\n"
+                + _SIGN_TRIM + "  " + tr("Right-click to exclude from selection")
             )
 
         self.instructions_label.setText(text)
@@ -571,46 +623,6 @@ class DockStateMixin:
         # the saved/candidate count, e.g. right after the detections import).
         self._update_instructions()
 
-    def set_manual_last_run_recap(self, count: int, area_m2,
-                                  layer_name: str | None = None,
-                                  layer_id: str | None = None) -> None:
-        """Show the session-only value recap on the Manual Start view after a
-        successful export: what the session produced and where it went.
-
-        The layer name is a link: clicking it selects the layer and frames it on
-        the map, so the user reaches the result without hunting through the
-        legend. Best-effort by contract (the export already committed): never
-        raises, so a recap problem can never surface as a failed export."""
-        try:
-            recap = getattr(self, "manual_last_run_recap", None)
-            if recap is None:
-                return
-            from .manual_recap import manual_recap_html
-            self._manual_recap_layer_id = layer_id or ""
-            recap.setText(manual_recap_html(count, area_m2, layer_name))
-            recap.setToolTip(
-                tr("Click the layer name to see it on the map")
-                if layer_id else "")
-            recap.setVisible(True)
-        except Exception:  # nosec B110 -- recap is best-effort, never break export
-            pass
-
-    def _on_manual_recap_link(self, _href: str) -> None:
-        """Reveal the layer the last Manual session exported to: make it the
-        active layer and frame it. A layer removed since the export resolves to
-        nothing, so the click is simply ignored."""
-        try:
-            from qgis.core import QgsProject
-            from qgis.utils import iface
-            layer_id = getattr(self, "_manual_recap_layer_id", "")
-            layer = QgsProject.instance().mapLayer(layer_id) if layer_id else None
-            if layer is None or iface is None:
-                return
-            iface.setActiveLayer(layer)
-            iface.zoomToActiveLayer()
-        except Exception:  # nosec B110 -- a recap click must never raise
-            pass
-
     @staticmethod
     def _is_online_layer(layer) -> bool:
         """Check if a raster layer is an online/remote service."""
@@ -655,13 +667,22 @@ class DockStateMixin:
         if not self._segmentation_active:
             self.start_container.setVisible(has_rasters_available)
 
-        deps_ok = self._dependencies_ok
-        checkpoint_ok = self._checkpoint_ok
+        # The on-device install, or the engine that needs none of it.
+        setup_ok = (self._dependencies_ok and self._checkpoint_ok) \
+            or self._manual_cloud_route_picked()
         activated = self._plugin_activated
         # Once the ToS lock is set, consent is permanent - skip the accepted check.
         tos_ok = has_tos_locked() or has_tos_accepted()
-        can_start = deps_ok and checkpoint_ok and has_layer and activated and tos_ok
+        # A cloud session with an empty account can click but never save, so it
+        # is not a session. The credit gate below the button carries the two
+        # ways on from here.
+        funded = not (self._manual_cloud_route_picked()
+                      and self._manual_credits_exhausted())
+        can_start = setup_ok and has_layer and activated and tos_ok and funded
         self.start_button.setEnabled(can_start and not self._segmentation_active)
+        # What the engine box turns Start into: a session, or the download the
+        # cleared box asks for. Runs after the line above, and overrides it.
+        self._refresh_manual_engine_card_enabled()
 
     def _update_ui_state_automatic(self):
         """Automatic mode UI state - update dynamic elements of the auto page."""
@@ -708,7 +729,14 @@ class DockStateMixin:
         # detections hit zero: at that point the user needs the pricing info
         # to continue, so it earns the space. Before that, the footer ring +
         # Subscribe pill are the only upsell surface.
-        exhausted = self._is_free_exhausted()
+        # Never over a live run or an open review. The review panel is built
+        # INSIDE auto_controls_section, so swapping it for the upsell took away
+        # the results of the run that had just spent the last credit: the
+        # "your detections are kept below" line, the filters and Export all
+        # went, leaving a paywall where paid work had been.
+        owns_page = bool(getattr(self, "_auto_run_active", False)
+                         or getattr(self, "_auto_review_active", False))
+        exhausted = self._is_free_exhausted() and not owns_page
         self.auto_upsell_card.setVisible(exhausted)
         self.auto_controls_section.setVisible(not exhausted)
         if exhausted:
@@ -1210,12 +1238,17 @@ class DockStateMixin:
         self._detect_blocked_last = reason
 
     def _refresh_auto_credits_display(self):
-        """Drive the footer credit gauge (ring + count + Subscribe pill)."""
-        in_auto = self._mode == Mode.AUTOMATIC and self._plugin_activated
+        """Drive the footer credit gauge (ring + count + Subscribe pill).
+
+        Both modes, because the balance belongs to the account and not to one
+        page. Signed out it stays hidden: _show_signed_out_page clears the
+        cached numbers, so there is nothing to show there anyway.
+        """
+        signed_in = self._plugin_activated
         remaining = self._auto_credits
         total = self._auto_credits_total
 
-        show_gauge = in_auto and remaining is not None
+        show_gauge = signed_in and remaining is not None
         if show_gauge:
             if total is not None and total > 0:
                 self._footer_credits_label.setText(f"{remaining} / {total}")
@@ -1253,7 +1286,7 @@ class DockStateMixin:
             self._credit_ring.setVisible(False)
             self._footer_credits_label.setVisible(False)
 
-        pill_shown = in_auto and not self._auto_is_subscriber
+        pill_shown = signed_in and not self._auto_is_subscriber
         self._subscribe_pill.setVisible(pill_shown)
         # The pill carries most of the upsell clicks in the product and used to
         # report none of the matching impressions, so its click-through rate
@@ -1306,6 +1339,13 @@ class DockStateMixin:
 
     def cleanup_signals(self):
         """Disconnect project signals and clean up shortcuts/timers on plugin reload."""
+        # The offline-install window is a top-level child of the dock, so a
+        # reload with one open would leave it on screen with nothing behind its
+        # buttons.
+        try:
+            self._close_manual_install_window()
+        except (TypeError, RuntimeError, AttributeError):
+            pass
         try:
             self.layer_combo.cleanup()
         except (TypeError, RuntimeError, AttributeError):

@@ -334,6 +334,16 @@ def replace_delay_s(shipped: float) -> float:
     return float(dial_in_range("install.replace.delay_s", shipped, 0.1, 30.0))
 
 
+def min_free_gb_full(shipped: float) -> float:
+    """Free GB the preflight wants before it installs the local model too."""
+    return float(dial_in_range("install.disk.min_free_gb_full", shipped, 1.0, 40.0))
+
+
+def min_free_gb_automatic(shipped: float) -> float:
+    """Free GB below which even the two Automatic packages cannot install."""
+    return float(dial_in_range("install.disk.min_free_gb_automatic", shipped, 0.2, 40.0))
+
+
 # -- the two bundled tool downloads ----------------------------------------
 
 

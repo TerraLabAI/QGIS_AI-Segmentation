@@ -24,10 +24,13 @@ class DepsInstallWorker(QThread):
     progress = pyqtSignal(int, str)
     done = pyqtSignal(bool, str)
 
-    def __init__(self, predictor=None, parent=None):
+    def __init__(self, predictor=None, parent=None, include_local_model: bool = True):
         super().__init__(parent)
         self._cancelled = False
         self._predictor = predictor
+        # Public: the review's env gate reads it to tell an install that will
+        # end in a usable local model from one that never fetched it.
+        self.include_local_model = bool(include_local_model)
 
     def cancel(self):
         self._cancelled = True
@@ -86,6 +89,7 @@ class DepsInstallWorker(QThread):
             success, message = create_venv_and_install(
                 progress_callback=lambda percent, msg: self.progress.emit(percent, msg),
                 cancel_check=lambda: self._cancelled,
+                include_local_model=self.include_local_model,
             )
             self.done.emit(success, message)
         except Exception as e:
@@ -274,6 +278,20 @@ class RemoveAiDataWorker(QThread):
                 thread = threading.Thread(target=predictor.cleanup, daemon=True)
                 thread.start()
                 thread.join(timeout=8)
+                if thread.is_alive():
+                    # Same stop as DepsInstallWorker._shutdown_predictor, for
+                    # the same reason: that thread is still killing a process
+                    # whose executable and libraries live in the tree below.
+                    # Windows refuses to delete either, so the delete comes back
+                    # half done and reports leftovers the user cannot clear.
+                    _log_worker_warning(
+                        "Model shutdown did not finish in time; the removal was "
+                        "stopped rather than delete files still held open")
+                    # The detail is a log and a flag, never shown as written:
+                    # the caller turns any error into its own sentence.
+                    self.done.emit(
+                        False, "", "the local AI did not stop; nothing deleted")
+                    return
             except Exception:  # noqa: BLE001
                 pass  # nosec B110 - a stuck cleanup must not block the delete
 
@@ -296,17 +314,31 @@ class RemoveAiDataWorker(QThread):
 
 
 class VerifyWorker(QThread):
-    """Runs venv verification + device detection off the main thread."""
+    """Runs venv verification + device detection off the main thread.
+
+    ``include_local_model`` must match the install that just ran. False skips
+    both the local-model package checks and the device probe, which reads the
+    same packages: on an environment that never fetched them the probe can
+    only fail, and its failure would be reported as a broken install.
+    """
     done = pyqtSignal(bool, str)  # (is_valid, message)
     progress = pyqtSignal(int, str)   # (percent, message)
+
+    def __init__(self, include_local_model: bool = True, parent=None):
+        super().__init__(parent)
+        self.include_local_model = bool(include_local_model)
 
     def run(self):
         try:
             from ..core.venv_manager import verify_venv
             is_valid, msg = verify_venv(
-                progress_callback=lambda pct, m: self.progress.emit(pct, m))
+                progress_callback=lambda pct, m: self.progress.emit(pct, m),
+                include_local_model=self.include_local_model)
             if not is_valid:
                 self.done.emit(False, msg)
+                return
+            if not self.include_local_model:
+                self.done.emit(True, "")
                 return
             self.progress.emit(100, tr("Detecting device..."))
             try:

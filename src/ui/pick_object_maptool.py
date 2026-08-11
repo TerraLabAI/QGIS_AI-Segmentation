@@ -138,10 +138,14 @@ class PickObjectMapTool(QgsMapTool):
         return False
 
     def keyPressEvent(self, event):  # noqa: N802 (Qt API)
+        # Both keys are acted on here, so both are accepted: an unaccepted key
+        # keeps travelling up the parent chain and fires a second handler.
         if event.key() == Qt.Key.Key_Escape:
             self._press_screen = None
+            event.accept()
             self.cancelled.emit()
         elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            event.accept()
             self.confirmed.emit()
         else:
             super().keyPressEvent(event)

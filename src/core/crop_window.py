@@ -36,6 +36,66 @@ SCALE_STEP = 1.15
 # or it does not belong in that shared crop and gets its own centred one.
 EDGE_CLEARANCE = 0.05
 
+# Native resolution: one source pixel per crop pixel. The floor for every window
+# the two helpers below pick. See their docstrings for why.
+NATIVE_SCALE = 1.0
+
+
+def scale_at_least_native(exact_scale: float) -> float:
+    """A file raster's zoom-out factor, never below native resolution.
+
+    A crop is answered at a fixed square size whatever it holds, so a window
+    cut from fewer source pixels than that square has to be blown up to fill
+    it. Blowing a crop up invents no detail: it spends the whole answer on
+    pixels that were interpolated, and the answer comes back worse than the
+    same click answered from a larger window read at native resolution. So a
+    canvas zoomed in past the raster's own pixels takes more ground rather than
+    fewer pixels.
+
+    Nothing here can ask for pixels the raster does not have. The reader clamps
+    the window to the raster, so a source coarser than the square simply sends
+    what it holds, which is the one case where there is nothing else to send.
+    """
+    try:
+        value = float(exact_scale)
+    except (TypeError, ValueError):
+        return NATIVE_SCALE
+    if not value > 0:
+        return NATIVE_SCALE
+    return max(NATIVE_SCALE, value)
+
+
+def ground_per_pixel_at_least_native(requested: float, native: float) -> float:
+    """The same floor for a tiled source, whose windows are sized in ground units.
+
+    ``native`` is the finest ground size per pixel the source actually serves,
+    or 0 when that is unknown, in which case the request is left alone. Asking
+    a tiled source for a finer step than it serves buys interpolated pixels at
+    the price of ground, exactly what ``scale_at_least_native`` refuses.
+    """
+    try:
+        want = float(requested)
+        floor = float(native)
+    except (TypeError, ValueError):
+        return requested
+    if not want > 0 or not floor > 0:
+        return requested
+    return max(want, floor)
+
+
+def scale_floor_is_usable(min_scale) -> bool:
+    """Can this floor be the base of the scale ladder below?
+
+    The tiled path measures its floor off the canvas, so a window with no size
+    yet reports zero and a transform that failed reports a number that is not
+    one. Both reach `log()`, where zero divides and the rest raises.
+    """
+    try:
+        value = float(min_scale)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(value) and value > 0
+
 
 def crop_scale_for_bounds(
     width: float,
@@ -51,11 +111,34 @@ def crop_scale_for_bounds(
     ``scale`` is the crop reader's zoom-out factor: it reads
     ``crop_size * scale`` native pixels and resamples them down to
     ``crop_size``, so 1.0 is native resolution and 8.0 is the reader's ceiling.
+
+    ``min_scale`` comes from the canvas on the tiled path, where a window not
+    yet laid out reports zero and a broken transform reports a number that is
+    not one. Both reach the logarithm below, so the floor is checked here
+    rather than at every caller.
+
+    Bounds that cover no ground, or none that can be read, answer with the
+    caller's own floor, and 0.0 when the caller gave no usable one. 0.0 means
+    "no size to give", which every reader of this number already treats as
+    "measure it yourself". The alternative was ``NATIVE_SCALE``, and that is a
+    zoom factor on source pixels: handed to a tiled caller, whose windows are
+    sized in ground units, it asks for one ground unit per pixel and reads a
+    crop a thousand units wide.
     """
+    floored = scale_floor_is_usable(min_scale)
+    unsized = float(min_scale) if floored else 0.0
     if native_pixel_size <= 0:
-        return min_scale
+        return unsized
     needed_ground = max(width, height) * margin
     exact = needed_ground / (crop_size * native_pixel_size)
+    if not math.isfinite(exact) or not exact > 0:
+        # A coordinate that is not a number reaches the logarithm below and
+        # raises there, on the click path. Refused here, like the floor.
+        return unsized
+    if not floored:
+        # No floor to ladder from. The window that just holds the object is
+        # the honest answer, and raising it is all the floor was ever for.
+        return min(max_scale, exact)
     if exact <= min_scale:
         return min_scale
     if exact >= max_scale:
@@ -132,6 +215,37 @@ def crop_window_key(
     """Comparable identity for one crop window, safe against float drift."""
     return (round(float(center_x), 6), round(float(center_y), 6),
             round(float(scale), 6))
+
+
+def crop_pixel_of_point(
+    bounds: tuple[float, float, float, float],
+    img_shape: tuple[int, int],
+    x: float,
+    y: float,
+) -> tuple[int, int] | None:
+    """(row, col) of a ground point inside a crop, floored like a raster read.
+
+    The same answer a raster library's inverse transform gives, written out so
+    the click path does not need one. Rows run top down, which is why the
+    northing is subtracted rather than added.
+
+    None when the window has no size. (0, 0) would be a valid pixel address,
+    and the caller cannot tell it from an answer: it prompts the model at the
+    crop's top-left corner and the user gets a mask nowhere near their click.
+
+    Clamped to the grid, because a point on the right or bottom bound divides
+    out to exactly the pixel count and would index one past the last column.
+    """
+    minx, miny, maxx, maxy = bounds
+    height, width = int(img_shape[0]), int(img_shape[1])
+    span_x = maxx - minx
+    span_y = maxy - miny
+    if span_x <= 0 or span_y <= 0 or width <= 0 or height <= 0:
+        return None
+    col = math.floor((x - minx) * width / span_x)
+    row = math.floor((maxy - y) * height / span_y)
+    return (min(max(int(row), 0), height - 1),
+            min(max(int(col), 0), width - 1))
 
 
 def window_frames_bounds(

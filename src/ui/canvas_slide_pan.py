@@ -77,7 +77,10 @@ class CanvasSlidePan:
         renders nothing: re-rendering there would restart the whole basemap tile
         job for a map that never moved.
         """
-        anchor, last = self._anchor, screen_point or self._last
+        # `is not None`, not truthiness: a QPoint on the top-left pixel is
+        # falsy, and taking the previous position there commits the wrong move.
+        anchor = self._anchor
+        last = screen_point if screen_point is not None else self._last
         self._anchor = None
         self._last = None
         if anchor is None:
