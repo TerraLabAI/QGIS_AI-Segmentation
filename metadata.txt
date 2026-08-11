@@ -3,7 +3,7 @@ name=AI Segmentation by TerraLab
 description=Segment buildings, vegetation, or any object in your raster using AI, refine & export as vector polygons
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
-version=2.3.1
+version=2.4.0
 author=Yvann and Lilien from TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
@@ -14,7 +14,7 @@ about=
 
     • Fully automatic: AI model and dependencies install themselves
 
-    • Two modes: Manual runs entirely on your computer. Automatic is cloud-powered, and the imagery inside the zone you draw is sent to our detection service to be processed.
+    • Two modes: Semi-Auto asks you where the segmentation runs. Pick "My computer" and nothing is sent. Pick "Cloud AI" and a small image crop around each click goes to our servers. Automatic is cloud-powered, and the imagery inside the zone you draw is sent to our detection service to be processed.
 
     • Works on any layer: local rasters (GeoTIFF, JPG, PNG) & online layers (WMS, XYZ tiles)
 
@@ -29,6 +29,27 @@ about=
     • Multilingual: English, French, Portuguese, Spanish, German, Italian, Dutch, Polish, Indonesian, Japanese, Chinese
 
 changelog=
+    2.4.0
+    - Manual mode is now called Semi-automatic, and can answer every click on TerraLab's servers: nothing to download, results in seconds
+    - Cloud clicks come back faster, including the first click of a session
+    - Clear pricing: saving an object costs one credit; correcting it, and everything on your computer, costs nothing
+    - You are charged only once the object is written to your file, and a refused object is never lost
+    - Outlines carry fewer points and hug the object closer, straight from the default settings
+    - The offline install now holds QGIS until it ends, instead of leaving a half-ready engine behind
+    - Drawings are read in the CRS they were made in, wherever they come from
+    - Export counts what actually reached the file, and finds your table whatever its case
+    - Fixed a crash when closing QGIS, and a stray Enter no longer discards a paid run
+    2.3.1
+    - Semi-Auto now asks where the segmentation runs, and you pick with one click: on your computer, or on TerraLab's servers
+    - Work straight away with no download: the cloud engine needs no install, and clicking costs nothing
+    - The offline AI gets its own install window, which says the size and the time before you start, and can be stopped
+    - Corners survive: an outline keeps the angles it was drawn to keep, with fewer points and a closer fit
+    - A drawn example now bounds the Precision slider, so the range offered fits the object you are after
+    - Fixing a polygon opens on the AI method when nothing has to be downloaded first
+    - The Confidence control steps aside on runs where every object scores the same
+    - Road runs keep the wide tile their model needs
+    - Signing out mid-session now ends it and says so, instead of leaving clicks that do nothing
+    - Re-opening a saved object no longer costs a second credit
     2.3.0
     - The panel follows the text size you set in QGIS, so every label, button and window stays readable
     - Installs behind a company network, including a proxy that asks for a password
