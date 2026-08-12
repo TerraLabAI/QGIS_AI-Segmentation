@@ -817,7 +817,7 @@ class AccountSettingsDialog(QDialog):
             # exhausted.
             fill = BRAND_GREEN if remaining > 0 else BRAND_RED
             text_color = BRAND_GREEN_TEXT if remaining > 0 else BRAND_RED
-            credits_text = tr("{remaining} / {total} credits").format(
+            credits_text = tr("{remaining} / {total} cloud detections").format(
                 remaining=f"{remaining:,}", total=f"{total:,}"
             )
             # The count is also the way out to the website: the user who cannot
@@ -831,8 +831,8 @@ class AccountSettingsDialog(QDialog):
             credits_lbl.setOpenExternalLinks(True)
             credits_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
             credits_lbl.setToolTip(tr(
-                "Opens your terra-lab.ai dashboard: your plan, your credits and "
-                "your payment details."))
+                "Opens your terra-lab.ai dashboard: your plan, your cloud "
+                "detections and your payment details."))
             credits_lbl.setStyleSheet(f"font-size: 12px; color: {text_color};")
             card_layout.addWidget(credits_lbl)
             bar = self._credits_bar(remaining, total, fill)
@@ -845,11 +845,11 @@ class AccountSettingsDialog(QDialog):
             # responses omit it).
             free_total = usage.get("free_detections_total")
             if free_total:
-                free_text = tr("{n} of {total} free detections left").format(
+                free_text = tr("{n} of {total} free cloud detections left").format(
                     n=free_left, total=int(free_total))
                 bar = self._credits_bar(free_left, int(free_total), fill)
             else:
-                free_text = tr("{n} free detection(s) remaining").format(
+                free_text = tr("{n} free cloud detection(s) remaining").format(
                     n=free_left)
             free_lbl = QLabel(free_text)
             free_lbl.setStyleSheet(f"font-size: 12px; color: {text_color};")
@@ -882,7 +882,9 @@ class AccountSettingsDialog(QDialog):
                 tr("Opens terra-lab.ai in your browser."))
             upgrade_btn.clicked.connect(self._on_upgrade_clicked)
             card_layout.addWidget(upgrade_btn)
-            benefit = QLabel(tr("5,000 credits every month. Cancel anytime."))
+            benefit = QLabel(tr(
+                "5,000 cloud detections every month, zones of any size. "
+                "Cancel anytime."))
             benefit.setAlignment(Qt.AlignmentFlag.AlignHCenter)
             benefit.setStyleSheet(
                 "font-size: 10px; color: rgba(128,128,128,0.9);")
@@ -1036,7 +1038,8 @@ class AccountSettingsDialog(QDialog):
         box.setText(tr("Remove the downloaded AI data from this computer?"))
         box.setInformativeText(tr(
             "This deletes the local AI model files, signs you out, and resets "
-            "the plugin. Your account and credits are not affected. "
+            "the plugin. Your account and your cloud detections are not "
+            "affected. "
             "Semi-Auto mode will download the files again next time you "
             "use it."))
         box.setStandardButtons(

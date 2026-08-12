@@ -42,14 +42,13 @@ from .widgets import (
     Mode,
 )
 
-# The two signs of the click legend: extend and trim, the same pair
-# `styles._sign_badge` draws. As quiet text here, because the instruction card
-# is one QLabel (see dock/build.py) and a badge is a widget, so it cannot be
-# seated inside it. They replace a green circle and a red cross emoji, which
-# painted themselves in the platform's colours rather than ours and read as
-# cheap beside the rest of the panel.
-_SIGN_ADD = "+"
-_SIGN_TRIM = "−"
+# The two signs of the click legend: extend and trim. They quote the canvas,
+# where a left click drops a green dot (MARKER_POSITIVE) and a right click a red
+# one (MARKER_NEGATIVE), so the legend and the map name the same two things with
+# the same two colours. A "+" and a "−" said it in the panel's own grey and lost
+# that link, which is the only reason the legend is there.
+_SIGN_ADD = "\U0001F7E2"
+_SIGN_TRIM = "\u274C"
 
 
 class DockStateMixin:
@@ -320,6 +319,10 @@ class DockStateMixin:
         else:
             self._segmentation_layer_id = None
 
+        # A live session owns its raster. The combo otherwise follows the map
+        # view, and a pan away from the work would swap the layer under it.
+        self.layer_combo.set_view_tracking(not active)
+
         self._update_button_visibility()
         self._update_ui_state()
         # Starting/stopping a Manual session crosses the Start screen boundary,
@@ -506,20 +509,36 @@ class DockStateMixin:
                 else _INSTRUCTIONS_CARD_QSS)
         self.instructions_label.setMinimumHeight(0 if style == "compact" else 70)
 
-    def set_manual_encoding(self, reading: bool) -> None:
-        """Base Manual is reading the imagery around the click, or has stopped.
+    def set_manual_encoding(self, reading: bool, phase: str = "imagery") -> None:
+        """Base Manual is waiting on something the click needs, or has stopped.
 
-        That read takes seconds and used to show nothing but an hourglass, so
-        the instruction card says what the wait is for. One line, same card, no
-        second place to look."""
-        if getattr(self, "_manual_encoding", False) == bool(reading):
+        That wait takes seconds and used to show nothing but an hourglass, so
+        the instruction card says what it is for. One line, same card, no
+        second place to look. ``phase`` names which wait it is: ``imagery``
+        for the pixels around the click, ``remote`` for an answer travelling
+        back from a machine that may still be starting."""
+        want = bool(reading)
+        phase = phase if want else "imagery"
+        if (getattr(self, "_manual_encoding", False) == want
+                and getattr(self, "_manual_encoding_phase", "imagery") == phase):
             return
-        self._manual_encoding = bool(reading)
+        self._manual_encoding = want
+        self._manual_encoding_phase = phase
+        if reading:
+            # A new read is the user acting on whatever the last notice asked
+            # for, so the notice has stopped being true. Cleared before the
+            # flag is read below, or the wait line would land under it.
+            self.clear_manual_notice()
         self._update_instructions()
 
     def _update_instructions(self):
         """Update instruction text based on current segmentation state."""
         total = self._positive_count + self._negative_count
+
+        if self.manual_notice_is_live():
+            # A click failed for a reason the user can fix. The notice owns the
+            # card until it expires or the next read starts (dock/manual_notice).
+            return
 
         if self._refine_handoff:
             # In-place AI reshape: the Correct card carries the guidance and the
@@ -530,11 +549,17 @@ class DockStateMixin:
 
         if getattr(self, "_manual_encoding", False):
             # The only state where the panel says what the plugin is doing
-            # rather than what to do next: the click has been taken and the
-            # imagery it needs is being read.
+            # rather than what to do next: the click has been taken, and what
+            # it is waiting on is named. Two waits, two sentences: reading the
+            # imagery is the machine's own disk or the tile server, answering
+            # is a machine elsewhere that may still be starting up. Pointing at
+            # the wrong one sends the user to check the wrong thing.
             self._set_instructions_style("waiting")
-            self.instructions_label.setText(
-                _msg_text("info", tr("Reading the imagery around your click...")))
+            if getattr(self, "_manual_encoding_phase", "") == "remote":
+                line = tr("Sending to the AI...")
+            else:
+                line = tr("Reading the imagery around your click...")
+            self.instructions_label.setText(_msg_text("info", line))
             return
         self._set_instructions_style("card")
         if total == 0 and self._saved_polygon_count > 0:
@@ -606,6 +631,7 @@ class DockStateMixin:
         self._handoff_editing = False
         self._handoff_selected = 0
         self._manual_encoding = False
+        self._manual_encoding_phase = "imagery"
         self.reset_refine_sliders()
         self._update_button_visibility()
         self._update_ui_state()
@@ -625,13 +651,19 @@ class DockStateMixin:
 
     @staticmethod
     def _is_online_layer(layer) -> bool:
-        """Check if a raster layer is an online/remote service."""
+        """Whether this raster is read by rendering it rather than from a file.
+
+        One list, the reader's own (core.raster_provider_kinds). The copy that
+        used to sit here left out postgresraster and virtualraster, so the panel
+        called a layer local that the crop reader treats like a web service.
+        """
         if layer is None or not isinstance(layer, QgsRasterLayer):
             return False
         provider = layer.dataProvider()
         if provider is None:
             return False
-        return provider.name() in ("wms", "wmts", "xyz", "arcgismapserver", "wcs")
+        from ...core.raster_provider_kinds import CANVAS_RENDERED_PROVIDERS
+        return provider.name() in CANVAS_RENDERED_PROVIDERS
 
     def _is_layer_georeferenced(self, layer) -> bool:
         """Check if a raster layer is properly georeferenced. Delegates to the
@@ -659,13 +691,22 @@ class DockStateMixin:
         # the Manual half of the fix that keeps fresh + delete-last-layer paths
         # landing on the same clean empty screen.
         self.no_rasters_widget.setVisible(empty)
-        self.layer_combo.setVisible(has_rasters_available)
-        self.layer_label.setVisible(not self._segmentation_active and has_rasters_available)
+        # Same rule one state further on: at zero credits on the cloud lane the
+        # credit card IS the page, so the picker and the Start block go with the
+        # rest. A raster cannot be picked into a session that cannot open, and
+        # leaving them up was what made that screen read as a form with an error
+        # stuck to it.
+        paywalled = self._manual_credit_gate_owns_page()
+        self.layer_combo.setVisible(has_rasters_available and not paywalled)
+        self.layer_label.setVisible(not self._segmentation_active
+                                    and has_rasters_available
+                                    and not paywalled)
         # start_container (Terms + Start button + caption) is a Start-view thing;
         # hide it in the empty state so only the hero shows. Session visibility is
         # owned elsewhere, so only touch it while no segmentation is active.
         if not self._segmentation_active:
-            self.start_container.setVisible(has_rasters_available)
+            self.start_container.setVisible(has_rasters_available
+                                            and not paywalled)
 
         # The on-device install, or the engine that needs none of it.
         setup_ok = (self._dependencies_ok and self._checkpoint_ok) \
@@ -715,8 +756,12 @@ class DockStateMixin:
             self.auto_layer_label.setVisible(has_auto_rasters)
             self.auto_steps.setVisible(has_auto_rasters)
             # Start only needs a raster to lock; consent is asked at Detect.
-            self.auto_start_btn.setEnabled(
-                has_auto_rasters and self.auto_layer_combo.currentLayer() is not None)
+            _start_ok = (has_auto_rasters
+                         and self.auto_layer_combo.currentLayer() is not None)
+            self.auto_start_btn.setEnabled(_start_ok)
+            # A dead Start with no reason was the first wall of the flow.
+            self.auto_start_btn.setToolTip("" if _start_ok else tr(
+                "Load imagery in QGIS, then pick it above to start."))
         self._update_auto_detect_enabled()
 
     def _update_auto_page_state(self):
@@ -1210,10 +1255,26 @@ class DockStateMixin:
         hard_ok = hard_ok and credits_enough and premium_ok and tos_ok
         run_allowed = hard_ok and can_run
         self.auto_detect_btn.setEnabled(run_allowed and not self._auto_run_active)
-        # A disabled button with no reason reads as broken: consent and the
-        # empty setup are the two gates the user can fix right here, so say so.
+        # A disabled button with no reason reads as broken. Every gate gets a
+        # sentence naming the way out: the silent branches covered most of the
+        # blocked runs, and a user who cannot see why the button is dead has no
+        # move left but to close the panel.
         if not tos_ok:
             tip = tr("Accept the Terms and Privacy Policy first.")
+        elif not has_layer:
+            tip = tr("Pick a raster layer at the top of the panel first.")
+        elif self._auto_zone_too_large:
+            tip = tr("This zone at this precision is too big for one run. "
+                     "Draw a smaller zone, or lower the precision.")
+        elif not credits_ok:
+            tip = tr("No cloud detections left this month. Semi-Auto mode runs "
+                     "on your computer, free and unlimited.")
+        elif not credits_enough:
+            tip = tr("This run costs more cloud detections than you have left. "
+                     "Lower the precision, or draw a smaller zone.")
+        elif not premium_ok:
+            tip = tr("One free run covers fewer cloud detections than this. "
+                     "Lower the precision, or draw a smaller zone.")
         elif hard_ok and not has_object:
             tip = tr("Type a word for the object, or draw an example.")
         else:
@@ -1260,20 +1321,21 @@ class DockStateMixin:
                 self._footer_credits_label.setText(str(remaining))
                 self._credit_ring.setVisible(False)
             if self._auto_is_subscriber:
-                tooltip = tr("{n} credits remaining").format(n=remaining)
+                tooltip = tr("{n} cloud detections remaining").format(n=remaining)
             elif total is not None and total > 0:
-                tooltip = tr("{n} of {total} free detections left").format(
+                tooltip = tr("{n} of {total} free cloud detections left").format(
                     n=remaining, total=total)
             else:
-                tooltip = tr("{n} free detection(s) remaining").format(n=remaining)
+                tooltip = tr("{n} free cloud detection(s) remaining").format(n=remaining)
             # A balance with no return date cannot be acted on: the quota
             # renews on the sign-up anniversary, which nobody can guess.
             # Pre-formatted by set_auto_credits, empty on servers that send no
             # period_end, and the line simply drops out then.
             reset_day = getattr(self, "_auto_reset_display", "")
             if reset_day:
-                tooltip += "\n" + tr("Credits come back on {date}").format(
-                    date=reset_day)
+                tooltip += "\n" + tr(
+                    "Your cloud detections come back on {date}").format(
+                        date=reset_day)
             # The gauge is a link, so the tooltip says where it goes.
             tooltip += "\n" + tr("Click to open your dashboard")
             self._footer_credits_label.setToolTip(tooltip)

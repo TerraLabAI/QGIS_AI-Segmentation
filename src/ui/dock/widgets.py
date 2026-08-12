@@ -467,12 +467,24 @@ class _ModeSwitch(QFrame):
         self._interactive_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self._interactive_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._interactive_btn.setProperty("mode", "interactive")
+        # The two halves carried no description at all, on or off screen. The
+        # segment is where the user picks a way of working, so each half says
+        # what it does and what it costs before they commit to it.
+        # Never says where this mode runs: Semi-Auto carries its own engine
+        # picker underneath, so the tooltip claiming "runs on your computer"
+        # contradicted the Cloud AI card the user had just selected.
+        self._interactive_btn.setToolTip(tr(
+            "One object at a time: click it, the AI outlines it. You choose "
+            "where it runs, on our servers or on your own computer."))
 
         self._automatic_btn = QPushButton(tr("Automatic"))
         self._automatic_btn.setCheckable(True)
         self._automatic_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self._automatic_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._automatic_btn.setProperty("mode", "automatic")
+        self._automatic_btn.setToolTip(tr(
+            "Draw a zone, name one kind of object, get all of them in one run. "
+            "Runs on our servers and uses your cloud detections."))
 
         # No badge on the Automatic half. A "PRO" pill on the tab read as a
         # locked, complicated mode before the user had seen what it does; the
@@ -546,6 +558,9 @@ class _MethodSwitch(QFrame):
         self.setAccessibleName(tr("Fix method"))
         self.setAccessibleDescription(
             tr("Choose how to fix the polygon: AI points or QGIS vertices"))
+        self.setToolTip(tr(
+            "AI: point at what to keep or trim, one cloud detection per "
+            "polygon. Manual: move the corners yourself, free."))
 
         outer = QHBoxLayout(self)
         outer.setContentsMargins(3, 3, 3, 3)
@@ -650,13 +665,23 @@ class _EngineSwitch(QWidget):
         # the whole choice turns on and a shipped one cannot be retuned until
         # the user updates. An id the server does not carry falls through to
         # the shipped English below.
+        # No model name on either card. A version number tells a GIS user
+        # nothing they can act on, and it dates the plugin the day we swap the
+        # model. Size and where it runs are the two facts that decide the pick.
+        #
+        # ONE LINE, hard budget: the gloss wraps but the card does not grow, so
+        # a second line is clipped mid-word. About 31 characters fit per card at
+        # the dock's 260px minimum. Keep every locale under that, here and in
+        # the served copy.
         self._cloud_btn = self._build_card(
             "cloud",
             f"{_CLOUD_EMOJI}  " + tr("Cloud AI"),
-            dial_copy("engine.cloud_gloss", tr("Faster and more accurate")))
+            dial_copy("engine.cloud_gloss",
+                      tr("Bigger model, more accurate")))
         self._local_btn = self._build_card(
             "local", f"{_LAPTOP_EMOJI}  " + tr("My computer"),
-            dial_copy("engine.local_gloss", tr("Free, works offline")))
+            dial_copy("engine.local_gloss",
+                      tr("Smaller model, works offline")))
 
         self._btn_group = QButtonGroup(self)
         self._btn_group.setExclusive(True)

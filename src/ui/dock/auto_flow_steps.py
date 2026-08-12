@@ -389,6 +389,18 @@ class DockAutoFlowStepsMixin:
         except (RuntimeError, AttributeError):
             pass
 
+    def _ai_fix_session_owns_undo(self) -> bool:
+        """Whether a live AI fix session is the one to take an Undo press.
+
+        The session runs on the map tool, not on a QGIS edit buffer, so there
+        is no native undo stack for the key to belong to. Its own undo (the
+        last point, the last part) is reached through the same signal as the
+        journal's, and the plugin picks between them.
+        """
+        if not bool(getattr(self, "_refine_handoff", False)):
+            return False
+        return not bool(getattr(self, "_qgis_bridge_active_ui", False))
+
     def _on_auto_correct_undo_shortcut(self) -> None:
         """Undo the last Correct-step change with the platform Undo shortcut.
 
@@ -397,7 +409,7 @@ class DockAutoFlowStepsMixin:
         the draw tool there (see _on_auto_undo_pressed). The two states never
         overlap, so at most one of the two acts on a press.
         """
-        if self._is_auto_correct_shortcut_active():
+        if self._is_auto_correct_shortcut_active() or self._ai_fix_session_owns_undo():
             self.auto_correction_undo_requested.emit()
 
     def set_auto_shortcuts_enabled(self, enabled: bool) -> None:
@@ -422,23 +434,30 @@ class DockAutoFlowStepsMixin:
 
         Wider than the Correct step: the same shortcut carries the undo for
         the zone draw and for an example box, both of which run before any
-        review exists. Narrower than the flow: while the QGIS editing bridge
-        or an AI fix session is up, Ctrl+Z belongs to QGIS's own undo stack,
-        and two enabled shortcuts on one key in one window make Qt fire
-        neither.
+        review exists. Narrower than the flow: while the QGIS editing bridge is
+        up, Ctrl+Z belongs to QGIS's own undo stack, and two enabled shortcuts
+        on one key in one window make Qt fire neither.
+
+        An AI fix session is the other way round. It puts no layer into edit
+        mode, so QGIS's own undo is disabled and there is nothing to be
+        ambiguous with, while the key is the one gesture the session needs
+        most: taking back the point just placed. It used to stand down here,
+        which left the press to the map tool's event filter, and that filter
+        only ever sees it when the canvas holds the focus. A press right after
+        clicking anything in the panel went nowhere.
         """
-        if not self.auto_flow_owns_keys():
-            return False
         if bool(getattr(self, "_qgis_bridge_active_ui", False)):
+            return False
+        if self._ai_fix_session_owns_undo():
+            return True
+        if not self.auto_flow_owns_keys():
             return False
         # The merge pick owns the map and the keyboard, and it is the one
         # state that silences the other keys without routing this one: the
         # zone draw and the example box both connect their own undo to this
         # shortcut, which is why the master switch cannot carry it. Undoing a
         # journal entry mid-pick moves the very polygons the pick is holding.
-        if bool(getattr(self, "_auto_correct_merge_armed", False)):
-            return False
-        return not bool(getattr(self, "_refine_handoff", False))
+        return not bool(getattr(self, "_auto_correct_merge_armed", False))
 
     def refresh_auto_shortcut_arming(self) -> None:
         """Enable each dock shortcut only while the plugin owns its key.

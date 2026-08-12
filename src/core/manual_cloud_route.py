@@ -5,51 +5,44 @@ all. Whoever swaps a predictor in asks both first.
 
 A plugin that never hears from a server still behaves exactly as it did before
 this file existed. That is carried by the second question, which is fail-closed
-(see ``manual_cloud_route_offered``), not by the first, which now reads an
-unanswered store as yes: the cloud engine is the one the product recommends,
-and a user who has never touched the box gets it. Nothing travels on that alone.
+(see ``manual_cloud_route_offered``), not by the first, which answers yes until
+the user says otherwise: the cloud engine is the one the product recommends, and
+a user who has never touched the cards gets it. Nothing travels on that alone.
 Imagery leaves the machine only once the data notice has been accepted, which
 the click path checks for itself.
+
+The choice lasts for the session and no longer. It used to sit in the user's
+QGIS profile under ``AISegmentation/manual_cloud_route``, which meant one
+afternoon spent on My computer held the machine there for months. That key is
+now abandoned on purpose: the profiles that carry it keep it, and nothing reads
+it. Picking My computer is a step the user takes when they want it, each time.
 """
 from __future__ import annotations
-
-from qgis.core import QgsSettings
-
-# Frozen literal. It sits in the user's QGIS profile, so a rename would lose
-# the choice of every install that already made one.
-MANUAL_CLOUD_ROUTE_KEY = "AISegmentation/manual_cloud_route"
 
 # The name the fleet-wide switch is published under, so the option can be
 # withdrawn from everyone with one deploy and no plugin release.
 MANUAL_CLOUD_ROUTE_FEATURE = "manual_cloud_route"
 
+# Session state, not a setting. Module-level, so a plugin reload clears it along
+# with the module and the cards come back up on Cloud AI.
+_cloud_route_picked = True
 
-def manual_cloud_route_enabled(settings=None) -> bool:
+
+def manual_cloud_route_enabled() -> bool:
     """Whether the clicks should be answered off the machine.
 
-    True when nothing has been stored, because the engine cards on the
-    Semi-Auto page open on Cloud AI. A user who picked My computer has False
-    written, and keeps it. No imagery travels on this alone: the data notice is
-    a separate answer, and every sender checks both.
-
-    False on anything unreadable: the on-device path is the one that always
-    works, so it is what a broken store means.
+    True at every start: the engine cards on the Semi-Auto page open on Cloud
+    AI. A user who picks My computer holds it until QGIS or the plugin
+    restarts. No imagery travels on this alone: the data notice is a separate
+    answer, and every sender checks both.
     """
-    try:
-        store = settings or QgsSettings()
-        return bool(store.value(MANUAL_CLOUD_ROUTE_KEY, True, type=bool))
-    except Exception:  # nosec B110 -- an unreadable setting means off
-        return False
+    return _cloud_route_picked
 
 
-def set_manual_cloud_route_enabled(enabled: bool, settings=None) -> None:
-    """Persist the user's choice. Never raises: a settings store that refuses a
-    write must not take the toggle down with it."""
-    try:
-        store = settings or QgsSettings()
-        store.setValue(MANUAL_CLOUD_ROUTE_KEY, bool(enabled))
-    except Exception:  # nosec B110 -- the choice is lost, the session is not
-        pass
+def set_manual_cloud_route_enabled(enabled: bool) -> None:
+    """Record the user's choice for the rest of this session."""
+    global _cloud_route_picked
+    _cloud_route_picked = bool(enabled)
 
 
 def manual_cloud_route_offered() -> bool:

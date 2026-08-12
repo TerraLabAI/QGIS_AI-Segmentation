@@ -69,24 +69,29 @@ def track_mode_switched(to_mode: str, had_unsaved_manual: bool = False,
     })
 
 
-def track_install_started() -> None:
-    track(ev.INSTALL_STARTED)
+# entry: "semi_auto_modal" when the install came through the window that holds
+# QGIS until it ends, "background" for the lighter one Automatic asks for.
+def track_install_started(entry: str = "background") -> None:
+    track(ev.INSTALL_STARTED, {"entry": entry})
 
 
 def track_install_completed(duration_ms: int | None = None,
                             python_minor: int | None = None,
-                            retry_count: int | None = None) -> None:
+                            retry_count: int | None = None,
+                            entry: str = "background") -> None:
     track(ev.INSTALL_COMPLETED, {
         "duration_ms": duration_ms,
         "python_minor": python_minor,
         "retry_count": retry_count,
+        "entry": entry,
     })
 
 
 def track_install_failed(error_class: str, duration_ms: int | None = None,
                          python_minor: int | None = None,
                          retry_count: int | None = None,
-                         detail: str | None = None) -> None:
+                         detail: str | None = None,
+                         entry: str = "background") -> None:
     """detail: what the installer actually said, scrubbed and truncated.
 
     Without it an error_class of "installation_failed" means only that no
@@ -101,15 +106,17 @@ def track_install_failed(error_class: str, duration_ms: int | None = None,
         "duration_ms": duration_ms,
         "python_minor": python_minor,
         "retry_count": retry_count,
+        "entry": entry,
     }
     if detail:
         props["error_detail"] = scrub_payload_value(detail[:300])
     track(ev.INSTALL_FAILED, props)
 
 
-def track_install_cancelled(duration_ms: int | None = None) -> None:
+def track_install_cancelled(duration_ms: int | None = None,
+                            entry: str = "background") -> None:
     """Fire when the user cancels the dependency install mid-way."""
-    track(ev.INSTALL_CANCELLED, {"duration_ms": duration_ms})
+    track(ev.INSTALL_CANCELLED, {"duration_ms": duration_ms, "entry": entry})
 
 
 def track_model_download_completed(model: str, duration_ms: int | None = None) -> None:
@@ -186,6 +193,53 @@ def track_manual_engine_chosen(engine: str, local_installed: bool = False,
 def track_manual_cloud_consent(accepted: bool) -> None:
     """The answer to the notice shown before any imagery leaves the machine."""
     track(ev.MANUAL_CLOUD_CONSENT, {"accepted": bool(accepted)})
+
+
+_click_answered_sent_this_session = False
+
+
+def track_manual_click_answered(engine: str, duration_ms: int | None = None,
+                                used_fallback: bool = False,
+                                is_correct: bool = False) -> None:
+    """One Semi-Auto click came back with a shape. engine: "cloud" | "local".
+
+    Sampled the same way as track_segmentation_run, and for the same reason: a
+    session is hundreds of clicks. The first click of a session always goes out
+    (sample_rate 1), the rest 1-in-10.
+
+    Safe from any thread: it only tracks, it never flushes.
+    """
+    global _click_answered_sent_this_session
+    import random
+
+    if _click_answered_sent_this_session:
+        if random.random() >= 0.1:  # nosec B311 - sampling, not crypto
+            return
+        sample_rate = 10
+    else:
+        _click_answered_sent_this_session = True
+        sample_rate = 1
+    track(ev.MANUAL_CLICK_ANSWERED, {
+        "engine": engine,
+        "duration_ms": duration_ms,
+        "used_fallback": bool(used_fallback),
+        "is_correct": bool(is_correct),
+        "sample_rate": sample_rate,
+    })
+
+
+def track_manual_object_charged(outcome: str, objects_charged: int | None = None,
+                                error_code: str = "") -> None:
+    """What the account did with the credit for one saved object.
+
+    outcome: "charged" | "refused" | "exhausted". Unsampled: a saved object is
+    rare next to a click, and this is the money line.
+    """
+    track(ev.MANUAL_OBJECT_CHARGED, {
+        "outcome": outcome,
+        "objects_charged": objects_charged,
+        "error_code": error_code or None,
+    })
 
 
 def track_manual_abandoned(context: str, polygon_count: int) -> None:

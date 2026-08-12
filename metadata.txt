@@ -3,7 +3,7 @@ name=AI Segmentation by TerraLab
 description=Segment buildings, vegetation, or any object in your raster using AI, refine & export as vector polygons
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
-version=2.4.0
+version=2.4.1
 author=Yvann and Lilien from TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
@@ -29,6 +29,16 @@ about=
     • Multilingual: English, French, Portuguese, Spanish, German, Italian, Dutch, Polish, Indonesian, Japanese, Chinese
 
 changelog=
+    2.4.1
+    - The first click of a session comes back in a moment, instead of keeping you waiting
+    - Correct now runs the same AI as the run itself, and reshaping an object still costs nothing
+    - Take back the last point you placed while correcting, with the Undo button or Ctrl+Z
+    - Correcting one object leaves the objects around it alone
+    - The panel picks the raster you are looking at, and follows the map as you pan
+    - When your detections run out, one card says where you stand and what Pro adds
+    - A click on the wrong layer is answered in the panel, with what to do about it
+    - Results are drawn above the imagery instead of under it
+    - One refused tile no longer takes down a whole basemap read
     2.4.0
     - Manual mode is now called Semi-automatic, and can answer every click on TerraLab's servers: nothing to download, results in seconds
     - Cloud clicks come back faster, including the first click of a session

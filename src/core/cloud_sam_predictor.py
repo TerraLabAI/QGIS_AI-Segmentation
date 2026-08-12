@@ -16,6 +16,9 @@ simply "the same calls with a socket in the middle":
 - The remote side keeps the encoded crop behind a token, and the logits of the
   answer it just gave behind a name. Every later click sends both names instead
   of a megabyte and a half of picture and a quarter of a megabyte of logits.
+  This side remembers the last few crop tokens, not just the current one, so a
+  user who works two objects and comes back to the first neighbourhood names
+  that crop instead of uploading it a second time.
 
 Manual mode never comes here. It stays on-device and offline by product rule.
 
@@ -25,12 +28,15 @@ local install at all.
 from __future__ import annotations
 
 import base64
+import hashlib
 import time
 import zlib
+from collections import OrderedDict
 
 import numpy as np
 from qgis.core import Qgis, QgsMessageLog
 
+from .click_crop_encoding import crop_webp_allowed, encode_crop_png, encode_crop_webp
 from .log_scrub import scrub_sensitive
 from .sam_predictor import SamWorkerError
 
@@ -151,137 +157,6 @@ def unpack_float16_payload(payload: str, shape: tuple[int, ...]) -> np.ndarray:
     return np.ascontiguousarray(flat.reshape(shape), dtype=np.float32)
 
 
-# How hard Qt is asked to squeeze the crop. Qt spells this as a "quality"
-# number, but PNG has no lossy setting: it only picks the compression effort,
-# and the pixels come back identical whatever it is. The default effort spends
-# several times longer than this one to shave a few per cent off a picture that
-# is about to travel anyway, and that time is paid on the click path. Never
-# swap PNG for a lossy format: the mask has to come back on exactly the pixels
-# the caller saw.
-#
-# It trades local encode time against bytes on the wire, and which way that
-# trade falls depends on the user's connection, so it is a dial
-# (``network.click_png_effort``). The constant below is the fallback.
-_PNG_EFFORT = 70
-
-# Qt's own range for the argument. 0 is legal and means "spend nothing", so a
-# served value is bounded rather than required to be positive.
-_PNG_EFFORT_MIN = 0
-_PNG_EFFORT_MAX = 100
-
-
-def click_png_effort() -> int:
-    """Qt's PNG compression effort for one click crop, 0 to 100.
-
-    Read off the served network policy, with the shipped constant standing for
-    an absent, out-of-range or malformed value. Never raises and never
-    networks: a click path calls it.
-    """
-    try:
-        from .detection_policy import network_policy
-
-        value = network_policy().get("click_png_effort")
-        if (isinstance(value, (int, float)) and not isinstance(value, bool)
-                and _PNG_EFFORT_MIN <= value <= _PNG_EFFORT_MAX):
-            return int(value)
-    except Exception:  # noqa: BLE001 -- a dial must never break a click  # nosec B110
-        pass
-    return _PNG_EFFORT
-
-
-def encode_crop_png(crop: np.ndarray) -> bytes | None:
-    """A contiguous (H, W, 3) uint8 crop as PNG bytes, or None when Qt cannot.
-
-    PNG rather than the raw bytes because the raw form of a large crop nearly
-    fills the request-body ceiling, and lossless because the mask has to come
-    back on exactly the pixels the caller saw. Qt does the encoding, never an
-    imaging library: the click path has to work for a user whose local install
-    carries nothing but the light packages.
-
-    Returns None instead of raising, so a click never fails on a compression
-    step: the caller sends the raw bytes when it gets None.
-    """
-    try:
-        from qgis.PyQt.QtCore import QBuffer, QByteArray
-        from qgis.PyQt.QtGui import QImage
-
-        from .qt_compat import FormatRGB888, WriteOnly
-
-        height, width = int(crop.shape[0]), int(crop.shape[1])
-        # Two things QImage will not do for you. It does not copy the buffer, so
-        # `raw` has to outlive it (hence the copy() before `raw` goes out of
-        # scope), and a 3-byte-per-pixel row is not 4-byte aligned, so without
-        # an explicit bytesPerLine Qt reads past the end of every row and the
-        # picture comes out sheared.
-        raw = crop.tobytes()
-        image = QImage(raw, width, height, width * 3, FormatRGB888).copy()
-        if image.isNull():
-            return None
-        payload = QByteArray()
-        buffer = QBuffer(payload)
-        buffer.open(WriteOnly)
-        written = image.save(buffer, "PNG", click_png_effort())
-        buffer.close()
-        if not written or payload.isEmpty():
-            return None
-        return bytes(payload)
-    except Exception as err:  # noqa: BLE001 -- the raw bytes still go out
-        _log(f"Crop PNG encode failed, sending raw pixels: {err}", Qgis.MessageLevel.Warning)
-        return None
-
-
-def crop_webp_allowed() -> bool:
-    """Whether the served flag lets this client send WebP. Off when unserved.
-
-    The dial defaults off because the format is a wire contract: every server
-    has to accept webp before any client sends it. Wrapped so a broken dial
-    read costs PNG, never the click.
-    """
-    try:
-        from .server_dials import crop_webp_enabled
-
-        return crop_webp_enabled()
-    except Exception:  # noqa: BLE001 -- a dial must never break a click  # nosec B110
-        return False
-
-
-def encode_crop_webp(crop: np.ndarray) -> bytes | None:
-    """A contiguous (H, W, 3) uint8 crop as LOSSLESS WebP bytes, or None.
-
-    WebP because it packs the same pixels about 30% smaller than PNG on aerial
-    imagery, and quality 100 because that is the one value at which Qt's WEBP
-    plugin writes lossless: every other value is lossy and would bring the
-    mask back on pixels the caller never sent, so no other value is ever
-    passed here. Returns None instead of raising (a Qt build may carry no
-    webp plugin at all), and the caller falls back to PNG: a click never
-    fails on a compression step.
-    """
-    try:
-        from qgis.PyQt.QtCore import QBuffer, QByteArray
-        from qgis.PyQt.QtGui import QImage
-
-        from .qt_compat import FormatRGB888, WriteOnly
-
-        height, width = int(crop.shape[0]), int(crop.shape[1])
-        # Same two QImage traps as the PNG path above: the buffer is not
-        # copied (hence the copy() while `raw` is alive), and a 3-byte-per-
-        # pixel row needs its bytesPerLine spelled out or the rows shear.
-        raw = crop.tobytes()
-        image = QImage(raw, width, height, width * 3, FormatRGB888).copy()
-        if image.isNull():
-            return None
-        payload = QByteArray()
-        buffer = QBuffer(payload)
-        buffer.open(WriteOnly)
-        written = image.save(buffer, "WEBP", 100)
-        buffer.close()
-        if not written or payload.isEmpty():
-            return None
-        return bytes(payload)
-    except Exception:  # noqa: BLE001 -- PNG still goes out  # nosec B110
-        return None
-
-
 def _accepts_cancel_check(call) -> bool:
     """Whether this client's refine call takes the cancellation hook.
 
@@ -298,24 +173,45 @@ def _accepts_cancel_check(call) -> bool:
 
 
 def _crop_identity(image_np: np.ndarray) -> tuple:
-    """Cheap content key for a crop, so a token is dropped when the pixels move.
+    """Content key for a crop, so a token is dropped when the pixels move.
 
-    A checksum rather than a comparison: the previous crop is not kept once its
+    A digest rather than a comparison: the previous crop is not kept once its
     token is held, and reading 3 MB is fast next to any network call.
+
+    Wide on purpose. A 32-bit checksum meets itself after tens of thousands of
+    crops, and what a meeting costs here is not an error but a wrong answer:
+    two different pictures would share one name, so the far side would be asked
+    to segment the picture it is still holding rather than the one on screen.
+    128 bits puts that past any number of crops a session can produce.
     """
-    return (image_np.shape, zlib.crc32(image_np.tobytes()))
+    return (image_np.shape,
+            hashlib.blake2b(image_np.tobytes(), digest_size=16).hexdigest())
+
+
+# How many crops the session remembers a token for. The user works one object,
+# moves to the next and comes back, and the grid cell is a fraction of the crop
+# width, so the neighbourhood behind an object is reached again and again. The
+# far side still holds those pixels, so a remembered name saves the upload
+# whole. Small on purpose: each entry is a short string, but a longer memory
+# only names crops the far side has had time to drop.
+_CROP_TOKEN_MEMORY = 8
 
 
 class CloudSamPredictor:
     """The click path's predictor, answered by the remote refine route."""
 
-    def __init__(self, client=None, auth=None) -> None:
+    def __init__(self, client=None, auth=None, on_remote_answer=None) -> None:
         """``auth`` is either the headers themselves or something that returns
         them. Hand over the callable whenever the session can outlive one key:
         a dict is read once and never again, so a key that rotates mid-session
-        leaves every later click failing over to the machine."""
+        leaves every later click failing over to the machine.
+
+        ``on_remote_answer`` fires once per click the network really answered,
+        same contract as ``CloudFirstPredictor``. A billed lane hangs its charge
+        on it, so a click that raised on its way must never fire it."""
         self._client = client
         self._auth = auth
+        self._on_remote_answer = on_remote_answer
         # Which client the cancellable-signature answer was resolved for. It
         # cannot change for a given object, and asking costs more than the
         # answer on a path that runs up to three times per click.
@@ -329,7 +225,15 @@ class CloudSamPredictor:
         self.input_size = None
         self._crop: np.ndarray | None = None
         self._crop_key: tuple | None = None
-        self._crop_token: str | None = None
+        # One name per crop the far side is still holding, oldest first. Keyed
+        # on the pixels themselves, so a user who leaves a neighbourhood and
+        # comes back finds the name of the crop already up there instead of
+        # sending it a second time. Names only, never the bodies they stand
+        # for: eight encoded crops would be tens of megabytes of memory.
+        self._crop_tokens: OrderedDict[tuple, str] = OrderedDict()
+        # Fingerprint of the account the held names were earned under.
+        # None until the first request resolves one.
+        self._auth_fingerprint: str | None = None
         # The crop already turned into the bytes that travel, kept beside the
         # pixels it came from. Encoding a crop takes long enough to be felt, and
         # the paths that send the pixels rather than the token (the hand-over
@@ -376,9 +280,95 @@ class CloudSamPredictor:
         self.original_size = None
         self._crop = None
         self._crop_key = None
-        self._crop_token = None
+        # Every name goes, not just this crop's. A session end, a predictor
+        # swap and a sign-out all come through here, and a name filed under one
+        # account must never be sent under the next one.
+        self._crop_tokens.clear()
         self._crop_body = None
         self._forget_seed()
+
+    @staticmethod
+    def _auth_print(auth) -> str:
+        """A fingerprint of the headers, never the key itself."""
+        try:
+            raw = "\x1f".join(f"{k}={v}" for k, v in sorted((auth or {}).items()))
+        except Exception:  # noqa: BLE001 -- unreadable auth is its own identity
+            raw = ""
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+    def _auth_changed(self, auth) -> bool:
+        """Whether these headers belong to a different account than the names
+        this session is holding. False the first time, which only records it."""
+        seen = self._auth_print(auth)
+        if self._auth_fingerprint is None:
+            self._auth_fingerprint = seen
+            return False
+        if seen == self._auth_fingerprint:
+            return False
+        self._auth_fingerprint = seen
+        return True
+
+    def _forget_tokens_of_another_account(self) -> None:
+        """Drop every name the moment the account behind them changes.
+
+        A name is what the far side calls one picture, and it is honoured on
+        the strength of the name alone. The session outlives a sign-out, and
+        the same predictor can be asked to click again under a different key,
+        so without this a name earned by one account would travel under the
+        next one.
+        """
+        try:
+            auth = self._resolve_auth()
+        except Exception:  # noqa: BLE001 -- unreadable auth means forget them
+            auth = None
+        if self._auth_changed(auth):
+            self._crop_tokens.clear()
+            self._forget_seed()
+
+    def _held_crop_token(self) -> str | None:
+        """The far side's name for the crop the session is on, or None.
+
+        Reading one keeps it: the entry moves to the young end, so the crops a
+        user keeps coming back to are the last ones the memory gives up.
+        """
+        self._forget_tokens_of_another_account()
+        key = self._crop_key
+        if key is None:
+            return None
+        token = self._crop_tokens.get(key)
+        if token is not None:
+            self._crop_tokens.move_to_end(key)
+        return token
+
+    def _hold_crop_token(self, key: tuple | None, token: str,
+                         generation: int | None = None) -> None:
+        """File the far side's name for one crop, dropping the oldest over the
+        ceiling.
+
+        ``generation`` is the session this name was earned in. Checked HERE,
+        at the write, not only before it: a session end can land between a
+        caller's own check and this call, and a name filed after that belongs
+        to a session that no longer exists.
+        """
+        if key is None or not token:
+            return
+        if generation is not None and generation != self._generation:
+            return
+        self._crop_tokens[key] = token
+        self._crop_tokens.move_to_end(key)
+        while len(self._crop_tokens) > _CROP_TOKEN_MEMORY:
+            self._crop_tokens.popitem(last=False)
+
+    def _drop_crop_token(self) -> None:
+        """Forget the name of the crop the session is on.
+
+        Called when the far side has said it no longer honours it, so the next
+        request carries the pixels. Only this crop's entry goes: the other
+        names are still good.
+        """
+        key = self._crop_key
+        if key is not None:
+            self._crop_tokens.pop(key, None)
 
     def _forget_seed(self) -> None:
         """Drop the named logits. Called whenever they could no longer be the
@@ -414,16 +404,17 @@ class CloudSamPredictor:
         if key != self._crop_key:
             # Different pixels: anything still travelling for the old ones is
             # no longer this session's, so move the generation before the new
-            # crop is in place.
+            # crop is in place. The names stay, the encoded body does not: the
+            # far side is still holding those crops, and one of them may well
+            # be this one.
             self._generation += 1
-            self._crop_token = None
             self._crop_body = None
             self._forget_seed()
         self._crop = image_np
         self._crop_key = key
         self.original_size = (int(image_np.shape[0]), int(image_np.shape[1]))
         self.is_image_set = True
-        if self._crop_token is None:
+        if self._held_crop_token() is None:
             self._register_crop(image_np)
 
     def _encoded_crop(self, crop: np.ndarray) -> tuple[str, str]:
@@ -438,8 +429,8 @@ class CloudSamPredictor:
             return held
         started = time.monotonic()
         # WebP first when the server says the fleet is ready for it, PNG when
-        # it is not or when this Qt cannot write it. Both are lossless, so the
-        # far side answers on exactly the pixels the user saw either way.
+        # it is not or when this Qt cannot write it. PNG is always the caller's
+        # own pixels; webp is too until the server asks for a lighter one.
         packed = (encode_crop_webp(crop)
                   if crop_webp_allowed() and not self._webp_refused else None)
         if packed is not None:
@@ -467,6 +458,7 @@ class CloudSamPredictor:
         """
         started = time.monotonic()
         generation = self._generation
+        key = self._crop_key
         payload, form = self._encoded_crop(crop)
         body = {"crop": payload, "crop_format": form,
                 "crop_shape": list(crop.shape)}
@@ -490,19 +482,19 @@ class CloudSamPredictor:
                 answer = self._resolve_client().submit_refine_register(
                     body, self._resolve_auth())
             if generation != self._generation:
-                # The crop changed while its pixels were on their way. This
-                # token names the old picture, and writing it here would send
-                # the next click at imagery the user has left.
+                # The crop changed while its pixels were on their way. The
+                # session has moved, and filing this name now would put it in
+                # a memory the user has left, or in the next account's.
                 return
             token = (answer or {}).get("crop_token")
             if not isinstance(token, str) or not token:
                 raise ValueError((answer or {}).get("error") or "no token")
-            self._crop_token = token
+            self._hold_crop_token(key, token, generation)
             _log("Remote refine: crop sent ahead of the click, {} KB in {} ms".format(
                 len(body["crop"]) // 1024, int((time.monotonic() - started) * 1000)))
         except Exception as err:  # noqa: BLE001 -- the click sends the crop itself
             if generation == self._generation:
-                self._crop_token = None
+                self._drop_crop_token()
             # Scrubbed: a refusal body is echoed straight into this text and
             # can carry the address it came from.
             _log("Remote refine: crop not sent ahead, the click will carry it: "
@@ -529,7 +521,7 @@ class CloudSamPredictor:
         generation = self._generation
         answer = self._post(self._build_body(
             point_coords, point_labels, mask_input, multimask_output,
-            send_crop=self._crop_token is None, name_seed=True), generation)
+            send_crop=self._held_crop_token() is None, name_seed=True), generation)
         self._refuse_late_answer(generation)
 
         if answer.get("code") in (CROP_EXPIRED_CODE, SEED_EXPIRED_CODE):
@@ -538,7 +530,7 @@ class CloudSamPredictor:
             # A lost crop costs the picture, a lost seed only the logits.
             crop_gone = answer.get("code") == CROP_EXPIRED_CODE
             if crop_gone:
-                self._crop_token = None
+                self._drop_crop_token()
             self._forget_seed()
             answer = self._post(self._build_body(
                 point_coords, point_labels, mask_input, multimask_output,
@@ -561,7 +553,7 @@ class CloudSamPredictor:
             # cannot succeed.
             answer = self._post(self._build_body(
                 point_coords, point_labels, None, multimask_output,
-                send_crop=self._crop_token is None, name_seed=False),
+                send_crop=self._held_crop_token() is None, name_seed=False),
                 generation)
             self._refuse_late_answer(generation)
 
@@ -577,7 +569,7 @@ class CloudSamPredictor:
                  "retries as png", Qgis.MessageLevel.Warning)
             self._webp_refused = True
             self._crop_body = None
-            self._crop_token = None
+            self._drop_crop_token()
             self._forget_seed()
             answer = self._post(self._build_body(
                 point_coords, point_labels, mask_input, multimask_output,
@@ -597,7 +589,10 @@ class CloudSamPredictor:
 
         token = answer.get("crop_token")
         if isinstance(token, str) and token:
-            self._crop_token = token
+            # Every path above has already refused a late answer. The
+            # session is named again at the write anyway, because a teardown
+            # can land between that refusal and this line.
+            self._hold_crop_token(self._crop_key, token, generation)
 
         masks, scores, low_res_masks = self._decode(answer)
         # Every answer states the side it works in, so one click is all it takes
@@ -625,6 +620,13 @@ class CloudSamPredictor:
                 bool(answer.get("cached_crop")),
             )
         )
+        # The network answered. Noted here, past every decode check, so a click
+        # that raised on its way is never counted as one the remote side served.
+        if self._on_remote_answer is not None:
+            try:
+                self._on_remote_answer()
+            except Exception:  # nosec B110 -- a note never costs a click
+                pass
         return masks, scores, low_res_masks
 
     # -- request -----------------------------------------------------------
@@ -645,7 +647,7 @@ class CloudSamPredictor:
             # Raw pixels are what the far side assumes when nothing says
             # otherwise, so this line only ever moves to "png".
             "crop_format": "raw",
-            "crop_token": None if send_crop else self._crop_token,
+            "crop_token": None if send_crop else self._held_crop_token(),
             "points": (
                 [] if point_coords is None
                 else np.asarray(point_coords, dtype=float).tolist()
@@ -714,6 +716,17 @@ class CloudSamPredictor:
         try:
             client = self._resolve_client()
             auth = self._resolve_auth()
+            # Checked against the headers THIS request will carry, not against
+            # a reading taken earlier. The body was built with whatever name
+            # was held then, and an account that changed in between would send
+            # one account's name under the other's key. Nothing goes out on a
+            # changed account: the click ends here and the next one starts
+            # clean, which is the only honest answer to signing out mid-click.
+            if self._auth_changed(auth):
+                self._crop_tokens.clear()
+                self._forget_seed()
+                raise RefineSupersededError(
+                    "the account changed while the click was being sent")
             if self._client_accepts_cancel(client):
                 answer = client.submit_refine(
                     body, auth,

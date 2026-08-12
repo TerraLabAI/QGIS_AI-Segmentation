@@ -6,7 +6,6 @@ are plain mixin members: widgets/signals live on the dock instance.
 """
 from __future__ import annotations
 
-from qgis.core import QgsRasterLayer
 from qgis.PyQt.QtCore import Qt
 
 from ...core.activation_manager import (
@@ -293,23 +292,16 @@ class DockActivationMixin:
         # Just update UI state - layer change handling is done by the plugin
         self._update_ui_state()
 
-    def _on_layers_added(self, layers):
-        """Handle new layers added to project - auto-select if none selected."""
-        # Update UI state first (includes layer filter)
+    def _on_layers_added(self, _layers):
+        """Handle new layers added to project.
+
+        No auto-select here any more. The combo listens to the same signal and
+        picks the raster that best fits the map view, which beats the old test
+        order (it preferred an online basemap over local imagery) and, unlike a
+        setLayer() call, does not read as a deliberate choice that stops the
+        combo following the view.
+        """
         self._update_ui_state()
-
-        if self.layer_combo.currentLayer() is not None:
-            return
-
-        for layer in layers:
-            if isinstance(layer, QgsRasterLayer):
-                # Auto-select: prefer local georeferenced, then online, then any raster
-                if self._is_online_layer(layer):
-                    self.layer_combo.setLayer(layer)
-                    break
-                if self._is_layer_georeferenced(layer):
-                    self.layer_combo.setLayer(layer)
-                    break
 
     def _on_layers_removed(self, _layer_ids):
         """Handle layers removed from project."""

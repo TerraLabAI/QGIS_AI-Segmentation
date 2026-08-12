@@ -1,9 +1,8 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE TS>
+<?xml version='1.0' encoding='utf-8'?>
 <TS version="2.1" language="zh_CN">
 <context>
     <name>AISegmentation</name>
-    <!-- Review display colours: Normal / Confidence / Random (2026-07-01) -->
+    
     <message>
         <source>Normal</source>
         <translation>普通</translation>
@@ -16,12 +15,12 @@
         <source>Outline</source>
         <translation>轮廓</translation>
     </message>
-    <!-- Retry: back to setup keeping inputs (2026-07-01) -->
+    
     <message>
         <source>Retry</source>
         <translation>重试</translation>
     </message>
-    <!-- Reference example enlarge (2026-07-01) -->
+    
     <message>
         <source>Click to enlarge</source>
         <translation>点击放大</translation>
@@ -30,7 +29,7 @@
         <source>This is exactly what the AI uses: your object with a little of its surroundings.</source>
         <translation>这正是 AI 实际使用的内容：您的对象及其周边的一小部分环境。</translation>
     </message>
-    <!-- Automatic step-2 redesign: describe + example + detail -->
+    
     <message>
         <source>Describe what to find</source>
         <translation>描述要查找的内容</translation>
@@ -51,7 +50,7 @@
         <source>Mark a false positive to drop things like it.</source>
         <translation>标记一个误检结果，以剔除类似的结果。</translation>
     </message>
-    <!-- Refine in Manual handoff -->
+    
     <message>
         <source>Finish or exit the review to switch modes.</source>
         <translation>请先完成或退出复核，再切换模式。</translation>
@@ -68,7 +67,7 @@
         <source>Minimum confidence to keep a detected object. Lower finds more objects but may add false positives; raise it for cleaner results on large, distinct features.</source>
         <translation>保留检测对象所需的最低置信度。数值越低，发现的对象越多，但可能增加误检；对于大型、独立的地物，可提高数值以获得更干净的结果。</translation>
     </message>
-    <!-- Account Settings: Dependencies -->
+    
     <message>
         <source>Dependencies</source>
         <translation>依赖项</translation>
@@ -89,14 +88,14 @@
         <source>Open folder</source>
         <translation>打开文件夹</translation>
     </message>
-    <!-- v1.2 strings previously missing from translations -->
+    
     <message>
         <source>Accept the Terms and Privacy Policy to enable segmentation.</source>
         <translation>接受服务条款和隐私政策以启用分割功能。</translation>
     </message>
     <message>
-        <source>I agree to the &lt;a href=&quot;{terms}&quot;&gt;Terms&lt;/a&gt; and &lt;a href=&quot;{privacy}&quot;&gt;Privacy Policy&lt;/a&gt;</source>
-        <translation>我同意 &lt;a href=&quot;{terms}&quot;&gt;服务条款&lt;/a&gt;和&lt;a href=&quot;{privacy}&quot;&gt;隐私政策&lt;/a&gt;</translation>
+        <source>I agree to the &lt;a href="{terms}"&gt;Terms&lt;/a&gt; and &lt;a href="{privacy}"&gt;Privacy Policy&lt;/a&gt;</source>
+        <translation>我同意 &lt;a href="{terms}"&gt;服务条款&lt;/a&gt;和&lt;a href="{privacy}"&gt;隐私政策&lt;/a&gt;</translation>
     </message>
     <message>
         <source>No valid polygons could be created from the selection. Try adjusting the refine settings or making a new selection.</source>
@@ -130,13 +129,13 @@
         <source>Could not write to {name}. Saved to a separate file instead.</source>
         <translation>无法写入 {name}，已改为保存到其他文件。</translation>
     </message>
-    <!-- Welcome Section -->
+    
     <message>
         <source>Click Install to set up AI Segmentation</source>
         <translation>点击“安装”以配置 AI Segmentation</translation>
     </message>
 
-    <!-- Setup Section -->
+    
     <message>
         <source>Installing AI Segmentation...</source>
         <translation>正在安装 AI Segmentation...</translation>
@@ -240,7 +239,7 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>安装失败</translation>
     </message>
 
-    <!-- Model Section -->
+    
     <message>
         <source>Update QGIS to 3.34+ for the latest AI model</source>
         <translation>请将 QGIS 更新到 3.34 及以上版本以使用最新的 AI 模型</translation>
@@ -254,13 +253,13 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>模型下载失败：</translation>
     </message>
 
-    <!-- Panel Title -->
+    
     <message>
         <source>AI Segmentation by TerraLab</source>
         <translation>AI Segmentation · TerraLab 出品</translation>
     </message>
 
-    <!-- Segmentation Section -->
+    
     <message>
         <source>Select a raster layer (GeoTIFF, WMS, XYZ tiles, etc.)</source>
         <translation>选择一个栅格图层（GeoTIFF、WMS、XYZ 瓦片等）</translation>
@@ -306,7 +305,7 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>将 {count} 个多边形 Export 到图层</translation>
     </message>
 
-    <!-- Refine Section -->
+    
     <message>
         <source>Refine selection</source>
         <translation>细化选区</translation>
@@ -328,7 +327,7 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>轮廓</translation>
     </message>
 
-    <!-- Instructions -->
+    
     <message>
         <source>Left-click to select</source>
         <translation>左键点击以选择</translation>
@@ -346,7 +345,7 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>无效图层</translation>
     </message>
 
-    <!-- Dialogs -->
+    
     <message>
         <source>Not Ready</source>
         <translation>尚未就绪</translation>
@@ -404,7 +403,7 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>警告：您即将编辑一个已保存的多边形。</translation>
     </message>
 
-    <!-- About Section -->
+    
     <message>
         <source>Contact us</source>
         <translation>联系我们</translation>
@@ -442,13 +441,13 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>隐私</translation>
     </message>
 
-    <!-- Tooltip -->
+    
     <message>
         <source>Segment elements on raster images using AI</source>
         <translation>使用 AI 分割栅格图像中的对象</translation>
     </message>
 
-    <!-- Error Report Dialog -->
+    
     <message>
         <source>Copy your logs with the button below and send them to our support email.</source>
         <translation>使用下方按钮复制您的日志,并发送到我们的支持邮箱。</translation>
@@ -474,7 +473,7 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>已复制！</translation>
     </message>
 
-    <!-- SSL / Antivirus error titles -->
+    
     <message>
         <source>SSL Certificate Error</source>
         <translation>SSL 证书错误</translation>
@@ -485,13 +484,13 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     </message>
 
     <message>
-        <source>Click is outside the &apos;{layer}&apos; raster. To segment another raster, stop the current segmentation first.</source>
+        <source>Click is outside the '{layer}' raster. To segment another raster, stop the current segmentation first.</source>
         <translation>点击位置超出栅格“{layer}”的范围。要分割其他栅格，请先停止当前的分割。</translation>
     </message>
 
-    <!-- Update notification -->
+    
 
-    <!-- Format conversion -->
+    
     <message>
         <source>{ext} format is not directly supported. GDAL is not available.
 Please convert your raster to GeoTIFF (.tif) before using AI Segmentation.</source>
@@ -511,7 +510,7 @@ Please convert your raster to GeoTIFF (.tif) manually.</source>
 请手动将栅格转换为 GeoTIFF（.tif）格式。</translation>
     </message>
 
-    <!-- PyTorch DLL Error Messages -->
+    
     <message>
         <source>PyTorch cannot load on Windows</source>
         <translation>PyTorch 无法在 Windows 上加载</translation>
@@ -547,10 +546,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>裁剪错误</translation>
     </message>
     <message>
-        <source>No raster file path available. Please restart segmentation.</source>
-        <translation>没有可用的栅格文件路径，请重新开始分割。</translation>
-    </message>
-    <message>
         <source>Encoding Error</source>
         <translation>编码错误</translation>
     </message>
@@ -576,7 +571,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <source>Retry</source>
         <translation>重试</translation>
     </message>
-<!-- v1.0.0 strings -->
+
     <message>
         <source>Loading AI model...</source>
         <translation>正在加载 AI 模型...</translation>
@@ -602,8 +597,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>网络连接问题</translation>
     </message>
     <message>
-        <source>Your connection appears unstable or blocked. Check: (1) your internet is working, (2) QGIS > Settings > Options > Network has a proxy configured if you are on a corporate network, (3) your firewall allows connections to pypi.org and files.pythonhosted.org.</source>
-        <translation>您的网络连接似乎不稳定或被阻止。请检查：(1) 您的网络是否正常；(2) 如果您在公司网络环境下，QGIS > 设置 > 选项 > 网络中是否已配置代理；(3) 您的防火墙是否允许连接 pypi.org 和 files.pythonhosted.org。</translation>
+        <source>Your connection appears unstable or blocked. Check: (1) your internet is working, (2) QGIS &gt; Settings &gt; Options &gt; Network has a proxy configured if you are on a corporate network, (3) your firewall allows connections to pypi.org and files.pythonhosted.org.</source>
+        <translation>您的网络连接似乎不稳定或被阻止。请检查：(1) 您的网络是否正常；(2) 如果您在公司网络环境下，QGIS &gt; 设置 &gt; 选项 &gt; 网络中是否已配置代理；(3) 您的防火墙是否允许连接 pypi.org 和 files.pythonhosted.org。</translation>
     </message>
     <message>
         <source>Checking...</source>
@@ -621,7 +616,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <source>Right-click must be inside the current selection area.</source>
         <translation>右键点击必须在当前选区范围内。</translation>
     </message>
-    <!-- Account Settings Dialog -->
+    
     <message>
         <source>Account Settings</source>
         <translation>账户设置</translation>
@@ -631,7 +626,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>正在加载账户信息...</translation>
     </message>
 
-    <!-- Corrupt checkpoint recovery (#65) -->
+    
     <message>
         <source>Model File Corrupted</source>
         <translation>模型文件已损坏</translation>
@@ -649,7 +644,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>AI 模型文件已损坏，但无法自动删除。请删除此文件夹并重启 QGIS：</translation>
     </message>
 
-    <!-- One-click sign-in (browser pairing, mirrors AI Edit) -->
+    
     <message>
         <source>Segment your map with AI</source>
         <translation>使用 AI 分割您的地图</translation>
@@ -671,20 +666,20 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>没有自动打开？重新打开页面</translation>
     </message>
     <message>
-        <source>Sign-in timed out. Click Connect to try again.</source>
-        <translation>登录超时，请点击“连接”重试。</translation>
+        <source>Sign-in timed out. Click Sign in to try again.</source>
+        <translation>登录超时。点击登录重试。</translation>
     </message>
     <message>
-        <source>Sign-in was cancelled in the browser. Click Connect to try again.</source>
-        <translation>登录已在浏览器中取消，请点击“连接”重试。</translation>
+        <source>Sign-in was cancelled in the browser. Click Sign in to try again.</source>
+        <translation>登录在浏览器中被取消。点击登录重试。</translation>
     </message>
     <message>
         <source>Unexpected response from the server. Please try again.</source>
         <translation>服务器返回了意外的响应，请重试。</translation>
     </message>
     <message>
-        <source>This account has no active AI Segmentation plan. Reactivate it on terra-lab.ai, then click Connect again.</source>
-        <translation>该账户没有有效的 AI Segmentation 套餐，请在 terra-lab.ai 上重新激活，然后再次点击“连接”。</translation>
+        <source>This account has no active AI Segmentation plan. Reactivate it on terra-lab.ai, then click Sign in again.</source>
+        <translation>此账户没有活跃的 AI Segmentation 订阅。请在 terra-lab.ai 上重新激活，然后重新点击登录。</translation>
     </message>
     <message>
         <source>Connecting AI Segmentation</source>
@@ -695,7 +690,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>正在取消登录</translation>
     </message>
 
-    <!-- Help menu / account settings (mirrors AI Edit) -->
+    
     <message>
         <source>Help / Report a problem</source>
         <translation>帮助 / 报告问题</translation>
@@ -733,928 +728,913 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>AI Edit：将您的影像转化为展示与规划用图</translation>
     </message>
 
-    <!-- Pro / Automatic mode strings (plan #79) -->
+    
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Mode selection</source>
         <translation>模式选择</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Stop the active segmentation before switching modes.</source>
         <translation>请先停止当前的分割，再切换模式。</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Cancel the active detection before switching modes.</source>
         <translation>请先取消当前的检测，再切换模式。</translation>
     </message>
     <message>
-        <location filename="../src/ui/zone_selection_maptool.py" line="0"/>
+        <location filename="../src/ui/zone_selection_maptool.py" line="0" />
         <source>Cancel the running detection first</source>
         <translation>请先取消正在进行的检测</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Zone too large - reduce the selection area</source>
         <translation>区域过大，请缩小选区范围</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Detect objects</source>
         <translation>检测对象</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Cancel detection</source>
         <translation>取消检测</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Tile {current}/{total}</source>
-        <translation>瓦片 {current}/{total}</translation>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
+        <source>Detection {current}/{total}</source>
+        <translation>检测 {current}/{total}</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Spot reserved · starting in ~{eta}</source>
         <translation>名额已预留 · 约 {eta} 后开始</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>{s} seconds</source>
         <translation>{s} 秒</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>{m} min</source>
         <translation>{m} 分钟</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>{n} credits remaining</source>
-        <translation>剩余 {n} 积分</translation>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
+        <source>{n} cloud detections remaining</source>
+        <translation>{n} 个云端检测剩余</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>{n} free detection(s) remaining</source>
-        <translation>剩余 {n} 次免费检测</translation>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
+        <source>{n} free cloud detection(s) remaining</source>
+        <translation>{n} 个云端检测剩余（免费）</translation>
     </message>
     <message>
-        <location filename="../src/ui/account_settings_dialog.py" line="0"/>
-        <source>{remaining} / {total} credits</source>
-        <translation>{remaining} / {total} 积分</translation>
+        <location filename="../src/ui/account_settings_dialog.py" line="0" />
+        <source>{remaining} / {total} cloud detections</source>
+        <translation>{remaining} / {total} 个云端检测</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_plugin.py" line="0" />
         <source>Auto detection (live)</source>
         <translation>自动检测（进行中）</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
-        <source>Preparing tiles...</source>
-        <translation>正在准备瓦片...</translation>
+        <location filename="../src/ui/ai_segmentation_plugin.py" line="0" />
+        <source>Preparing your zone...</source>
+        <translation>正在准备您的区域...</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_plugin.py" line="0" />
         <source>Cancelling...</source>
         <translation>正在取消...</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_plugin.py" line="0" />
         <source>Finishing the previous run, please wait a moment...</source>
         <translation>正在结束上一次运行，请稍候...</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_plugin.py" line="0" />
         <source>Detection failed. Check your connection and try again.</source>
         <translation>检测失败，请检查您的网络连接后重试。</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_plugin.py" line="0" />
         <source>Automatic detection is temporarily unavailable. Please try again later.</source>
         <translation>自动检测暂时不可用，请稍后重试。</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_plugin.py" line="0" />
         <source>Draw a zone first. Automatic detection on online layers needs a zone.</source>
         <translation>请先绘制一个区域。在在线图层上进行自动检测需要指定区域。</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_plugin.py" line="0" />
         <source>The zone is outside the selected raster layer. Pick the right layer or redraw the zone.</source>
         <translation>该区域位于所选栅格图层范围之外，请选择正确的图层或重新绘制区域。</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Less</source>
         <translation>更少</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>More</source>
         <translation>更多</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Available when detection finishes</source>
         <translation>检测完成后可用</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Off</source>
         <translation>关闭</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>No limit</source>
         <translation>无限制</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Hide detections smaller than this ground area. Use it to drop tiny noise blobs. 0 = keep all.</source>
         <translation>隐藏地面面积小于此值的检测结果，用于剔除微小的噪点。0 = 保留全部。</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Hide detections larger than this ground area. 0 = no limit.</source>
         <translation>隐藏地面面积大于此值的检测结果。0 = 无限制。</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_plugin.py" line="0" />
         <source>Saved {n} polygon(s) to {name}</source>
         <translation>已将 {n} 个多边形保存到 {name}</translation>
     </message>
     <message>
-        <location filename="../src/api/terralab_client.py" line="0"/>
+        <location filename="../src/api/terralab_client.py" line="0" />
         <source>Cannot reach the server. Check your internet connection.</source>
         <translation>无法连接服务器，请检查您的网络连接。</translation>
     </message>
     <message>
-        <location filename="../src/api/terralab_client.py" line="0"/>
+        <location filename="../src/api/terralab_client.py" line="0" />
         <source>Server refused the connection.</source>
         <translation>服务器拒绝了连接。</translation>
     </message>
     <message>
-        <location filename="../src/api/terralab_client.py" line="0"/>
+        <location filename="../src/api/terralab_client.py" line="0" />
         <source>Request timed out. Check your connection or try again.</source>
         <translation>请求超时，请检查网络连接或重试。</translation>
     </message>
     <message>
-        <location filename="../src/api/terralab_client.py" line="0"/>
+        <location filename="../src/api/terralab_client.py" line="0" />
         <source>SSL certificate error. Your network may be blocking secure connections.</source>
         <translation>SSL 证书错误，您的网络可能阻止了安全连接。</translation>
     </message>
     <message>
-        <location filename="../src/api/terralab_client.py" line="0"/>
+        <location filename="../src/api/terralab_client.py" line="0" />
         <source>Proxy connection failed. Check QGIS proxy settings (Settings &gt; Options &gt; Network).</source>
         <translation>代理连接失败，请检查 QGIS 的代理设置（设置 &gt; 选项 &gt; 网络）。</translation>
     </message>
     <message>
-        <location filename="../src/api/terralab_client.py" line="0"/>
+        <location filename="../src/api/terralab_client.py" line="0" />
         <source>Authentication failed. Please sign in again.</source>
         <translation>身份验证失败，请重新登录。</translation>
     </message>
     <message>
-        <location filename="../src/api/terralab_client.py" line="0"/>
+        <location filename="../src/api/terralab_client.py" line="0" />
         <source>Network error. Check your internet connection.</source>
         <translation>网络错误，请检查您的网络连接。</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_plugin.py" line="0" />
         <source>Checking your AI Segmentation subscription</source>
         <translation>正在检查您的 AI Segmentation 订阅</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_plugin.py" line="0" />
         <source>Loading AI Segmentation settings</source>
         <translation>正在加载 AI Segmentation 设置</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
-        <source>Refreshing credits</source>
-        <translation>正在刷新积分</translation>
+        <location filename="../src/ui/ai_segmentation_plugin.py" line="0" />
+        <source>Refreshing your cloud detections</source>
+        <translation>正在刷新您的云端检测</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_plugin.py" line="0" />
         <source>Warming up AI Segmentation</source>
         <translation>正在预热 AI Segmentation</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Popular</source>
         <translation>热门</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>Library</source>
         <translation>对象库</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>Use just 1-2 words for the object.</source>
         <translation>请仅用 1-2 个单词描述对象。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>Type the object itself, not a sentence or question.</source>
         <translation>请输入对象本身，而不是句子或问句。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>Too generic. Draw an example instead, or use a concrete word like building.</source>
         <translation>过于笼统。请改用绘制示例，或使用像 building 这样的具体词汇。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>Name a concrete object, not how it looks.</source>
         <translation>请命名一个具体对象，而不是描述它的外观。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>Segment one object - drop words like 'near' or 'with'.</source>
         <translation>一次分割一个对象，请去掉“near”或“with”之类的词。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>Use a real object word.</source>
         <translation>请使用真实存在的对象词汇。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>Use a 1-2 word object name.</source>
         <translation>请使用 1-2 个单词的对象名称。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>Did you mean '{term}'?</source>
         <translation>您是想输入“{term}”吗？</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>Loading...</source>
         <translation>正在加载...</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>No preview</source>
         <translation>无预览</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>No preview yet</source>
         <translation>暂无预览</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>Segment library</source>
         <translation>分割对象库</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>today</source>
         <translation>今天</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>yesterday</source>
         <translation>昨天</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>{n} days ago</source>
         <translation>{n} 天前</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>{n} detection(s)</source>
         <translation>{n} 个检测结果</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>{n} object(s)</source>
         <translation>{n} 个对象</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_plugin.py" line="0" />
         <source>Loading segment library</source>
         <translation>正在加载分割对象库</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>Search objects... e.g. building, solar panel</source>
         <translation>搜索对象... 例如 building、solar panel</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>Fuzzy edges: this one may need cleanup after detection.</source>
         <translation>边缘模糊：此对象可能需要在检测后进行清理。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>Use this prompt</source>
         <translation>使用此提示词</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library_dialog.py" line="0" />
         <source>Use</source>
         <translation>使用</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>≈ {n} tiles = {n} credits</source>
-        <translation>≈ {n} 个瓦片 = {n} 积分</translation>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
+        <source>≈ {n} cloud detections</source>
+        <translation>≈ {n} 个云端检测</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_plugin.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_plugin.py" line="0" />
         <source>Draw your example inside the selected zone.</source>
         <translation>在所选区域内绘制您的示例。</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>{n} objects found</source>
         <translation>发现 {n} 个对象</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>No objects found</source>
         <translation>未发现任何对象</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>0 shown at {pct}% - lower Confidence to reveal them</source>
         <translation>在 {pct}% 下显示 0 个，降低置信度即可显示它们</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>More objects</source>
         <translation>更多对象</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Only confident</source>
         <translation>仅显示高置信度</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Export {n} polygons</source>
         <translation>Export {n} 个多边形</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Lower Confidence to show objects first.</source>
         <translation>请先降低置信度以显示对象。</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Discard these detections?</source>
         <translation>要放弃这些检测结果吗？</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>Your {total} detections will be discarded. You keep your zone, object and settings. Running Detect again will use new credits.</source>
-        <translation>您的 {total} 个检测结果将被放弃。您的区域、对象和设置会保留。再次运行检测将消耗新的积分。</translation>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
+        <source>Your {total} detections will be discarded. You keep your zone, object and settings. Running Detect again spends new cloud detections.</source>
+        <translation>您的 {total} 个检测结果将被丢弃。您保留区域、对象和设置。再次运行检测会消耗新的云端检测。</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Discard &amp;&amp; adjust</source>
         <translation>放弃并调整</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Keep your detections?</source>
         <translation>要保留检测结果吗？</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Save &amp;&amp; exit</source>
         <translation>保存并退出</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Discard &amp;&amp; exit</source>
         <translation>放弃并退出</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>How many objects sit at each confidence level.</source>
         <translation>各置信度级别下的对象数量分布。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
-        <source>Every building, tree, or road as clean polygons</source>
-        <translation>将每一栋建筑、每一棵树或每一条道路转化为整洁的多边形</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
-        <source>Cancel anytime; your exported layers stay yours</source>
-        <translation>随时可取消；已 Export 的图层仍归您所有</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
-        <source>Opens your TerraLab dashboard</source>
-        <translation>打开您的 TerraLab 控制面板</translation>
-    </message>
-    <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
+        <location filename="../src/ui/dock/auto_build.py" line="0" />
         <source>Start Automatic AI Segmentation</source>
         <translation>开始自动 AI Segmentation</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
+        <location filename="../src/ui/dock/auto_build.py" line="0" />
         <source>Draw your zone</source>
         <translation>绘制您的区域</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
+        <location filename="../src/ui/dock/auto_build.py" line="0" />
         <source>Click on the map to outline the area to scan.</source>
         <translation>在地图上点击以圈出要扫描的区域。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
+        <location filename="../src/ui/dock/auto_state.py" line="0" />
         <source>Keep clicking around the area, at least 3 points.</source>
         <translation>继续沿区域边缘点击，至少需要 3 个点。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
+        <location filename="../src/ui/dock/auto_state.py" line="0" />
         <source>Click the first point to close the zone.</source>
         <translation>点击起始点以闭合区域。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
+        <location filename="../src/ui/dock/auto_build.py" line="0" />
         <source>undo point</source>
         <translation>撤销点</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
+        <location filename="../src/ui/dock/auto_build.py" line="0" />
         <source>cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
+        <location filename="../src/ui/dock/auto_build.py" line="0" />
         <source>Exit</source>
         <translation>退出</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
+        <location filename="../src/ui/dock/auto_build.py" line="0" />
         <source>e.g. building, tree, road, car</source>
         <translation>例如：building、tree、road、car</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
+        <location filename="../src/ui/dock/auto_build.py" line="0" />
         <source>Browse ready-to-use objects with before / after previews.</source>
         <translation>浏览带有前后对比预览的现成对象。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
+        <location filename="../src/ui/dock/auto_build.py" line="0" />
         <source>Filter detections by confidence. Lower shows more (and noisier), higher keeps only the strongest. Free and instant.</source>
         <translation>按置信度筛选检测结果。数值越低，显示的结果越多（也更嘈杂）；数值越高，仅保留最可靠的结果。免费且即时生效。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_build.py" line="0"/>
+        <location filename="../src/ui/dock/auto_build.py" line="0" />
         <source>Show tiles (debug)</source>
         <translation>显示瓦片（调试）</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
+        <location filename="../src/ui/dock/auto_state.py" line="0" />
         <source>"{word}" will run as "{token}".</source>
         <translation>“{word}” 将作为 “{token}” 运行。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
+        <location filename="../src/ui/dock/auto_state.py" line="0" />
         <source>That word isn't recognized - try a common object like building or tree.</source>
         <translation>无法识别该词，请尝试常见对象，例如 building 或 tree。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
+        <location filename="../src/ui/dock/auto_state.py" line="0" />
         <source>One object per run - start with the first one, then run again.</source>
         <translation>每次运行仅支持一个对象，请先处理第一个，然后再次运行。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
+        <location filename="../src/ui/dock/auto_state.py" line="0" />
         <source>The Library has ready-to-use objects.</source>
         <translation>对象库中有现成的对象可供使用。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/cards.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/cards.py" line="0" />
         <source>Older detection</source>
         <translation>较早的检测记录</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>Details</source>
         <translation>详情</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>Fullscreen</source>
         <translation>全屏</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>Exit fullscreen</source>
         <translation>退出全屏</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>Prompt</source>
         <translation>提示词</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>Copy</source>
         <translation>复制</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>Copy prompt</source>
         <translation>复制提示词</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>Copied</source>
         <translation>已复制</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>Template</source>
         <translation>模板</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>Your detection</source>
         <translation>您的检测结果</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>Open the Library from the Automatic page to use this.</source>
         <translation>从自动模式页面打开对象库以使用此项。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>DATE</source>
         <translation>日期</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>OBJECTS</source>
         <translation>对象</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
-        <source>CREDITS</source>
-        <translation>积分</translation>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
+        <source>CHARGED</source>
+        <translation>已扣费</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
-        <source>TILES</source>
-        <translation>瓦片</translation>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
+        <source>CLOUD DETECTIONS</source>
+        <translation>云端检测</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>RESOLUTION</source>
         <translation>分辨率</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>EXAMPLE</source>
         <translation>示例</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>Used</source>
         <translation>已使用</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>Restore to map</source>
         <translation>恢复到地图</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
-        <source>Reopens this run's review at the same place. Free - no credits.</source>
-        <translation>在原位置重新打开本次运行的复核界面。免费，不消耗积分。</translation>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
+        <source>Reopens this run's review at the same place, with its imagery. Free, and it costs no cloud detections.</source>
+        <translation>在原位置重新打开此次运行的复核，包含其影像。免费，无需消耗云端检测。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>Export...</source>
         <translation>Export...</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>Remove from favorites</source>
         <translation>从收藏中移除</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>Add to favorites</source>
         <translation>添加到收藏</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>Format:</source>
         <translation>格式：</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>GeoPackage keeps the embedded style; other formats are saved without a style.</source>
         <translation>GeoPackage 会保留内嵌样式；其他格式保存时不带样式。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/detail.py" line="0" />
         <source>Browse...</source>
         <translation>浏览...</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0" />
         <source>Recent</source>
         <translation>最近</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0" />
         <source>Favorites</source>
         <translation>收藏</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0" />
         <source>Load older runs</source>
         <translation>加载更早的运行记录</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0" />
         <source>Nothing here yet. Your automatic detections will land here, ready to reuse, restore or export.</source>
         <translation>这里还没有内容。您的自动检测结果会显示在这里，可随时重用、恢复或 Export。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0" />
         <source>Could not load this run's stored detections. Try again later.</source>
         <translation>无法加载此次运行存储的检测结果，请稍后重试。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0" />
         <source>Nothing to export at this confidence. Lower it and try again.</source>
         <translation>当前置信度下没有可 Export 的内容，请降低置信度后重试。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0" />
         <source>The export failed. Check the file path and try again.</source>
         <translation>Export 失败，请检查文件路径后重试。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0"/>
+        <location filename="../src/ui/dialogs/segment_library/dialog.py" line="0" />
         <source>Exported {n} polygon(s).</source>
         <translation>已 Export {n} 个多边形。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
+        <location filename="../src/ui/dock/about.py" line="0" />
         <source>Add a point</source>
         <translation>添加一个点</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
+        <location filename="../src/ui/dock/about.py" line="0" />
         <source>Add area</source>
         <translation>增加面积</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
+        <location filename="../src/ui/dock/about.py" line="0" />
         <source>Arrow keys</source>
         <translation>方向键</translation>
     </message>
     <message>
-        <location filename="../src/api/terralab_client.py" line="0"/>
+        <location filename="../src/api/terralab_client.py" line="0" />
         <source>Automatic</source>
         <translation>自动</translation>
     </message>
     <message>
-        <location filename="../src/core/feature_encoder.py" line="0"/>
+        <location filename="../src/core/feature_encoder.py" line="0" />
         <source>Click</source>
         <translation>点击</translation>
     </message>
     <message>
-        <location filename="../src/ui/plugin/auto_run.py" line="0"/>
+        <location filename="../src/ui/plugin/auto_run.py" line="0" />
         <source>Could not place the example on the image. Redraw the example box inside the zone and try again.</source>
         <translation>无法将示例放置到图像上，请在区域内重新绘制示例框并重试。</translation>
     </message>
     <message>
-        <location filename="../src/core/run_restore.py" line="0"/>
+        <location filename="../src/core/run_restore.py" line="0" />
         <source>Could not rebuild this run's detections.</source>
         <translation>无法重建此次运行的检测结果。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
+        <location filename="../src/ui/dock/about.py" line="0" />
         <source>Delete the active object</source>
         <translation>删除当前选中的对象</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Detection continues in the background. Reopen AI Segmentation to follow it.</source>
         <translation>检测将在后台继续进行。重新打开 AI Segmentation 以查看进度。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
+        <location filename="../src/ui/dock/about.py" line="0" />
         <source>Double-click</source>
         <translation>双击</translation>
     </message>
     <message>
-        <location filename="../src/core/pip_diagnostics.py" line="0"/>
+        <location filename="../src/core/pip_diagnostics.py" line="0" />
         <source>Example</source>
         <translation>示例</translation>
     </message>
     <message>
-        <location filename="../src/core/run_restore.py" line="0"/>
+        <location filename="../src/core/run_restore.py" line="0" />
         <source>Finish or exit the current run before restoring a past one.</source>
         <translation>请先完成或退出当前运行，再恢复以往的运行记录。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
+        <location filename="../src/ui/dock/about.py" line="0" />
         <source>Finish the zone</source>
         <translation>完成该区域</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
+        <location filename="../src/ui/dock/about.py" line="0" />
         <source>General</source>
         <translation>常规</translation>
     </message>
     <message>
-        <location filename="../src/ui/plugin/manual_handoff.py" line="0"/>
+        <location filename="../src/ui/plugin/manual_handoff.py" line="0" />
         <source>Install now</source>
         <translation>立即安装</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/build.py" line="0"/>
+        <location filename="../src/ui/dock/build.py" line="0" />
         <source>Keeps this polygon in your session. Export writes all kept polygons to a layer.</source>
         <translation>将此多边形保留在本次会话中。Export 会将所有保留的多边形写入图层。</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_maptool.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_maptool.py" line="0" />
         <source>Keyboard shortcuts</source>
         <translation>键盘快捷键</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
+        <location filename="../src/ui/dock/about.py" line="0" />
         <source>Left-click</source>
         <translation>左键点击</translation>
     </message>
     <message>
-        <location filename="../src/core/layer_conventions.py" line="0"/>
+        <location filename="../src/core/layer_conventions.py" line="0" />
         <source>Manual</source>
         <translation>手动</translation>
     </message>
     <message>
-        <location filename="../src/core/venv_manager.py" line="0"/>
+        <location filename="../src/core/venv_manager.py" line="0" />
         <source>OK</source>
         <translation>确定</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
+        <location filename="../src/ui/dock/auto_review_build.py" line="0" />
         <source>One color per object - check neighbors are separated</source>
         <translation>每个对象使用一种颜色，检查相邻对象是否已分开</translation>
     </message>
     <message>
-        <location filename="../src/ui/plugin/auto_lifecycle.py" line="0"/>
-        <source>Out of credits after {done}/{total} tiles. Your detections are kept below.</source>
-        <translation>处理完 {done}/{total} 个瓦片后积分已用完，已发现的检测结果保留在下方。</translation>
+        <location filename="../src/ui/plugin/auto_lifecycle.py" line="0" />
+        <source>Out of cloud detections at {done}/{total}. Everything found so far is kept below and stays yours.</source>
+        <translation>已用尽云端检测（{done}/{total}）。到目前为止发现的所有内容都会保留在下方，归您所有。</translation>
     </message>
     <message>
-        <location filename="../src/ui/plugin/auto_results.py" line="0"/>
+        <location filename="../src/ui/plugin/auto_results.py" line="0" />
         <source>Outlines only - check boundaries against the imagery</source>
         <translation>仅显示轮廓，对照影像检查边界</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
+        <location filename="../src/ui/dock/about.py" line="0" />
         <source>Pan the map</source>
         <translation>平移地图</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Part of your zone is outside "{layer}" - only the overlapping area will return objects.</source>
         <translation>您的区域部分超出“{layer}”范围，仅重叠部分会返回检测结果。</translation>
     </message>
     <message>
-        <location filename="../src/ui/plugin/auto_run.py" line="0"/>
+        <location filename="../src/ui/plugin/auto_run.py" line="0" />
         <source>Pick an object to detect first (nothing was selected).</source>
         <translation>请先选择要检测的对象（当前未选择任何内容）。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/state.py" line="0"/>
+        <location filename="../src/ui/dock/state.py" line="0" />
         <source>Polygon saved ({n} total). Click another element, or export when done.</source>
         <translation>多边形已保存（共 {n} 个）。点击其他对象继续，或完成后 Export。</translation>
     </message>
     <message>
-        <location filename="../src/ui/plugin/auto_results.py" line="0"/>
+        <location filename="../src/ui/plugin/auto_results.py" line="0" />
         <source>Refine seeds</source>
         <translation>细化种子点</translation>
     </message>
     <message>
-        <location filename="../src/core/checkpoint_manager.py" line="0"/>
+        <location filename="../src/core/checkpoint_manager.py" line="0" />
         <source>Remove</source>
         <translation>移除</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
+        <location filename="../src/ui/dock/about.py" line="0" />
         <source>Remove area</source>
         <translation>移除面积</translation>
     </message>
     <message>
-        <location filename="../src/ui/zone_selection_maptool.py" line="0"/>
+        <location filename="../src/ui/zone_selection_maptool.py" line="0" />
         <source>Remove zone</source>
         <translation>移除区域</translation>
     </message>
     <message>
-        <location filename="../src/ui/account_settings_dialog.py" line="0"/>
+        <location filename="../src/ui/account_settings_dialog.py" line="0" />
         <source>Resets {date}</source>
         <translation>{date} 重置</translation>
     </message>
     <message>
-        <location filename="../src/core/run_restore.py" line="0"/>
+        <location filename="../src/core/run_restore.py" line="0" />
         <source>Restored "{prompt}" - adjust and export below.</source>
         <translation>已恢复“{prompt}”，请在下方调整并 Export。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
+        <location filename="../src/ui/dock/about.py" line="0" />
         <source>Right-click</source>
         <translation>右键点击</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/build.py" line="0"/>
+        <location filename="../src/ui/dock/build.py" line="0" />
         <source>Save polygon (S)</source>
         <translation>保存多边形（S）</translation>
     </message>
     <message>
-        <location filename="../src/ui/plugin/auto_lifecycle.py" line="0"/>
+        <location filename="../src/ui/plugin/auto_lifecycle.py" line="0" />
         <source>Session expired. Sign in again to continue.</source>
         <translation>会话已过期，请重新登录以继续。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
+        <location filename="../src/ui/dock/about.py" line="0" />
         <source>Start (the visible mode's Start button)</source>
         <translation>开始（当前可见模式的“开始”按钮）</translation>
     </message>
     <message>
-        <location filename="../src/ui/plugin/auto_lifecycle.py" line="0"/>
+        <location filename="../src/ui/plugin/auto_lifecycle.py" line="0" />
         <source>The raster was removed. Your polygons were saved to a layer.</source>
         <translation>该栅格已被移除，您的多边形已保存到图层中。</translation>
     </message>
     <message>
-        <location filename="../src/ui/plugin/auto_lifecycle.py" line="0"/>
+        <location filename="../src/ui/plugin/auto_lifecycle.py" line="0" />
         <source>The selected raster was removed.</source>
         <translation>所选栅格已被移除。</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>The selected raster was removed. Keeping what was already found.</source>
         <translation>所选栅格已被移除，已发现的结果将被保留。</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/about.py" line="0"/>
+        <location filename="../src/ui/dock/about.py" line="0" />
         <source>Undo the last point</source>
         <translation>撤销上一个点</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/state.py" line="0"/>
+        <location filename="../src/ui/dock/state.py" line="0" />
         <source>Writes a GeoPackage layer with your {n} kept polygons.</source>
         <translation>将您保留的 {n} 个多边形写入一个 GeoPackage 图层。</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Your zone is outside "{layer}". Pick the right layer or draw inside it.</source>
         <translation>您的区域位于“{layer}”范围之外，请选择正确的图层，或在其范围内重新绘制。</translation>
     </message>
     <message>
-        <location filename="../src/ui/plugin/auto_zone.py" line="0"/>
+        <location filename="../src/ui/plugin/auto_zone.py" line="0" />
         <source>Zone too large. Reduce the area to {max} tiles or fewer.</source>
         <translation>区域过大，请将范围缩小到 {max} 个瓦片以内。</translation>
     </message>
     <message>
-        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0"/>
-        <source>{n} of {total} free detections left</source>
-        <translation>剩余 {n}/{total} 次免费检测</translation>
+        <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
+        <source>{n} of {total} free cloud detections left</source>
+        <translation>{n} 个云端检测（共 {total} 个免费）</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
-        <source>≈ 1 tile = 1 credit</source>
-        <translation>≈ 1 个瓦片 = 1 积分</translation>
+        <location filename="../src/ui/dock/auto_state.py" line="0" />
+        <source>≈ 1 cloud detection</source>
+        <translation>≈ 1 个云端检测</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
+        <location filename="../src/ui/dock/auto_state.py" line="0" />
         <source>all shown</source>
         <translation>全部已显示</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_state.py" line="0"/>
+        <location filename="../src/ui/dock/auto_state.py" line="0" />
         <source>{visible} of {n} shown</source>
         <translation>已显示 {visible}/{n} 个</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
+        <location filename="../src/ui/dock/auto_review_build.py" line="0" />
         <source>all shown</source>
         <translation>全部已显示</translation>
     </message>
     <message>
-        <location filename="../src/ui/dock/auto_review_build.py" line="0"/>
+        <location filename="../src/ui/dock/auto_review_build.py" line="0" />
         <source>{visible} of {n} shown</source>
         <translation>已显示 {visible}/{n} 个</translation>
     </message>
-    <!-- Onboarding conversion batch (2026-07-04) -->
+    
     <message>
         <source>Show guidance tips again</source>
         <translation>再次显示引导提示</translation>
@@ -1708,8 +1688,8 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
         <translation>显示 0 个，降低最小尺寸筛选即可显示它们</translation>
     </message>
     <message>
-        <source>5,000 credits every month. Cancel anytime.</source>
-        <translation>每月 5,000 积分，随时可取消。</translation>
+        <source>5,000 cloud detections every month, zones of any size. Cancel anytime.</source>
+        <translation>每月 5,000 个云端检测，任意大小的区域。随时可取消。</translation>
     </message>
     <message>
         <source>A Component Failed to Load</source>
@@ -1770,8 +1750,8 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>已检测对象</translation>
     </message>
     <message>
-        <source>Detection failed. Please try again.</source>
-        <translation>检测失败，请重试。</translation>
+        <source>Detection failed. Run Detect again, and lower the precision if it fails a second time.</source>
+        <translation>检测失败。请重新运行检测，如果再次失败，请降低精度。</translation>
     </message>
     <message>
         <source>Downloaded AI data removed. You have been signed out.</source>
@@ -2001,22 +1981,15 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <source>{n} found so far</source>
         <translation>目前已发现 {n} 个</translation>
     </message>
-    <!-- v2.1.7 sync: append-to-layer export, singular forms, small-example guidance (2026-07-13) -->
-    <message>
-        <source>5,000 detections every month</source>
-        <translation>每月 5,000 次检测（约 1,700 平方公里）</translation>
-    </message>
+    
     <message>
         <source>This zone is {area} km². Free zones stop at {max} km².</source>
         <translation>这个区域为 {area} km²。免费区域最大 {max} km²。</translation>
     </message>
+
     <message>
-        <source>Pro has no size limit. Any area you draw, 5,000 tiles a month, maximum detail.</source>
-        <translation>Pro 没有大小限制。你画多大都行，每月 5,000 个瓦片，最高细节。</translation>
-    </message>
-    <message>
-        <source>&lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt;, or make this zone smaller.</source>
-        <translation>&lt;a href=&quot;{url}&quot;&gt;升级到 Pro&lt;/a&gt;，或把区域画小一点。</translation>
+        <source>&lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to run this zone as drawn, or make it smaller.</source>
+        <translation>&lt;a href="{url}"&gt;升级到 Pro&lt;/a&gt;，即可按绘制的范围运行此区域，或将区域画小一些。</translation>
     </message>
     <message>
         <source>Sending to the AI...</source>
@@ -2031,8 +2004,8 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>名额已预留 · 即将开始...</translation>
     </message>
     <message>
-        <source>Stopping - keeping the tiles already found...</source>
-        <translation>正在停止，已发现的瓦片将被保留...</translation>
+        <source>Stopping - keeping everything already found...</source>
+        <translation>停止中 - 保留已找到的所有内容...</translation>
     </message>
     <message>
         <source>Stopping...</source>
@@ -2087,11 +2060,11 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>您的免费检测已用完</translation>
     </message>
     <message>
-        <source>&quot;{obj}&quot; is not an object the AI knows well. Drawing one example on the map shows it what to find.</source>
+        <source>"{obj}" is not an object the AI knows well. Drawing one example on the map shows it what to find.</source>
         <translation>“{obj}”不是 AI 熟悉的对象，在地图上绘制一个示例，让它知道要查找的内容。</translation>
     </message>
     <message>
-        <source>&quot;{obj}&quot; is often missed from text alone. Draw one example on the map to find far more.</source>
+        <source>"{obj}" is often missed from text alone. Draw one example on the map to find far more.</source>
         <translation>仅凭文字，“{obj}”很容易被遗漏。在地图上绘制一个示例可发现更多目标。</translation>
     </message>
     <message>
@@ -2129,10 +2102,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>Add a missing polygon</source>
         <translation>添加遗漏的多边形</translation>
-    </message>
-    <message>
-        <source>Add an object the AI missed. In AI, point at it and the on-device model outlines it, free; in Manual, draw its corners.</source>
-        <translation>添加一个 AI 遗漏的对象。在 AI 模式下，点击它，本地模型即可免费勾出轮廓；在手动模式下，逐一绘制其节点。</translation>
     </message>
     <message>
         <source>Add another example - more references detect more</source>
@@ -2291,8 +2260,8 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>无法检查 AI 组件，详情请查看日志。</translation>
     </message>
     <message>
-        <source>Credits come back on {date}</source>
-        <translation>积分将于 {date} 恢复</translation>
+        <source>Your cloud detections come back on {date}</source>
+        <translation>您的云端检测将在 {date} 恢复</translation>
     </message>
     <message>
         <source>Crop fetch was cancelled.</source>
@@ -2323,12 +2292,12 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>密集区域 {current}/{total}</translation>
     </message>
     <message>
-        <source>Dense forest? &quot;Forest&quot; takes it as one block; &quot;Tree&quot; picks individual trees.</source>
+        <source>Dense forest? "Forest" takes it as one block; "Tree" picks individual trees.</source>
         <translation>茂密的森林？“Forest”会作为一整块处理，“Tree”则会识别单株树木。</translation>
     </message>
     <message>
-        <source>Detection stopped early after {done} tile(s). The objects already found are kept below.</source>
-        <translation>检测在处理 {done} 个瓦片后提前停止，已发现的对象保留在下方。</translation>
+        <source>Detection stopped early after {done} cloud detection(s). Everything found is kept below and stays yours.</source>
+        <translation>检测在 {done} 个云端检测后提前停止。发现的所有内容都会保留在下方，归您所有。</translation>
     </message>
     <message>
         <source>Discard reviewed results and run again? Confirm</source>
@@ -2347,7 +2316,7 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>拖动节点即可移动，双击边线可添加节点。</translation>
     </message>
     <message>
-        <source>Drag, add or delete the object&apos;s corners by hand.</source>
+        <source>Drag, add or delete the object's corners by hand.</source>
         <translation>手动拖动、添加或删除对象的节点。</translation>
     </message>
     <message>
@@ -2367,7 +2336,7 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>绘制其节点</translation>
     </message>
     <message>
-        <source>Draw one &apos;{object}&apos; - the AI finds the rest</source>
+        <source>Draw one '{object}' - the AI finds the rest</source>
         <translation>绘制一个“{object}”，AI 会找出其余的</translation>
     </message>
     <message>
@@ -2391,7 +2360,7 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>删除与直线边缘距离小于此值的节点（0 = 关闭）。这是一个距离，而非数量：调得过高会压平弯曲的墙面。通常“节点数”是更合适的调节项，此项保留仅作对比。</translation>
     </message>
     <message>
-        <source>Drop this polygon&apos;s points closer than this distance to a straight edge (0 = off). A distance, not a count; Points is usually the better dial.</source>
+        <source>Drop this polygon's points closer than this distance to a straight edge (0 = off). A distance, not a count; Points is usually the better dial.</source>
         <translation>删除此多边形上与直线边缘距离小于此值的节点（0 = 关闭）。这是一个距离，而非数量；通常“节点数”是更合适的调节项。</translation>
     </message>
     <message>
@@ -2447,7 +2416,7 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>检测结果在地图上的着色方式（仅影响显示）：普通填充、轮廓、置信度热力图，或每个对象使用不同颜色以便区分。</translation>
     </message>
     <message>
-        <source>How many of this polygon&apos;s points to keep. The count in the title row follows it. It runs before Right angles, so lowering it gives the squaring straight walls instead of a staircase.</source>
+        <source>How many of this polygon's points to keep. The count in the title row follows it. It runs before Right angles, so lowering it gives the squaring straight walls instead of a staircase.</source>
         <translation>此多边形要保留的节点数量，标题行中的数字会随之变化。该项在“直角化”之前执行，因此调低它可让直角化处理出平直的墙面，而不是锯齿状的台阶。</translation>
     </message>
     <message>
@@ -2559,16 +2528,16 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>已添加新形状，点击“保存”以保留。</translation>
     </message>
     <message>
-        <source>No connection to the sign-in service. Check your internet connection, then click Connect to try again.</source>
-        <translation>无法连接登录服务，请检查网络连接，然后点击“连接”重试。</translation>
+        <source>No connection to the sign-in service. Check your internet connection, then click Sign in to try again.</source>
+        <translation>无法连接到登录服务。请检查您的网络连接，然后点击登录重试。</translation>
     </message>
     <message>
         <source>No detection under that click.</source>
         <translation>该点击位置未检测到对象。</translation>
     </message>
     <message>
-        <source>No matches in this zone.</source>
-        <translation>该区域内无匹配结果。</translation>
+        <source>No matches in this zone. A different object word often fixes it.</source>
+        <translation>此区域内无匹配结果。使用不同的对象词通常可以解决此问题。</translation>
     </message>
     <message>
         <source>No object matches that search.</source>
@@ -2595,11 +2564,11 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>一个对象被拆分成了多个多边形返回。请在地图上点击其余部分，然后确认将它们合并为一个。</translation>
     </message>
     <message>
-        <source>One object per run - Detect will run &quot;{first}&quot; first.</source>
+        <source>One object per run - Detect will run "{first}" first.</source>
         <translation>每次运行仅处理一个对象，检测将优先运行“{first}”。</translation>
     </message>
     <message>
-        <source>One object per run - detecting &quot;{first}&quot; now. Run the other objects as separate detections.</source>
+        <source>One object per run - detecting "{first}" now. Run the other objects as separate detections.</source>
         <translation>每次运行仅处理一个对象，目前正在检测“{first}”。其他对象请作为单独的检测运行。</translation>
     </message>
     <message>
@@ -2635,8 +2604,8 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>节点数</translation>
     </message>
     <message>
-        <source>Points the map back at this run with the same object and the same number of tiles, ready to detect. Nothing is spent until you do.</source>
-        <translation>将地图重新定位到本次运行的位置，保持相同的对象和相同数量的瓦片，随时可以检测。在您操作之前不会消耗任何积分。</translation>
+        <source>Points the map back at this run with the same object and the same number of cloud detections, ready to detect. Nothing is spent until you do.</source>
+        <translation>将地图指向此次运行的相同对象和相同数量的云端检测，准备检测。在您操作之前不会消耗任何费用。</translation>
     </message>
     <message>
         <source>Points: {n}</source>
@@ -2651,7 +2620,7 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>需要代理身份验证</translation>
     </message>
     <message>
-        <source>Push this polygon&apos;s edge out (positive) or in (negative), for the one footprint the model cut short or overran.</source>
+        <source>Push this polygon's edge out (positive) or in (negative), for the one footprint the model cut short or overran.</source>
         <translation>将此多边形的边缘向外（正值）或向内（负值）推移，适用于模型描绘得过小或过大的单个对象轮廓。</translation>
     </message>
     <message>
@@ -2727,7 +2696,7 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>圆角适用于树木、灌木等自然形状。降低“节点数”可获得更平滑的效果。</translation>
     </message>
     <message>
-        <source>Round this polygon&apos;s corners, for a tree or a pond among squared neighbours.</source>
+        <source>Round this polygon's corners, for a tree or a pond among squared neighbours.</source>
         <translation>为此多边形做圆角处理，适用于方正邻边中的树木或池塘等对象。</translation>
     </message>
     <message>
@@ -2759,7 +2728,7 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>共享边界：</translation>
     </message>
     <message>
-        <source>Shave thin spikes and ragged bits off each shape&apos;s outline. It leaves the main body alone; higher values trim more. 0 = off.</source>
+        <source>Shave thin spikes and ragged bits off each shape's outline. It leaves the main body alone; higher values trim more. 0 = off.</source>
         <translation>削去每个形状轮廓上的细小尖刺和参差不齐的部分，不影响主体；数值越高，修剪越多。0 = 关闭。</translation>
     </message>
     <message>
@@ -2787,7 +2756,7 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>拆分</translation>
     </message>
     <message>
-        <source>Square this polygon&apos;s edges, or leave them as traced while the rest of the layer stays squared.</source>
+        <source>Square this polygon's edges, or leave them as traced while the rest of the layer stays squared.</source>
         <translation>将此多边形的边缘变为直角，或保持原始描绘形态，同时图层其余部分仍为直角化处理。</translation>
     </message>
     <message>
@@ -2811,20 +2780,8 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>该区域未与您正在编辑的对象相接触，因此未添加任何内容。重塑每次只能处理一个对象。</translation>
     </message>
     <message>
-        <source>That ground belongs to another object, so nothing was added. Edit that object instead, or join the two with Merge with neighbours.</source>
-        <translation>该区域属于另一个对象，因此未添加任何内容。请改为编辑该对象，或使用“与相邻对象合并”将两者拼接。</translation>
-    </message>
-    <message>
-        <source>That is another object. The one you were editing is saved, and this one is now selected.</source>
-        <translation>这是另一个对象。您正在编辑的对象已保存，当前已选中此对象。</translation>
-    </message>
-    <message>
         <source>The AI finds every object that looks like your examples - you can draw up to 3.</source>
         <translation>AI 会找出所有与您示例相似的对象，最多可绘制 3 个示例。</translation>
-    </message>
-    <message>
-        <source>The AI outlines it, free, on your computer.</source>
-        <translation>AI 会在您的电脑上免费为其勾出轮廓。</translation>
     </message>
     <message>
         <source>The connection to the server was interrupted. Please try again.</source>
@@ -2835,8 +2792,8 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>检测服务出现问题，运行已停止，请重试。</translation>
     </message>
     <message>
-        <source>The detection stopped responding. Keeping the {n} tiles already found.</source>
-        <translation>检测服务已无响应，将保留已发现的 {n} 个瓦片。</translation>
+        <source>The detection stopped responding. Keeping the {n} cloud detection(s) already paid for.</source>
+        <translation>检测已停止响应。保留已支付的 {n} 个云端检测。</translation>
     </message>
     <message>
         <source>The imagery reader could not be loaded, and repairing the installation did not fix it. Please report this so we can look into it.
@@ -2871,7 +2828,7 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>服务器返回了意外的响应，请重试。</translation>
     </message>
     <message>
-        <source>Thin this polygon&apos;s points before you edit them by hand. 100% keeps the outline as it is.</source>
+        <source>Thin this polygon's points before you edit them by hand. 100% keeps the outline as it is.</source>
         <translation>在手动编辑之前细化此多边形的节点。100% 表示保持轮廓不变。</translation>
     </message>
     <message>
@@ -2935,10 +2892,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>正在写入文件…</translation>
     </message>
     <message>
-        <source>You place the corners, the same as on any QGIS layer.</source>
-        <translation>由您放置节点，与在任何 QGIS 图层中一样。</translation>
-    </message>
-    <message>
         <source>Your examples drive the search - naming the object makes it even more accurate.</source>
         <translation>您的示例将引导搜索，为对象命名可进一步提高准确度。</translation>
     </message>
@@ -2991,15 +2944,15 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>{count} 个节点</translation>
     </message>
     <message>
-        <source>{credits} credits</source>
-        <translation>{credits} 积分</translation>
+        <source>{credits} charged</source>
+        <translation>已扣费 {credits} 个</translation>
     </message>
     <message>
         <source>{hidden} hidden by the filters</source>
         <translation>{hidden} 个已被筛选条件隐藏</translation>
     </message>
     <message>
-        <source>{n} &quot;{object}&quot; found so far</source>
+        <source>{n} "{object}" found so far</source>
         <translation>目前已找到 {n} 个“{object}”</translation>
     </message>
     <message>
@@ -3039,8 +2992,8 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>已选择 {n} 个形状，按 Enter 拼接。</translation>
     </message>
     <message>
-        <source>{n} tile(s) took too long to load and are missing from this result.</source>
-        <translation>{n} 个瓦片加载耗时过长，未包含在本次结果中。</translation>
+        <source>{n} part(s) of this run took too long to load and are missing from this result.</source>
+        <translation>此次运行的 {n} 个部分加载时间过长，缺失于此结果中。</translation>
     </message>
     <message>
         <source>{n} weeks ago</source>
@@ -3051,17 +3004,17 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>{n} 年前</translation>
     </message>
     <message>
-        <source>{tiles} tiles</source>
-        <translation>{tiles} 个瓦片</translation>
+        <source>{tiles} cloud detections</source>
+        <translation>{tiles} 个云端检测</translation>
     </message>
-    <!-- Correct step rework, install and precision wording (2026-07-30) -->
+    
     <message>
-        <source>5,000 credits a month.</source>
-        <translation>每月 5,000 积分。</translation>
+        <source>Pro: 5,000 cloud detections a month, zones of any size, up to 800 cloud detections in one run. Same AI, same free clicks and corrections, every machine you work on.</source>
+        <translation>Pro：每月 5,000 个云端检测、任意大小的区域、一次运行最多 800 个云端检测。相同的 AI、相同的免费点击和修正功能、您工作的每台机器。</translation>
     </message>
     <message>
-        <source>A free run covers up to {cap} credits. This one costs more.</source>
-        <translation>免费运行最多可覆盖 {cap} 积分。本次运行消耗更多积分。</translation>
+        <source>A free run covers up to {cap} cloud detections. This one needs more. Pro covers up to 800 in one run.</source>
+        <translation>一次免费运行最多可覆盖 {cap} 个云端检测。本次需要更多。Pro 版本一次运行最多可覆盖 800 个。</translation>
     </message>
     <message>
         <source>Adding an object uses the free on-device AI, which is not installed yet. Install it now? It runs once and takes a few minutes. The review waits for it, then arms Add for you.</source>
@@ -3072,8 +3025,8 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>在当前精度下，{obj}太小，难以发现，请提高精度。</translation>
     </message>
     <message>
-        <source>Automatic mode scans your zone tile by tile. 1 tile = 1 credit, so this run costs about {n} credits. More precision splits the zone into more tiles, which costs more credits.</source>
-        <translation>自动模式会逐个瓦片扫描您的区域。1 个瓦片 = 1 积分，因此本次运行大约消耗 {n} 积分。精度越高，区域被划分的瓦片越多，消耗的积分也越多。</translation>
+        <source>Automatic mode sweeps your zone in a grid. Each grid cell costs one cloud detection, so this run costs about {n}. More precision means a finer grid and more cloud detections.</source>
+        <translation>自动模式会以网格形式扫描您的区域。每个网格单元消耗一个云端检测，本次运行预计消耗约 {n} 个。更高的精度意味着网格更细密，云端检测数也更多。</translation>
     </message>
     <message>
         <source>Cancel setup</source>
@@ -3100,8 +3053,8 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>点击打开您的控制面板</translation>
     </message>
     <message>
-        <source>Connection is slow - still working, tiles already found are kept...</source>
-        <translation>连接较慢，仍在处理中，已发现的瓦片将被保留...</translation>
+        <source>Connection is slow - still working, everything already found is kept...</source>
+        <translation>连接缓慢 - 仍在工作，已找到的所有内容都会保留...</translation>
     </message>
     <message>
         <source>Could not save your detections to a file.</source>
@@ -3136,12 +3089,8 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>帮助我们更快地修复问题。</translation>
     </message>
     <message>
-        <source>Higher precision splits the zone into more tiles. Each tile costs 1 credit and captures smaller objects.</source>
-        <translation>更高的精度会将区域划分为更多瓦片。每个瓦片消耗 1 积分，并能捕捉更小的对象。</translation>
-    </message>
-    <message>
-        <source>Keep detecting without limits:</source>
-        <translation>不受限制地持续检测：</translation>
+        <source>More precision sweeps your zone in a finer grid, so it catches smaller objects. Each grid cell costs one cloud detection.</source>
+        <translation>更高的精度会以更细密的网格扫描您的区域，从而捕获更小的对象。每个网格单元消耗一个云端检测。</translation>
     </message>
     <message>
         <source>Keep installing</source>
@@ -3164,8 +3113,8 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>该区域已达到最高精度，绘制更大的区域可获得更精细的结果。</translation>
     </message>
     <message>
-        <source>More precision cuts the zone into more tiles and costs more credits.</source>
-        <translation>精度越高，区域被划分的瓦片越多，消耗的积分也越多。</translation>
+        <source>More precision finds smaller objects and uses more cloud detections.</source>
+        <translation>更高的精度可以找到更小的对象，但会消耗更多云端检测。</translation>
     </message>
     <message>
         <source>More precision finds smaller objects.</source>
@@ -3196,12 +3145,12 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>在当前精度下，该区域没有影像覆盖，因此未进行分析（不计费）。请降低精度，或选择一个覆盖此区域的图层。</translation>
     </message>
     <message>
-        <source>Not enough credits: {n} tiles, only {left} left. Lower the precision or the zone.</source>
-        <translation>积分不足：需要 {n} 个瓦片，仅剩 {left} 个。请降低精度或缩小区域。</translation>
+        <source>This run needs {n} cloud detections and you have {left} left. Lower the precision or shrink the zone. Pro gives you 5,000 cloud detections a month.</source>
+        <translation>本次运行需要 {n} 个云端检测，您还剩 {left} 个。请降低精度或缩小区域。Pro 版本每月提供 5,000 个云端检测。</translation>
     </message>
     <message>
-        <source>Opens your terra-lab.ai dashboard: your plan, your credits and your payment details.</source>
-        <translation>打开您的 terra-lab.ai 控制面板：您的套餐、积分和付款信息。</translation>
+        <source>Opens your terra-lab.ai dashboard: your plan, your cloud detections and your payment details.</source>
+        <translation>打开您的 terra-lab.ai 控制面板：您的订阅、云端检测和支付详情。</translation>
     </message>
     <message>
         <source>Outline settings</source>
@@ -3216,12 +3165,12 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>自动模式已就绪</translation>
     </message>
     <message>
-        <source>Running low: {n} free detections left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
-        <translation>即将用完：还剩 {n} 次免费检测，将于 {date} 恢复。&lt;a href=&quot;{url}&quot;&gt;升级到 Pro&lt;/a&gt;以继续使用。</translation>
+        <source>Running low: {n} free detections left, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>即将用完：还剩 {n} 次免费检测，将于 {date} 恢复。&lt;a href="{url}"&gt;升级到 Pro&lt;/a&gt;以继续使用。</translation>
     </message>
     <message>
-        <source>Running low: {n} free detections left. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
-        <translation>免费次数即将用完：剩余 {n} 次免费检测。&lt;a href=&quot;{url}&quot;&gt;升级到 Pro&lt;/a&gt;以继续使用。</translation>
+        <source>Running low: {n} free detections left. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>免费次数即将用完：剩余 {n} 次免费检测。&lt;a href="{url}"&gt;升级到 Pro&lt;/a&gt;以继续使用。</translation>
     </message>
     <message>
         <source>Same setup as your last run - the result will match. Add an example or change the precision for a different result.</source>
@@ -3272,8 +3221,8 @@ Lower thins the smallest detail first, keeps the corners, and gives Right angles
         <translation>停止安装？</translation>
     </message>
     <message>
-        <source>The detection stopped responding before any tile came back. Check your connection, then run Detect again (nothing was charged).</source>
-        <translation>检测服务已无响应，尚未返回任何瓦片。请检查您的网络连接，然后重新运行检测（未产生任何费用）。</translation>
+        <source>The detection stopped responding before anything came back. Check your connection, then run Detect again (nothing was charged).</source>
+        <translation>检测未返回任何结果就停止响应。请检查您的连接，然后重新运行检测（无需扣费）。</translation>
     </message>
     <message>
         <source>The file may be open in QGIS or in another program. Close it and try Finish again.</source>
@@ -3346,28 +3295,28 @@ It may have been moved or renamed, or the drive or network share it is on may be
         <translation>仅此多边形；减少节点数即可减少需要拖动的节点。</translation>
     </message>
     <message>
-        <source>This run costs more credits than a free run covers.</source>
-        <translation>本次运行所需积分超出免费额度。</translation>
+        <source>This run needs more cloud detections than one free run covers. Pro covers up to 800 in one run.</source>
+        <translation>本次运行所需的云端检测数超过一次免费运行的覆盖量。Pro 版本一次运行最多可覆盖 800 个。</translation>
     </message>
     <message>
-        <source>This zone at this precision needs a subscription. Lower the precision or the zone to stay free.</source>
-        <translation>在当前精度下，该区域需要订阅。请降低精度或缩小区域以保持免费。</translation>
+        <source>One free run covers fewer cloud detections than this. Lower the precision or shrink the zone to stay free. Pro runs up to 800 cloud detections in one go, so a wide zone keeps a fine grid.</source>
+        <translation>一次免费运行的云端检测数小于此需求。请降低精度或缩小区域以保持免费。Pro 版本一次运行最多可处理 800 个云端检测，因此宽阔区域可保持细密网格。</translation>
     </message>
     <message>
         <source>This zone is too large for sharp detections, even at full precision. Draw a smaller zone for the best results.</source>
         <translation>即使在最高精度下，该区域也过大，难以获得精确的检测结果。请绘制更小的区域以获得最佳效果。</translation>
     </message>
     <message>
-        <source>Tiles your layer has no image for are dropped before they are sent, so a run can cost less than this, never more.</source>
-        <translation>图层中没有影像的瓦片会在发送前被剔除，因此本次运行消耗的积分可能低于此数，但绝不会更多。</translation>
+        <source>You are never charged for a part of the zone your layer has no image for, so a run can cost less than this, never more.</source>
+        <translation>对于图层无图像数据的区域部分，您永远不会被收费，因此运行成本可能更低，但永远不会更高。</translation>
     </message>
     <message>
         <source>Type a word for the object, or draw an example.</source>
         <translation>为对象输入一个词，或绘制一个示例。</translation>
     </message>
     <message>
-        <source>Upgrade to Pro to finish this zone: 5,000 credits/month.</source>
-        <translation>升级到 Pro 以完成该区域的检测：每月 5,000 积分。</translation>
+        <source>Finish this zone with Pro: 5,000 cloud detections a month.</source>
+        <translation>使用 Pro 完成此区域：每月 5,000 个云端检测。</translation>
     </message>
     <message>
         <source>Wait for the on-device AI to finish installing.</source>
@@ -3381,11 +3330,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
         <source>{n} {object} saved to {layer}</source>
         <translation>已将 {n} 个{object}保存到 {layer}</translation>
     </message>
-    <!-- Correct-step on-device AI setup, free-run cap wording, missing raster (2026-07-30) -->
-    <message>
-        <source>5,000 objects every month</source>
-        <translation>每月 5,000 个对象</translation>
-    </message>
+    
     <message>
         <source>A session is already running.</source>
         <translation>会话已在进行中。</translation>
@@ -3401,10 +3346,6 @@ It may have been moved or renamed, or the drive or network share it is on may be
     <message>
         <source>AI ready</source>
         <translation>AI 已就绪</translation>
-    </message>
-    <message>
-        <source>Add an object the AI missed. In AI, point at it and the model outlines it, free; in Manual, draw its corners.</source>
-        <translation>添加一个 AI 遗漏的对象。在 AI 模式下，点击它，模型即可免费勾出轮廓；在手动模式下，逐一绘制其节点。</translation>
     </message>
     <message>
         <source>Almost ready: the AI file did not download.</source>
@@ -3483,20 +3424,16 @@ It may have been moved or renamed, or the drive or network share it is on may be
         <translation>每次点击会将图像中的一小块方形区域发送到我们在欧洲的服务器，随后返回轮廓结果。</translation>
     </message>
     <message>
-        <source>Ends this session. Your saved polygons are kept.</source>
-        <translation>结束本次会话。您已保存的多边形会被保留。</translation>
-    </message>
-    <message>
-        <source>Faster and more accurate</source>
-        <translation>更快，更准确</translation>
+        <source>Bigger model, more accurate</source>
+        <translation>更大的模型，更精确</translation>
     </message>
     <message>
         <source>Featured</source>
         <translation>精选</translation>
     </message>
     <message>
-        <source>Free, works offline</source>
-        <translation>免费，可离线使用</translation>
+        <source>Smaller model, works offline</source>
+        <translation>更小的模型，可离线使用</translation>
     </message>
     <message>
         <source>Install it now</source>
@@ -3523,28 +3460,12 @@ It may have been moved or renamed, or the drive or network share it is on may be
         <translation>我的电脑</translation>
     </message>
     <message>
-        <source>My computer, free and unlimited</source>
-        <translation>我的电脑，免费且不受限制</translation>
-    </message>
-    <message>
         <source>My work</source>
         <translation>我的作品</translation>
     </message>
     <message>
-        <source>No credits left. Each object you save with Cloud AI costs one credit.</source>
-        <translation>积分已用完。使用 Cloud AI 保存的每个对象消耗 1 积分。</translation>
-    </message>
-    <message>
-        <source>No credits left. Each object you save with Cloud AI costs one credit. Switch to the offline AI to keep working for free, or upgrade from the panel.</source>
-        <translation>积分已用完。使用 Cloud AI 保存的每个对象消耗 1 积分。切换到离线 AI 可继续免费使用，或从面板升级。</translation>
-    </message>
-    <message>
-        <source>No credits left. This polygon stays on the map, and Export still works.</source>
-        <translation>积分已用完。此多边形会保留在地图上，Export 功能仍可使用。</translation>
-    </message>
-    <message>
-        <source>No credits left. This polygon stays on the map, but it cannot be saved.</source>
-        <translation>积分已用完。此多边形会保留在地图上，但无法保存。</translation>
+        <source>No detections left. Each object you save with Cloud AI costs one. Switch to your own computer to keep working for free, or upgrade from the panel.</source>
+        <translation>detection 已用完。使用 Cloud AI 保存的每个物体消耗一个。切换到你自己的电脑可继续免费使用，也可以在面板中升级。</translation>
     </message>
     <message>
         <source>No object found here. Try clicking somewhere else.</source>
@@ -3555,8 +3476,8 @@ It may have been moved or renamed, or the drive or network share it is on may be
         <translation>暂不</translation>
     </message>
     <message>
-        <source>Your project and your files stay on your computer. One credit per object you save.</source>
-        <translation>您的工程和文件都留在您的电脑上。每保存 1 个对象消耗 1 积分。</translation>
+        <source>Your project and your files stay on your computer. One cloud detection per object you save.</source>
+        <translation>您的项目和文件保留在您的电脑上。保存每个对象消耗一个云端检测。</translation>
     </message>
     <message>
         <source>One precision level fits {obj} in a zone this size - draw a larger zone for a choice.</source>
@@ -3579,8 +3500,8 @@ It may have been moved or renamed, or the drive or network share it is on may be
         <translation>正在准备安装...</translation>
     </message>
     <message>
-        <source>Pro is active on this account. Your credits are ready.</source>
-        <translation>此账户已激活 Pro。您的积分已就绪。</translation>
+        <source>Pro is active on this account. Your cloud detections are ready.</source>
+        <translation>此账户的 Pro 已启用。您的云端检测已就绪。</translation>
     </message>
     <message>
         <source>Read the privacy policy</source>
@@ -3591,12 +3512,12 @@ It may have been moved or renamed, or the drive or network share it is on may be
         <translation>在地图上右键点击多边形即可将其删除。</translation>
     </message>
     <message>
-        <source>Running low: {n} credits left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
-        <translation>即将用完：还剩 {n} 积分，将于 {date} 恢复。&lt;a href=&quot;{url}&quot;&gt;升级到 Pro&lt;/a&gt;以继续使用。</translation>
+        <source>Running low: {n} cloud detections left, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>即将用尽：剩余 {n} 个云端检测，{date} 恢复。&lt;a href="{url}"&gt;升级到 Pro&lt;/a&gt; 继续。</translation>
     </message>
     <message>
-        <source>Running low: {n} credits left. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
-        <translation>即将用完：还剩 {n} 积分。&lt;a href=&quot;{url}&quot;&gt;升级到 Pro&lt;/a&gt;以继续使用。</translation>
+        <source>Running low: {n} cloud detections left. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>即将用尽：剩余 {n} 个云端检测。&lt;a href="{url}"&gt;升级到 Pro&lt;/a&gt; 继续。</translation>
     </message>
     <message>
         <source>Save a polygon first. Export writes every polygon you kept to a layer.</source>
@@ -3627,10 +3548,6 @@ It may have been moved or renamed, or the drive or network share it is on may be
         <translation>半自动模式需要安装本地依赖项，但在此沙盒化的 QGIS 环境（Flatpak 或 Snap）中不受支持。请改用自动模式，它完全在云端运行，无需本地安装。</translation>
     </message>
     <message>
-        <source>Semi-Auto mode stays free and unlimited on your computer.</source>
-        <translation>半自动模式在您的电脑上始终免费且不受限制。</translation>
-    </message>
-    <message>
         <source>Session ended</source>
         <translation>会话已结束</translation>
     </message>
@@ -3639,16 +3556,8 @@ It may have been moved or renamed, or the drive or network share it is on may be
         <translation>立即设置</translation>
     </message>
     <message>
-        <source>Setting up on your computer {dot} &lt;b&gt;pick Cloud AI to start now&lt;/b&gt;</source>
-        <translation>正在您的电脑上设置 {dot} &lt;b&gt;选择 Cloud AI 以立即开始&lt;/b&gt;</translation>
-    </message>
-    <message>
         <source>Start Semi-Auto AI Segmentation</source>
         <translation>开始半自动 AI Segmentation</translation>
-    </message>
-    <message>
-        <source>Stop and use my computer instead</source>
-        <translation>停止并改用我的电脑</translation>
     </message>
     <message>
         <source>Stop the install</source>
@@ -3687,12 +3596,8 @@ It may have been moved or renamed, or the drive or network share it is on may be
         <translation>离线 AI 仍在下载中。</translation>
     </message>
     <message>
-        <source>The smaller model on your computer. No credits, no limit.</source>
-        <translation>在您电脑上运行的较小模型。无需积分，不受限制。</translation>
-    </message>
-    <message>
-        <source>This deletes the local AI model files, signs you out, and resets the plugin. Your account and credits are not affected. Semi-Auto mode will download the files again next time you use it.</source>
-        <translation>这将删除本地 AI 模型文件、退出登录并重置插件。您的账户和积分不受影响。下次使用半自动模式时会重新下载文件。</translation>
+        <source>This deletes the local AI model files, signs you out, and resets the plugin. Your account and your cloud detections are not affected. Semi-Auto mode will download the files again next time you use it.</source>
+        <translation>这将删除本地 AI 模型文件、退出登录并重置插件。您的账户和云端检测不受影响。下次使用时，Semi-Auto 模式将重新下载这些文件。</translation>
     </message>
     <message>
         <source>This drive has {free} GB free, under the {need} GB the install needs. Free some space, or use Cloud AI.</source>
@@ -3723,35 +3628,19 @@ It may have been moved or renamed, or the drive or network share it is on may be
         <translation>分割运行的位置：</translation>
     </message>
     <message>
-        <source>You can close this window and keep working. The install carries on, and the panel shows how far it has got.</source>
-        <translation>您可以关闭此窗口继续工作。安装会在后台继续进行，面板会显示当前进度。</translation>
-    </message>
-    <message>
-        <source>Your free credits come back on {date}.</source>
-        <translation>您的免费积分将于 {date} 恢复。</translation>
-    </message>
-    <message>
         <source>Everything stays on this computer {dot} &lt;b&gt;about 10 minutes to install&lt;/b&gt;</source>
         <translation>一切都留在您的电脑上 {dot} &lt;b&gt;安装约需 10 分钟&lt;/b&gt;</translation>
-    </message>
-    <message>
-        <source>Everything stays on this computer {dot} &lt;b&gt;save as many as you like&lt;/b&gt;</source>
-        <translation>一切都留在您的电脑上 {dot} &lt;b&gt;保存数量不限&lt;/b&gt;</translation>
     </message>
     <message>
         <source>Everything stays on this computer {dot} &lt;b&gt;{gb} GB and about 10 minutes to install&lt;/b&gt;</source>
         <translation>一切都留在您的电脑上 {dot} &lt;b&gt;{gb} GB，安装约需 10 分钟&lt;/b&gt;</translation>
     </message>
     <message>
-        <source>No setup on this computer {dot} &lt;b&gt;1 credit per object you save&lt;/b&gt;</source>
-        <translation>您的电脑上无需设置 {dot} &lt;b&gt;每保存 1 个对象消耗 1 积分&lt;/b&gt;</translation>
-    </message>
-    <message>
         <source>The offline AI answers your clicks on this computer. Your imagery stays here, and every click is free.</source>
         <translation>离线 AI 会在您的电脑上响应点击。您的影像留在本地，每次点击都是免费的。</translation>
     </message>
     <message>
-        <source>This online layer returned no imagery for this area. Its server refused the request. Check the layer&apos;s URL in Layer Properties, or use another basemap.</source>
+        <source>This online layer returned no imagery for this area. Its server refused the request. Check the layer's URL in Layer Properties, or use another basemap.</source>
         <translation>此在线图层未返回此区域的影像。其服务器拒绝了请求。请在图层属性中检查该图层的 URL，或使用其他底图。</translation>
     </message>
     <message>
@@ -3791,8 +3680,8 @@ It may have been moved or renamed, or the drive or network share it is on may be
         <translation>此分类下暂无内容。</translation>
     </message>
     <message>
-        <source>One run covers up to {cap} tiles. This zone at this precision needs more. Draw a smaller zone, or lower the precision.</source>
-        <translation>一次运行最多可覆盖 {cap} 个瓦片，此区域在当前精度下需要更多瓦片。请绘制更小的区域，或降低精度。</translation>
+        <source>One run covers up to {cap} cloud detections. This zone at this precision needs more. Draw a smaller zone, or lower the precision.</source>
+        <translation>一次运行最多可覆盖 {cap} 个云端检测。这个精度下该区域需要更多。请绘制更小的区域或降低精度。</translation>
     </message>
     <message>
         <source>QGIS could not open a browser. Open this address to finish signing in, then come back here. It works once:
@@ -3833,8 +3722,8 @@ It may have been moved or renamed, or the drive or network share it is on may be
         <translation>此次运行未找到任何内容。请在下方手动添加对象，或点击“退出”后换一个词语或缩小区域重新运行。</translation>
     </message>
     <message>
-        <source>This zone at this precision needs more tiles than one run covers. Draw a smaller zone, or lower the precision.</source>
-        <translation>此区域在当前精度下需要的瓦片数超过一次运行所能覆盖的数量。请绘制更小的区域，或降低精度。</translation>
+        <source>This zone at this precision needs more cloud detections than one run covers. Draw a smaller zone, or lower the precision.</source>
+        <translation>这个精度下该区域所需的云端检测数超过一次运行的覆盖量。请绘制更小的区域或降低精度。</translation>
     </message>
     <message>
         <source>Undo every correction of this round at once. The count is in the label, so you can see what goes.</source>
@@ -3847,6 +3736,214 @@ It may have been moved or renamed, or the drive or network share it is on may be
     <message>
         <source>You are signed in on this computer, but QGIS cannot read your sign-in until you enter its master password.</source>
         <translation>您已在此电脑上登录，但在您输入 QGIS 的主密码之前，QGIS 无法读取您的登录信息。</translation>
+    </message>
+    <message>
+        <source>AI: point at what to keep or trim, one cloud detection per polygon. Manual: move the corners yourself, free.</source>
+        <translation>AI：指出要保留或修剪的部分，每个多边形消耗一个云端检测。手动：自己移动角点，免费。</translation>
+    </message>
+    <message>
+        <source>Start now, nothing to install {dot} &lt;b&gt;1 cloud detection per object you save&lt;/b&gt;</source>
+        <translation>立即开始，无需安装 {dot} &lt;b&gt;保存每个对象消耗 1 个云端检测&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>The AI outlines it. One cloud detection per object.</source>
+        <translation>AI 为其勾勒轮廓。每个对象消耗一个云端检测。</translation>
+    </message>
+    <message>
+        <source>Add an object the AI missed. In AI, point at it and the model outlines it for one cloud detection; in Manual, draw its corners for free.</source>
+        <translation>添加 AI 遗漏的对象。在 AI 中指向它，模型为其勾勒轮廓，消耗一个云端检测；在手动中，免费绘制其角点。</translation>
+    </message>
+    <message>
+        <source>This zone at this precision needs more than one run covers. Draw a smaller zone, or lower the precision. Free runs stop well below that ceiling, so Pro keeps more precision on a zone this size.</source>
+        <translation>此区域在此精度下需要超过一次云端检测。绘制一个较小的区域，或降低精度。免费运行停止在远低于该上限处，因此Pro在此大小的区域上保持更高精度。</translation>
+    </message>
+    <message>
+        <source>This zone at this precision needs more cloud detections than one run covers. Draw a smaller zone, or lower the precision. Free runs stop well below that ceiling, so Pro keeps more precision on a zone this size.</source>
+        <translation>此区域在此精度下需要超过一次运行的云端检测。绘制一个较小的区域，或降低精度。免费运行停止在远低于该上限处，因此Pro在此大小的区域上保持更高精度。</translation>
+    </message>
+    <message>
+        <source>Pick a raster layer at the top of the panel first.</source>
+        <translation>请先在面板顶部选择一个栅格图层。</translation>
+    </message>
+    <message>
+        <source>This zone at this precision is too big for one run. Draw a smaller zone, or lower the precision.</source>
+        <translation>这个精度下该区域对于一次运行来说太大。请绘制更小的区域或降低精度。</translation>
+    </message>
+    <message>
+        <source>No cloud detections left this month. Semi-Auto mode runs on your computer, free and unlimited.</source>
+        <translation>本月云端检测已用尽。Semi-Auto 模式在您的电脑上运行，免费且无限制。</translation>
+    </message>
+    <message>
+        <source>This run costs more cloud detections than you have left. Lower the precision, or draw a smaller zone.</source>
+        <translation>本次运行消耗的云端检测数超过剩余数量。请降低精度或绘制更小的区域。</translation>
+    </message>
+    <message>
+        <source>One free run covers fewer cloud detections than this. Lower the precision, or draw a smaller zone.</source>
+        <translation>一次免费运行的云端检测数小于此需求。请降低精度或绘制更小的区域。</translation>
+    </message>
+    <message>
+        <source>Load imagery in QGIS, then pick it above to start.</source>
+        <translation>在 QGIS 中加载影像，然后在上方选择它以开始。</translation>
+    </message>
+    <message>
+        <source>One object at a time: click it, the AI outlines it. You choose where it runs, on our servers or on your own computer.</source>
+        <translation>一次处理一个物体：点击它，AI 就会勾出轮廓。运行位置由你决定，可以在我们的服务器上，也可以在你自己的电脑上。</translation>
+    </message>
+    <message>
+        <source>Draw a zone, name one kind of object, get all of them in one run. Runs on our servers and uses your cloud detections.</source>
+        <translation>绘制一个区域，命名一种对象，一次运行获得所有对象。在我们的服务器上运行，消耗您的云端检测。</translation>
+    </message>
+    <message>
+        <source>This layer has no file to read. Pick another layer at the top of the panel, then start again.</source>
+        <translation>此图层没有可读取的文件。在面板顶部选择另一个图层，然后重新开始。</translation>
+    </message>
+    <message>
+        <source>Writes a GeoPackage with the QGIS style built in, English field names, and how the run was made (prompt, source layer, date, precision). It opens styled and documented on a colleague's machine, with no plugin installed.</source>
+        <translation>写入包含 QGIS 样式的 GeoPackage，字段名为英文，并记录运行方式（提示词、源图层、日期、精度）。在同事的机器上以已样式化和已文档化的形式打开，无需安装插件。</translation>
+    </message>
+    <message>
+        <source>&quot;{selected}&quot; has no imagery here. You are looking at &quot;{other}&quot;. Pick it at the top of the panel, then click again.</source>
+        <translation>“{selected}”在此处没有影像。您当前查看的是“{other}”。请在面板顶部选择它，然后再次点击。</translation>
+    </message>
+    <message>
+        <source>39 EUR a month, cancel anytime. Opens your TerraLab dashboard.</source>
+        <translation>每月 39 EUR，随时可取消。将打开您的 TerraLab 控制面板。</translation>
+    </message>
+    <message>
+        <source>Could not reach this layer&apos;s server. Check your connection, then click again.</source>
+        <translation>无法连接到此图层的服务器。请检查您的网络连接，然后再次点击。</translation>
+    </message>
+    <message>
+        <source>Every run is kept with its image, ready to open months later.</source>
+        <translation>每次运行都会连同影像一起保存，几个月后仍可打开。</translation>
+    </message>
+    <message>
+        <source>Nothing to install, works right away.</source>
+        <translation>无需安装，即刻可用。</translation>
+    </message>
+    <message>
+        <source>Or click objects one by one in Semi-Auto, free on this computer.</source>
+        <translation>或在半自动模式下逐个点击对象，在本机上免费使用。</translation>
+    </message>
+    <message>
+        <source>Or end this session and work free on this computer. Your saved polygons are kept.</source>
+        <translation>或结束本次会话，改在本机上免费使用。您已保存的多边形会被保留。</translation>
+    </message>
+    <message>
+        <source>Or work free with a smaller AI on this computer.</source>
+        <translation>或在本机上使用较小的 AI，免费处理。</translation>
+    </message>
+    <message>
+        <source>Pro: 5,000 cloud detections a month</source>
+        <translation>Pro：每月 5,000 个云端检测</translation>
+    </message>
+    <message>
+        <source>Pro: 5,000 detections a month, on zones of any size</source>
+        <translation>Pro：每月 5,000 个检测，适用于任意大小的区域</translation>
+    </message>
+    <message>
+        <source>QGIS cannot read this raster format here. Convert it to GeoTIFF, then start again.</source>
+        <translation>QGIS 无法读取此栅格格式。请先转换为 GeoTIFF，然后重新开始。</translation>
+    </message>
+    <message>
+        <source>QGIS waits while this installs. To segment right away, stop the install and use Cloud AI.</source>
+        <translation>QGIS 会在安装期间等待。如需立即分割，请停止安装并使用 Cloud AI。</translation>
+    </message>
+    <message>
+        <source>Runs on this computer {dot} &lt;b&gt;save as many as you like&lt;/b&gt;</source>
+        <translation>在本机上运行 {dot} &lt;b&gt;保存数量不限&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Setting up on your computer {dot} &lt;b&gt;wait for it to finish&lt;/b&gt;</source>
+        <translation>正在您的电脑上设置 {dot} &lt;b&gt;请等待完成&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Small objects still show up on wide areas.</source>
+        <translation>大范围区域中，小对象依然可见。</translation>
+    </message>
+    <message>
+        <source>Stop and use my computer</source>
+        <translation>停止并使用我的电脑</translation>
+    </message>
+    <message>
+        <source>Stop the install?</source>
+        <translation>停止安装？</translation>
+    </message>
+    <message>
+        <source>Take back the last point you placed. Shortcut: Ctrl+Z</source>
+        <translation>撤销您放置的最后一个节点。快捷键：Ctrl+Z</translation>
+    </message>
+    <message>
+        <source>The layer you picked has no imagery here. You are looking at &quot;{other}&quot;. Pick it at the top of the panel, then click again.</source>
+        <translation>您所选的图层在此处没有影像。您当前查看的是“{other}”。请在面板顶部选择它，然后再次点击。</translation>
+    </message>
+    <message>
+        <source>The offline AI is not installed yet. Stop the install?</source>
+        <translation>离线 AI 尚未安装。停止安装？</translation>
+    </message>
+    <message>
+        <source>The same cloud AI, and the cleanest shapes.</source>
+        <translation>同一个 Cloud AI，带来最干净的轮廓。</translation>
+    </message>
+    <message>
+        <source>They come back on {date}.</source>
+        <translation>将于 {date} 恢复。</translation>
+    </message>
+    <message>
+        <source>This layer has no imagery at this zoom. Zoom in until you see it on the map, then click again.</source>
+        <translation>此图层在当前缩放级别下没有影像。请放大直至在地图上看到它，然后再次点击。</translation>
+    </message>
+    <message>
+        <source>This layer&apos;s file is no longer where QGIS expects it. Reload it from where the file is now, then start again.</source>
+        <translation>此图层的文件已不在 QGIS 期望的位置。请从文件当前所在位置重新加载，然后重新开始。</translation>
+    </message>
+    <message>
+        <source>This layer&apos;s server refused the request. Pick another basemap at the top of the panel, then click again.</source>
+        <translation>此图层的服务器拒绝了请求。请在面板顶部选择其他底图，然后再次点击。</translation>
+    </message>
+    <message>
+        <source>This polygon stays on the map, and Export still works.</source>
+        <translation>此多边形仍保留在地图上，Export 仍可使用。</translation>
+    </message>
+    <message>
+        <source>This polygon stays on the map, but it cannot be saved.</source>
+        <translation>此多边形仍保留在地图上，但无法保存。</translation>
+    </message>
+    <message>
+        <source>This raster has no bands to read. Pick another layer at the top of the panel.</source>
+        <translation>此栅格没有可读取的波段。请在面板顶部选择其他图层。</translation>
+    </message>
+    <message>
+        <source>Undo point</source>
+        <translation>撤销点</translation>
+    </message>
+    <message>
+        <source>Use Semi-Auto</source>
+        <translation>使用半自动</translation>
+    </message>
+    <message>
+        <source>Use my computer</source>
+        <translation>使用我的电脑</translation>
+    </message>
+    <message>
+        <source>You place the corners, the same as on any QGIS layer. Free.</source>
+        <translation>由您放置节点，与在任何 QGIS 图层中一样。免费。</translation>
+    </message>
+    <message>
+        <source>You used all {n}. They come back on {date}.</source>
+        <translation>您已用完全部 {n} 个。将于 {date} 恢复。</translation>
+    </message>
+    <message>
+        <source>Your click is outside this layer. Click on the imagery itself, or pick another layer at the top of the panel.</source>
+        <translation>您的点击位置在此图层范围之外。请点击影像本身，或在面板顶部选择其他图层。</translation>
+    </message>
+    <message>
+        <source>Your cloud detections are used up</source>
+        <translation>您的云端检测已用完</translation>
+    </message>
+    <message>
+        <source>Your free cloud detections are used up</source>
+        <translation>您的免费云端检测已用完</translation>
     </message>
 </context>
 </TS>

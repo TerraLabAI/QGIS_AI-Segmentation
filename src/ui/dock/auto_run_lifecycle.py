@@ -238,7 +238,7 @@ class DockAutoRunLifecycleMixin:
         try:
             if self.auto_progress_card.isVisible():
                 self.auto_progress_label.setText(
-                    tr("Stopping - keeping the tiles already found..."))
+                    tr("Stopping - keeping everything already found..."))
                 self.auto_progress_label.setVisible(True)
         except (RuntimeError, AttributeError):
             pass

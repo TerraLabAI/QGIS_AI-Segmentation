@@ -1068,7 +1068,8 @@ class AutoReviewMixin:
             box.setWindowTitle(tr("Discard these detections?"))
             box.setText(tr(
                 "Your {total} detections will be discarded. You keep your zone, "
-                "object and settings. Running Detect again will use new credits."
+                "object and settings. Running Detect again spends new cloud "
+                "detections."
             ).format(total=total))
             discard_btn = box.addButton(
                 tr("Discard && adjust"), QMessageBox.ButtonRole.AcceptRole)

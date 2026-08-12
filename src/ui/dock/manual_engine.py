@@ -413,12 +413,21 @@ class DockManualEngineMixin:
             #
             # One claim, not two. "Nothing to install, nothing to download" said
             # the same thing twice and spent the sentence on the word "nothing".
-            # The two lines now turn on one phrase, "this computer", so moving
-            # between the cards swaps one fact and nothing else.
+            #
+            # It opens on the action, not on an absence. "No setup on this
+            # computer" described a thing that does not happen, which is the
+            # weakest way to say the strongest fact this side has: the user can
+            # segment their first object now, without the wall the other card
+            # puts in front of them.
+            #
+            # This id is SERVED, so the sentence a user reads is the site's, in
+            # their own language. Reword it there, never here: the shipped one
+            # below is the offline fallback and carries eleven translations that
+            # a new English source would drop.
             return _fill_engine_line(dial_copy(
                 "engine.cloud_line",
-                tr("No setup on this computer {dot} "
-                   "<b>1 credit per object you save</b>")))
+                tr("Start now, nothing to install {dot} "
+                   "<b>1 cloud detection per object you save</b>")))
         if not self._manual_engine_local_ready():
             if self._manual_install_running():
                 # Do not promise "runs on your computer" while it is still
@@ -437,14 +446,15 @@ class DockManualEngineMixin:
                     tr("The install did not finish {dot} <b>retry it, or "
                        "pick Cloud AI</b>")))
             return self._manual_engine_install_copy()
-        # "Nothing is sent" planted the idea that something could be. It named
-        # the risk in order to deny it, on the half where there is none, and it
-        # read as a warning. Say where the imagery is instead, and let the
-        # cloud line be the one that raises the question.
+        # Where it runs, then what it costs, and nothing about what does or
+        # does not leave the machine. Two versions have now made that mistake:
+        # "Nothing is sent" named a risk in order to deny it, and "Everything
+        # stays on this computer" said the same thing in the positive. Both
+        # answer a question the user had not asked, and both make the other
+        # half of the switch read as the risky one.
         return _fill_engine_line(dial_copy(
             "engine.local_line",
-            tr("Everything stays on this computer {dot} <b>save as many as "
-               "you like</b>")))
+            tr("Runs on this computer {dot} <b>save as many as you like</b>")))
 
     def _on_manual_low_credit_link(self, url: str) -> None:
         """The Pro link inside this mode's running-low line.
@@ -486,12 +496,12 @@ class DockManualEngineMixin:
             url = self._build_upgrade_url()
             if reset_day:
                 line.setText(tr(
-                    'Running low: {n} credits left, back on {date}. '
+                    'Running low: {n} cloud detections left, back on {date}. '
                     '<a href="{url}">Upgrade to Pro</a> to keep going.'
                 ).format(n=left, date=reset_day, url=url))
             else:
                 line.setText(tr(
-                    'Running low: {n} credits left. '
+                    'Running low: {n} cloud detections left. '
                     '<a href="{url}">Upgrade to Pro</a> to keep going.'
                 ).format(n=left, url=url))
             line.setVisible(True)

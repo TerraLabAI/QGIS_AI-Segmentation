@@ -311,7 +311,13 @@ class DockAutoReviewPanelMixin:
                        if size_bound else
                        tr("Lower Confidence to show objects first."))
             else:
-                tip = ""
+                # What the file carries. Nothing on screen said it, and it is
+                # the reason the export survives leaving this machine.
+                tip = tr(
+                    "Writes a GeoPackage with the QGIS style built in, English "
+                    "field names, and how the run was made (prompt, source "
+                    "layer, date, precision). It opens styled and documented "
+                    "on a colleague's machine, with no plugin installed.")
             self.auto_export_btn.setToolTip(tip)
             # A run that found nothing hides both green primaries: there is
             # nothing to advance to or export. The moment the review holds an

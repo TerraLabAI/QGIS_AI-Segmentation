@@ -1168,8 +1168,8 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
         skipped = int(outcome.get("tiles_skipped") or 0)
         if skipped <= 0:
             return ""
-        return tr("{n} tile(s) took too long to load and are missing from "
-                  "this result.").format(n=skipped)
+        return tr("{n} part(s) of this run took too long to load and are "
+                  "missing from this result.").format(n=skipped)
 
     def _finish_restore(self, run: dict, tiles: list, decoded: dict) -> None:
         from qgis.PyQt.QtCore import Qt

@@ -131,6 +131,11 @@ class ManualAddMixin:
         # Add mode: a click on empty ground starts a normal prediction. The flag
         # scopes the resting-click gate flip in manual_predict.
         self._refine_add_mode_active = True
+        # Same canvas rule as a fix session, for an object that has no row yet:
+        # everything already on the map goes pale and stops answering the
+        # pointer, so the outline being drawn is the only thing in play.
+        from .correct_focus import FOCUS_ID_NEW_OBJECT
+        self._begin_correct_focus(FOCUS_ID_NEW_OBJECT)
         self._ai_add_kept_count = 0
         try:
             self.dock_widget.set_add_lane_armed(True, "ai")
@@ -232,19 +237,28 @@ class ManualAddMixin:
         return True
 
     def _refresh_ai_add_keep_button(self) -> None:
-        """Show Keep exactly while the lane has an outline to commit. Called
-        from every path that changes what is on screen (prediction, undo, save,
-        cancel), so the button never outlives its outline."""
+        """Show Keep and Undo exactly while the lane has something for each.
+        Called from every path that changes what is on screen (prediction,
+        undo, save, cancel), so neither button outlives its outline.
+
+        Undo answers a wider question than Keep: a point placed whose answer
+        never became a shape is still a gesture to take back."""
         dock = getattr(self, "dock_widget", None)
         if dock is None:
             return
+        armed = bool(getattr(self, "_refine_add_mode_active", False))
         fn = getattr(dock, "set_add_lane_keep_available", None)
-        if not callable(fn):
-            return
-        try:
-            fn(bool(getattr(self, "_refine_add_mode_active", False)) and self._ai_add_outline_in_progress())
-        except (RuntimeError, AttributeError, TypeError):
-            pass
+        if callable(fn):
+            try:
+                fn(armed and self._ai_add_outline_in_progress())
+            except (RuntimeError, AttributeError, TypeError):
+                pass
+        undo_fn = getattr(dock, "set_add_lane_undo_available", None)
+        if callable(undo_fn):
+            try:
+                undo_fn(armed and self._ai_session_has_undo())
+            except (RuntimeError, AttributeError, TypeError):
+                pass
 
     # ------------------------------------------------------------------
     # Exit + install-pending lifecycle
@@ -256,6 +270,9 @@ class ManualAddMixin:
         Esc-to-rest / step change) is a separate step, so callers that want to
         leave the session entirely fold first. Safe to call from any teardown."""
         self._refine_add_mode_active = False
+        # Give every polygon its colour and its clicks back. Idempotent, so a
+        # teardown that already ended the focus loses nothing here.
+        self._end_correct_focus()
         if self.dock_widget is None:
             return
         try:

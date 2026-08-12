@@ -81,6 +81,7 @@ from .styles import (
     _CHIP_QSS,
     _INPUT_THEME_QSS,
     _MSG_GLYPHS,
+    _PREMIUM_STAR,
     _PROGRESS_THIN_QSS,
     _SLIDER_QSS,
     _SUBCARD_MARGINS,
@@ -92,6 +93,7 @@ from .styles import (
     _step_dial,
 )
 from .widgets import (
+    Mode,
     _ZoneGestureGlyph,
     build_no_imagery_hero,
     make_shortcut_hint,
@@ -118,16 +120,24 @@ class DockAutoBuildMixin:
         self.auto_upsell_card.setObjectName("autoUpsellCard")
         self.auto_upsell_card.setAttribute(
             Qt.WidgetAttribute.WA_StyledBackground, True)
+        # Neutral card, and the offer inside it wears the tint. Flat and blue
+        # all through, every line weighed the same and the reader met seven of
+        # them at once. Pixel-for-pixel the Semi-Auto credit card
+        # (manual_credit_gate.py): a user who runs out in both modes must not
+        # have to read two different screens to learn one fact.
         self.auto_upsell_card.setStyleSheet(
-            _msg_card_qss("autoUpsellCard", "info") + _CARD_CHILD_BTN_RESET_QSS)
+            _CARD_QSS.format(name="autoUpsellCard")
+            + "QLabel { background: transparent; border: none; }"
+            + _CARD_CHILD_BTN_RESET_QSS)
         upsell_layout = QVBoxLayout(self.auto_upsell_card)
         upsell_layout.setContentsMargins(*_SUBCARD_MARGINS)
-        upsell_layout.setSpacing(8)
+        upsell_layout.setSpacing(4)
 
         # The count is filled in from the fetched free-detection total by
         # _refresh_auto_upsell_title (a number-free fallback until it is known).
         self._auto_upsell_title = QLabel(tr("Your free detections are used up"))
-        self._auto_upsell_title.setStyleSheet("font-weight: bold; font-size: 12px; color: palette(text);")
+        self._auto_upsell_title.setStyleSheet(
+            "font-weight: bold; font-size: 13px; color: palette(text);")
         self._auto_upsell_title.setWordWrap(True)
         upsell_layout.addWidget(self._auto_upsell_title)
 
@@ -137,54 +147,93 @@ class DockAutoBuildMixin:
         # when the server sends none.
         self._auto_upsell_reset = QLabel()
         self._auto_upsell_reset.setStyleSheet(
-            "font-size: 11px; color: palette(text);")
+            "font-size: 11px; color: rgba(128,128,128,0.95);")
         self._auto_upsell_reset.setWordWrap(True)
         self._auto_upsell_reset.setVisible(False)
         upsell_layout.addWidget(self._auto_upsell_reset)
 
-        # The whole card is served copy with the shipped lines as fallback. The
-        # offer it describes ("5,000 detections every month") is a commercial
-        # fact that can change any week, and until it can be corrected from the
-        # server a change of offer makes the plugin lie until the next release.
-        _upsell_sub = QLabel(dial_copy(
-            "upsell.subtitle", tr("Keep detecting without limits:")))
-        _upsell_sub.setStyleSheet("font-size: 11px; color: palette(text);")
-        _upsell_sub.setWordWrap(True)
-        upsell_layout.addWidget(_upsell_sub)
+        # The offer, tinted, inside the card. The lines are served with the
+        # shipped ones as fallback: what Pro gives is a commercial fact that
+        # can change any week, and a plugin release takes days to reach a user.
+        upsell_layout.addSpacing(4)
+        _offer = QWidget()
+        _offer.setObjectName("autoUpsellOffer")
+        _offer.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        _offer.setStyleSheet(
+            _msg_card_qss("autoUpsellOffer", "premium") + _CARD_CHILD_BTN_RESET_QSS)
+        _offer_layout = QVBoxLayout(_offer)
+        _offer_layout.setContentsMargins(*_SUBCARD_MARGINS)
+        _offer_layout.setSpacing(3)
 
-        for bullet_id, bullet in [
-            ("upsell.bullet_quota", tr("5,000 detections every month")),
-            ("upsell.bullet_objects", tr("Every building, tree, or road as clean polygons")),
-            ("upsell.bullet_cancel", tr("Cancel anytime; your exported layers stay yours")),
+        # The served line already carries the zone promise, so the two lines
+        # under it must not say it again.
+        _quota = QLabel(f"{_PREMIUM_STAR}  " + dial_copy(
+            "upsell.bullet_quota",
+            tr("Pro: 5,000 detections a month, on zones of any size")))
+        _quota.setStyleSheet(
+            "font-size: 12px; font-weight: bold; color: palette(text);")
+        _quota.setWordWrap(True)
+        _offer_layout.addWidget(_quota)
+
+        # Two lines, and they are limits that stop a free account on real
+        # work. The old pair sold nothing: "clean polygons" is what the free
+        # tier already returns, and "cancel anytime" belongs by the price.
+        for _bullet_id, _bullet in [
+            ("upsell.bullet_objects", tr("Small objects still show up on wide "
+                                         "areas.")),
+            ("upsell.bullet_runs", tr("Every run is kept with its image, ready "
+                                      "to open months later.")),
         ]:
-            _lbl = QLabel(dial_copy(bullet_id, bullet))
+            _lbl = QLabel(dial_copy(_bullet_id, _bullet))
             _lbl.setStyleSheet("font-size: 11px; color: palette(text);")
             _lbl.setWordWrap(True)
-            upsell_layout.addWidget(_lbl)
-
-        # Reassurance: even out of free detections, Semi-Auto never stops.
-        # Keeps the exhausted card from reading as a hard wall.
-        _upsell_free = QLabel(dial_copy(
-            "upsell.manual_free",
-            tr("Semi-Auto mode stays free and unlimited on your computer.")))
-        _upsell_free.setStyleSheet("font-size: 11px; color: rgba(128,128,128,0.95);")
-        _upsell_free.setWordWrap(True)
-        upsell_layout.addWidget(_upsell_free)
+            _offer_layout.addWidget(_lbl)
 
         self.auto_upgrade_btn = QPushButton(
             dial_copy("upsell.cta", tr("Upgrade to Pro")))
         self.auto_upgrade_btn.setStyleSheet(_BTN_BLUE)
-        self.auto_upgrade_btn.setMinimumHeight(36)
+        self.auto_upgrade_btn.setMinimumHeight(34)
         self.auto_upgrade_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_upgrade_btn.clicked.connect(self._on_upgrade_clicked)
-        upsell_layout.addWidget(self.auto_upgrade_btn)
+        _offer_layout.addWidget(self.auto_upgrade_btn)
 
+        # The price ships in the line and stays served (see the same read in
+        # manual_credit_gate.py): served alone it is absent on a cold cache,
+        # which is the launch where a buyer first meets this card.
         _upsell_hint = QLabel(dial_copy(
-            "upsell.cta_hint", tr("Opens your TerraLab dashboard")))
+            "upsell.cta_hint",
+            tr("39 EUR a month, cancel anytime. "
+               "Opens your TerraLab dashboard.")))
         _upsell_hint.setStyleSheet("font-size: 10px; color: rgba(128,128,128,0.95);")
         _upsell_hint.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         _upsell_hint.setWordWrap(True)
-        upsell_layout.addWidget(_upsell_hint)
+        _offer_layout.addWidget(_upsell_hint)
+        upsell_layout.addWidget(_offer)
+
+        # The free way out, under a hairline and in grey: named so nobody
+        # feels stuck, never weighed like the offer above it.
+        upsell_layout.addSpacing(6)
+        _rule = QFrame()
+        _rule.setFrameShape(QFrame.Shape.HLine)
+        _rule.setStyleSheet(
+            "background: rgba(128,128,128,0.25); border: none; max-height: 1px;")
+        upsell_layout.addWidget(_rule)
+
+        _upsell_free = QLabel(dial_copy(
+            "upsell.manual_free",
+            tr("Or click objects one by one in Semi-Auto, free on this "
+               "computer.")))
+        _upsell_free.setStyleSheet("font-size: 11px; color: rgba(128,128,128,0.95);")
+        _upsell_free.setWordWrap(True)
+        upsell_layout.addWidget(_upsell_free)
+
+        self.auto_upsell_manual_btn = QPushButton(tr("Use Semi-Auto"))
+        self.auto_upsell_manual_btn.setMinimumHeight(30)
+        self.auto_upsell_manual_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.auto_upsell_manual_btn.setStyleSheet(_BTN_CHIP)
+        self.auto_upsell_manual_btn.clicked.connect(
+            self._on_auto_upsell_manual_clicked)
+        upsell_layout.addWidget(self.auto_upsell_manual_btn)
 
         # The auto page absorbs the panel height (stretch factor below); the
         # card itself must never stretch with it.
@@ -726,8 +775,8 @@ class DockAutoBuildMixin:
         # choice to offer, so set_auto_detail_range hides this line with the
         # slider rather than leaving a promise about a control that is gone.
         self.auto_detail_sub = QLabel(tr(
-            "More precision cuts the zone into more tiles and costs more"
-            " credits."))
+            "More precision finds smaller objects and uses more cloud"
+            " detections."))
         self.auto_detail_sub.setWordWrap(True)
         self.auto_detail_sub.setStyleSheet(
             "font-size: 11px; color: rgba(128, 128, 128, 0.95);")
@@ -774,8 +823,8 @@ class DockAutoBuildMixin:
         self.auto_detail_slider.setMinimumHeight(26)
         self.auto_detail_slider.setStyleSheet(_SLIDER_QSS)
         self.auto_detail_slider.setToolTip(tr(
-            "Higher precision splits the zone into more tiles. Each tile costs"
-            " 1 credit and captures smaller objects."))
+            "More precision sweeps your zone in a finer grid, so it catches"
+            " smaller objects. Each grid cell costs one cloud detection."))
         self.auto_detail_slider.valueChanged.connect(self._on_auto_detail_changed)
         _slider_row.addWidget(self.auto_detail_slider, 1)
         _fine_lbl = QLabel(tr("More"))
@@ -1107,8 +1156,12 @@ class DockAutoBuildMixin:
         # credits (Moment C). A quiet text-link under the status; the partial
         # results are still kept in review. Hidden by default; shown by
         # set_auto_exhausted_subscribe_visible.
-        self.auto_exhausted_subscribe_link = QPushButton(
-            tr("Upgrade to Pro to finish this zone: 5,000 credits/month."))
+        # Served, like the rest of the upsell card above it: the sentence
+        # quotes the Pro monthly quota, so a hardcoded number makes the plugin
+        # misstate the offer until the next release.
+        self.auto_exhausted_subscribe_link = QPushButton(dial_copy(
+            "upsell.exhausted_link",
+            tr("Finish this zone with Pro: 5,000 cloud detections a month.")))
         self.auto_exhausted_subscribe_link.setStyleSheet(_BTN_LINK)
         self.auto_exhausted_subscribe_link.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_exhausted_subscribe_link.setVisible(False)
@@ -1152,6 +1205,18 @@ class DockAutoBuildMixin:
         auto_layout.addStretch()
         self.auto_page.setVisible(False)
         self.main_layout.addWidget(self.auto_page, 1)
+
+    def _on_auto_upsell_manual_clicked(self) -> None:
+        """Take the free way out of the exhausted card: the other mode.
+
+        Through the switch's own handler, so a run in progress still blocks
+        the move and the segmented control cannot end up showing a mode the
+        page is not on.
+        """
+        try:
+            self._on_mode_selected(Mode.INTERACTIVE)
+        except (RuntimeError, AttributeError):
+            return
 
     def get_auto_confidence(self) -> float:
         """Current cloud-model detection-confidence threshold from the Automatic panel.

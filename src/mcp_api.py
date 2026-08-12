@@ -433,6 +433,7 @@ class SegmentationMCPAPI:
                 round_measure,
                 to_multipolygon,
             )
+            from .core.output_group_order import keep_group_above_imagery
 
             timestamp = datetime.now().isoformat(timespec="seconds")
 
@@ -574,6 +575,11 @@ class SegmentationMCPAPI:
 
             QgsProject.instance().addMapLayer(result_layer, False)
             group.addLayer(result_layer)
+            # Same rule as the dock: results paint above the imagery they were
+            # made from. A headless caller has no eyes on the canvas, so a
+            # group left under an opaque basemap goes unnoticed for longer.
+            # The node is destroyed by the move, so never touch `group` after.
+            keep_group_above_imagery(group)
 
             return {"layer_name": layer_name, "file_path": gpkg_path}
 

@@ -37,7 +37,6 @@ from .shared import (
     SETTINGS_KEY_LAST_MANUAL_SESSION_TS,
     SETTINGS_KEY_TUTORIAL_SHOWN,
     _add_features_fast,
-    _apply_fast_render,
     looks_like_pixel_image,
     pixel_grid_crs,
 )
@@ -216,10 +215,12 @@ class ManualWorkflowMixin:
         self._current_raster_path = raster_path
 
         # Opened here, past every guard above: a Start that turns back leaves no
-        # ledger behind for a session that never opened. A handoff bills nothing,
-        # so it never opens one.
-        if not self._refine_handoff_active:
-            self._start_manual_credit_session()
+        # ledger behind for a session that never opened. The review's Correct
+        # step comes through here too and opens one on the same terms, because
+        # its AI lane is answered off the machine and costs a credit per fix.
+        # Whether a ledger opens at all is the predictor's answer, not the
+        # mode's, so a session on the machine still gets none.
+        self._start_manual_credit_session()
 
         # Canvas CRS <-> raster CRS, and the watch that rebuilds the pair when
         # the project CRS changes under the session.
@@ -503,9 +504,9 @@ class ManualWorkflowMixin:
             combined = None
 
         if combined and not combined.isEmpty():
-            # Refine handoff: if this save overlaps an existing detection, fold
-            # them into ONE polygon (complete-don't-stack). No-op in base Manual.
-            combined = self._absorb_overlapping_saved(combined)
+            # Refine handoff: count the edit. The shape is saved as drawn, and
+            # the detections around it are not touched. No-op in base Manual.
+            combined = self._note_handoff_shape_saved(combined)
             # Per-instance identity: an object re-opened for editing keeps its
             # original det_id (its Random colour survives the edit); a brand-new
             # hand save gets a synthetic one. Score follows the same rule.
@@ -788,6 +789,8 @@ class ManualWorkflowMixin:
 
     def _on_export_layer_impl(self):
         """Internal export implementation."""
+        import time as _time
+        _t_start = _time.perf_counter()
         self._ensure_polygon_rubberband_sync()
 
         has_active = self.current_mask is not None and self.current_transform_info is not None
@@ -806,10 +809,12 @@ class ManualWorkflowMixin:
             current_geoms.append(self._unfrozen_display_polygon)
 
         if has_active:
-            # Shared refine tail: exports exactly what the preview shows.
+            # Shared refine tail: exports exactly what the preview shows, and
+            # reads it from the memo the preview filled (manual_shape_cache).
             active_combined = self._refined_active_mask_geometry()
             if active_combined is not None and not active_combined.isEmpty():
                 current_geoms.append(active_combined)
+        _t_shape = _time.perf_counter()
 
         # An object still on screen leaves the session through here, so this is
         # its Save: same gate, and the same charge once it is written. Without
@@ -1052,6 +1057,7 @@ class ManualWorkflowMixin:
             source_layer=source_layer,
             fallback_stem="segmentation",
         )
+        _t_write = _time.perf_counter()
 
         if result is None:
             # Keep the user's work on screen: the features already live in
@@ -1082,43 +1088,14 @@ class ManualWorkflowMixin:
         gpkg_path = result.gpkg_path
         layer_name = result_layer.name()
 
-        # Add under the source raster's sub-group in the "AI Segmentation" group
-        output_store.add_committed_layer(result_layer, source_name=source_name)
-
-        if result.used_fallback:
-            msg = tr(
-                "Could not write to {name}. Saved to a separate file instead."
-            ).format(name=output_store.GPKG_FILENAME)
-            self.iface.messageBar().pushMessage(
-                "AI Segmentation", msg,
-                level=Qgis.MessageLevel.Warning, duration=8)
-
-        # Log the layer extent for debugging
-        layer_extent = result_layer.extent()
-        QgsMessageLog.logMessage(
-            f"Exported layer extent: xmin={layer_extent.xMinimum():.2f}, ymin={layer_extent.yMinimum():.2f}, "
-            f"xmax={layer_extent.xMaximum():.2f}, ymax={layer_extent.yMaximum():.2f}",
-            "AI Segmentation",
-            level=Qgis.MessageLevel.Info
-        )
-        QgsMessageLog.logMessage(
-            f"Layer CRS: {result_layer.crs().authid()}",
-            "AI Segmentation",
-            level=Qgis.MessageLevel.Info
-        )
-        QgsMessageLog.logMessage(
-            f"Saved to: {gpkg_path}",
-            "AI Segmentation",
-            level=Qgis.MessageLevel.Info
-        )
-
+        # Style and provenance BEFORE the layer reaches the project. Added
+        # first, it paints once with the provider default and again with the
+        # committed look; dressed first, it paints once, correctly.
+        #
         # Committed look: solid outline + light same-hue fill (legacy red hue
         # for Manual runs, which carry no object prompt).
         result_layer.setRenderer(make_committed_renderer(
             color=output_store.committed_color_for_prompt("")))
-        # Smooth pan/zoom on a dense result: render-time simplification (the GPKG
-        # already ships a spatial index from the OGR writer).
-        _apply_fast_render(result_layer)
         # Style + provenance stored with the .gpkg: the file opens styled and
         # documented in any QGIS, with or without the plugin.
         from datetime import datetime
@@ -1131,11 +1108,41 @@ class ManualWorkflowMixin:
             created_iso=datetime.now().astimezone().isoformat(timespec="seconds"),
             plugin_version=plugin_version,
         )
-        result_layer.triggerRepaint()
+
+        # Add under the source raster's sub-group in the "AI Segmentation"
+        # group. This also turns on render-time simplification and builds the
+        # provider spatial index, so neither is repeated below.
+        output_store.add_committed_layer(result_layer, source_name=source_name)
+
+        if result.used_fallback:
+            msg = tr(
+                "Could not write to {name}. Saved to a separate file instead."
+            ).format(name=output_store.GPKG_FILENAME)
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation", msg,
+                level=Qgis.MessageLevel.Warning, duration=8)
+
+        # One repaint. The layer tree bridge already schedules one when the
+        # layer joins the project, and a triggerRepaint on top of it made the
+        # canvas draw the whole map twice for the same result.
         self.iface.mapCanvas().refresh()
 
+        # One line, with where the wait went. Four separate lines used to
+        # report the extent, the CRS and the path and said nothing about what
+        # the user was waiting for; the next report of a slow export should be
+        # answerable from the log alone.
+        _t_end = _time.perf_counter()
+        _ms_shape = int((_t_shape - _t_start) * 1000)
+        _ms_write = int((_t_write - _t_shape) * 1000)
+        _ms_layer = int((_t_end - _t_write) * 1000)
+        _ms_total = int((_t_end - _t_start) * 1000)
+        _extent = result_layer.extent()
         QgsMessageLog.logMessage(
-            f"Created segmentation layer: {layer_name} with {len(features_to_add)} polygons",
+            f"Export: {len(features_to_add)} polygon(s) to {layer_name} "
+            f"[{result_layer.crs().authid()}] in {_ms_total} ms "
+            f"(shape {_ms_shape}, write {_ms_write}, layer {_ms_layer}); "
+            f"extent {_extent.xMinimum():.1f},{_extent.yMinimum():.1f} to "
+            f"{_extent.xMaximum():.1f},{_extent.yMaximum():.1f}; file {gpkg_path}",
             "AI Segmentation",
             level=Qgis.MessageLevel.Info
         )

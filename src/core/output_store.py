@@ -37,6 +37,7 @@ from qgis.PyQt.QtCore import QDate, QLocale
 from qgis.PyQt.QtGui import QColor
 
 from .i18n import tr
+from .output_group_order import keep_group_above_imagery
 
 # Custom property stamped on every committed layer with its creation epoch.
 # Survives a project save/reload since custom properties serialize into the .qgz.
@@ -322,7 +323,7 @@ def _source_layer_dir(source_layer) -> str:
     return ""
 
 
-def output_directory_candidates(source_layer) -> list[str]:
+def output_directory_candidates(source_layer, first_only: bool = False) -> list[str]:
     """Every writable output directory, best first: project, raster, home.
 
     A list and not a single answer, because "a file can be created here" is not
@@ -332,6 +333,11 @@ def output_directory_candidates(source_layer) -> list[str]:
     "database is locked" once the write runs. The fallback in write_run_table
     walks this list, so a run that cannot be written next to the project still
     lands in the home folder instead of failing twice in the same place.
+
+    ``first_only`` stops at the first writable one. Every probe is a real file
+    created and removed, and on a synced or network project folder that is not
+    free; the caller that just wants "where does this run go" (see
+    _output_directory) asks two questions it never reads the answer to.
     """
     project = QgsProject.instance()
     home = str(Path.home())
@@ -351,12 +357,14 @@ def output_directory_candidates(source_layer) -> list[str]:
         seen.add(key)
         if _probe_writable(candidate):
             writable.append(candidate)
+            if first_only:
+                break
     return writable or [home]
 
 
 def _output_directory(source_layer) -> str:
     """Writable output directory: project folder, raster folder, then home."""
-    return output_directory_candidates(source_layer)[0]
+    return output_directory_candidates(source_layer, first_only=True)[0]
 
 
 def project_gpkg_path(source_layer) -> str:
@@ -542,6 +550,12 @@ def add_committed_layer(layer, source_name: str | None = None) -> None:
         group.setExpanded(True)
     top.setItemVisibilityChecked(True)
     top.setExpanded(True)
+    # The run is in the tree; now make sure it is on screen. A group under an
+    # opaque basemap paints under it, so the user saves a run and the canvas
+    # looks unchanged. This DESTROYS the node it moves, so nothing may touch
+    # `top` or `group` after this line: the layer object survives, the nodes do
+    # not.
+    keep_group_above_imagery(top)
     # A committed run holds thousands of dense outlines, and the layer has just
     # landed on the canvas. Do this LAST, so a layer the registry refused never
     # gets it, and so it is on before the first frame is drawn.
@@ -619,9 +633,34 @@ def apply_fast_canvas_render(layer) -> None:
     except Exception:  # noqa: BLE001 - display nicety, never break a run on it  # nosec B110
         pass
     try:
-        layer.dataProvider().createSpatialIndex()
+        provider = layer.dataProvider()
+        if _provider_lacks_spatial_index(provider):
+            provider.createSpatialIndex()
     except Exception:  # noqa: BLE001  # nosec B110
         pass
+
+
+def _provider_lacks_spatial_index(provider) -> bool:
+    """Whether this provider still needs an index built.
+
+    A GeoPackage comes out of the OGR writer with its rtree already there, so
+    asking for one again rebuilds an index the file has: a write into the file
+    the user is waiting on, for nothing.
+
+    True on any doubt, which is the behaviour of code that never asked: an
+    "unknown" answer, a build with no such enum, a provider that cannot answer.
+    """
+    try:
+        from .qt_compat import resolve_qt_enum
+
+        present = resolve_qt_enum(
+            type(provider), "SpatialIndexPresence", "SpatialIndexPresent")
+    except AttributeError:
+        return True
+    try:
+        return provider.hasSpatialIndex() != present
+    except (AttributeError, TypeError, RuntimeError):
+        return True
 
 
 def mark_temp_layer(layer) -> None:

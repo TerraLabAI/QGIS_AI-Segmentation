@@ -251,8 +251,10 @@ class DockAutoDetailLevelMixin:
             # number costs no line.
             self.auto_detail_hint.setStyleSheet(_msg_label_qss("error"))
             _hint = _msg_text("error", tr(
-                "This zone at this precision needs a subscription. "
-                "Lower the precision or the zone to stay free."))
+                "One free run covers fewer cloud detections than this. Lower "
+                "the precision or shrink the zone to stay free. Pro runs up to "
+                "800 cloud detections in one go, so a wide zone keeps a fine "
+                "grid."))
             _hint += "<br/>"
             _hint += f'<a href="upgrade" style="color: {BRAND_BLUE};'
             _hint += ' text-decoration: underline;">'
@@ -264,9 +266,11 @@ class DockAutoDetailLevelMixin:
             # data too, and one stray brace in any of the catalogues would
             # raise here, on the path that paints the dock.
             self.auto_detail_hint.setToolTip(
-                tr("A free run covers up to {cap} credits. This one costs "
-                   "more.").replace("{cap}", str(int(_cap))) if _cap else
-                tr("This run costs more credits than a free run covers."))
+                tr("A free run covers up to {cap} cloud detections. This one "
+                   "needs more. Pro covers up to 800 in one run.").replace(
+                       "{cap}", str(int(_cap))) if _cap else
+                tr("This run needs more cloud detections than one free run "
+                   "covers. Pro covers up to 800 in one run."))
             # The gate blocks Detect, so its box must be the one on screen
             # whatever the coarse-imagery guard decided on the previous pass.
             self.auto_detail_warning.setVisible(False)

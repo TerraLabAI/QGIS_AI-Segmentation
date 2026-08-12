@@ -113,26 +113,55 @@ class DockAutoCreditsMixin:
         itself never reaches the dock: the grid stops counting once it passes
         the ceiling. Never raises: a slider move calls it.
 
-        Served copy, like the row above it, with one id per form: the sentence
-        with the ceiling in it and the sentence for when no ceiling is known.
-        The ceiling is filled with str.replace, never format(), so a stray
-        brace in a served sentence cannot raise on a slider move.
+        Four served ids, one per form: free or subscriber, ceiling known or
+        not. ``max_tiles_per_run_cap()`` is tier-BLIND (a flat cost/abuse dial,
+        800 by default), so this refusal fires at the same size on both plans
+        and Pro would be refused this zone too. The subscriber form is
+        therefore purely informational, and the free form promises only what is
+        true: a free run is separately bounded by ``free_run_fraction`` well
+        under the ceiling, so precision is what Pro buys back here. Neither
+        shipped sentence quotes the ceiling, because the number that stops a
+        free user is the other one. The {cap} fill stays on the cap-known
+        branch so a served override MAY quote it where it is meaningful (an
+        enterprise account whose dial was raised). str.replace, never format(),
+        so a stray brace in a served sentence cannot raise on a slider move.
         """
         try:
             from ..plugin.shared import max_tiles_per_run_cap
             cap = int(max_tiles_per_run_cap())
         except Exception:  # noqa: BLE001 -- a tooltip must never break a paint
             cap = 0
+        # Known-free only. Before the usage fetch lands the tier is UNKNOWN,
+        # not free (same rule as the zone-area guard), so a subscriber never
+        # reads an upsell while their plan is still loading.
+        known_free = (self._auto_credits is not None
+                      and not self._auto_is_subscriber)
         if cap > 0:
+            if known_free:
+                return dial_copy(
+                    "zone.too_large_tooltip_free",
+                    tr("This zone at this precision needs more than one run "
+                       "covers. Draw a smaller zone, or lower the precision. "
+                       "Free runs stop well below that ceiling, so Pro keeps "
+                       "more precision on a zone this size."),
+                ).replace("{cap}", str(cap))
             return dial_copy(
                 "zone.too_large_tooltip",
-                tr("One run covers up to {cap} tiles. This zone at this precision "
-                   "needs more. Draw a smaller zone, or lower the precision."),
+                tr("One run covers up to {cap} cloud detections. This zone at "
+                   "this precision needs more. Draw a smaller zone, or lower "
+                   "the precision."),
             ).replace("{cap}", str(cap))
+        if known_free:
+            return dial_copy(
+                "zone.too_large_tooltip_free_no_cap",
+                tr("This zone at this precision needs more cloud detections "
+                   "than one run covers. Draw a smaller zone, or lower the "
+                   "precision. Free runs stop well below that ceiling, so Pro "
+                   "keeps more precision on a zone this size."))
         return dial_copy(
             "zone.too_large_tooltip_no_cap",
-            tr("This zone at this precision needs more tiles than one run "
-               "covers. Draw a smaller zone, or lower the precision."))
+            tr("This zone at this precision needs more cloud detections than "
+               "one run covers. Draw a smaller zone, or lower the precision."))
 
     def set_auto_credit_estimate(self, credits: int) -> None:
         # Remember the estimate so a later balance change (e.g. after a run
@@ -152,15 +181,14 @@ class DockAutoCreditsMixin:
             self.set_auto_credit_block(None)
             self._set_auto_premium_gated(False)
         else:
-            # Make the per-tile billing explicit right before Detect: the run
-            # scans the zone tile by tile and spends 1 credit per tile, so the
-            # count reads as the equation "N tiles = N credits" (same N on
-            # purpose - that IS the lesson). The footer credit ring owns the
-            # remaining balance, so no "M left" suffix here.
+            # Name the billable unit right before Detect. One grid cell is one
+            # cloud detection, so the price of the run is one number in the
+            # product's only unit. The footer ring owns the remaining balance,
+            # so no "M left" suffix here.
             if credits == 1:
-                text = tr("≈ 1 tile = 1 credit")
+                text = tr("≈ 1 cloud detection")
             else:
-                text = tr("≈ {n} tiles = {n} credits").format(n=credits)
+                text = tr("≈ {n} cloud detections").format(n=credits)
             remaining = (self._auto_credits if self._auto_is_subscriber
                          else self._auto_free_left)
             # Hard credit gate: a run may never launch under-funded. When the
@@ -207,9 +235,9 @@ class DockAutoCreditsMixin:
                     "color: palette(text); font-size: 11px;"))
             self.auto_credit_cost_label.setText(text)
             _base_tip = tr(
-                "Automatic mode scans your zone tile by tile. 1 tile = 1 credit, "
-                "so this run costs about {n} credits. More precision splits the "
-                "zone into more tiles, which costs more credits.").format(n=credits)
+                "Automatic mode sweeps your zone in a grid. Each grid cell costs "
+                "one cloud detection, so this run costs about {n}. More precision "
+                "means a finer grid and more cloud detections.").format(n=credits)
             # One way of saying "about" per surface: the row carries the
             # symbol, the tooltip carries the word. It used to run both, and a
             # third spelling of the same idea, inside one pair of sentences.
@@ -226,8 +254,8 @@ class DockAutoCreditsMixin:
             # more. Without the sentence a run quoted 40 and billed 32 looks
             # like a billing bug rather than the guard doing its job.
             _skip_tip = tr(
-                "Tiles your layer has no image for are dropped before they are "
-                "sent, so a run can cost less than this, never more.")
+                "You are never charged for a part of the zone your layer has no "
+                "image for, so a run can cost less than this, never more.")
             self.auto_credit_cost_label.setToolTip(
                 _base_tip + " " + _extra_tip + " " + _skip_tip)
             self._auto_zone_too_large = False
@@ -251,9 +279,20 @@ class DockAutoCreditsMixin:
             if tiles is None:
                 card.setVisible(False)
                 return
-            self.auto_credit_block_label.setText(tr(
-                "Not enough credits: {n} tiles, only {left} left. "
-                "Lower the precision or the zone.").format(n=int(tiles), left=int(left)))
+            # Served copy: this sentence quotes the Pro monthly quota, a
+            # commercial number that can move any week, and a hardcoded one
+            # makes the plugin lie until the next release. Placeholders are
+            # filled with str.replace, never format(), so a stray brace in a
+            # served sentence cannot raise on the draw path (same rule as the
+            # zone refusals in shared.py).
+            _block_msg = dial_copy(
+                "credit_block.message",
+                tr("This run needs {n} cloud detections and you have {left} left. "
+                   "Lower the precision or shrink the zone. Pro gives you 5,000 "
+                   "cloud detections a month."))
+            self.auto_credit_block_label.setText(
+                _block_msg.replace("{n}", str(int(tiles)))
+                          .replace("{left}", str(int(left))))
             free_user = not self._auto_is_subscriber
             self.auto_credit_block_upgrade.setVisible(free_user)
             card.setVisible(True)

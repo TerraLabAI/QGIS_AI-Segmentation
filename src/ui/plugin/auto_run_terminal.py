@@ -460,7 +460,8 @@ class AutoRunTerminalMixin:
             # One info per state: the banner states the fact, the rescue
             # button right below it carries the action (draw an example -
             # the proven lever against empty results).
-            msg = tr("No matches in this zone.")
+            msg = tr("No matches in this zone. A different object word often "
+                     "fixes it.")
             log_msg = "Auto detection: run completed with zero detections"
         else:
             # Example store full (examples were already the strategy): the

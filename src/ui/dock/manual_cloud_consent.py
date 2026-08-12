@@ -80,8 +80,8 @@ def build_cloud_consent_dialog(parent=None) -> QDialog:
         # What stays, said as a fact rather than as a denial. "Nothing else
         # leaves your computer" answers a fear by repeating it, and the line
         # about going back only restated the button underneath.
-        tr("Your project and your files stay on your computer. One credit "
-           "per object you save."),
+        tr("Your project and your files stay on your computer. One cloud "
+           "detection per object you save."),
     ):
         body = QLabel(line)
         body.setWordWrap(True)

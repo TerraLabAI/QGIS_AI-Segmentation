@@ -33,10 +33,12 @@ never starts while an object is open (`_manual_warm_allowed`), and one already
 running gives the pipe up as soon as a gesture arrives for an object
 (`_abandon_speculative_manual_crop`).
 
-Online basemaps are deliberately never warmed. Their imagery is not read from a
-file: it is pulled through the live layer provider, which the read has to switch
-to bilinear resampling and tell to drop its cached tiles. Doing that behind a
-cursor movement would reload the user's basemap while they are looking at it.
+A basemap is warmed like any other layer, but never through the layer itself.
+Its imagery is not read from a file: it is pulled through a layer provider,
+which the read switches to bilinear resampling and tells to drop its cached
+tiles. So a warm-up reads through a private copy of the layer instead
+(`core/online_layer_twin.py`), and the layer on screen is left untouched. No
+copy, no warm-up: the click then pays for its own imagery, as it always did.
 """
 from __future__ import annotations
 
@@ -390,6 +392,9 @@ class LocalAiWarmMixin:
         warm-up exists for. The gestures they still answer (undo back into the
         last saved polygon, undo a delete) are covered the other way round, by
         _abandon_speculative_manual_crop at the gesture itself.
+
+        A layer QGIS renders is warmed only through a private copy of it, so
+        the extra question it answers is whether that copy can be had.
         """
         if not local_ai_warmup_enabled():
             return False  # off means nothing is read or encoded before a click
@@ -401,7 +406,7 @@ class LocalAiWarmMixin:
             return False
         if self._current_layer is None or not self._current_raster_path:
             return False
-        if getattr(self, "_is_online_layer", False):
+        if getattr(self, "_is_online_layer", False) and not self._online_warm_layer_ready():
             return False
         if getattr(self, "_encoding_in_progress", False):
             return False
@@ -431,10 +436,23 @@ class LocalAiWarmMixin:
         except (AttributeError, TypeError):
             return True
 
+    def _online_warm_layer_ready(self) -> bool:
+        """May a warm-up read the rendered layer of this session, and through
+        what? True only when the served switch is on and a private copy of the
+        layer builds, because reading the user's own layer would reload the
+        basemap under the cursor. The copy is cached, so answering this on every
+        mouse move is cheap."""
+        from ...core.online_layer_twin import online_layer_twin, online_prewarm_enabled
+
+        if not online_prewarm_enabled():
+            return False
+        return online_layer_twin(self._current_layer) is not None
+
     def _begin_speculative_manual_crop(self, center_point, scale) -> None:
         """Start a Manual warm-up crop and record that the pipe it takes
         belongs to nobody. The flag rides the START, so a call that started
-        nothing (an online layer, a busy pipe) leaves it down."""
+        nothing (a busy pipe, a rendered layer with no private copy to read
+        through) leaves it down."""
         self._speculative_manual_crop = bool(self._extract_and_encode_crop(
             center_point, mupp_override=scale, show_busy=False, quiet=True))
 
@@ -523,6 +541,11 @@ class LocalAiWarmMixin:
         the cursor, so coming back to a neighbourhood asks the model for a crop it
         already has. The click itself still lands well inside that crop, since one
         grid cell is a quarter of the crop's own width.
+
+        A layer QGIS renders measures that grid in ground per pixel instead of a
+        zoom-out factor on native pixels, so it asks _online_grid_window for the
+        same window its own fetch would cut, and the read then goes through the
+        private copy of the layer.
         """
         point = getattr(self, "_manual_warm_canvas_point", None)
         if point is None or not self._manual_warm_allowed():
@@ -538,18 +561,25 @@ class LocalAiWarmMixin:
         if self._check_crop_status(raster_pt) == "ok":
             return
         from ...core.crop_window import crop_window_key, snap_center_to_grid
-        scale = self._compute_initial_scale_factor()
-        cx, cy = snap_center_to_grid(
-            raster_pt.x(), raster_pt.y(), scale or 1.0,
-            self._get_native_pixel_size())
-        if crop_window_key(cx, cy, scale or 1.0) in (
+        if getattr(self, "_is_online_layer", False):
+            window = self._online_grid_window(raster_pt)
+            if window is None:
+                return
+            center, scale = window
+        else:
+            scale = self._compute_initial_scale_factor()
+            cx, cy = snap_center_to_grid(
+                raster_pt.x(), raster_pt.y(), scale or 1.0,
+                self._get_native_pixel_size())
+            center = QgsPointXY(cx, cy)
+        if crop_window_key(center.x(), center.y(), scale or 1.0) in (
                 getattr(self, "_encoded_crop_window", None),
                 getattr(self, "_inflight_crop_window", None)):
             return
         QgsMessageLog.logMessage(
             "Manual: warming the crop under the resting cursor",
             "AI Segmentation", level=Qgis.MessageLevel.Info)
-        self._begin_speculative_manual_crop(QgsPointXY(cx, cy), scale)
+        self._begin_speculative_manual_crop(center, scale)
 
     def _bind_correct_crop_context(self) -> bool:
         """Point the crop reader at the raster the run segmented.

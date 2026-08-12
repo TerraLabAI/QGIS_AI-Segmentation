@@ -649,11 +649,16 @@ class DockAutoCorrectBuildMixin:
         self.auto_add_lane_line.setVisible(False)
         _col.addWidget(self.auto_add_lane_line)
 
-        # Keep, the way to commit the outline on screen without leaving the
-        # lane. The per-polygon panel (which carries the session Save) is
-        # hidden while nothing is selected, so without this button an AI
-        # outline could only be kept from the keyboard. Shown exactly while
-        # there is something to keep (set_add_lane_keep_available).
+        # Keep and Undo, the two buttons of a live outline, in the same row and
+        # the same order as the per-polygon panel's Save and Undo: the lane is
+        # the only place the panel is hidden (nothing is selected), so without
+        # them an outline could only be kept or unwound from the keyboard.
+        # Each is shown exactly while it has something to act on
+        # (set_add_lane_keep_available, set_add_lane_undo_available).
+        self.auto_add_lane_action_row = QWidget()
+        _act = QHBoxLayout(self.auto_add_lane_action_row)
+        _act.setContentsMargins(0, 0, 0, 0)
+        _act.setSpacing(6)
         self.auto_add_lane_keep_btn = QPushButton("✓  " + tr("Keep this one"))
         self.auto_add_lane_keep_btn.setStyleSheet(_BTN_GREEN)
         self.auto_add_lane_keep_btn.setMinimumHeight(36)
@@ -663,12 +668,25 @@ class DockAutoCorrectBuildMixin:
         self.auto_add_lane_keep_btn.clicked.connect(
             self.auto_ai_add_keep_requested.emit)
         self.auto_add_lane_keep_btn.setVisible(False)
-        _col.addWidget(self.auto_add_lane_keep_btn)
+        self.auto_add_lane_undo_btn = QPushButton(tr("Undo point"))
+        self.auto_add_lane_undo_btn.setStyleSheet(_BTN_GHOST)
+        self.auto_add_lane_undo_btn.setMinimumHeight(32)
+        self.auto_add_lane_undo_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.auto_add_lane_undo_btn.setToolTip(tr(
+            "Take back the last point you placed. Shortcut: Ctrl+Z"))
+        self.auto_add_lane_undo_btn.clicked.connect(
+            self.auto_correction_undo_requested.emit)
+        self.auto_add_lane_undo_btn.setVisible(False)
+        _act.addWidget(self.auto_add_lane_keep_btn, 1)
+        _act.addWidget(self.auto_add_lane_undo_btn, 1)
+        self.auto_add_lane_action_row.setVisible(False)
+        _col.addWidget(self.auto_add_lane_action_row)
 
         self.auto_add_lane_btn = _action_tile(
             "＋", tr("Point at it on the map"), tr(
                 "Add an object the AI missed. In AI, point at it and the "
-                "model outlines it, free; in Manual, draw its corners."))
+                "model outlines it for one cloud detection; in Manual, draw "
+                "its corners for free."))
         self.auto_add_lane_btn.clicked.connect(self._on_add_lane_clicked)
         _col.addWidget(self.auto_add_lane_btn)
 

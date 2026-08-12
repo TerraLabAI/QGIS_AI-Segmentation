@@ -202,7 +202,10 @@ class DockAboutMixin:
         gauge_row.addWidget(self._footer_credits_label)
 
         self._subscribe_pill = QPushButton(tr("Upgrade to Pro"))
-        self._subscribe_pill.setToolTip(tr("5,000 credits a month."))
+        self._subscribe_pill.setToolTip(tr(
+            "Pro: 5,000 cloud detections a month, zones of any size, up to 800 "
+            "cloud detections in one run. Same AI, same free clicks and "
+            "corrections, every machine you work on."))
         self._subscribe_pill.setCursor(Qt.CursorShape.PointingHandCursor)
         # Filled brand-blue pill (stronger than the old ghost outline): white
         # text on a solid blue, lighter blue on hover. Kept small.

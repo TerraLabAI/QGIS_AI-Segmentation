@@ -337,6 +337,28 @@ class ManualCropWindowMixin:
         return canvas_mupp, ground_per_pixel_at_least_native(
             mupp_override or raster_mupp, self._online_native_ground_per_pixel())
 
+    def _online_grid_window(self, raster_pt):
+        """``(center, ground per pixel)`` an online crop at ``raster_pt`` would
+        be cut from, on the shared grid. None when the resolution cannot be
+        told.
+
+        The same two lines `_begin_online_crop_fetch` runs when no resolution
+        is named, so a warm-up can test that window against the crop in hand
+        before starting a read, and then ask for exactly it. The grid unit for
+        an online layer is ground per pixel, so the mupp IS the scale and the
+        pixel size is 1.
+        """
+        from ...core.crop_window import snap_center_to_grid
+        try:
+            _canvas_mupp, actual_mupp = self._online_crop_mupp_now(None)
+        except Exception:  # noqa: BLE001 -- an unusable resolution warms nothing
+            return None
+        if not actual_mupp or actual_mupp <= 0:
+            return None
+        cx, cy = snap_center_to_grid(
+            raster_pt.x(), raster_pt.y(), actual_mupp, 1.0)
+        return QgsPointXY(cx, cy), actual_mupp
+
     def _online_crop_mupp(self, mupp_override):
         """Canvas -> raster map-units-per-pixel for an online crop, stashing the
         per-crop mupp state. Shared by the sync (_extract_crop_only) and async

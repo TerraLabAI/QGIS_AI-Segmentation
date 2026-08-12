@@ -289,8 +289,9 @@ class AutoLifecycleMixin:
         if is_auth:
             banner = tr("Session expired. Sign in again to continue.")
         elif salvaged_tiles > 0 and not self._auto_headless_run:
-            banner = tr("Detection stopped early after {done} tile(s). "
-                        "The objects already found are kept below.").format(
+            banner = tr("Detection stopped early after {done} cloud "
+                        "detection(s). Everything found is kept below and "
+                        "stays yours.").format(
                             done=self._auto_tiles_done_shown(salvaged_tiles))
         elif error_class == "SERVER":
             # Never promise a refund here: the plugin has no count of what the
@@ -304,7 +305,8 @@ class AutoLifecycleMixin:
         elif error_class == "NETWORK":
             banner = tr("Detection failed. Check your connection and try again.")
         else:
-            banner = tr("Detection failed. Please try again.")
+            banner = tr("Detection failed. Run Detect again, and lower the "
+                        "precision if it fails a second time.")
         # Our-fault failures (server/timeout/unknown) get a short support code the
         # user can quote: it is the head of the run id the server archives this
         # run under, so support can match the report to the exact run.
@@ -453,8 +455,9 @@ class AutoLifecycleMixin:
                 # Tiles-only message: the review header carries the kept count.
                 self.dock_widget.set_auto_status(
                     "info",
-                    tr("Out of credits after {done}/{total} tiles. "
-                       "Your detections are kept below.").format(
+                    tr("Out of cloud detections at {done}/{total}. "
+                       "Everything found so far is kept below and stays "
+                       "yours.").format(
                         done=self._auto_tiles_done_shown(tiles_succeeded),
                         total=tiles_total),
                 )
@@ -583,11 +586,11 @@ class AutoLifecycleMixin:
             # empty review, which reads as "the plugin found nothing here" when
             # what happened is that it never got an answer.
             msg = (
-                tr("The detection stopped responding. Keeping the {n} "
-                   "tiles already found.").format(
+                tr("The detection stopped responding. Keeping the {n} cloud "
+                   "detection(s) already paid for.").format(
                        n=self._auto_tiles_done_shown(tiles_succeeded))
                 if tiles_succeeded > 0 else
-                tr("The detection stopped responding before any tile came "
+                tr("The detection stopped responding before anything came "
                    "back. Check your connection, then run Detect again "
                    "(nothing was charged).")
             )

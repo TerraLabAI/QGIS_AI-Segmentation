@@ -782,7 +782,7 @@ class AutoRunMixin:
         self._set_zone_band_fill_visible(False)
         try:
             self.dock_widget.set_auto_run_active(True)
-            self.dock_widget.auto_status_banner.setText(tr("Preparing tiles..."))
+            self.dock_widget.auto_status_banner.setText(tr("Preparing your zone..."))
             self.dock_widget.auto_status_banner.setVisible(True)
         except (RuntimeError, AttributeError):
             pass

@@ -1,5 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE TS>
+<?xml version='1.0' encoding='utf-8'?>
 <TS version="2.1" language="nl_NL">
 <context>
     <name>AISegmentation</name>
@@ -88,8 +87,8 @@
         <translation>Accepteer de Algemene Voorwaarden en het Privacybeleid om segmentatie in te schakelen.</translation>
     </message>
     <message>
-        <source>I agree to the &lt;a href=&quot;{terms}&quot;&gt;Terms&lt;/a&gt; and &lt;a href=&quot;{privacy}&quot;&gt;Privacy Policy&lt;/a&gt;</source>
-        <translation>Ik ga akkoord met de &lt;a href=&quot;{terms}&quot;&gt;Algemene Voorwaarden&lt;/a&gt; en het &lt;a href=&quot;{privacy}&quot;&gt;Privacybeleid&lt;/a&gt;</translation>
+        <source>I agree to the &lt;a href="{terms}"&gt;Terms&lt;/a&gt; and &lt;a href="{privacy}"&gt;Privacy Policy&lt;/a&gt;</source>
+        <translation>Ik ga akkoord met de &lt;a href="{terms}"&gt;Algemene Voorwaarden&lt;/a&gt; en het &lt;a href="{privacy}"&gt;Privacybeleid&lt;/a&gt;</translation>
     </message>
     <message>
         <source>No valid polygons could be created from the selection. Try adjusting the refine settings or making a new selection.</source>
@@ -454,8 +453,8 @@ export AI_SEGMENTATION_CACHE_DIR=/jouw/pad</translation>
         <translation>Installatie geblokkeerd</translation>
     </message>
     <message>
-        <source>Click is outside the &apos;{layer}&apos; raster. To segment another raster, stop the current segmentation first.</source>
-        <translation>De klik ligt buiten het raster &apos;{layer}&apos;. Stop eerst de huidige segmentatie om een ander raster te kunnen segmenteren.</translation>
+        <source>Click is outside the '{layer}' raster. To segment another raster, stop the current segmentation first.</source>
+        <translation>De klik ligt buiten het raster '{layer}'. Stop eerst de huidige segmentatie om een ander raster te kunnen segmenteren.</translation>
     </message>
     <message>
         <source>{ext} format is not directly supported. GDAL is not available.
@@ -510,10 +509,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Fout bij uitsnijden</translation>
     </message>
     <message>
-        <source>No raster file path available. Please restart segmentation.</source>
-        <translation>Geen rasterbestandspad beschikbaar. Start de segmentatie opnieuw.</translation>
-    </message>
-    <message>
         <source>Encoding Error</source>
         <translation>Coderingsfout</translation>
     </message>
@@ -558,8 +553,8 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Netwerkverbindingsprobleem</translation>
     </message>
     <message>
-        <source>Your connection appears unstable or blocked. Check: (1) your internet is working, (2) QGIS > Settings > Options > Network has a proxy configured if you are on a corporate network, (3) your firewall allows connections to pypi.org and files.pythonhosted.org.</source>
-        <translation>Uw verbinding lijkt instabiel of geblokkeerd. Controleer: (1) of uw internet werkt, (2) of er in QGIS > Instellingen > Opties > Netwerk een proxy is geconfigureerd als u op een zakelijk netwerk zit, (3) of uw firewall verbindingen met pypi.org en files.pythonhosted.org toestaat.</translation>
+        <source>Your connection appears unstable or blocked. Check: (1) your internet is working, (2) QGIS &gt; Settings &gt; Options &gt; Network has a proxy configured if you are on a corporate network, (3) your firewall allows connections to pypi.org and files.pythonhosted.org.</source>
+        <translation>Uw verbinding lijkt instabiel of geblokkeerd. Controleer: (1) of uw internet werkt, (2) of er in QGIS &gt; Instellingen &gt; Opties &gt; Netwerk een proxy is geconfigureerd als u op een zakelijk netwerk zit, (3) of uw firewall verbindingen met pypi.org en files.pythonhosted.org toestaat.</translation>
     </message>
     <message>
         <source>Checking...</source>
@@ -622,20 +617,20 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Niet geopend? Open de pagina opnieuw</translation>
     </message>
     <message>
-        <source>Sign-in timed out. Click Connect to try again.</source>
-        <translation>Time-out bij aanmelden. Klik op Verbinden om het opnieuw te proberen.</translation>
+        <source>Sign-in timed out. Click Sign in to try again.</source>
+        <translation>Aanmelden is verlopen. Klik op Aanmelden om het opnieuw te proberen.</translation>
     </message>
     <message>
-        <source>Sign-in was cancelled in the browser. Click Connect to try again.</source>
-        <translation>Aanmelden is geannuleerd in de browser. Klik op Verbinden om het opnieuw te proberen.</translation>
+        <source>Sign-in was cancelled in the browser. Click Sign in to try again.</source>
+        <translation>Aanmelden is geannuleerd in de browser. Klik op Aanmelden om het opnieuw te proberen.</translation>
     </message>
     <message>
         <source>Unexpected response from the server. Please try again.</source>
         <translation>Onverwachte reactie van de server. Probeer het opnieuw.</translation>
     </message>
     <message>
-        <source>This account has no active AI Segmentation plan. Reactivate it on terra-lab.ai, then click Connect again.</source>
-        <translation>Dit account heeft geen actief AI Segmentation-abonnement. Activeer het opnieuw op terra-lab.ai en klik daarna weer op Verbinden.</translation>
+        <source>This account has no active AI Segmentation plan. Reactivate it on terra-lab.ai, then click Sign in again.</source>
+        <translation>Dit account heeft geen actief AI Segmentation-abonnement. Activeer het opnieuw op terra-lab.ai en klik vervolgens op Aanmelden.</translation>
     </message>
     <message>
         <source>Connecting AI Segmentation</source>
@@ -710,8 +705,8 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Detectie annuleren</translation>
     </message>
     <message>
-        <source>Tile {current}/{total}</source>
-        <translation>Tegel {current}/{total}</translation>
+        <source>Detection {current}/{total}</source>
+        <translation>Detectie {current}/{total}</translation>
     </message>
     <message>
         <source>Spot reserved · starting in ~{eta}</source>
@@ -726,24 +721,24 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>{m} min</translation>
     </message>
     <message>
-        <source>{n} credits remaining</source>
-        <translation>{n} credits over</translation>
+        <source>{n} cloud detections remaining</source>
+        <translation>{n} clouddetecties resterend</translation>
     </message>
     <message>
-        <source>{n} free detection(s) remaining</source>
-        <translation>{n} gratis detectie(s) over</translation>
+        <source>{n} free cloud detection(s) remaining</source>
+        <translation>{n} gratis clouddetectie(s) resterend</translation>
     </message>
     <message>
-        <source>{remaining} / {total} credits</source>
-        <translation>{remaining} / {total} credits</translation>
+        <source>{remaining} / {total} cloud detections</source>
+        <translation>{remaining} / {total} clouddetecties</translation>
     </message>
     <message>
         <source>Auto detection (live)</source>
         <translation>Automatische detectie (live)</translation>
     </message>
     <message>
-        <source>Preparing tiles...</source>
-        <translation>Tegels voorbereiden...</translation>
+        <source>Preparing your zone...</source>
+        <translation>Je zone wordt voorbereid...</translation>
     </message>
     <message>
         <source>Cancelling...</source>
@@ -838,8 +833,8 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>AI Segmentation-instellingen laden</translation>
     </message>
     <message>
-        <source>Refreshing credits</source>
-        <translation>Credits vernieuwen</translation>
+        <source>Refreshing your cloud detections</source>
+        <translation>Je clouddetecties worden vernieuwd</translation>
     </message>
     <message>
         <source>Warming up AI Segmentation</source>
@@ -942,8 +937,8 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Gebruiken</translation>
     </message>
     <message>
-        <source>≈ {n} tiles = {n} credits</source>
-        <translation>≈ {n} tegels = {n} credits</translation>
+        <source>≈ {n} cloud detections</source>
+        <translation>≈ {n} clouddetecties</translation>
     </message>
     <message>
         <source>Draw your example inside the selected zone.</source>
@@ -982,8 +977,8 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Deze detecties verwijderen?</translation>
     </message>
     <message>
-        <source>Your {total} detections will be discarded. You keep your zone, object and settings. Running Detect again will use new credits.</source>
-        <translation>Uw {total} detecties worden verwijderd. Uw zone, object en instellingen blijven behouden. Nogmaals detecteren gebruikt nieuwe credits.</translation>
+        <source>Your {total} detections will be discarded. You keep your zone, object and settings. Running Detect again spends new cloud detections.</source>
+        <translation>Je {total} detecties worden verwijderd. Je behoudt je zone, object en instellingen. Detecteren opnieuw uitvoeren kost nieuwe clouddetecties.</translation>
     </message>
     <message>
         <source>Discard &amp;&amp; adjust</source>
@@ -1004,18 +999,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
     <message>
         <source>How many objects sit at each confidence level.</source>
         <translation>Hoeveel objecten zich op elk betrouwbaarheidsniveau bevinden.</translation>
-    </message>
-    <message>
-        <source>Every building, tree, or road as clean polygons</source>
-        <translation>Elk gebouw, boom of weg als schone polygonen</translation>
-    </message>
-    <message>
-        <source>Cancel anytime; your exported layers stay yours</source>
-        <translation>Op elk moment opzegbaar; uw geëxporteerde lagen blijven van u</translation>
-    </message>
-    <message>
-        <source>Opens your TerraLab dashboard</source>
-        <translation>Opent uw TerraLab-dashboard</translation>
     </message>
     <message>
         <source>Start Automatic AI Segmentation</source>
@@ -1134,12 +1117,12 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>OBJECTEN</translation>
     </message>
     <message>
-        <source>CREDITS</source>
-        <translation>CREDITS</translation>
+        <source>CHARGED</source>
+        <translation>BEREKEND</translation>
     </message>
     <message>
-        <source>TILES</source>
-        <translation>TEGELS</translation>
+        <source>CLOUD DETECTIONS</source>
+        <translation>CLOUDDETECTIES</translation>
     </message>
     <message>
         <source>RESOLUTION</source>
@@ -1158,8 +1141,8 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Herstellen naar kaart</translation>
     </message>
     <message>
-        <source>Reopens this run's review at the same place. Free - no credits.</source>
-        <translation>Heropent de beoordeling van deze uitvoering op dezelfde plek. Gratis - geen credits.</translation>
+        <source>Reopens this run's review at the same place, with its imagery. Free, and it costs no cloud detections.</source>
+        <translation>Opent de beoordeling van deze run opnieuw op dezelfde plaats, met de beelden. Gratis en het kost geen clouddetecties.</translation>
     </message>
     <message>
         <source>Export...</source>
@@ -1302,8 +1285,8 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Één kleur per object - controleer of buren gescheiden zijn</translation>
     </message>
     <message>
-        <source>Out of credits after {done}/{total} tiles. Your detections are kept below.</source>
-        <translation>Geen credits meer na {done}/{total} tegels. Je detecties zijn hieronder bewaard.</translation>
+        <source>Out of cloud detections at {done}/{total}. Everything found so far is kept below and stays yours.</source>
+        <translation>Clouddetecties gebruikt bij {done}/{total}. Alles wat tot nu toe is gevonden, blijft hieronder en blijft van jou.</translation>
     </message>
     <message>
         <source>Outlines only - check boundaries against the imagery</source>
@@ -1394,12 +1377,12 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>Zone te groot. Verklein het gebied tot {max} tegels of minder.</translation>
     </message>
     <message>
-        <source>{n} of {total} free detections left</source>
-        <translation>{n} van {total} gratis detecties over</translation>
+        <source>{n} of {total} free cloud detections left</source>
+        <translation>{n} van {total} gratis clouddetecties resterend</translation>
     </message>
     <message>
-        <source>≈ 1 tile = 1 credit</source>
-        <translation>≈ 1 tegel = 1 credit</translation>
+        <source>≈ 1 cloud detection</source>
+        <translation>≈ 1 clouddetectie</translation>
     </message>
     <message>
         <source>all shown</source>
@@ -1470,8 +1453,8 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
         <translation>0 getoond - verlaag het filter Min. grootte om ze te tonen</translation>
     </message>
     <message>
-        <source>5,000 credits every month. Cancel anytime.</source>
-        <translation>5.000 credits per maand. Op elk moment opzegbaar.</translation>
+        <source>5,000 cloud detections every month, zones of any size. Cancel anytime.</source>
+        <translation>5.000 clouddetecties elke maand, zones van elke grootte. Op elk moment opzegbaar.</translation>
     </message>
     <message>
         <source>A Component Failed to Load</source>
@@ -1532,8 +1515,8 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Gedetecteerd object</translation>
     </message>
     <message>
-        <source>Detection failed. Please try again.</source>
-        <translation>Detectie mislukt. Probeer het opnieuw.</translation>
+        <source>Detection failed. Run Detect again, and lower the precision if it fails a second time.</source>
+        <translation>Detectie mislukt. Voer Detecteren opnieuw uit en verlaag de precisie als het een tweede keer mislukt.</translation>
     </message>
     <message>
         <source>Downloaded AI data removed. You have been signed out.</source>
@@ -1763,22 +1746,15 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <source>{n} found so far</source>
         <translation>{n} gevonden tot nu toe</translation>
     </message>
-    <!-- v2.1.7 sync: append-to-layer export, singular forms, small-example guidance (2026-07-13) -->
-    <message>
-        <source>5,000 detections every month</source>
-        <translation>5.000 detecties per maand</translation>
-    </message>
+    
     <message>
         <source>This zone is {area} km². Free zones stop at {max} km².</source>
         <translation>Deze zone is {area} km². Gratis zones gaan tot {max} km².</translation>
     </message>
+
     <message>
-        <source>Pro has no size limit. Any area you draw, 5,000 tiles a month, maximum detail.</source>
-        <translation>Pro heeft geen groottelimiet. Elk gebied dat u tekent, 5.000 tiles per maand, maximaal detail.</translation>
-    </message>
-    <message>
-        <source>&lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt;, or make this zone smaller.</source>
-        <translation>&lt;a href=&quot;{url}&quot;&gt;Stap over op Pro&lt;/a&gt;, of maak deze zone kleiner.</translation>
+        <source>&lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to run this zone as drawn, or make it smaller.</source>
+        <translation>&lt;a href="{url}"&gt;Upgrade naar Pro&lt;/a&gt; om deze zone te draaien zoals getekend, of maak hem kleiner.</translation>
     </message>
     <message>
         <source>Sending to the AI...</source>
@@ -1793,8 +1769,8 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Plek gereserveerd · start binnenkort...</translation>
     </message>
     <message>
-        <source>Stopping - keeping the tiles already found...</source>
-        <translation>Stoppen - de al gevonden tegels worden bewaard...</translation>
+        <source>Stopping - keeping everything already found...</source>
+        <translation>Stoppen - alles wat al is gevonden wordt bewaard...</translation>
     </message>
     <message>
         <source>Stopping...</source>
@@ -1849,12 +1825,12 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Je gratis detecties zijn opgebruikt</translation>
     </message>
     <message>
-        <source>&quot;{obj}&quot; is not an object the AI knows well. Drawing one example on the map shows it what to find.</source>
-        <translation>&quot;{obj}&quot; is geen object dat de AI goed kent. Teken één voorbeeld op de kaart om te laten zien wat het moet vinden.</translation>
+        <source>"{obj}" is not an object the AI knows well. Drawing one example on the map shows it what to find.</source>
+        <translation>"{obj}" is geen object dat de AI goed kent. Teken één voorbeeld op de kaart om te laten zien wat het moet vinden.</translation>
     </message>
     <message>
-        <source>&quot;{obj}&quot; is often missed from text alone. Draw one example on the map to find far more.</source>
-        <translation>&quot;{obj}&quot; wordt vaak gemist als je alleen tekst gebruikt. Teken één voorbeeld op de kaart om er veel meer te vinden.</translation>
+        <source>"{obj}" is often missed from text alone. Draw one example on the map to find far more.</source>
+        <translation>"{obj}" wordt vaak gemist als je alleen tekst gebruikt. Teken één voorbeeld op de kaart om er veel meer te vinden.</translation>
     </message>
     <message>
         <source>1 correction this round</source>
@@ -1891,10 +1867,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>Add a missing polygon</source>
         <translation>Ontbrekende polygoon toevoegen</translation>
-    </message>
-    <message>
-        <source>Add an object the AI missed. In AI, point at it and the on-device model outlines it, free; in Manual, draw its corners.</source>
-        <translation>Voeg een object toe dat de AI heeft gemist. Bij AI wijs je het aan en omlijnt het lokale model het gratis; bij Handmatig teken je de hoekpunten.</translation>
     </message>
     <message>
         <source>Add another example - more references detect more</source>
@@ -2053,8 +2025,8 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Kon de AI-componenten niet controleren. Zie het logbestand voor meer details.</translation>
     </message>
     <message>
-        <source>Credits come back on {date}</source>
-        <translation>Credits komen terug op {date}</translation>
+        <source>Your cloud detections come back on {date}</source>
+        <translation>Je clouddetecties komen terug op {date}</translation>
     </message>
     <message>
         <source>Crop fetch was cancelled.</source>
@@ -2085,12 +2057,12 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Dicht gebied {current}/{total}</translation>
     </message>
     <message>
-        <source>Dense forest? &quot;Forest&quot; takes it as one block; &quot;Tree&quot; picks individual trees.</source>
-        <translation>Dicht bos? &quot;Forest&quot; neemt het als één geheel; &quot;Tree&quot; kiest afzonderlijke bomen.</translation>
+        <source>Dense forest? "Forest" takes it as one block; "Tree" picks individual trees.</source>
+        <translation>Dicht bos? "Forest" neemt het als één geheel; "Tree" kiest afzonderlijke bomen.</translation>
     </message>
     <message>
-        <source>Detection stopped early after {done} tile(s). The objects already found are kept below.</source>
-        <translation>Detectie vroegtijdig gestopt na {done} tegel(s). De al gevonden objecten zijn hieronder bewaard.</translation>
+        <source>Detection stopped early after {done} cloud detection(s). Everything found is kept below and stays yours.</source>
+        <translation>Detectie vroegtijdig gestopt na {done} clouddetectie(s). Alles wat is gevonden, blijft hieronder en blijft van jou.</translation>
     </message>
     <message>
         <source>Discard reviewed results and run again? Confirm</source>
@@ -2109,7 +2081,7 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Sleep een hoekpunt om het te verplaatsen. Dubbelklik op een rand om er een toe te voegen.</translation>
     </message>
     <message>
-        <source>Drag, add or delete the object&apos;s corners by hand.</source>
+        <source>Drag, add or delete the object's corners by hand.</source>
         <translation>Sleep, voeg toe of verwijder de hoekpunten van het object handmatig.</translation>
     </message>
     <message>
@@ -2129,8 +2101,8 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Teken de hoekpunten</translation>
     </message>
     <message>
-        <source>Draw one &apos;{object}&apos; - the AI finds the rest</source>
-        <translation>Teken één &apos;{object}&apos; - de AI vindt de rest</translation>
+        <source>Draw one '{object}' - the AI finds the rest</source>
+        <translation>Teken één '{object}' - de AI vindt de rest</translation>
     </message>
     <message>
         <source>Draw one example - the AI finds the rest</source>
@@ -2153,7 +2125,7 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Verwijder punten die dichter bij een rechte rand liggen dan deze afstand (0 = uit). Een afstand, geen aantal: hoog ingesteld kan het gebogen muren afvlakken. Punten is meestal de betere regelaar; dit blijft staan ter vergelijking.</translation>
     </message>
     <message>
-        <source>Drop this polygon&apos;s points closer than this distance to a straight edge (0 = off). A distance, not a count; Points is usually the better dial.</source>
+        <source>Drop this polygon's points closer than this distance to a straight edge (0 = off). A distance, not a count; Points is usually the better dial.</source>
         <translation>Verwijder de punten van deze polygoon die dichter bij een rechte rand liggen dan deze afstand (0 = uit). Een afstand, geen aantal; Punten is meestal de betere regelaar.</translation>
     </message>
     <message>
@@ -2209,7 +2181,7 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Hoe detecties op de kaart worden gekleurd (alleen visueel): Normale vulling, Omtrek, Betrouwbaarheid-heatmap, of een unieke kleur per object om ze uit elkaar te houden.</translation>
     </message>
     <message>
-        <source>How many of this polygon&apos;s points to keep. The count in the title row follows it. It runs before Right angles, so lowering it gives the squaring straight walls instead of a staircase.</source>
+        <source>How many of this polygon's points to keep. The count in the title row follows it. It runs before Right angles, so lowering it gives the squaring straight walls instead of a staircase.</source>
         <translation>Hoeveel punten van deze polygoon behouden blijven. Het aantal in de titelbalk volgt dit. Dit werkt vóór Rechte hoeken, dus als je dit verlaagt, geeft dat het haaks maken rechte muren in plaats van een trapje.</translation>
     </message>
     <message>
@@ -2321,16 +2293,16 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Nieuwe vorm toegevoegd. Klik op Opslaan om hem te behouden.</translation>
     </message>
     <message>
-        <source>No connection to the sign-in service. Check your internet connection, then click Connect to try again.</source>
-        <translation>Geen verbinding met de aanmeldservice. Controleer je internetverbinding en klik daarna op Verbinden om het opnieuw te proberen.</translation>
+        <source>No connection to the sign-in service. Check your internet connection, then click Sign in to try again.</source>
+        <translation>Geen verbinding met de aanmeldingsservice. Controleer je internetverbinding en klik op Aanmelden om het opnieuw te proberen.</translation>
     </message>
     <message>
         <source>No detection under that click.</source>
         <translation>Geen detectie onder die klik.</translation>
     </message>
     <message>
-        <source>No matches in this zone.</source>
-        <translation>Geen overeenkomsten in deze zone.</translation>
+        <source>No matches in this zone. A different object word often fixes it.</source>
+        <translation>Geen overeenkomsten in deze zone. Een ander objectwoord helpt vaak.</translation>
     </message>
     <message>
         <source>No object matches that search.</source>
@@ -2357,12 +2329,12 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Eén object kwam terug als meerdere polygonen. Klik op de andere op de kaart en bevestig daarna om ze samen te voegen tot één.</translation>
     </message>
     <message>
-        <source>One object per run - Detect will run &quot;{first}&quot; first.</source>
-        <translation>Eén object per run - Detecteren voert eerst &quot;{first}&quot; uit.</translation>
+        <source>One object per run - Detect will run "{first}" first.</source>
+        <translation>Eén object per run - Detecteren voert eerst "{first}" uit.</translation>
     </message>
     <message>
-        <source>One object per run - detecting &quot;{first}&quot; now. Run the other objects as separate detections.</source>
-        <translation>Eén object per run - &quot;{first}&quot; wordt nu gedetecteerd. Voer de andere objecten uit als aparte detecties.</translation>
+        <source>One object per run - detecting "{first}" now. Run the other objects as separate detections.</source>
+        <translation>Eén object per run - "{first}" wordt nu gedetecteerd. Voer de andere objecten uit als aparte detecties.</translation>
     </message>
     <message>
         <source>Open the selected saved polygon for AI editing</source>
@@ -2397,8 +2369,8 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Punten</translation>
     </message>
     <message>
-        <source>Points the map back at this run with the same object and the same number of tiles, ready to detect. Nothing is spent until you do.</source>
-        <translation>Zet de kaart terug op deze run met hetzelfde object en hetzelfde aantal tegels, klaar om te detecteren. Er wordt niets uitgegeven totdat je dat doet.</translation>
+        <source>Points the map back at this run with the same object and the same number of cloud detections, ready to detect. Nothing is spent until you do.</source>
+        <translation>Wijst de kaart terug naar deze run met hetzelfde object en hetzelfde aantal clouddetecties, klaar voor detectie. Niets wordt besteed tot je het doet.</translation>
     </message>
     <message>
         <source>Points: {n}</source>
@@ -2413,7 +2385,7 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Proxyauthenticatie vereist</translation>
     </message>
     <message>
-        <source>Push this polygon&apos;s edge out (positive) or in (negative), for the one footprint the model cut short or overran.</source>
+        <source>Push this polygon's edge out (positive) or in (negative), for the one footprint the model cut short or overran.</source>
         <translation>Duw de rand van deze polygoon naar buiten (positief) of naar binnen (negatief), voor het ene grondvlak dat het model te kort of te lang maakte.</translation>
     </message>
     <message>
@@ -2489,7 +2461,7 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Rond hoeken af voor natuurlijke vormen zoals bomen en struiken. Verlaag Punten voor een vloeiender resultaat.</translation>
     </message>
     <message>
-        <source>Round this polygon&apos;s corners, for a tree or a pond among squared neighbours.</source>
+        <source>Round this polygon's corners, for a tree or a pond among squared neighbours.</source>
         <translation>Rond de hoeken van deze polygoon af, voor een boom of vijver tussen rechthoekige buren.</translation>
     </message>
     <message>
@@ -2521,7 +2493,7 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Gedeelde grenzen:</translation>
     </message>
     <message>
-        <source>Shave thin spikes and ragged bits off each shape&apos;s outline. It leaves the main body alone; higher values trim more. 0 = off.</source>
+        <source>Shave thin spikes and ragged bits off each shape's outline. It leaves the main body alone; higher values trim more. 0 = off.</source>
         <translation>Snijd dunne pieken en rafelige stukjes van de contour van elke vorm. De hoofdvorm blijft ongemoeid; hogere waarden snijden meer weg. 0 = uit.</translation>
     </message>
     <message>
@@ -2549,7 +2521,7 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Splitsen</translation>
     </message>
     <message>
-        <source>Square this polygon&apos;s edges, or leave them as traced while the rest of the layer stays squared.</source>
+        <source>Square this polygon's edges, or leave them as traced while the rest of the layer stays squared.</source>
         <translation>Maak de randen van deze polygoon haaks, of laat ze zoals getraceerd terwijl de rest van de laag haaks blijft.</translation>
     </message>
     <message>
@@ -2573,20 +2545,8 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Dat gebied raakt het object dat je bewerkt niet, dus er is niets toegevoegd. Vormaanpassing werkt op één object tegelijk.</translation>
     </message>
     <message>
-        <source>That ground belongs to another object, so nothing was added. Edit that object instead, or join the two with Merge with neighbours.</source>
-        <translation>Die grond hoort bij een ander object, dus er is niets toegevoegd. Bewerk dat object in plaats daarvan, of voeg de twee samen met Samenvoegen met buren.</translation>
-    </message>
-    <message>
-        <source>That is another object. The one you were editing is saved, and this one is now selected.</source>
-        <translation>Dat is een ander object. Het object dat je aan het bewerken was, is opgeslagen, en dit is nu geselecteerd.</translation>
-    </message>
-    <message>
         <source>The AI finds every object that looks like your examples - you can draw up to 3.</source>
         <translation>De AI vindt elk object dat lijkt op je voorbeelden - je kunt er tot 3 tekenen.</translation>
-    </message>
-    <message>
-        <source>The AI outlines it, free, on your computer.</source>
-        <translation>De AI omlijnt het, gratis, op je computer.</translation>
     </message>
     <message>
         <source>The connection to the server was interrupted. Please try again.</source>
@@ -2597,8 +2557,8 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>De detectieservice had een probleem en de run is gestopt. Probeer het opnieuw.</translation>
     </message>
     <message>
-        <source>The detection stopped responding. Keeping the {n} tiles already found.</source>
-        <translation>De detectie reageerde niet meer. De {n} al gevonden tegels worden bewaard.</translation>
+        <source>The detection stopped responding. Keeping the {n} cloud detection(s) already paid for.</source>
+        <translation>De detectie reageert niet meer. De {n} clouddetectie(s) waarvoor al betaald is, worden behouden.</translation>
     </message>
     <message>
         <source>The imagery reader could not be loaded, and repairing the installation did not fix it. Please report this so we can look into it.
@@ -2633,7 +2593,7 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>De server gaf een onverwacht antwoord. Probeer het opnieuw.</translation>
     </message>
     <message>
-        <source>Thin this polygon&apos;s points before you edit them by hand. 100% keeps the outline as it is.</source>
+        <source>Thin this polygon's points before you edit them by hand. 100% keeps the outline as it is.</source>
         <translation>Dun de punten van deze polygoon uit voordat je ze handmatig bewerkt. 100% houdt de contour zoals hij is.</translation>
     </message>
     <message>
@@ -2697,10 +2657,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Bestand wordt geschreven...</translation>
     </message>
     <message>
-        <source>You place the corners, the same as on any QGIS layer.</source>
-        <translation>Jij plaatst de hoekpunten, net als bij elke QGIS-laag.</translation>
-    </message>
-    <message>
         <source>Your examples drive the search - naming the object makes it even more accurate.</source>
         <translation>Je voorbeelden bepalen de zoekopdracht - het object benoemen maakt het nog nauwkeuriger.</translation>
     </message>
@@ -2753,16 +2709,16 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>{count} hoekpunten</translation>
     </message>
     <message>
-        <source>{credits} credits</source>
-        <translation>{credits} credits</translation>
+        <source>{credits} charged</source>
+        <translation>{credits} berekend</translation>
     </message>
     <message>
         <source>{hidden} hidden by the filters</source>
         <translation>{hidden} verborgen door de filters</translation>
     </message>
     <message>
-        <source>{n} &quot;{object}&quot; found so far</source>
-        <translation>Tot nu toe {n} &quot;{object}&quot; gevonden</translation>
+        <source>{n} "{object}" found so far</source>
+        <translation>Tot nu toe {n} "{object}" gevonden</translation>
     </message>
     <message>
         <source>{n} corrections this round</source>
@@ -2801,8 +2757,8 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>{n} vormen gekozen. Druk op Enter om samen te voegen.</translation>
     </message>
     <message>
-        <source>{n} tile(s) took too long to load and are missing from this result.</source>
-        <translation>{n} tegel(s) duurden te lang om te laden en ontbreken in dit resultaat.</translation>
+        <source>{n} part(s) of this run took too long to load and are missing from this result.</source>
+        <translation>{n} onderdeel(en) van deze run duurde(n) te lang om te laden en ontbreekt/ontbreken in dit resultaat.</translation>
     </message>
     <message>
         <source>{n} weeks ago</source>
@@ -2813,17 +2769,17 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>{n} jaar geleden</translation>
     </message>
     <message>
-        <source>{tiles} tiles</source>
-        <translation>{tiles} tegels</translation>
+        <source>{tiles} cloud detections</source>
+        <translation>{tiles} clouddetecties</translation>
     </message>
-    <!-- Correct step rework, install and precision wording (2026-07-30) -->
+    
     <message>
-        <source>5,000 credits a month.</source>
-        <translation>5.000 credits per maand.</translation>
+        <source>Pro: 5,000 cloud detections a month, zones of any size, up to 800 cloud detections in one run. Same AI, same free clicks and corrections, every machine you work on.</source>
+        <translation>Pro: 5.000 clouddetecties per maand, zones van elke grootte, tot 800 clouddetecties in één run. Dezelfde AI, dezelfde gratis klikken en correcties, op elke machine waarop je werkt.</translation>
     </message>
     <message>
-        <source>A free run covers up to {cap} credits. This one costs more.</source>
-        <translation>Een gratis run dekt tot {cap} credits. Deze kost meer.</translation>
+        <source>A free run covers up to {cap} cloud detections. This one needs more. Pro covers up to 800 in one run.</source>
+        <translation>Een gratis run omvat tot {cap} clouddetecties. Deze heeft meer nodig. Pro omvat tot 800 in één run.</translation>
     </message>
     <message>
         <source>Adding an object uses the free on-device AI, which is not installed yet. Install it now? It runs once and takes a few minutes. The review waits for it, then arms Add for you.</source>
@@ -2834,8 +2790,8 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Bij deze precisie is {obj} te klein om te herkennen - verhoog de precisie.</translation>
     </message>
     <message>
-        <source>Automatic mode scans your zone tile by tile. 1 tile = 1 credit, so this run costs about {n} credits. More precision splits the zone into more tiles, which costs more credits.</source>
-        <translation>De Automatische modus scant je zone tegel voor tegel. 1 tegel = 1 credit, dus deze uitvoering kost ongeveer {n} credits. Meer precisie verdeelt de zone in meer tegels, wat meer credits kost.</translation>
+        <source>Automatic mode sweeps your zone in a grid. Each grid cell costs one cloud detection, so this run costs about {n}. More precision means a finer grid and more cloud detections.</source>
+        <translation>Automatische modus scant je zone in een raster. Elke rastercell kost één clouddetectie, dus deze run kost ongeveer {n}. Meer precisie betekent een fijner raster en meer clouddetecties.</translation>
     </message>
     <message>
         <source>Cancel setup</source>
@@ -2862,8 +2818,8 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Klik om je dashboard te openen</translation>
     </message>
     <message>
-        <source>Connection is slow - still working, tiles already found are kept...</source>
-        <translation>Verbinding is traag - nog steeds bezig, de al gevonden tegels worden bewaard...</translation>
+        <source>Connection is slow - still working, everything already found is kept...</source>
+        <translation>Verbinding is traag - nog steeds bezig, alles wat al is gevonden wordt bewaard...</translation>
     </message>
     <message>
         <source>Could not save your detections to a file.</source>
@@ -2898,12 +2854,8 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Helpt ons bugs sneller op te lossen.</translation>
     </message>
     <message>
-        <source>Higher precision splits the zone into more tiles. Each tile costs 1 credit and captures smaller objects.</source>
-        <translation>Meer precisie verdeelt de zone in meer tegels. Elke tegel kost 1 credit en legt kleinere objecten vast.</translation>
-    </message>
-    <message>
-        <source>Keep detecting without limits:</source>
-        <translation>Zonder limieten blijven detecteren:</translation>
+        <source>More precision sweeps your zone in a finer grid, so it catches smaller objects. Each grid cell costs one cloud detection.</source>
+        <translation>Meer precisie scant je zone in een fijner raster, dus het vangt kleinere objecten. Elke rastercell kost één clouddetectie.</translation>
     </message>
     <message>
         <source>Keep installing</source>
@@ -2926,8 +2878,8 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Maximale precisie voor deze zone - teken een grotere zone voor meer precisie.</translation>
     </message>
     <message>
-        <source>More precision cuts the zone into more tiles and costs more credits.</source>
-        <translation>Meer precisie verdeelt de zone in meer tegels en kost meer credits.</translation>
+        <source>More precision finds smaller objects and uses more cloud detections.</source>
+        <translation>Meer precisie vindt kleinere objecten en gebruikt meer clouddetecties.</translation>
     </message>
     <message>
         <source>More precision finds smaller objects.</source>
@@ -2958,12 +2910,12 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Geen beeld over deze zone bij deze precisie, dus er is niets geanalyseerd (niet in rekening gebracht). Verlaag Precisie, of kies een laag die dit gebied dekt.</translation>
     </message>
     <message>
-        <source>Not enough credits: {n} tiles, only {left} left. Lower the precision or the zone.</source>
-        <translation>Niet genoeg credits: {n} tegels, nog maar {left} over. Verlaag de precisie of verklein de zone.</translation>
+        <source>This run needs {n} cloud detections and you have {left} left. Lower the precision or shrink the zone. Pro gives you 5,000 cloud detections a month.</source>
+        <translation>Deze run heeft {n} clouddetecties nodig en je hebt nog {left} over. Verlaag de precisie of verklein de zone. Pro geeft je 5.000 clouddetecties per maand.</translation>
     </message>
     <message>
-        <source>Opens your terra-lab.ai dashboard: your plan, your credits and your payment details.</source>
-        <translation>Opent je terra-lab.ai-dashboard: je abonnement, je credits en je betaalgegevens.</translation>
+        <source>Opens your terra-lab.ai dashboard: your plan, your cloud detections and your payment details.</source>
+        <translation>Opent je terra-lab.ai-dashboard: je plan, je clouddetecties en je betalingsgegevens.</translation>
     </message>
     <message>
         <source>Outline settings</source>
@@ -2978,12 +2930,12 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
         <translation>Gereed voor Automatische modus</translation>
     </message>
     <message>
-        <source>Running low: {n} free detections left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
-        <translation>Bijna op: nog {n} gratis detecties over, terug op {date}. &lt;a href=&quot;{url}&quot;&gt;Upgraden naar Pro&lt;/a&gt; om door te gaan.</translation>
+        <source>Running low: {n} free detections left, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bijna op: nog {n} gratis detecties over, terug op {date}. &lt;a href="{url}"&gt;Upgraden naar Pro&lt;/a&gt; om door te gaan.</translation>
     </message>
     <message>
-        <source>Running low: {n} free detections left. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
-        <translation>Bijna op: nog {n} gratis detecties over. &lt;a href=&quot;{url}&quot;&gt;Upgraden naar Pro&lt;/a&gt; om door te gaan.</translation>
+        <source>Running low: {n} free detections left. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bijna op: nog {n} gratis detecties over. &lt;a href="{url}"&gt;Upgraden naar Pro&lt;/a&gt; om door te gaan.</translation>
     </message>
     <message>
         <source>Same setup as your last run - the result will match. Add an example or change the precision for a different result.</source>
@@ -3034,8 +2986,8 @@ Lager dunt eerst het kleinste detail uit, behoudt de hoekpunten, en geeft Rechte
         <translation>Installatie stoppen?</translation>
     </message>
     <message>
-        <source>The detection stopped responding before any tile came back. Check your connection, then run Detect again (nothing was charged).</source>
-        <translation>De detectie reageerde niet meer voordat er een tegel terugkwam. Controleer je verbinding en voer Detecteren daarna opnieuw uit (er is niets in rekening gebracht).</translation>
+        <source>The detection stopped responding before anything came back. Check your connection, then run Detect again (nothing was charged).</source>
+        <translation>De detectie reageert niet meer voordat iets terugkwam. Controleer je verbinding en voer Detecteren opnieuw uit (er is niets berekend).</translation>
     </message>
     <message>
         <source>The file may be open in QGIS or in another program. Close it and try Finish again.</source>
@@ -3108,28 +3060,28 @@ Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het 
         <translation>Alleen deze polygoon. Minder punten betekent minder hoekpunten om te slepen.</translation>
     </message>
     <message>
-        <source>This run costs more credits than a free run covers.</source>
-        <translation>Deze run kost meer credits dan een gratis run dekt.</translation>
+        <source>This run needs more cloud detections than one free run covers. Pro covers up to 800 in one run.</source>
+        <translation>Deze run heeft meer clouddetecties nodig dan één gratis run omvat. Pro omvat tot 800 in één run.</translation>
     </message>
     <message>
-        <source>This zone at this precision needs a subscription. Lower the precision or the zone to stay free.</source>
-        <translation>Deze zone heeft bij deze precisie een abonnement nodig. Verlaag de precisie of verklein de zone om gratis te blijven.</translation>
+        <source>One free run covers fewer cloud detections than this. Lower the precision or shrink the zone to stay free. Pro runs up to 800 cloud detections in one go, so a wide zone keeps a fine grid.</source>
+        <translation>Één gratis run omvat minder clouddetecties dan dit. Verlaag de precisie of verklein de zone om gratis te blijven. Pro kan tot 800 clouddetecties tegelijk verwerken, dus een brede zone houdt een fijn raster.</translation>
     </message>
     <message>
         <source>This zone is too large for sharp detections, even at full precision. Draw a smaller zone for the best results.</source>
         <translation>Deze zone is te groot voor scherpe detecties, zelfs bij volledige precisie. Teken een kleinere zone voor de beste resultaten.</translation>
     </message>
     <message>
-        <source>Tiles your layer has no image for are dropped before they are sent, so a run can cost less than this, never more.</source>
-        <translation>Tegels waarvoor je laag geen beeld heeft, worden overgeslagen voordat ze worden verzonden, dus een run kan minder kosten dan dit, nooit meer.</translation>
+        <source>You are never charged for a part of the zone your layer has no image for, so a run can cost less than this, never more.</source>
+        <translation>Je wordt nooit belast voor een deel van de zone waarvoor je laag geen afbeelding heeft, dus een run kan minder kosten dan dit, maar nooit meer.</translation>
     </message>
     <message>
         <source>Type a word for the object, or draw an example.</source>
         <translation>Typ een woord voor het object, of teken een voorbeeld.</translation>
     </message>
     <message>
-        <source>Upgrade to Pro to finish this zone: 5,000 credits/month.</source>
-        <translation>Upgrade naar Pro om deze zone af te ronden: 5.000 credits/maand.</translation>
+        <source>Finish this zone with Pro: 5,000 cloud detections a month.</source>
+        <translation>Voltooi deze zone met Pro: 5.000 clouddetecties per maand.</translation>
     </message>
     <message>
         <source>Wait for the on-device AI to finish installing.</source>
@@ -3143,11 +3095,7 @@ Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het 
         <source>{n} {object} saved to {layer}</source>
         <translation>{n} {object} opgeslagen in {layer}</translation>
     </message>
-    <!-- Correct-step on-device AI setup, free-run cap wording, missing raster (2026-07-30) -->
-    <message>
-        <source>5,000 objects every month</source>
-        <translation>5.000 objecten per maand</translation>
-    </message>
+    
     <message>
         <source>A session is already running.</source>
         <translation>Er is al een sessie bezig.</translation>
@@ -3163,10 +3111,6 @@ Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het 
     <message>
         <source>AI ready</source>
         <translation>AI gereed</translation>
-    </message>
-    <message>
-        <source>Add an object the AI missed. In AI, point at it and the model outlines it, free; in Manual, draw its corners.</source>
-        <translation>Voeg een object toe dat de AI heeft gemist. Bij AI wijs je het aan en omlijnt het model het gratis; bij Handmatig teken je de hoekpunten.</translation>
     </message>
     <message>
         <source>Almost ready: the AI file did not download.</source>
@@ -3245,20 +3189,16 @@ Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het 
         <translation>Elke klik stuurt een klein vierkant van de afbeelding naar onze servers in Europa, en de omlijning komt terug.</translation>
     </message>
     <message>
-        <source>Ends this session. Your saved polygons are kept.</source>
-        <translation>Beëindigt deze sessie. Je opgeslagen polygonen blijven behouden.</translation>
-    </message>
-    <message>
-        <source>Faster and more accurate</source>
-        <translation>Sneller en nauwkeuriger</translation>
+        <source>Bigger model, more accurate</source>
+        <translation>Groter model, nauwkeuriger</translation>
     </message>
     <message>
         <source>Featured</source>
         <translation>Uitgelicht</translation>
     </message>
     <message>
-        <source>Free, works offline</source>
-        <translation>Gratis, werkt offline</translation>
+        <source>Smaller model, works offline</source>
+        <translation>Kleiner model, werkt offline</translation>
     </message>
     <message>
         <source>Install it now</source>
@@ -3285,28 +3225,12 @@ Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het 
         <translation>Mijn computer</translation>
     </message>
     <message>
-        <source>My computer, free and unlimited</source>
-        <translation>Mijn computer, gratis en onbeperkt</translation>
-    </message>
-    <message>
         <source>My work</source>
         <translation>Mijn werk</translation>
     </message>
     <message>
-        <source>No credits left. Each object you save with Cloud AI costs one credit.</source>
-        <translation>Geen credits meer. Elk object dat je opslaat met Cloud AI kost 1 credit.</translation>
-    </message>
-    <message>
-        <source>No credits left. Each object you save with Cloud AI costs one credit. Switch to the offline AI to keep working for free, or upgrade from the panel.</source>
-        <translation>Geen credits meer. Elk object dat je opslaat met Cloud AI kost 1 credit. Schakel over naar de lokale AI om gratis te blijven werken, of upgrade vanuit het paneel.</translation>
-    </message>
-    <message>
-        <source>No credits left. This polygon stays on the map, and Export still works.</source>
-        <translation>Geen credits meer. Deze polygoon blijft op de kaart staan, en Exporteren werkt nog steeds.</translation>
-    </message>
-    <message>
-        <source>No credits left. This polygon stays on the map, but it cannot be saved.</source>
-        <translation>Geen credits meer. Deze polygoon blijft op de kaart staan, maar kan niet worden opgeslagen.</translation>
+        <source>No detections left. Each object you save with Cloud AI costs one. Switch to your own computer to keep working for free, or upgrade from the panel.</source>
+        <translation>Geen detections meer. Elk object dat je met Cloud AI opslaat kost er een. Schakel over naar je eigen computer om gratis door te werken, of upgrade via het paneel.</translation>
     </message>
     <message>
         <source>No object found here. Try clicking somewhere else.</source>
@@ -3317,8 +3241,8 @@ Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het 
         <translation>Niet nu</translation>
     </message>
     <message>
-        <source>Your project and your files stay on your computer. One credit per object you save.</source>
-        <translation>Je project en je bestanden blijven op je computer. 1 credit per object dat je opslaat.</translation>
+        <source>Your project and your files stay on your computer. One cloud detection per object you save.</source>
+        <translation>Je project en je bestanden blijven op je computer. Één clouddetectie per object dat je opslaat.</translation>
     </message>
     <message>
         <source>One precision level fits {obj} in a zone this size - draw a larger zone for a choice.</source>
@@ -3341,8 +3265,8 @@ Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het 
         <translation>Installatie voorbereiden...</translation>
     </message>
     <message>
-        <source>Pro is active on this account. Your credits are ready.</source>
-        <translation>Pro is actief op dit account. Je credits staan klaar.</translation>
+        <source>Pro is active on this account. Your cloud detections are ready.</source>
+        <translation>Pro is actief op dit account. Je clouddetecties staan klaar.</translation>
     </message>
     <message>
         <source>Read the privacy policy</source>
@@ -3353,12 +3277,12 @@ Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het 
         <translation>Klik met de rechtermuisknop op een polygoon op de kaart om deze te verwijderen.</translation>
     </message>
     <message>
-        <source>Running low: {n} credits left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
-        <translation>Bijna op: nog {n} credits over, terug op {date}. &lt;a href=&quot;{url}&quot;&gt;Upgraden naar Pro&lt;/a&gt; om door te gaan.</translation>
+        <source>Running low: {n} cloud detections left, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bijna op: {n} clouddetecties resterend, terug op {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; om door te gaan.</translation>
     </message>
     <message>
-        <source>Running low: {n} credits left. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
-        <translation>Bijna op: nog {n} credits over. &lt;a href=&quot;{url}&quot;&gt;Upgraden naar Pro&lt;/a&gt; om door te gaan.</translation>
+        <source>Running low: {n} cloud detections left. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bijna op: {n} clouddetecties resterend. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; om door te gaan.</translation>
     </message>
     <message>
         <source>Save a polygon first. Export writes every polygon you kept to a layer.</source>
@@ -3389,10 +3313,6 @@ Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het 
         <translation>De Semi-Auto-modus moet lokale afhankelijkheden installeren, wat niet wordt ondersteund binnen deze sandbox-QGIS-installatie (Flatpak of Snap). Gebruik in plaats daarvan de Automatische modus, die volledig in de cloud draait en geen lokale installatie nodig heeft.</translation>
     </message>
     <message>
-        <source>Semi-Auto mode stays free and unlimited on your computer.</source>
-        <translation>Semi-Auto-modus blijft gratis en onbeperkt op je computer.</translation>
-    </message>
-    <message>
         <source>Session ended</source>
         <translation>Sessie beëindigd</translation>
     </message>
@@ -3401,16 +3321,8 @@ Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het 
         <translation>Nu instellen</translation>
     </message>
     <message>
-        <source>Setting up on your computer {dot} &lt;b&gt;pick Cloud AI to start now&lt;/b&gt;</source>
-        <translation>Wordt ingesteld op je computer {dot} &lt;b&gt;kies Cloud AI om nu te starten&lt;/b&gt;</translation>
-    </message>
-    <message>
         <source>Start Semi-Auto AI Segmentation</source>
         <translation>Start Semi-Auto AI Segmentation</translation>
-    </message>
-    <message>
-        <source>Stop and use my computer instead</source>
-        <translation>Stop en gebruik in plaats daarvan mijn computer</translation>
     </message>
     <message>
         <source>Stop the install</source>
@@ -3449,12 +3361,8 @@ Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het 
         <translation>De lokale AI wordt nog gedownload.</translation>
     </message>
     <message>
-        <source>The smaller model on your computer. No credits, no limit.</source>
-        <translation>Het kleinere model op je computer. Geen credits, geen limiet.</translation>
-    </message>
-    <message>
-        <source>This deletes the local AI model files, signs you out, and resets the plugin. Your account and credits are not affected. Semi-Auto mode will download the files again next time you use it.</source>
-        <translation>Dit verwijdert de lokale AI-modelbestanden, meldt je af en herstelt de plugin. Je account en credits worden niet beïnvloed. De Semi-Auto-modus downloadt de bestanden opnieuw wanneer je deze de volgende keer gebruikt.</translation>
+        <source>This deletes the local AI model files, signs you out, and resets the plugin. Your account and your cloud detections are not affected. Semi-Auto mode will download the files again next time you use it.</source>
+        <translation>Dit verwijdert de lokale AI-modelbestanden, meldt je af en reset de plugin. Je account en je clouddetecties worden niet beïnvloed. Semi-Auto-modus downloadt de bestanden de volgende keer opnieuw.</translation>
     </message>
     <message>
         <source>This drive has {free} GB free, under the {need} GB the install needs. Free some space, or use Cloud AI.</source>
@@ -3485,35 +3393,19 @@ Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het 
         <translation>Waar de segmentatie draait:</translation>
     </message>
     <message>
-        <source>You can close this window and keep working. The install carries on, and the panel shows how far it has got.</source>
-        <translation>Je kunt dit venster sluiten en blijven werken. De installatie gaat door, en het paneel toont hoe ver deze is.</translation>
-    </message>
-    <message>
-        <source>Your free credits come back on {date}.</source>
-        <translation>Je gratis credits komen terug op {date}.</translation>
-    </message>
-    <message>
         <source>Everything stays on this computer {dot} &lt;b&gt;about 10 minutes to install&lt;/b&gt;</source>
         <translation>Alles blijft op deze computer {dot} &lt;b&gt;ongeveer 10 minuten om te installeren&lt;/b&gt;</translation>
-    </message>
-    <message>
-        <source>Everything stays on this computer {dot} &lt;b&gt;save as many as you like&lt;/b&gt;</source>
-        <translation>Alles blijft op deze computer {dot} &lt;b&gt;sla er zoveel op als je wilt&lt;/b&gt;</translation>
     </message>
     <message>
         <source>Everything stays on this computer {dot} &lt;b&gt;{gb} GB and about 10 minutes to install&lt;/b&gt;</source>
         <translation>Alles blijft op deze computer {dot} &lt;b&gt;{gb} GB en ongeveer 10 minuten om te installeren&lt;/b&gt;</translation>
     </message>
     <message>
-        <source>No setup on this computer {dot} &lt;b&gt;1 credit per object you save&lt;/b&gt;</source>
-        <translation>Geen installatie op deze computer {dot} &lt;b&gt;1 credit per object dat je opslaat&lt;/b&gt;</translation>
-    </message>
-    <message>
         <source>The offline AI answers your clicks on this computer. Your imagery stays here, and every click is free.</source>
         <translation>De lokale AI beantwoordt je klikken op deze computer. Je beeldmateriaal blijft hier, en elke klik is gratis.</translation>
     </message>
     <message>
-        <source>This online layer returned no imagery for this area. Its server refused the request. Check the layer&apos;s URL in Layer Properties, or use another basemap.</source>
+        <source>This online layer returned no imagery for this area. Its server refused the request. Check the layer's URL in Layer Properties, or use another basemap.</source>
         <translation>Deze online laag leverde geen beeldmateriaal voor dit gebied. De server ervan heeft het verzoek geweigerd. Controleer de URL van de laag in Laageigenschappen, of gebruik een andere achtergrondkaart.</translation>
     </message>
     <message>
@@ -3553,8 +3445,8 @@ Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het 
         <translation>Nog niets in deze categorie.</translation>
     </message>
     <message>
-        <source>One run covers up to {cap} tiles. This zone at this precision needs more. Draw a smaller zone, or lower the precision.</source>
-        <translation>Eén run dekt tot {cap} tegels. Deze zone heeft bij deze precisie meer nodig. Teken een kleinere zone, of verlaag de precisie.</translation>
+        <source>One run covers up to {cap} cloud detections. This zone at this precision needs more. Draw a smaller zone, or lower the precision.</source>
+        <translation>Één run omvat tot {cap} clouddetecties. Deze zone op deze precisie heeft meer nodig. Teken een kleinere zone of verlaag de precisie.</translation>
     </message>
     <message>
         <source>QGIS could not open a browser. Open this address to finish signing in, then come back here. It works once:
@@ -3594,8 +3486,8 @@ Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het 
         <translation>Deze run vond niets. Voeg het object hieronder zelf toe, of druk op Afsluiten en voer de run opnieuw uit met een ander woord of een kleinere zone.</translation>
     </message>
     <message>
-        <source>This zone at this precision needs more tiles than one run covers. Draw a smaller zone, or lower the precision.</source>
-        <translation>Deze zone heeft bij deze precisie meer tegels nodig dan één run dekt. Teken een kleinere zone, of verlaag de precisie.</translation>
+        <source>This zone at this precision needs more cloud detections than one run covers. Draw a smaller zone, or lower the precision.</source>
+        <translation>Deze zone op deze precisie heeft meer clouddetecties nodig dan één run omvat. Teken een kleinere zone of verlaag de precisie.</translation>
     </message>
     <message>
         <source>Undo every correction of this round at once. The count is in the label, so you can see what goes.</source>
@@ -3608,6 +3500,214 @@ Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het 
     <message>
         <source>You are signed in on this computer, but QGIS cannot read your sign-in until you enter its master password.</source>
         <translation>Je bent aangemeld op deze computer, maar QGIS kan je aanmelding pas lezen als je zijn hoofdwachtwoord invoert.</translation>
+    </message>
+    <message>
+        <source>AI: point at what to keep or trim, one cloud detection per polygon. Manual: move the corners yourself, free.</source>
+        <translation>AI: wijs aan wat te behouden of bij te snijden, één clouddetectie per polygoon. Handmatig: verplaats de hoeken zelf, gratis.</translation>
+    </message>
+    <message>
+        <source>Start now, nothing to install {dot} &lt;b&gt;1 cloud detection per object you save&lt;/b&gt;</source>
+        <translation>Begin nu, niets om te installeren {dot} &lt;b&gt;1 clouddetectie per object dat je opslaat&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>The AI outlines it. One cloud detection per object.</source>
+        <translation>De AI omlijnde het. Één clouddetectie per object.</translation>
+    </message>
+    <message>
+        <source>Add an object the AI missed. In AI, point at it and the model outlines it for one cloud detection; in Manual, draw its corners for free.</source>
+        <translation>Voeg een object toe dat de AI heeft gemist. In AI, wijs ernaar aan en het model omlijnde het voor één clouddetectie; in Handmatig, teken de hoeken gratis.</translation>
+    </message>
+    <message>
+        <source>This zone at this precision needs more than one run covers. Draw a smaller zone, or lower the precision. Free runs stop well below that ceiling, so Pro keeps more precision on a zone this size.</source>
+        <translation>Deze zone bij deze nauwkeurigheid vereist meer dan één clouddetecties. Teken een kleinere zone, of verlaag de nauwkeurigheid. Gratis runs stoppen ruim onder die limiet, dus Pro behoudt meer nauwkeurigheid op een zone van deze grootte.</translation>
+    </message>
+    <message>
+        <source>This zone at this precision needs more cloud detections than one run covers. Draw a smaller zone, or lower the precision. Free runs stop well below that ceiling, so Pro keeps more precision on a zone this size.</source>
+        <translation>Deze zone bij deze nauwkeurigheid vereist meer clouddetecties dan één run bestrijkt. Teken een kleinere zone, of verlaag de nauwkeurigheid. Gratis runs stoppen ruim onder die limiet, dus Pro behoudt meer nauwkeurigheid op een zone van deze grootte.</translation>
+    </message>
+    <message>
+        <source>Pick a raster layer at the top of the panel first.</source>
+        <translation>Kies eerst een rasterlaag bovenaan het paneel.</translation>
+    </message>
+    <message>
+        <source>This zone at this precision is too big for one run. Draw a smaller zone, or lower the precision.</source>
+        <translation>Deze zone op deze precisie is te groot voor één run. Teken een kleinere zone of verlaag de precisie.</translation>
+    </message>
+    <message>
+        <source>No cloud detections left this month. Semi-Auto mode runs on your computer, free and unlimited.</source>
+        <translation>Geen clouddetecties meer deze maand. Semi-Auto-modus draait op je computer, gratis en onbeperkt.</translation>
+    </message>
+    <message>
+        <source>This run costs more cloud detections than you have left. Lower the precision, or draw a smaller zone.</source>
+        <translation>Deze run kost meer clouddetecties dan je nog hebt. Verlaag de precisie of teken een kleinere zone.</translation>
+    </message>
+    <message>
+        <source>One free run covers fewer cloud detections than this. Lower the precision, or draw a smaller zone.</source>
+        <translation>Één gratis run omvat minder clouddetecties dan dit. Verlaag de precisie of teken een kleinere zone.</translation>
+    </message>
+    <message>
+        <source>Load imagery in QGIS, then pick it above to start.</source>
+        <translation>Laad beelden in QGIS en selecteer ze hierboven om te starten.</translation>
+    </message>
+    <message>
+        <source>One object at a time: click it, the AI outlines it. You choose where it runs, on our servers or on your own computer.</source>
+        <translation>Eén object tegelijk: klik erop en de AI tekent de omtrek. Jij kiest waar het draait, op onze servers of op je eigen computer.</translation>
+    </message>
+    <message>
+        <source>Draw a zone, name one kind of object, get all of them in one run. Runs on our servers and uses your cloud detections.</source>
+        <translation>Teken een zone, noem één soort object en krijg ze allemaal in één run. Draait op onze servers en gebruikt je clouddetecties.</translation>
+    </message>
+    <message>
+        <source>This layer has no file to read. Pick another layer at the top of the panel, then start again.</source>
+        <translation>Deze laag heeft geen bestand om te lezen. Kies een ander laag bovenaan het paneel en start opnieuw.</translation>
+    </message>
+    <message>
+        <source>Writes a GeoPackage with the QGIS style built in, English field names, and how the run was made (prompt, source layer, date, precision). It opens styled and documented on a colleague's machine, with no plugin installed.</source>
+        <translation>Schrijft een GeoPackage met ingebouwde QGIS-stijl, Engelse veldnamen, en hoe de uitvoering is gemaakt (prompt, bronlaag, datum, precisie). Het opent gestijld en gedocumenteerd op de computer van een collega, zonder plugin geïnstalleerd.</translation>
+    </message>
+    <message>
+        <source>&quot;{selected}&quot; has no imagery here. You are looking at &quot;{other}&quot;. Pick it at the top of the panel, then click again.</source>
+        <translation>&quot;{selected}&quot; heeft hier geen beeldmateriaal. Je bekijkt &quot;{other}&quot;. Kies deze bovenaan het paneel en klik opnieuw.</translation>
+    </message>
+    <message>
+        <source>39 EUR a month, cancel anytime. Opens your TerraLab dashboard.</source>
+        <translation>39 EUR per maand, op elk moment opzegbaar. Opent je TerraLab-dashboard.</translation>
+    </message>
+    <message>
+        <source>Could not reach this layer&apos;s server. Check your connection, then click again.</source>
+        <translation>Kon de server van deze laag niet bereiken. Controleer je verbinding en klik opnieuw.</translation>
+    </message>
+    <message>
+        <source>Every run is kept with its image, ready to open months later.</source>
+        <translation>Elke run wordt bewaard met zijn afbeelding, maanden later nog te openen.</translation>
+    </message>
+    <message>
+        <source>Nothing to install, works right away.</source>
+        <translation>Niets te installeren, direct te gebruiken.</translation>
+    </message>
+    <message>
+        <source>Or click objects one by one in Semi-Auto, free on this computer.</source>
+        <translation>Of klik objecten één voor één aan in Semi-Auto, gratis op deze computer.</translation>
+    </message>
+    <message>
+        <source>Or end this session and work free on this computer. Your saved polygons are kept.</source>
+        <translation>Of beëindig deze sessie en werk gratis op deze computer. Je opgeslagen polygonen blijven behouden.</translation>
+    </message>
+    <message>
+        <source>Or work free with a smaller AI on this computer.</source>
+        <translation>Of werk gratis met een kleinere AI op deze computer.</translation>
+    </message>
+    <message>
+        <source>Pro: 5,000 cloud detections a month</source>
+        <translation>Pro: 5.000 clouddetecties per maand</translation>
+    </message>
+    <message>
+        <source>Pro: 5,000 detections a month, on zones of any size</source>
+        <translation>Pro: 5.000 detecties per maand, op zones van elke grootte</translation>
+    </message>
+    <message>
+        <source>QGIS cannot read this raster format here. Convert it to GeoTIFF, then start again.</source>
+        <translation>QGIS kan deze rasterindeling hier niet lezen. Zet het om naar GeoTIFF en start opnieuw.</translation>
+    </message>
+    <message>
+        <source>QGIS waits while this installs. To segment right away, stop the install and use Cloud AI.</source>
+        <translation>QGIS wacht tijdens deze installatie. Stop de installatie en gebruik Cloud AI om direct te segmenteren.</translation>
+    </message>
+    <message>
+        <source>Runs on this computer {dot} &lt;b&gt;save as many as you like&lt;/b&gt;</source>
+        <translation>Draait op deze computer {dot} &lt;b&gt;sla er zoveel op als je wilt&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Setting up on your computer {dot} &lt;b&gt;wait for it to finish&lt;/b&gt;</source>
+        <translation>Wordt ingesteld op je computer {dot} &lt;b&gt;wacht tot dit is voltooid&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Small objects still show up on wide areas.</source>
+        <translation>Kleine objecten blijven zichtbaar op grote gebieden.</translation>
+    </message>
+    <message>
+        <source>Stop and use my computer</source>
+        <translation>Stop en gebruik mijn computer</translation>
+    </message>
+    <message>
+        <source>Stop the install?</source>
+        <translation>Installatie stoppen?</translation>
+    </message>
+    <message>
+        <source>Take back the last point you placed. Shortcut: Ctrl+Z</source>
+        <translation>Maak het laatst geplaatste punt ongedaan. Sneltoets: Ctrl+Z</translation>
+    </message>
+    <message>
+        <source>The layer you picked has no imagery here. You are looking at &quot;{other}&quot;. Pick it at the top of the panel, then click again.</source>
+        <translation>De laag die je koos heeft hier geen beeldmateriaal. Je bekijkt &quot;{other}&quot;. Kies deze bovenaan het paneel en klik opnieuw.</translation>
+    </message>
+    <message>
+        <source>The offline AI is not installed yet. Stop the install?</source>
+        <translation>De lokale AI is nog niet geïnstalleerd. Installatie stoppen?</translation>
+    </message>
+    <message>
+        <source>The same cloud AI, and the cleanest shapes.</source>
+        <translation>Dezelfde cloud AI, en de netste vormen.</translation>
+    </message>
+    <message>
+        <source>They come back on {date}.</source>
+        <translation>Ze komen terug op {date}.</translation>
+    </message>
+    <message>
+        <source>This layer has no imagery at this zoom. Zoom in until you see it on the map, then click again.</source>
+        <translation>Deze laag heeft geen beeldmateriaal op dit zoomniveau. Zoom in tot je het op de kaart ziet en klik opnieuw.</translation>
+    </message>
+    <message>
+        <source>This layer&apos;s file is no longer where QGIS expects it. Reload it from where the file is now, then start again.</source>
+        <translation>Het bestand van deze laag staat niet meer op de plek die QGIS verwacht. Laad het opnieuw vanaf de huidige locatie en start opnieuw.</translation>
+    </message>
+    <message>
+        <source>This layer&apos;s server refused the request. Pick another basemap at the top of the panel, then click again.</source>
+        <translation>De server van deze laag heeft het verzoek geweigerd. Kies een andere basiskaart bovenaan het paneel en klik opnieuw.</translation>
+    </message>
+    <message>
+        <source>This polygon stays on the map, and Export still works.</source>
+        <translation>Deze polygoon blijft op de kaart, en Exporteren werkt nog steeds.</translation>
+    </message>
+    <message>
+        <source>This polygon stays on the map, but it cannot be saved.</source>
+        <translation>Deze polygoon blijft op de kaart, maar kan niet worden opgeslagen.</translation>
+    </message>
+    <message>
+        <source>This raster has no bands to read. Pick another layer at the top of the panel.</source>
+        <translation>Dit raster heeft geen banden om te lezen. Kies een andere laag bovenaan het paneel.</translation>
+    </message>
+    <message>
+        <source>Undo point</source>
+        <translation>Punt ongedaan maken</translation>
+    </message>
+    <message>
+        <source>Use Semi-Auto</source>
+        <translation>Gebruik Semi-Auto</translation>
+    </message>
+    <message>
+        <source>Use my computer</source>
+        <translation>Gebruik mijn computer</translation>
+    </message>
+    <message>
+        <source>You place the corners, the same as on any QGIS layer. Free.</source>
+        <translation>Jij plaatst de hoekpunten, net als bij elke QGIS-laag. Gratis.</translation>
+    </message>
+    <message>
+        <source>You used all {n}. They come back on {date}.</source>
+        <translation>Je hebt alle {n} gebruikt. Ze komen terug op {date}.</translation>
+    </message>
+    <message>
+        <source>Your click is outside this layer. Click on the imagery itself, or pick another layer at the top of the panel.</source>
+        <translation>Je klik valt buiten deze laag. Klik op het beeldmateriaal zelf, of kies een andere laag bovenaan het paneel.</translation>
+    </message>
+    <message>
+        <source>Your cloud detections are used up</source>
+        <translation>Je clouddetecties zijn opgebruikt</translation>
+    </message>
+    <message>
+        <source>Your free cloud detections are used up</source>
+        <translation>Je gratis clouddetecties zijn opgebruikt</translation>
     </message>
 </context>
 </TS>

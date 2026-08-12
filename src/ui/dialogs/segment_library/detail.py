@@ -458,8 +458,8 @@ class _RunDetailDialog(_DetailDialogBase):
         if when:
             chips.append((tr("DATE"), when))
         chips.append((tr("OBJECTS"), str(run.get("objects") or 0)))
-        chips.append((tr("CREDITS"), str(run.get("credits") or 0)))
-        chips.append((tr("TILES"), str(run.get("tiles") or 0)))
+        chips.append((tr("CHARGED"), str(run.get("credits") or 0)))
+        chips.append((tr("CLOUD DETECTIONS"), str(run.get("tiles") or 0)))
         try:
             mupp = float(run.get("pixel_size_m") or 0)
             if mupp > 0:
@@ -481,7 +481,8 @@ class _RunDetailDialog(_DetailDialogBase):
         self.restore_btn.setStyleSheet(_ACTION_BTN)
         self.restore_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.restore_btn.setToolTip(tr(
-            "Reopens this run's review at the same place. Free - no credits."))
+            "Reopens this run's review at the same place, with its imagery. "
+            "Free, and it costs no cloud detections."))
         self.restore_btn.clicked.connect(
             lambda: self._lib._request_restore(self._run, self))
         actions.addWidget(self.restore_btn, 1)
@@ -514,7 +515,8 @@ class _RunDetailDialog(_DetailDialogBase):
         self.rerun_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.rerun_btn.setToolTip(tr(
             "Points the map back at this run with the same object and the same "
-            "number of tiles, ready to detect. Nothing is spent until you do."))
+            "number of cloud detections, ready to detect. Nothing is spent "
+            "until you do."))
         self.rerun_btn.clicked.connect(
             lambda: self._lib._request_rerun(self._run, self))
         primary.addWidget(self.rerun_btn, 1)

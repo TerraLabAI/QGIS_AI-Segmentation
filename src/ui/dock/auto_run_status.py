@@ -173,7 +173,7 @@ class DockAutoRunStatusMixin:
             count_txt = tr("Dense area {current}/{total}").format(
                 current=current, total=total)
         else:
-            count_txt = tr("Tile {current}/{total}").format(
+            count_txt = tr("Detection {current}/{total}").format(
                 current=current, total=total)
         if found > 0:
             found_txt = self._auto_found_so_far_text(found, count_txt)
@@ -391,7 +391,7 @@ class DockAutoRunStatusMixin:
             # work: the screen must not change until the review takes it.
             text = tr("Almost done - building the shapes...")
         elif self._auto_cancelling:
-            text = tr("Stopping - keeping the tiles already found...")
+            text = tr("Stopping - keeping everything already found...")
         elif total and current >= total:
             # Every answer is in, the run has not ended: the shapes are still
             # being folded on this thread. Without a line here the card is a full
@@ -405,8 +405,8 @@ class DockAutoRunStatusMixin:
             # Tiles landed and then stopped. The bar alone reads as a hang, and
             # the work already billed is lost if that reading makes the user
             # cancel, so name the cause and say the run is still on.
-            text = tr("Connection is slow - still working, tiles already found "
-                      "are kept...")
+            text = tr("Connection is slow - still working, everything already "
+                      "found is kept...")
         else:
             pos = getattr(self, "_auto_queue_position", 0)
             eta_s = getattr(self, "_auto_queue_eta", 0)

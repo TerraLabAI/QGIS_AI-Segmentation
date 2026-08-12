@@ -465,9 +465,12 @@ class ManualCropsMixin:
             # Online tile extraction blocks on the network (fetch + progressive
             # retry, up to ~18s). Drive it asynchronously so the GUI never
             # freezes; True means the crop FETCH started (the encode follows on
-            # completion), not that the crop is ready.
+            # completion), not that the crop is ready. A quiet read is a
+            # speculative one, and it goes through a private copy of the layer
+            # so the user's basemap is left alone.
             return self._begin_online_crop_fetch(
-                center_point, mupp_override, on_encoded)
+                center_point, mupp_override, on_encoded,
+                show_busy=show_busy, quiet=quiet)
 
         # File-based: the windowed read goes off the GUI thread too. It is fast
         # on a small local GeoTIFF, but on a big, heavily compressed or
@@ -480,8 +483,8 @@ class ManualCropsMixin:
             center_point, mupp_override, on_encoded,
             show_busy=show_busy, quiet=quiet)
 
-    def _set_manual_encoding_note(self, active: bool) -> None:
-        """Say in the panel that the imagery around the click is being read.
+    def _set_manual_encoding_note(self, active: bool, phase: str = "imagery") -> None:
+        """Say in the panel what the click is waiting on.
 
         For the 3 to 8 seconds an encode takes, the busy cursor was the only
         sign anything was happening, and it names nothing. Base Manual only: the
@@ -495,6 +498,9 @@ class ManualCropsMixin:
         if active and getattr(self, "_refine_handoff_active", False):
             return
         try:
+            dock.set_manual_encoding(bool(active), phase)
+        except TypeError:
+            # A dock from before the wait had two phases.
             dock.set_manual_encoding(bool(active))
         except (RuntimeError, AttributeError):
             pass
@@ -592,7 +598,10 @@ class ManualCropsMixin:
         if not self._current_raster_path:
             if quiet:
                 return None
-            message = tr("No raster file path available. Please restart segmentation.")
+            if self._crop_error_went_to_panel("crop_error_no_path"):
+                return None
+            message = tr("This layer has no file to read. Pick another layer at "
+                         "the top of the panel, then start again.")
             if self._headless:
                 self._headless_error = message
                 return None
@@ -645,6 +654,49 @@ class ManualCropsMixin:
             "ground_aspect": ground_aspect,
         }
 
+    def _crop_error_went_to_panel(self, error_code, center_point=None) -> bool:
+        """Try to answer a failed click with one line in the panel.
+
+        True when the notice took it and no dialog is owed. Wrong basemap,
+        wrong zoom, a click off the edge of the raster: the user fixes those in
+        one move, and asking them to mail logs for it was the whole complaint.
+        Which codes qualify, and what each one says, is in
+        core/click_error_advice.py.
+        """
+        from ...core.click_error_advice import click_error_notice
+
+        selected = ""
+        try:
+            selected = self._current_layer.name()
+        except (RuntimeError, AttributeError):  # nosec B110 -- layer gone
+            pass
+        notice = click_error_notice(
+            error_code or "", selected,
+            self._visible_raster_under_click(center_point))
+        if not notice:
+            return False
+        if self._headless:
+            self._headless_error = notice
+        else:
+            try:
+                self.dock_widget.show_manual_notice(notice)
+            except (RuntimeError, AttributeError):
+                # No panel to write on. Hand it back to the dialog, which
+                # fires its own event, so nothing is counted twice.
+                return False
+        # The dialog used to fire this event on its way up. These failures still
+        # need counting (how often a run dies on the wrong basemap is the whole
+        # reason to know), so the code travels even though the dialog does not.
+        # The sentence itself never does: it carries layer names.
+        try:
+            from ...core.telemetry_errors import track_plugin_error
+            track_plugin_error(
+                stage="segment", error_code=error_code or "crop_error_unknown",
+                message="")
+        except Exception:  # noqa: BLE001 -- telemetry never blocks a click
+            pass  # nosec B110
+        return True
+
     def _report_crop_error(self, error, error_code_from_crop, quiet=False) -> None:
         """Log and surface a file/online crop extraction failure on the MAIN
         thread. Shared by the synchronous path (_extract_crop_only) and the
@@ -655,6 +707,11 @@ class ManualCropsMixin:
             "AI Segmentation", level=Qgis.MessageLevel.Critical
         )
         if quiet:
+            return
+        # Before the dedup, not after: a notice is cheap to repeat, and the
+        # user who clicks the same wrong layer twice should read the same
+        # sentence twice rather than nothing at all.
+        if self._crop_error_went_to_panel(error_code_from_crop):
             return
         if error_code_from_crop == "crop_error_rasterio_unavailable":
             # The panel said ready but the in-process rasterio import
@@ -1274,13 +1331,28 @@ class ManualCropsMixin:
     # _encoding_in_progress) and replays once the crop is ready. On success the
     # crop hands off to the same async SAM encode as the file-based path.
 
-    def _begin_online_crop_fetch(self, center_point, mupp_override,
-                                 on_encoded) -> bool:
+    def _begin_online_crop_fetch(self, center_point, mupp_override, on_encoded,
+                                 *, show_busy: bool = True,
+                                 quiet: bool = False) -> bool:
         """Start the asynchronous online-tile crop fetch. Returns True when the
         fetch STARTED (the encode follows on completion), False when it could
-        not start (provider unavailable / setup error, already surfaced)."""
-        from ...core.feature_encoder import OnlineCropFetcher
+        not start (provider unavailable / setup error, already surfaced).
 
+        A SPECULATIVE fetch (``quiet``) reads through a private twin of the
+        layer and refuses to start without one. The fetch switches the provider
+        it reads to bilinear and makes it drop its tiles, and nobody asked for a
+        basemap that reloads under the cursor. Being unasked, it also wears no
+        busy cursor and reports no failure: the click behind it pays its own way
+        exactly as it always has.
+        """
+        from ...core.feature_encoder import OnlineCropFetcher
+        from ...core.online_layer_twin import online_layer_twin
+
+        read_layer = self._current_layer
+        if quiet:
+            read_layer = online_layer_twin(read_layer)
+            if read_layer is None:
+                return False
         actual_mupp = self._online_crop_mupp(mupp_override)
         if mupp_override is None:
             # No resolution was named, so no window was chosen either: put this
@@ -1300,18 +1372,18 @@ class ManualCropsMixin:
         self._inflight_crop_window = self._crop_window_key_for(
             center_point, actual_mupp)
         fetcher = OnlineCropFetcher(
-            self._current_layer, center_point.x(), center_point.y(),
+            read_layer, center_point.x(), center_point.y(),
             actual_mupp, crop_size=1024)
         if fetcher.error is not None:
             self._surface_online_crop_error(
-                fetcher.error, fetcher.error_code, center_point)
+                fetcher.error, fetcher.error_code, center_point, quiet=quiet)
             return False
         try:
             fetcher.begin()
         except Exception as e:  # noqa: BLE001 - never leave the provider mutated
             fetcher.restore()
             self._surface_online_crop_error(
-                str(e), "crop_error_online_exception", center_point)
+                str(e), "crop_error_online_exception", center_point, quiet=quiet)
             return False
 
         self._ensure_manual_encode_state()
@@ -1321,22 +1393,32 @@ class ManualCropsMixin:
             "fetcher": fetcher,
             "gen": gen,
             "on_encoded": on_encoded,
-            "cursor": True,
+            "cursor": bool(show_busy),
+            # Rides the fetch so a failure several steps later still knows
+            # nobody asked for this crop.
+            "quiet": bool(quiet),
             # The click this fetch serves, kept for the failure report: it is
             # what lets the report name the layer the user is actually seeing.
             "center": center_point,
         }
-        # The fetch owns the transport lock + busy cursor for its whole life. A
-        # click meanwhile defers via _encoding_in_progress and replays after the
-        # crop is ready. _encode_cursor_set mirrors the cursor so handoff
-        # gestures treat the fetch like a foreground encode.
+        # The fetch owns the transport lock for its whole life, and the busy
+        # cursor too when it has one. A click meanwhile defers via
+        # _encoding_in_progress and replays after the crop is ready.
+        # _encode_cursor_set mirrors the cursor so handoff gestures treat the
+        # fetch like a foreground encode, and so an unasked one stays
+        # abandonable (_abandon_speculative_manual_crop reads it).
         self._encoding_in_progress = True
-        self._encode_cursor_set = True
+        self._encode_cursor_set = bool(show_busy)
         self._encode_lock_gen = gen
-        QApplication.setOverrideCursor(Qt.CursorShape.BusyCursor)
-        self._set_manual_encoding_note(True)
+        if show_busy:
+            QApplication.setOverrideCursor(Qt.CursorShape.BusyCursor)
+            self._set_manual_encoding_note(True)
         self._arm_encode_watchdog()
-        QApplication.processEvents()
+        if show_busy:
+            # Let the cursor and the note paint before the first read blocks.
+            # A silent fetch has nothing to paint, so it skips the re-entrant
+            # pass through the event loop entirely.
+            QApplication.processEvents()
         self._step_online_crop_fetch()
         return True
 
@@ -1410,14 +1492,19 @@ class ManualCropsMixin:
         # Success: drop the fetch bookkeeping and pop the fetch's busy cursor,
         # then start the async encode (it re-asserts the lock + pushes its own
         # cursor, restored on the encode completion). The lock stays held across
-        # the handoff so a click cannot race in between.
+        # the handoff so a click cannot race in between. The encode inherits the
+        # fetch's cursor state, read HERE rather than at the start: a click that
+        # landed on a silent fetch promoted it to a foreground one, and the
+        # encode behind it belongs to that click.
         self._online_fetch = None
-        if fetch.get("cursor"):
+        show_busy = bool(fetch.get("cursor"))
+        if show_busy:
             try:
                 QApplication.restoreOverrideCursor()
             except Exception:  # nosec B110
                 pass
-        self._start_manual_encode(image_np, crop_info, on_encoded)
+        self._start_manual_encode(image_np, crop_info, on_encoded,
+                                  show_busy=show_busy)
 
     def _fail_online_fetch(self, error, error_code,
                            restore_provider: bool = True) -> None:
@@ -1426,8 +1513,10 @@ class ManualCropsMixin:
         and drop the deferred click (it cannot be honored)."""
         fetch = getattr(self, "_online_fetch", None) or {}
         center_point = fetch.get("center")
+        quiet = bool(fetch.get("quiet"))
         self._release_online_fetch(restore_provider=restore_provider)
-        self._surface_online_crop_error(error, error_code, center_point)
+        self._surface_online_crop_error(error, error_code, center_point,
+                                        quiet=quiet)
         self._discard_pending_manual_click()
 
     def _release_online_fetch(self, restore_provider: bool = True) -> None:
@@ -1456,7 +1545,8 @@ class ManualCropsMixin:
             self._set_manual_encoding_note(False)
 
     def _surface_online_crop_error(self, error, error_code,
-                                   center_point=None) -> None:
+                                   center_point=None,
+                                   quiet: bool = False) -> None:
         """Log + report an online crop-fetch failure on the GUI thread (mirrors
         the interactive branch of _extract_crop_only; online never returns the
         rasterio-unavailable code, so no venv recovery is wired here).
@@ -1467,29 +1557,30 @@ class ManualCropsMixin:
         the imagery they are LOOKING at comes from another layer underneath.
         Without the hint that reads as the plugin failing on a picture that is
         right there on screen.
+
+        ``quiet`` logs and stops there, for a crop nobody asked for: the click
+        that follows reads its own imagery and reports its own failure. It logs
+        as information, not as a fault. A preparation the user never asked for
+        must not colour the log red, or the first thing they see on a basemap
+        that answers slowly is a critical line about something that was going
+        to work anyway.
         """
+        if quiet:
+            QgsMessageLog.logMessage(
+                f"Prepared crop not read, the click will read its own: {error}",
+                "AI Segmentation", level=Qgis.MessageLevel.Info
+            )
+            return
         QgsMessageLog.logMessage(
             f"Crop extraction failed: {error}",
             "AI Segmentation", level=Qgis.MessageLevel.Critical
         )
-        shown = error
-        other = self._visible_raster_under_click(center_point)
-        if other:
-            selected = ""
-            try:
-                selected = self._current_layer.name()
-            except (RuntimeError, AttributeError):
-                pass
-            shown = tr(
-                'The selected layer "{selected}" returned no imagery '
-                'here. The image you see at this spot likely comes from '
-                '"{other}", another layer on your map. Select that layer '
-                'at the top of the panel, then click again.\n\n{details}'
-            ).format(selected=selected, other=other, details=error)
+        if self._crop_error_went_to_panel(error_code, center_point):
+            return
         show_error_report(
             self.iface.mainWindow(),
             tr("Crop Error"),
-            shown,
+            error,
             error_code=error_code or "crop_error_unknown",
         )
 
@@ -1566,13 +1657,11 @@ class ManualCropsMixin:
             center = self._transform_to_raster_crs(QgsPointXY(canvas.center()))
         except Exception:  # noqa: BLE001 - prewarm is best-effort, never blocks the session
             return
-        if self._is_online_layer:
-            # An online crop is read from the tile network on the GUI thread and
-            # blocks through its retry back-off; a speculative prewarm must never
-            # freeze QGIS for that. The first real click drives the async fetch.
-            return
         if not self._is_point_in_raster_extent(center):
             return  # view is off the raster; the first real click drives the encode
+        if self._is_online_layer:
+            self._prewarm_online_manual_encode(center)
+            return
         QgsMessageLog.logMessage(
             "Prewarming first crop at view center",
             "AI Segmentation", level=Qgis.MessageLevel.Info
@@ -1590,6 +1679,33 @@ class ManualCropsMixin:
             center.x(), center.y(), scale or 1.0, self._get_native_pixel_size())
         self._begin_file_crop_read(
             QgsPointXY(cx, cy), scale, None, quiet=True, show_busy=False)
+
+    def _prewarm_online_manual_encode(self, center) -> None:
+        """Same prewarm for a layer QGIS renders, read through a private copy.
+
+        A file raster starts a session with its first crop already in hand,
+        while a basemap user paid the whole imagery read at the click. The copy
+        is what makes the difference payable early: the tiles it downloads sit
+        in the shared cache, so the user's own layer answers the same ground
+        almost at once, and the layer on screen is never touched.
+
+        Best effort in every direction. With no copy to be had, or with the
+        served switch off, nothing is read and the first click drives its own
+        fetch, exactly as before. No resolution is named, so the fetch puts the
+        window on the shared grid itself, which is the window a click with
+        nothing in hand asks for.
+        """
+        from ...core.online_layer_twin import online_prewarm_enabled
+
+        if not online_prewarm_enabled():
+            return
+        QgsMessageLog.logMessage(
+            "Prewarming first crop at view center through a private copy "
+            "of the rendered layer",
+            "AI Segmentation", level=Qgis.MessageLevel.Info
+        )
+        self._extract_and_encode_crop(
+            center, mupp_override=None, show_busy=False, quiet=True)
 
     def _invalidate_manual_encode(self) -> None:
         """Invalidate any pending encode completion so it never touches

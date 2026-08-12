@@ -1,5 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE TS>
+<?xml version='1.0' encoding='utf-8'?>
 <TS version="2.1" language="id_ID">
 <context>
     <name>AISegmentation</name>
@@ -88,8 +87,8 @@
         <translation>Setujui Ketentuan dan Kebijakan Privasi untuk mengaktifkan segmentasi.</translation>
     </message>
     <message>
-        <source>I agree to the &lt;a href=&quot;{terms}&quot;&gt;Terms&lt;/a&gt; and &lt;a href=&quot;{privacy}&quot;&gt;Privacy Policy&lt;/a&gt;</source>
-        <translation>Saya menyetujui &lt;a href=&quot;{terms}&quot;&gt;Ketentuan&lt;/a&gt; dan &lt;a href=&quot;{privacy}&quot;&gt;Kebijakan Privasi&lt;/a&gt;</translation>
+        <source>I agree to the &lt;a href="{terms}"&gt;Terms&lt;/a&gt; and &lt;a href="{privacy}"&gt;Privacy Policy&lt;/a&gt;</source>
+        <translation>Saya menyetujui &lt;a href="{terms}"&gt;Ketentuan&lt;/a&gt; dan &lt;a href="{privacy}"&gt;Kebijakan Privasi&lt;/a&gt;</translation>
     </message>
     <message>
         <source>No valid polygons could be created from the selection. Try adjusting the refine settings or making a new selection.</source>
@@ -454,8 +453,8 @@ export AI_SEGMENTATION_CACHE_DIR=/jalur/anda</translation>
         <translation>Instalasi Diblokir</translation>
     </message>
     <message>
-        <source>Click is outside the &apos;{layer}&apos; raster. To segment another raster, stop the current segmentation first.</source>
-        <translation>Klik berada di luar raster &apos;{layer}&apos;. Untuk menyegmentasi raster lain, hentikan dulu segmentasi yang sedang berjalan.</translation>
+        <source>Click is outside the '{layer}' raster. To segment another raster, stop the current segmentation first.</source>
+        <translation>Klik berada di luar raster '{layer}'. Untuk menyegmentasi raster lain, hentikan dulu segmentasi yang sedang berjalan.</translation>
     </message>
     <message>
         <source>{ext} format is not directly supported. GDAL is not available.
@@ -510,10 +509,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Kesalahan Pemotongan</translation>
     </message>
     <message>
-        <source>No raster file path available. Please restart segmentation.</source>
-        <translation>Tidak ada jalur berkas raster yang tersedia. Silakan mulai ulang segmentasi.</translation>
-    </message>
-    <message>
         <source>Encoding Error</source>
         <translation>Kesalahan Enkode</translation>
     </message>
@@ -558,8 +553,8 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Masalah Koneksi Jaringan</translation>
     </message>
     <message>
-        <source>Your connection appears unstable or blocked. Check: (1) your internet is working, (2) QGIS > Settings > Options > Network has a proxy configured if you are on a corporate network, (3) your firewall allows connections to pypi.org and files.pythonhosted.org.</source>
-        <translation>Koneksi Anda tampak tidak stabil atau terblokir. Periksa: (1) apakah internet Anda berfungsi, (2) apakah QGIS > Settings > Options > Network memiliki proxy yang dikonfigurasi jika Anda berada di jaringan perusahaan, (3) apakah firewall Anda mengizinkan koneksi ke pypi.org dan files.pythonhosted.org.</translation>
+        <source>Your connection appears unstable or blocked. Check: (1) your internet is working, (2) QGIS &gt; Settings &gt; Options &gt; Network has a proxy configured if you are on a corporate network, (3) your firewall allows connections to pypi.org and files.pythonhosted.org.</source>
+        <translation>Koneksi Anda tampak tidak stabil atau terblokir. Periksa: (1) apakah internet Anda berfungsi, (2) apakah QGIS &gt; Settings &gt; Options &gt; Network memiliki proxy yang dikonfigurasi jika Anda berada di jaringan perusahaan, (3) apakah firewall Anda mengizinkan koneksi ke pypi.org dan files.pythonhosted.org.</translation>
     </message>
     <message>
         <source>Checking...</source>
@@ -622,20 +617,17 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Tidak terbuka? Buka halaman lagi</translation>
     </message>
     <message>
-        <source>Sign-in timed out. Click Connect to try again.</source>
-        <translation>Waktu masuk habis. Klik Hubungkan untuk mencoba lagi.</translation>
+        <source>Sign-in timed out. Click Sign in to try again.</source><translation>Masuk kedaluwarsa waktu. Klik Masuk untuk mencoba lagi.</translation>
     </message>
     <message>
-        <source>Sign-in was cancelled in the browser. Click Connect to try again.</source>
-        <translation>Proses masuk dibatalkan di peramban. Klik Hubungkan untuk mencoba lagi.</translation>
+        <source>Sign-in was cancelled in the browser. Click Sign in to try again.</source><translation>Masuk dibatalkan di browser. Klik Masuk untuk mencoba lagi.</translation>
     </message>
     <message>
         <source>Unexpected response from the server. Please try again.</source>
         <translation>Respons tak terduga dari server. Silakan coba lagi.</translation>
     </message>
     <message>
-        <source>This account has no active AI Segmentation plan. Reactivate it on terra-lab.ai, then click Connect again.</source>
-        <translation>Akun ini tidak memiliki paket AI Segmentation aktif. Aktifkan kembali di terra-lab.ai, lalu klik Hubungkan lagi.</translation>
+        <source>This account has no active AI Segmentation plan. Reactivate it on terra-lab.ai, then click Sign in again.</source><translation>Akun ini tidak memiliki paket AI Segmentation yang aktif. Aktifkan kembali di terra-lab.ai, lalu klik Masuk lagi.</translation>
     </message>
     <message>
         <source>Connecting AI Segmentation</source>
@@ -710,8 +702,7 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Batalkan deteksi</translation>
     </message>
     <message>
-        <source>Tile {current}/{total}</source>
-        <translation>Tile {current}/{total}</translation>
+        <source>Detection {current}/{total}</source><translation>Deteksi {current}/{total}</translation>
     </message>
     <message>
         <source>Spot reserved · starting in ~{eta}</source>
@@ -726,24 +717,20 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>{m} mnt</translation>
     </message>
     <message>
-        <source>{n} credits remaining</source>
-        <translation>{n} kredit tersisa</translation>
+        <source>{n} cloud detections remaining</source><translation>{n} deteksi cloud tersisa</translation>
     </message>
     <message>
-        <source>{n} free detection(s) remaining</source>
-        <translation>{n} deteksi gratis tersisa</translation>
+        <source>{n} free cloud detection(s) remaining</source><translation>{n} deteksi cloud gratis tersisa</translation>
     </message>
     <message>
-        <source>{remaining} / {total} credits</source>
-        <translation>{remaining} / {total} kredit</translation>
+        <source>{remaining} / {total} cloud detections</source><translation>{remaining} / {total} deteksi cloud</translation>
     </message>
     <message>
         <source>Auto detection (live)</source>
         <translation>Deteksi Otomatis (langsung)</translation>
     </message>
     <message>
-        <source>Preparing tiles...</source>
-        <translation>Menyiapkan tile...</translation>
+        <source>Preparing your zone...</source><translation>Mempersiapkan zona Anda...</translation>
     </message>
     <message>
         <source>Cancelling...</source>
@@ -838,8 +825,7 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Memuat pengaturan AI Segmentation</translation>
     </message>
     <message>
-        <source>Refreshing credits</source>
-        <translation>Memperbarui kredit</translation>
+        <source>Refreshing your cloud detections</source><translation>Menyegarkan deteksi cloud Anda</translation>
     </message>
     <message>
         <source>Warming up AI Segmentation</source>
@@ -942,8 +928,7 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Gunakan</translation>
     </message>
     <message>
-        <source>≈ {n} tiles = {n} credits</source>
-        <translation>≈ {n} tile = {n} kredit</translation>
+        <source>≈ {n} cloud detections</source><translation>≈ {n} deteksi cloud</translation>
     </message>
     <message>
         <source>Draw your example inside the selected zone.</source>
@@ -982,8 +967,7 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Buang deteksi ini?</translation>
     </message>
     <message>
-        <source>Your {total} detections will be discarded. You keep your zone, object and settings. Running Detect again will use new credits.</source>
-        <translation>{total} deteksi Anda akan dibuang. Zona, objek, dan pengaturan Anda tetap disimpan. Menjalankan Deteksi lagi akan menggunakan kredit baru.</translation>
+        <source>Your {total} detections will be discarded. You keep your zone, object and settings. Running Detect again spends new cloud detections.</source><translation>Deteksi {total} Anda akan dibuang. Anda menyimpan zona, objek, dan pengaturan. Menjalankan Detect lagi menghabiskan deteksi cloud baru.</translation>
     </message>
     <message>
         <source>Discard &amp;&amp; adjust</source>
@@ -1004,18 +988,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
     <message>
         <source>How many objects sit at each confidence level.</source>
         <translation>Berapa banyak objek berada pada setiap tingkat keyakinan.</translation>
-    </message>
-    <message>
-        <source>Every building, tree, or road as clean polygons</source>
-        <translation>Setiap bangunan, pohon, atau jalan sebagai poligon yang bersih</translation>
-    </message>
-    <message>
-        <source>Cancel anytime; your exported layers stay yours</source>
-        <translation>Batalkan kapan saja; lapisan yang telah diekspor tetap menjadi milik Anda</translation>
-    </message>
-    <message>
-        <source>Opens your TerraLab dashboard</source>
-        <translation>Membuka dasbor TerraLab Anda</translation>
     </message>
     <message>
         <source>Start Automatic AI Segmentation</source>
@@ -1134,12 +1106,10 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>OBJEK</translation>
     </message>
     <message>
-        <source>CREDITS</source>
-        <translation>KREDIT</translation>
+        <source>CHARGED</source><translation>DIKENAKAN BIAYA</translation>
     </message>
     <message>
-        <source>TILES</source>
-        <translation>TILE</translation>
+        <source>CLOUD DETECTIONS</source><translation>DETEKSI CLOUD</translation>
     </message>
     <message>
         <source>RESOLUTION</source>
@@ -1158,8 +1128,7 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Pulihkan ke peta</translation>
     </message>
     <message>
-        <source>Reopens this run's review at the same place. Free - no credits.</source>
-        <translation>Membuka kembali tinjauan proses ini di tempat yang sama. Gratis - tanpa kredit.</translation>
+        <source>Reopens this run's review at the same place, with its imagery. Free, and it costs no cloud detections.</source><translation>Membuka kembali tinjauan proses ini di tempat yang sama, dengan citranya. Gratis, dan tidak memerlukan biaya deteksi cloud.</translation>
     </message>
     <message>
         <source>Export...</source>
@@ -1302,8 +1271,7 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Satu warna per objek - periksa apakah objek yang bersebelahan terpisah</translation>
     </message>
     <message>
-        <source>Out of credits after {done}/{total} tiles. Your detections are kept below.</source>
-        <translation>Kredit habis setelah {done}/{total} tile. Deteksi Anda tetap disimpan di bawah.</translation>
+        <source>Out of cloud detections at {done}/{total}. Everything found so far is kept below and stays yours.</source><translation>Kehabisan deteksi cloud pada {done}/{total}. Semua yang ditemukan sejauh ini disimpan di bawah dan tetap milik Anda.</translation>
     </message>
     <message>
         <source>Outlines only - check boundaries against the imagery</source>
@@ -1394,12 +1362,10 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>Zona terlalu besar. Perkecil area menjadi {max} tile atau kurang.</translation>
     </message>
     <message>
-        <source>{n} of {total} free detections left</source>
-        <translation>{n} dari {total} deteksi gratis tersisa</translation>
+        <source>{n} of {total} free cloud detections left</source><translation>{n} dari {total} deteksi cloud gratis tersisa</translation>
     </message>
     <message>
-        <source>≈ 1 tile = 1 credit</source>
-        <translation>≈ 1 tile = 1 kredit</translation>
+        <source>≈ 1 cloud detection</source><translation>≈ 1 deteksi cloud</translation>
     </message>
     <message>
         <source>all shown</source>
@@ -1470,8 +1436,7 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
         <translation>0 ditampilkan - turunkan filter Ukuran min untuk menampilkannya</translation>
     </message>
     <message>
-        <source>5,000 credits every month. Cancel anytime.</source>
-        <translation>5.000 kredit setiap bulan. Batalkan kapan saja.</translation>
+        <source>5,000 cloud detections every month, zones of any size. Cancel anytime.</source><translation>5.000 deteksi cloud setiap bulan, zona dengan ukuran apa pun. Batalkan kapan saja.</translation>
     </message>
     <message>
         <source>A Component Failed to Load</source>
@@ -1532,8 +1497,7 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Objek terdeteksi</translation>
     </message>
     <message>
-        <source>Detection failed. Please try again.</source>
-        <translation>Deteksi gagal. Silakan coba lagi.</translation>
+        <source>Detection failed. Run Detect again, and lower the precision if it fails a second time.</source><translation>Deteksi gagal. Jalankan Detect lagi, dan turunkan presisi jika gagal kali kedua.</translation>
     </message>
     <message>
         <source>Downloaded AI data removed. You have been signed out.</source>
@@ -1763,22 +1727,15 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <source>{n} found so far</source>
         <translation>{n} ditemukan sejauh ini</translation>
     </message>
-    <!-- v2.1.7 sync: append-to-layer export, singular forms, small-example guidance (2026-07-13) -->
-    <message>
-        <source>5,000 detections every month</source>
-        <translation>5.000 deteksi setiap bulan</translation>
-    </message>
+    
     <message>
         <source>This zone is {area} km². Free zones stop at {max} km².</source>
         <translation>Zona ini {area} km². Zona gratis sampai {max} km².</translation>
     </message>
+
     <message>
-        <source>Pro has no size limit. Any area you draw, 5,000 tiles a month, maximum detail.</source>
-        <translation>Pro tidak punya batas ukuran. Area sebesar apa pun, 5.000 ubin per bulan, detail maksimum.</translation>
-    </message>
-    <message>
-        <source>&lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt;, or make this zone smaller.</source>
-        <translation>&lt;a href=&quot;{url}&quot;&gt;Tingkatkan ke Pro&lt;/a&gt;, atau perkecil zona ini.</translation>
+        <source>&lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to run this zone as drawn, or make it smaller.</source>
+        <translation>&lt;a href="{url}"&gt;Upgrade ke Pro&lt;/a&gt; untuk menjalankan zona ini seperti yang digambar, atau buat lebih kecil.</translation>
     </message>
     <message>
         <source>Sending to the AI...</source>
@@ -1793,8 +1750,7 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Slot dicadangkan · segera dimulai...</translation>
     </message>
     <message>
-        <source>Stopping - keeping the tiles already found...</source>
-        <translation>Menghentikan - tile yang sudah ditemukan tetap disimpan...</translation>
+        <source>Stopping - keeping everything already found...</source><translation>Berhenti - menyimpan semua yang sudah ditemukan...</translation>
     </message>
     <message>
         <source>Stopping...</source>
@@ -1849,12 +1805,12 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Deteksi gratis Anda telah habis</translation>
     </message>
     <message>
-        <source>&quot;{obj}&quot; is not an object the AI knows well. Drawing one example on the map shows it what to find.</source>
-        <translation>&quot;{obj}&quot; bukan objek yang dikenal baik oleh AI. Menggambar satu contoh di peta menunjukkan apa yang harus dicari.</translation>
+        <source>"{obj}" is not an object the AI knows well. Drawing one example on the map shows it what to find.</source>
+        <translation>"{obj}" bukan objek yang dikenal baik oleh AI. Menggambar satu contoh di peta menunjukkan apa yang harus dicari.</translation>
     </message>
     <message>
-        <source>&quot;{obj}&quot; is often missed from text alone. Draw one example on the map to find far more.</source>
-        <translation>&quot;{obj}&quot; sering terlewat jika hanya dari teks. Gambar satu contoh di peta untuk menemukan jauh lebih banyak.</translation>
+        <source>"{obj}" is often missed from text alone. Draw one example on the map to find far more.</source>
+        <translation>"{obj}" sering terlewat jika hanya dari teks. Gambar satu contoh di peta untuk menemukan jauh lebih banyak.</translation>
     </message>
     <message>
         <source>1 correction this round</source>
@@ -1891,10 +1847,6 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
     <message>
         <source>Add a missing polygon</source>
         <translation>Tambahkan poligon yang hilang</translation>
-    </message>
-    <message>
-        <source>Add an object the AI missed. In AI, point at it and the on-device model outlines it, free; in Manual, draw its corners.</source>
-        <translation>Tambahkan objek yang terlewat oleh AI. Di AI, arahkan ke objek tersebut dan model di perangkat akan menggambar garis di sekelilingnya, gratis; di Manual, gambar sudut-sudutnya.</translation>
     </message>
     <message>
         <source>Add another example - more references detect more</source>
@@ -2053,8 +2005,7 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Tidak dapat memeriksa komponen AI. Lihat log untuk detailnya.</translation>
     </message>
     <message>
-        <source>Credits come back on {date}</source>
-        <translation>Kredit kembali pada {date}</translation>
+        <source>Your cloud detections come back on {date}</source><translation>Deteksi cloud Anda kembali pada {date}</translation>
     </message>
     <message>
         <source>Crop fetch was cancelled.</source>
@@ -2085,12 +2036,11 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Area padat {current}/{total}</translation>
     </message>
     <message>
-        <source>Dense forest? &quot;Forest&quot; takes it as one block; &quot;Tree&quot; picks individual trees.</source>
-        <translation>Hutan lebat? &quot;Forest&quot; memperlakukannya sebagai satu blok; &quot;Tree&quot; memilih pohon satu per satu.</translation>
+        <source>Dense forest? "Forest" takes it as one block; "Tree" picks individual trees.</source>
+        <translation>Hutan lebat? "Forest" memperlakukannya sebagai satu blok; "Tree" memilih pohon satu per satu.</translation>
     </message>
     <message>
-        <source>Detection stopped early after {done} tile(s). The objects already found are kept below.</source>
-        <translation>Deteksi berhenti lebih awal setelah {done} tile. Objek yang sudah ditemukan tetap disimpan di bawah.</translation>
+        <source>Detection stopped early after {done} cloud detection(s). Everything found is kept below and stays yours.</source><translation>Deteksi berhenti lebih awal setelah {done} deteksi cloud. Semua yang ditemukan disimpan di bawah dan tetap milik Anda.</translation>
     </message>
     <message>
         <source>Discard reviewed results and run again? Confirm</source>
@@ -2109,7 +2059,7 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Seret sudut untuk memindahkannya. Klik dua kali tepi untuk menambahkan satu.</translation>
     </message>
     <message>
-        <source>Drag, add or delete the object&apos;s corners by hand.</source>
+        <source>Drag, add or delete the object's corners by hand.</source>
         <translation>Seret, tambahkan, atau hapus sudut objek secara manual.</translation>
     </message>
     <message>
@@ -2129,8 +2079,8 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Gambar sudut-sudutnya</translation>
     </message>
     <message>
-        <source>Draw one &apos;{object}&apos; - the AI finds the rest</source>
-        <translation>Gambar satu &apos;{object}&apos; - AI menemukan sisanya</translation>
+        <source>Draw one '{object}' - the AI finds the rest</source>
+        <translation>Gambar satu '{object}' - AI menemukan sisanya</translation>
     </message>
     <message>
         <source>Draw one example - the AI finds the rest</source>
@@ -2153,7 +2103,7 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Hapus titik yang lebih dekat dari jarak ini ke tepi lurus (0 = nonaktif). Ini jarak, bukan jumlah: jika dinaikkan tinggi dapat meratakan dinding melengkung. Titik biasanya menjadi pengaturan yang lebih baik; opsi ini tetap ada untuk perbandingan.</translation>
     </message>
     <message>
-        <source>Drop this polygon&apos;s points closer than this distance to a straight edge (0 = off). A distance, not a count; Points is usually the better dial.</source>
+        <source>Drop this polygon's points closer than this distance to a straight edge (0 = off). A distance, not a count; Points is usually the better dial.</source>
         <translation>Hapus titik poligon ini yang lebih dekat dari jarak ini ke tepi lurus (0 = nonaktif). Ini jarak, bukan jumlah; Titik biasanya menjadi pengaturan yang lebih baik.</translation>
     </message>
     <message>
@@ -2209,7 +2159,7 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Bagaimana deteksi diwarnai di peta (hanya visual): isian Normal, Garis luar, heatmap Keyakinan, atau warna berbeda per objek untuk membedakannya.</translation>
     </message>
     <message>
-        <source>How many of this polygon&apos;s points to keep. The count in the title row follows it. It runs before Right angles, so lowering it gives the squaring straight walls instead of a staircase.</source>
+        <source>How many of this polygon's points to keep. The count in the title row follows it. It runs before Right angles, so lowering it gives the squaring straight walls instead of a staircase.</source>
         <translation>Seberapa banyak titik poligon ini yang dipertahankan. Jumlah pada baris judul mengikuti nilai ini. Ini berjalan sebelum Sudut siku-siku, sehingga menurunkannya menghasilkan dinding lurus, bukan bentuk bertangga.</translation>
     </message>
     <message>
@@ -2321,16 +2271,14 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Bentuk baru ditambahkan. Klik Simpan untuk mempertahankannya.</translation>
     </message>
     <message>
-        <source>No connection to the sign-in service. Check your internet connection, then click Connect to try again.</source>
-        <translation>Tidak ada koneksi ke layanan masuk. Periksa koneksi internet Anda, lalu klik Hubungkan untuk mencoba lagi.</translation>
+        <source>No connection to the sign-in service. Check your internet connection, then click Sign in to try again.</source><translation>Tidak ada koneksi ke layanan masuk. Periksa koneksi internet Anda, lalu klik Masuk untuk mencoba lagi.</translation>
     </message>
     <message>
         <source>No detection under that click.</source>
         <translation>Tidak ada deteksi pada titik klik itu.</translation>
     </message>
     <message>
-        <source>No matches in this zone.</source>
-        <translation>Tidak ada kecocokan di zona ini.</translation>
+        <source>No matches in this zone. A different object word often fixes it.</source><translation>Tidak ada kecocokan di zona ini. Kata objek yang berbeda sering kali memperbaikinya.</translation>
     </message>
     <message>
         <source>No object matches that search.</source>
@@ -2357,12 +2305,12 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Satu objek kembali terpisah menjadi beberapa poligon. Klik yang lainnya di peta, lalu konfirmasi untuk menggabungkannya menjadi satu.</translation>
     </message>
     <message>
-        <source>One object per run - Detect will run &quot;{first}&quot; first.</source>
-        <translation>Satu objek per proses - Deteksi akan menjalankan &quot;{first}&quot; terlebih dahulu.</translation>
+        <source>One object per run - Detect will run "{first}" first.</source>
+        <translation>Satu objek per proses - Deteksi akan menjalankan "{first}" terlebih dahulu.</translation>
     </message>
     <message>
-        <source>One object per run - detecting &quot;{first}&quot; now. Run the other objects as separate detections.</source>
-        <translation>Satu objek per proses - sedang mendeteksi &quot;{first}&quot; sekarang. Jalankan objek lain sebagai deteksi terpisah.</translation>
+        <source>One object per run - detecting "{first}" now. Run the other objects as separate detections.</source>
+        <translation>Satu objek per proses - sedang mendeteksi "{first}" sekarang. Jalankan objek lain sebagai deteksi terpisah.</translation>
     </message>
     <message>
         <source>Open the selected saved polygon for AI editing</source>
@@ -2397,8 +2345,7 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Titik</translation>
     </message>
     <message>
-        <source>Points the map back at this run with the same object and the same number of tiles, ready to detect. Nothing is spent until you do.</source>
-        <translation>Mengarahkan peta kembali ke proses ini dengan objek dan jumlah tile yang sama, siap untuk dideteksi. Tidak ada kredit yang digunakan sampai Anda menjalankannya.</translation>
+        <source>Points the map back at this run with the same object and the same number of cloud detections, ready to detect. Nothing is spent until you do.</source><translation>Mengarahkan peta kembali ke proses ini dengan objek yang sama dan jumlah deteksi cloud yang sama, siap untuk mendeteksi. Tidak ada yang dihabiskan sampai Anda melakukannya.</translation>
     </message>
     <message>
         <source>Points: {n}</source>
@@ -2413,7 +2360,7 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Autentikasi Proxy Diperlukan</translation>
     </message>
     <message>
-        <source>Push this polygon&apos;s edge out (positive) or in (negative), for the one footprint the model cut short or overran.</source>
+        <source>Push this polygon's edge out (positive) or in (negative), for the one footprint the model cut short or overran.</source>
         <translation>Dorong tepi poligon ini keluar (positif) atau ke dalam (negatif), untuk satu jejak yang dipotong terlalu pendek atau berlebih oleh model.</translation>
     </message>
     <message>
@@ -2489,7 +2436,7 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Bulatkan sudut untuk bentuk alami seperti pohon dan semak. Turunkan Titik untuk hasil yang lebih halus.</translation>
     </message>
     <message>
-        <source>Round this polygon&apos;s corners, for a tree or a pond among squared neighbours.</source>
+        <source>Round this polygon's corners, for a tree or a pond among squared neighbours.</source>
         <translation>Bulatkan sudut poligon ini, untuk pohon atau kolam di antara objek tetangga yang bersudut siku.</translation>
     </message>
     <message>
@@ -2521,7 +2468,7 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Batas bersama:</translation>
     </message>
     <message>
-        <source>Shave thin spikes and ragged bits off each shape&apos;s outline. It leaves the main body alone; higher values trim more. 0 = off.</source>
+        <source>Shave thin spikes and ragged bits off each shape's outline. It leaves the main body alone; higher values trim more. 0 = off.</source>
         <translation>Kikis duri tipis dan bagian tidak rata dari garis luar tiap bentuk. Bagian utama tidak disentuh; nilai lebih tinggi memangkas lebih banyak. 0 = nonaktif.</translation>
     </message>
     <message>
@@ -2549,7 +2496,7 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Pisahkan</translation>
     </message>
     <message>
-        <source>Square this polygon&apos;s edges, or leave them as traced while the rest of the layer stays squared.</source>
+        <source>Square this polygon's edges, or leave them as traced while the rest of the layer stays squared.</source>
         <translation>Sikukan tepi poligon ini, atau biarkan sesuai bentuk aslinya sementara lapisan lainnya tetap disikukan.</translation>
     </message>
     <message>
@@ -2573,20 +2520,8 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Area ini tidak menyentuh objek yang sedang Anda edit, sehingga tidak ada yang ditambahkan. Bentuk ulang bekerja pada satu objek dalam satu waktu.</translation>
     </message>
     <message>
-        <source>That ground belongs to another object, so nothing was added. Edit that object instead, or join the two with Merge with neighbours.</source>
-        <translation>Tanah itu milik objek lain, sehingga tidak ada yang ditambahkan. Edit objek itu sebagai gantinya, atau gabungkan keduanya dengan Gabungkan dengan tetangga.</translation>
-    </message>
-    <message>
-        <source>That is another object. The one you were editing is saved, and this one is now selected.</source>
-        <translation>Itu objek lain. Objek yang sedang Anda edit telah disimpan, dan objek ini sekarang dipilih.</translation>
-    </message>
-    <message>
         <source>The AI finds every object that looks like your examples - you can draw up to 3.</source>
         <translation>AI menemukan setiap objek yang mirip dengan contoh Anda - Anda dapat menggambar hingga 3.</translation>
-    </message>
-    <message>
-        <source>The AI outlines it, free, on your computer.</source>
-        <translation>AI menggambar garis di sekelilingnya, gratis, di komputer Anda.</translation>
     </message>
     <message>
         <source>The connection to the server was interrupted. Please try again.</source>
@@ -2597,8 +2532,7 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Layanan deteksi mengalami masalah dan proses terhenti. Silakan coba lagi.</translation>
     </message>
     <message>
-        <source>The detection stopped responding. Keeping the {n} tiles already found.</source>
-        <translation>Deteksi berhenti merespons. {n} tile yang sudah ditemukan tetap disimpan.</translation>
+        <source>The detection stopped responding. Keeping the {n} cloud detection(s) already paid for.</source><translation>Deteksi berhenti merespons. Mempertahankan {n} deteksi cloud yang sudah dibayar.</translation>
     </message>
     <message>
         <source>The imagery reader could not be loaded, and repairing the installation did not fix it. Please report this so we can look into it.
@@ -2633,7 +2567,7 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Server mengembalikan respons yang tidak terduga. Silakan coba lagi.</translation>
     </message>
     <message>
-        <source>Thin this polygon&apos;s points before you edit them by hand. 100% keeps the outline as it is.</source>
+        <source>Thin this polygon's points before you edit them by hand. 100% keeps the outline as it is.</source>
         <translation>Tipiskan titik poligon ini sebelum Anda mengeditnya secara manual. 100% mempertahankan garis luar apa adanya.</translation>
     </message>
     <message>
@@ -2697,10 +2631,6 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Menulis berkas...</translation>
     </message>
     <message>
-        <source>You place the corners, the same as on any QGIS layer.</source>
-        <translation>Anda menempatkan sudut, sama seperti pada lapisan QGIS mana pun.</translation>
-    </message>
-    <message>
         <source>Your examples drive the search - naming the object makes it even more accurate.</source>
         <translation>Contoh Anda menentukan arah pencarian - memberi nama objek membuatnya lebih akurat lagi.</translation>
     </message>
@@ -2753,16 +2683,15 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>{count} verteks</translation>
     </message>
     <message>
-        <source>{credits} credits</source>
-        <translation>{credits} kredit</translation>
+        <source>{credits} charged</source><translation>{credits} dikenakan biaya</translation>
     </message>
     <message>
         <source>{hidden} hidden by the filters</source>
         <translation>{hidden} disembunyikan oleh filter</translation>
     </message>
     <message>
-        <source>{n} &quot;{object}&quot; found so far</source>
-        <translation>{n} &quot;{object}&quot; ditemukan sejauh ini</translation>
+        <source>{n} "{object}" found so far</source>
+        <translation>{n} "{object}" ditemukan sejauh ini</translation>
     </message>
     <message>
         <source>{n} corrections this round</source>
@@ -2801,8 +2730,7 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>{n} bentuk dipilih. Tekan Enter untuk menggabungkan.</translation>
     </message>
     <message>
-        <source>{n} tile(s) took too long to load and are missing from this result.</source>
-        <translation>{n} tile terlalu lama dimuat dan hilang dari hasil ini.</translation>
+        <source>{n} part(s) of this run took too long to load and are missing from this result.</source><translation>{n} bagian proses ini memerlukan waktu terlalu lama untuk dimuat dan hilang dari hasil ini.</translation>
     </message>
     <message>
         <source>{n} weeks ago</source>
@@ -2813,17 +2741,14 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>{n} tahun yang lalu</translation>
     </message>
     <message>
-        <source>{tiles} tiles</source>
-        <translation>{tiles} tile</translation>
+        <source>{tiles} cloud detections</source><translation>{tiles} deteksi cloud</translation>
     </message>
-    <!-- Correct step rework, install and precision wording (2026-07-30) -->
+    
     <message>
-        <source>5,000 credits a month.</source>
-        <translation>5.000 kredit per bulan.</translation>
+        <source>Pro: 5,000 cloud detections a month, zones of any size, up to 800 cloud detections in one run. Same AI, same free clicks and corrections, every machine you work on.</source><translation>Pro: 5.000 deteksi cloud setiap bulan, zona dengan ukuran apa pun, hingga 800 deteksi cloud dalam satu proses. AI yang sama, klik gratis yang sama dan koreksi, setiap mesin yang Anda gunakan.</translation>
     </message>
     <message>
-        <source>A free run covers up to {cap} credits. This one costs more.</source>
-        <translation>Proses gratis mencakup hingga {cap} kredit. Proses ini menggunakan lebih banyak.</translation>
+        <source>A free run covers up to {cap} cloud detections. This one needs more. Pro covers up to 800 in one run.</source><translation>Proses gratis mencakup hingga {cap} deteksi cloud. Yang ini memerlukan lebih banyak. Pro mencakup hingga 800 dalam satu proses.</translation>
     </message>
     <message>
         <source>Adding an object uses the free on-device AI, which is not installed yet. Install it now? It runs once and takes a few minutes. The review waits for it, then arms Add for you.</source>
@@ -2834,8 +2759,7 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Pada presisi ini {obj} terlalu kecil untuk dikenali - naikkan presisi.</translation>
     </message>
     <message>
-        <source>Automatic mode scans your zone tile by tile. 1 tile = 1 credit, so this run costs about {n} credits. More precision splits the zone into more tiles, which costs more credits.</source>
-        <translation>Mode Otomatis memindai zona Anda tile demi tile. 1 tile = 1 kredit, sehingga proses ini menggunakan sekitar {n} kredit. Presisi yang lebih tinggi membagi zona menjadi lebih banyak tile, yang menggunakan lebih banyak kredit.</translation>
+        <source>Automatic mode sweeps your zone in a grid. Each grid cell costs one cloud detection, so this run costs about {n}. More precision means a finer grid and more cloud detections.</source><translation>Mode Otomatis menyapu zona Anda dalam grid. Setiap sel grid memerlukan satu deteksi cloud, jadi proses ini akan memerlukan sekitar {n}. Presisi lebih tinggi berarti grid yang lebih halus dan lebih banyak deteksi cloud.</translation>
     </message>
     <message>
         <source>Cancel setup</source>
@@ -2862,8 +2786,7 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Klik untuk membuka dasbor Anda</translation>
     </message>
     <message>
-        <source>Connection is slow - still working, tiles already found are kept...</source>
-        <translation>Koneksi lambat - masih berjalan, tile yang sudah ditemukan tetap disimpan...</translation>
+        <source>Connection is slow - still working, everything already found is kept...</source><translation>Koneksi lambat - masih bekerja, semua yang sudah ditemukan disimpan...</translation>
     </message>
     <message>
         <source>Could not save your detections to a file.</source>
@@ -2898,12 +2821,7 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Membantu kami memperbaiki bug lebih cepat.</translation>
     </message>
     <message>
-        <source>Higher precision splits the zone into more tiles. Each tile costs 1 credit and captures smaller objects.</source>
-        <translation>Presisi yang lebih tinggi membagi zona menjadi lebih banyak tile. Setiap tile berharga 1 kredit dan menangkap objek yang lebih kecil.</translation>
-    </message>
-    <message>
-        <source>Keep detecting without limits:</source>
-        <translation>Tetap mendeteksi tanpa batas:</translation>
+        <source>More precision sweeps your zone in a finer grid, so it catches smaller objects. Each grid cell costs one cloud detection.</source><translation>Presisi lebih tinggi menyapu zona Anda dalam grid yang lebih halus, sehingga menangkap objek yang lebih kecil. Setiap sel grid memerlukan satu deteksi cloud.</translation>
     </message>
     <message>
         <source>Keep installing</source>
@@ -2926,8 +2844,7 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Presisi maksimum untuk zona ini - gambar zona yang lebih besar untuk presisi yang lebih halus.</translation>
     </message>
     <message>
-        <source>More precision cuts the zone into more tiles and costs more credits.</source>
-        <translation>Presisi yang lebih tinggi membagi zona menjadi lebih banyak tile dan menggunakan lebih banyak kredit.</translation>
+        <source>More precision finds smaller objects and uses more cloud detections.</source><translation>Presisi lebih tinggi menemukan objek yang lebih kecil dan menggunakan lebih banyak deteksi cloud.</translation>
     </message>
     <message>
         <source>More precision finds smaller objects.</source>
@@ -2958,12 +2875,10 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Tidak ada gambar di atas zona ini pada presisi ini, sehingga tidak ada yang dianalisis (tidak dikenai biaya). Turunkan Presisi, atau pilih lapisan yang mencakup area ini.</translation>
     </message>
     <message>
-        <source>Not enough credits: {n} tiles, only {left} left. Lower the precision or the zone.</source>
-        <translation>Kredit tidak cukup: {n} tile, hanya tersisa {left}. Turunkan presisi atau zona.</translation>
+        <source>This run needs {n} cloud detections and you have {left} left. Lower the precision or shrink the zone. Pro gives you 5,000 cloud detections a month.</source><translation>Proses ini memerlukan {n} deteksi cloud dan Anda memiliki {left} tersisa. Turunkan presisi atau perkecil zona. Pro memberi Anda 5.000 deteksi cloud setiap bulan.</translation>
     </message>
     <message>
-        <source>Opens your terra-lab.ai dashboard: your plan, your credits and your payment details.</source>
-        <translation>Membuka dasbor terra-lab.ai Anda: paket Anda, kredit Anda, dan detail pembayaran Anda.</translation>
+        <source>Opens your terra-lab.ai dashboard: your plan, your cloud detections and your payment details.</source><translation>Membuka dasbor terra-lab.ai Anda: paket Anda, deteksi cloud Anda dan detail pembayaran Anda.</translation>
     </message>
     <message>
         <source>Outline settings</source>
@@ -2978,12 +2893,12 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Siap untuk mode Otomatis</translation>
     </message>
     <message>
-        <source>Running low: {n} free detections left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
-        <translation>Hampir habis: {n} deteksi gratis tersisa, kembali pada {date}. &lt;a href=&quot;{url}&quot;&gt;Tingkatkan ke Pro&lt;/a&gt; untuk terus melanjutkan.</translation>
+        <source>Running low: {n} free detections left, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Hampir habis: {n} deteksi gratis tersisa, kembali pada {date}. &lt;a href="{url}"&gt;Tingkatkan ke Pro&lt;/a&gt; untuk terus melanjutkan.</translation>
     </message>
     <message>
-        <source>Running low: {n} free detections left. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
-        <translation>Hampir habis: {n} deteksi gratis tersisa. &lt;a href=&quot;{url}&quot;&gt;Tingkatkan ke Pro&lt;/a&gt; untuk terus melanjutkan.</translation>
+        <source>Running low: {n} free detections left. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Hampir habis: {n} deteksi gratis tersisa. &lt;a href="{url}"&gt;Tingkatkan ke Pro&lt;/a&gt; untuk terus melanjutkan.</translation>
     </message>
     <message>
         <source>Same setup as your last run - the result will match. Add an example or change the precision for a different result.</source>
@@ -3034,8 +2949,7 @@ Nilai lebih rendah menipiskan detail terkecil lebih dulu, mempertahankan sudut, 
         <translation>Hentikan pengaturan?</translation>
     </message>
     <message>
-        <source>The detection stopped responding before any tile came back. Check your connection, then run Detect again (nothing was charged).</source>
-        <translation>Deteksi berhenti merespons sebelum ada tile yang kembali. Periksa koneksi Anda, lalu jalankan Deteksi lagi (tidak dikenai biaya).</translation>
+        <source>The detection stopped responding before anything came back. Check your connection, then run Detect again (nothing was charged).</source><translation>Deteksi berhenti merespons sebelum apa pun kembali. Periksa koneksi Anda, lalu jalankan Detect lagi (tidak ada yang dikenakan biaya).</translation>
     </message>
     <message>
         <source>The file may be open in QGIS or in another program. Close it and try Finish again.</source>
@@ -3108,28 +3022,24 @@ Berkas ini mungkin telah dipindahkan atau diganti namanya, atau drive atau folde
         <translation>Hanya poligon ini. Titik yang lebih sedikit berarti sudut yang lebih sedikit untuk diseret.</translation>
     </message>
     <message>
-        <source>This run costs more credits than a free run covers.</source>
-        <translation>Proses ini menggunakan lebih banyak kredit daripada yang dicakup oleh proses gratis.</translation>
+        <source>This run needs more cloud detections than one free run covers. Pro covers up to 800 in one run.</source><translation>Proses ini memerlukan lebih banyak deteksi cloud daripada yang dicakup satu proses gratis. Pro mencakup hingga 800 dalam satu proses.</translation>
     </message>
     <message>
-        <source>This zone at this precision needs a subscription. Lower the precision or the zone to stay free.</source>
-        <translation>Zona pada presisi ini memerlukan langganan. Turunkan presisi atau zona untuk tetap gratis.</translation>
+        <source>One free run covers fewer cloud detections than this. Lower the precision or shrink the zone to stay free. Pro runs up to 800 cloud detections in one go, so a wide zone keeps a fine grid.</source><translation>Satu proses gratis mencakup lebih sedikit deteksi cloud daripada ini. Turunkan presisi atau perkecil zona agar tetap gratis. Pro menjalankan hingga 800 deteksi cloud dalam satu kali, jadi zona yang luas menjaga grid yang halus.</translation>
     </message>
     <message>
         <source>This zone is too large for sharp detections, even at full precision. Draw a smaller zone for the best results.</source>
         <translation>Zona ini terlalu luas untuk deteksi yang tajam, bahkan pada presisi penuh. Gambar zona yang lebih kecil untuk hasil terbaik.</translation>
     </message>
     <message>
-        <source>Tiles your layer has no image for are dropped before they are sent, so a run can cost less than this, never more.</source>
-        <translation>Tile yang tidak memiliki gambar pada lapisan Anda dilewati sebelum dikirim, sehingga proses ini bisa berbiaya lebih rendah dari perkiraan ini, tidak pernah lebih tinggi.</translation>
+        <source>You are never charged for a part of the zone your layer has no image for, so a run can cost less than this, never more.</source><translation>Anda tidak akan pernah dikenai biaya untuk bagian zona yang layer Anda tidak memiliki gambar, jadi proses dapat menelan biaya lebih sedikit dari ini, tidak pernah lebih.</translation>
     </message>
     <message>
         <source>Type a word for the object, or draw an example.</source>
         <translation>Ketik kata untuk objek, atau gambar contoh.</translation>
     </message>
     <message>
-        <source>Upgrade to Pro to finish this zone: 5,000 credits/month.</source>
-        <translation>Tingkatkan ke Pro untuk menyelesaikan zona ini: 5.000 kredit/bulan.</translation>
+        <source>Finish this zone with Pro: 5,000 cloud detections a month.</source><translation>Selesaikan zona ini dengan Pro: 5.000 deteksi cloud setiap bulan.</translation>
     </message>
     <message>
         <source>Wait for the on-device AI to finish installing.</source>
@@ -3143,11 +3053,7 @@ Berkas ini mungkin telah dipindahkan atau diganti namanya, atau drive atau folde
         <source>{n} {object} saved to {layer}</source>
         <translation>{n} {object} disimpan ke {layer}</translation>
     </message>
-    <!-- Correct-step on-device AI setup, free-run cap wording, missing raster (2026-07-30) -->
-    <message>
-        <source>5,000 objects every month</source>
-        <translation>5.000 objek setiap bulan</translation>
-    </message>
+    
     <message>
         <source>A session is already running.</source>
         <translation>Sesi sudah berjalan.</translation>
@@ -3163,10 +3069,6 @@ Berkas ini mungkin telah dipindahkan atau diganti namanya, atau drive atau folde
     <message>
         <source>AI ready</source>
         <translation>AI siap</translation>
-    </message>
-    <message>
-        <source>Add an object the AI missed. In AI, point at it and the model outlines it, free; in Manual, draw its corners.</source>
-        <translation>Tambahkan objek yang terlewat oleh AI. Di AI, arahkan ke objek tersebut dan model akan menggambar garis di sekelilingnya, gratis; di Manual, gambar sudut-sudutnya.</translation>
     </message>
     <message>
         <source>Almost ready: the AI file did not download.</source>
@@ -3245,20 +3147,14 @@ Berkas ini mungkin telah dipindahkan atau diganti namanya, atau drive atau folde
         <translation>Setiap klik mengirim potongan kecil gambar ke server kami di Eropa, dan garis luarnya akan kembali.</translation>
     </message>
     <message>
-        <source>Ends this session. Your saved polygons are kept.</source>
-        <translation>Mengakhiri sesi ini. Poligon yang telah Anda simpan tetap dipertahankan.</translation>
-    </message>
-    <message>
-        <source>Faster and more accurate</source>
-        <translation>Lebih cepat dan lebih akurat</translation>
+        <source>Bigger model, more accurate</source><translation>Model lebih besar, lebih akurat</translation>
     </message>
     <message>
         <source>Featured</source>
         <translation>Unggulan</translation>
     </message>
     <message>
-        <source>Free, works offline</source>
-        <translation>Gratis, berfungsi secara luring</translation>
+        <source>Smaller model, works offline</source><translation>Model lebih kecil, offline</translation>
     </message>
     <message>
         <source>Install it now</source>
@@ -3285,28 +3181,11 @@ Berkas ini mungkin telah dipindahkan atau diganti namanya, atau drive atau folde
         <translation>Komputer saya</translation>
     </message>
     <message>
-        <source>My computer, free and unlimited</source>
-        <translation>Komputer saya, gratis dan tanpa batas</translation>
-    </message>
-    <message>
         <source>My work</source>
         <translation>Karya saya</translation>
     </message>
     <message>
-        <source>No credits left. Each object you save with Cloud AI costs one credit.</source>
-        <translation>Kredit habis. Setiap objek yang Anda simpan dengan Cloud AI berharga satu kredit.</translation>
-    </message>
-    <message>
-        <source>No credits left. Each object you save with Cloud AI costs one credit. Switch to the offline AI to keep working for free, or upgrade from the panel.</source>
-        <translation>Kredit habis. Setiap objek yang Anda simpan dengan Cloud AI berharga satu kredit. Beralih ke AI luring untuk terus bekerja gratis, atau tingkatkan dari panel.</translation>
-    </message>
-    <message>
-        <source>No credits left. This polygon stays on the map, and Export still works.</source>
-        <translation>Kredit habis. Poligon ini tetap ada di peta, dan Ekspor masih berfungsi.</translation>
-    </message>
-    <message>
-        <source>No credits left. This polygon stays on the map, but it cannot be saved.</source>
-        <translation>Kredit habis. Poligon ini tetap ada di peta, tetapi tidak dapat disimpan.</translation>
+        <source>No detections left. Each object you save with Cloud AI costs one. Switch to your own computer to keep working for free, or upgrade from the panel.</source><translation>Detection habis. Setiap objek yang Anda simpan dengan Cloud AI memakai satu. Beralih ke komputer Anda sendiri untuk terus bekerja gratis, atau upgrade dari panel.</translation>
     </message>
     <message>
         <source>No object found here. Try clicking somewhere else.</source>
@@ -3317,8 +3196,7 @@ Berkas ini mungkin telah dipindahkan atau diganti namanya, atau drive atau folde
         <translation>Tidak sekarang</translation>
     </message>
     <message>
-        <source>Your project and your files stay on your computer. One credit per object you save.</source>
-        <translation>Proyek dan berkas Anda tetap di komputer Anda. Satu kredit per objek yang Anda simpan.</translation>
+        <source>Your project and your files stay on your computer. One cloud detection per object you save.</source><translation>Proyek dan file Anda tetap di komputer Anda. Satu deteksi cloud per objek yang Anda simpan.</translation>
     </message>
     <message>
         <source>One precision level fits {obj} in a zone this size - draw a larger zone for a choice.</source>
@@ -3341,8 +3219,7 @@ Berkas ini mungkin telah dipindahkan atau diganti namanya, atau drive atau folde
         <translation>Menyiapkan instalasi...</translation>
     </message>
     <message>
-        <source>Pro is active on this account. Your credits are ready.</source>
-        <translation>Pro aktif di akun ini. Kredit Anda sudah siap.</translation>
+        <source>Pro is active on this account. Your cloud detections are ready.</source><translation>Pro aktif di akun ini. Deteksi cloud Anda siap digunakan.</translation>
     </message>
     <message>
         <source>Read the privacy policy</source>
@@ -3353,12 +3230,10 @@ Berkas ini mungkin telah dipindahkan atau diganti namanya, atau drive atau folde
         <translation>Klik kanan poligon di peta untuk menghapusnya.</translation>
     </message>
     <message>
-        <source>Running low: {n} credits left, back on {date}. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
-        <translation>Hampir habis: {n} kredit tersisa, kembali pada {date}. &lt;a href=&quot;{url}&quot;&gt;Tingkatkan ke Pro&lt;/a&gt; untuk terus melanjutkan.</translation>
+        <source>Running low: {n} cloud detections left, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source><translation>Menipis: {n} deteksi cloud tersisa, kembali pada {date}. &lt;a href="{url}"&gt;Tingkatkan ke Pro&lt;/a&gt; untuk melanjutkan.</translation>
     </message>
     <message>
-        <source>Running low: {n} credits left. &lt;a href=&quot;{url}&quot;&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
-        <translation>Hampir habis: {n} kredit tersisa. &lt;a href=&quot;{url}&quot;&gt;Tingkatkan ke Pro&lt;/a&gt; untuk terus melanjutkan.</translation>
+        <source>Running low: {n} cloud detections left. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source><translation>Menipis: {n} deteksi cloud tersisa. &lt;a href="{url}"&gt;Tingkatkan ke Pro&lt;/a&gt; untuk melanjutkan.</translation>
     </message>
     <message>
         <source>Save a polygon first. Export writes every polygon you kept to a layer.</source>
@@ -3389,10 +3264,6 @@ Berkas ini mungkin telah dipindahkan atau diganti namanya, atau drive atau folde
         <translation>Mode Semi-Auto perlu memasang dependensi lokal, yang tidak didukung di dalam instalasi QGIS yang di-sandbox ini (Flatpak atau Snap). Silakan gunakan mode Otomatis sebagai gantinya, yang berjalan sepenuhnya di cloud dan tidak memerlukan instalasi lokal.</translation>
     </message>
     <message>
-        <source>Semi-Auto mode stays free and unlimited on your computer.</source>
-        <translation>Mode Semi-Auto tetap gratis dan tanpa batas di komputer Anda.</translation>
-    </message>
-    <message>
         <source>Session ended</source>
         <translation>Sesi berakhir</translation>
     </message>
@@ -3401,16 +3272,8 @@ Berkas ini mungkin telah dipindahkan atau diganti namanya, atau drive atau folde
         <translation>Siapkan sekarang</translation>
     </message>
     <message>
-        <source>Setting up on your computer {dot} &lt;b&gt;pick Cloud AI to start now&lt;/b&gt;</source>
-        <translation>Menyiapkan di komputer Anda {dot} &lt;b&gt;pilih Cloud AI untuk mulai sekarang&lt;/b&gt;</translation>
-    </message>
-    <message>
         <source>Start Semi-Auto AI Segmentation</source>
         <translation>Mulai Semi-Auto AI Segmentation</translation>
-    </message>
-    <message>
-        <source>Stop and use my computer instead</source>
-        <translation>Hentikan dan gunakan komputer saya sebagai gantinya</translation>
     </message>
     <message>
         <source>Stop the install</source>
@@ -3449,12 +3312,7 @@ Berkas ini mungkin telah dipindahkan atau diganti namanya, atau drive atau folde
         <translation>AI luring masih diunduh.</translation>
     </message>
     <message>
-        <source>The smaller model on your computer. No credits, no limit.</source>
-        <translation>Model yang lebih kecil di komputer Anda. Tanpa kredit, tanpa batas.</translation>
-    </message>
-    <message>
-        <source>This deletes the local AI model files, signs you out, and resets the plugin. Your account and credits are not affected. Semi-Auto mode will download the files again next time you use it.</source>
-        <translation>Ini menghapus berkas model AI lokal, mengeluarkan Anda, dan mengatur ulang plugin. Akun dan kredit Anda tidak terpengaruh. Mode Semi-Auto akan mengunduh berkas lagi saat Anda menggunakannya lain kali.</translation>
+        <source>This deletes the local AI model files, signs you out, and resets the plugin. Your account and your cloud detections are not affected. Semi-Auto mode will download the files again next time you use it.</source><translation>Ini menghapus file model AI lokal, menandatangani Anda keluar, dan mengatur ulang plugin. Akun Anda dan deteksi cloud Anda tidak terpengaruh. Mode Semi-Auto akan mengunduh file lagi lain kali Anda menggunakannya.</translation>
     </message>
     <message>
         <source>This drive has {free} GB free, under the {need} GB the install needs. Free some space, or use Cloud AI.</source>
@@ -3485,35 +3343,19 @@ Berkas ini mungkin telah dipindahkan atau diganti namanya, atau drive atau folde
         <translation>Tempat segmentasi berjalan:</translation>
     </message>
     <message>
-        <source>You can close this window and keep working. The install carries on, and the panel shows how far it has got.</source>
-        <translation>Anda dapat menutup jendela ini dan terus bekerja. Instalasi tetap berjalan, dan panel menunjukkan sejauh mana prosesnya.</translation>
-    </message>
-    <message>
-        <source>Your free credits come back on {date}.</source>
-        <translation>Kredit gratis Anda kembali pada {date}.</translation>
-    </message>
-    <message>
         <source>Everything stays on this computer {dot} &lt;b&gt;about 10 minutes to install&lt;/b&gt;</source>
         <translation>Semua tetap di komputer ini {dot} &lt;b&gt;sekitar 10 menit untuk memasang&lt;/b&gt;</translation>
-    </message>
-    <message>
-        <source>Everything stays on this computer {dot} &lt;b&gt;save as many as you like&lt;/b&gt;</source>
-        <translation>Semua tetap di komputer ini {dot} &lt;b&gt;simpan sebanyak yang Anda inginkan&lt;/b&gt;</translation>
     </message>
     <message>
         <source>Everything stays on this computer {dot} &lt;b&gt;{gb} GB and about 10 minutes to install&lt;/b&gt;</source>
         <translation>Semua tetap di komputer ini {dot} &lt;b&gt;{gb} GB dan sekitar 10 menit untuk memasang&lt;/b&gt;</translation>
     </message>
     <message>
-        <source>No setup on this computer {dot} &lt;b&gt;1 credit per object you save&lt;/b&gt;</source>
-        <translation>Tidak perlu pengaturan di komputer ini {dot} &lt;b&gt;1 kredit per objek yang Anda simpan&lt;/b&gt;</translation>
-    </message>
-    <message>
         <source>The offline AI answers your clicks on this computer. Your imagery stays here, and every click is free.</source>
         <translation>AI luring menjawab klik Anda di komputer ini. Imagery Anda tetap di sini, dan setiap klik gratis.</translation>
     </message>
     <message>
-        <source>This online layer returned no imagery for this area. Its server refused the request. Check the layer&apos;s URL in Layer Properties, or use another basemap.</source>
+        <source>This online layer returned no imagery for this area. Its server refused the request. Check the layer's URL in Layer Properties, or use another basemap.</source>
         <translation>Lapisan daring ini tidak mengembalikan imagery untuk area ini. Servernya menolak permintaan tersebut. Periksa URL lapisan ini di Properti Lapisan, atau gunakan basemap lain.</translation>
     </message>
     <message>
@@ -3553,8 +3395,7 @@ Berkas ini mungkin telah dipindahkan atau diganti namanya, atau drive atau folde
         <translation>Belum ada apa pun di kategori ini.</translation>
     </message>
     <message>
-        <source>One run covers up to {cap} tiles. This zone at this precision needs more. Draw a smaller zone, or lower the precision.</source>
-        <translation>Satu proses mencakup hingga {cap} tile. Zona pada presisi ini membutuhkan lebih banyak. Gambar zona yang lebih kecil, atau turunkan presisi.</translation>
+        <source>One run covers up to {cap} cloud detections. This zone at this precision needs more. Draw a smaller zone, or lower the precision.</source><translation>Satu proses mencakup hingga {cap} deteksi cloud. Zona ini dengan presisi ini memerlukan lebih banyak. Gambar zona yang lebih kecil, atau turunkan presisi.</translation>
     </message>
     <message>
         <source>QGIS could not open a browser. Open this address to finish signing in, then come back here. It works once:
@@ -3595,8 +3436,7 @@ Berkas ini mungkin telah dipindahkan atau diganti namanya, atau drive atau folde
         <translation>Proses ini tidak menemukan apa pun. Tambahkan objek sendiri di bawah, atau tekan Keluar dan jalankan lagi dengan kata lain atau zona yang lebih kecil.</translation>
     </message>
     <message>
-        <source>This zone at this precision needs more tiles than one run covers. Draw a smaller zone, or lower the precision.</source>
-        <translation>Zona pada presisi ini membutuhkan lebih banyak tile daripada yang dicakup satu proses. Gambar zona yang lebih kecil, atau turunkan presisi.</translation>
+        <source>This zone at this precision needs more cloud detections than one run covers. Draw a smaller zone, or lower the precision.</source><translation>Zona ini dengan presisi ini memerlukan lebih banyak deteksi cloud daripada yang dicakup satu proses. Gambar zona yang lebih kecil, atau turunkan presisi.</translation>
     </message>
     <message>
         <source>Undo every correction of this round at once. The count is in the label, so you can see what goes.</source>
@@ -3609,6 +3449,199 @@ Berkas ini mungkin telah dipindahkan atau diganti namanya, atau drive atau folde
     <message>
         <source>You are signed in on this computer, but QGIS cannot read your sign-in until you enter its master password.</source>
         <translation>Anda sudah masuk di komputer ini, tetapi QGIS tidak dapat membaca informasi masuk Anda sampai Anda memasukkan kata sandi utamanya.</translation>
+    </message>
+    <message>
+        <source>AI: point at what to keep or trim, one cloud detection per polygon. Manual: move the corners yourself, free.</source><translation>AI: tunjuk apa yang ingin disimpan atau dipangkas, satu deteksi cloud per poligon. Manual: pindahkan sudut sendiri, gratis.</translation>
+    </message>
+    <message>
+        <source>Start now, nothing to install {dot} &lt;b&gt;1 cloud detection per object you save&lt;/b&gt;</source><translation>Mulai sekarang, tidak ada yang perlu dipasang {dot} &lt;b&gt;1 deteksi cloud per objek yang Anda simpan&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>The AI outlines it. One cloud detection per object.</source><translation>AI menguraikannya. Satu deteksi cloud per objek.</translation>
+    </message>
+    <message>
+        <source>Add an object the AI missed. In AI, point at it and the model outlines it for one cloud detection; in Manual, draw its corners for free.</source><translation>Tambahkan objek yang AI lewatkan. Di AI, tunjuk dan model menguraikannya untuk satu deteksi cloud; di Manual, gambar sudutnya secara gratis.</translation>
+    </message>
+    <message>
+        <source>This zone at this precision needs more than one run covers. Draw a smaller zone, or lower the precision. Free runs stop well below that ceiling, so Pro keeps more precision on a zone this size.</source><translation>Zona ini pada presisi ini memerlukan lebih dari satu deteksi cloud. Gambar zona yang lebih kecil, atau turunkan presisinya. Operasi gratis berhenti jauh di bawah batas itu, jadi Pro mempertahankan lebih banyak presisi pada zona ukuran ini.</translation>
+    </message>
+    <message>
+        <source>This zone at this precision needs more cloud detections than one run covers. Draw a smaller zone, or lower the precision. Free runs stop well below that ceiling, so Pro keeps more precision on a zone this size.</source><translation>Zona ini pada presisi ini memerlukan lebih banyak deteksi cloud daripada yang dicakup satu operasi. Gambar zona yang lebih kecil, atau turunkan presisinya. Operasi gratis berhenti jauh di bawah batas itu, jadi Pro mempertahankan lebih banyak presisi pada zona ukuran ini.</translation>
+    </message>
+    <message>
+        <source>Pick a raster layer at the top of the panel first.</source><translation>Pilih layer raster di bagian atas panel terlebih dahulu.</translation>
+    </message>
+    <message>
+        <source>This zone at this precision is too big for one run. Draw a smaller zone, or lower the precision.</source><translation>Zona ini dengan presisi ini terlalu besar untuk satu proses. Gambar zona yang lebih kecil, atau turunkan presisi.</translation>
+    </message>
+    <message>
+        <source>No cloud detections left this month. Semi-Auto mode runs on your computer, free and unlimited.</source><translation>Tidak ada deteksi cloud tersisa bulan ini. Mode Semi-Auto berjalan di komputer Anda, gratis dan tidak terbatas.</translation>
+    </message>
+    <message>
+        <source>This run costs more cloud detections than you have left. Lower the precision, or draw a smaller zone.</source><translation>Proses ini memerlukan biaya lebih banyak deteksi cloud daripada yang Anda miliki. Turunkan presisi, atau gambar zona yang lebih kecil.</translation>
+    </message>
+    <message>
+        <source>One free run covers fewer cloud detections than this. Lower the precision, or draw a smaller zone.</source><translation>Satu proses gratis mencakup lebih sedikit deteksi cloud daripada ini. Turunkan presisi, atau gambar zona yang lebih kecil.</translation>
+    </message>
+    <message>
+        <source>Load imagery in QGIS, then pick it above to start.</source><translation>Muat imagery di QGIS, lalu pilih di atas untuk memulai.</translation>
+    </message>
+    <message>
+        <source>One object at a time: click it, the AI outlines it. You choose where it runs, on our servers or on your own computer.</source><translation>Satu objek per klik: klik, AI menggambar batasnya. Anda memilih di mana prosesnya berjalan, di server kami atau di komputer Anda sendiri.</translation>
+    </message>
+    <message>
+        <source>Draw a zone, name one kind of object, get all of them in one run. Runs on our servers and uses your cloud detections.</source><translation>Gambar zona, beri nama satu jenis objek, dapatkan semuanya dalam satu proses. Berjalan di server kami dan menggunakan deteksi cloud Anda.</translation>
+    </message>
+    <message>
+        <source>This layer has no file to read. Pick another layer at the top of the panel, then start again.</source><translation>Layer ini tidak memiliki file untuk dibaca. Pilih layer lain di bagian atas panel, lalu mulai lagi.</translation>
+    </message>
+    <message>
+        <source>Writes a GeoPackage with the QGIS style built in, English field names, and how the run was made (prompt, source layer, date, precision). It opens styled and documented on a colleague's machine, with no plugin installed.</source>
+        <translation>Menulis GeoPackage dengan gaya QGIS bawaan, nama bidang dalam bahasa Inggris, dan cara eksekusi dibuat (prompt, lapisan sumber, tanggal, presisi). Terbuka dengan gaya dan terdokumentasi di mesin rekan kerja, tanpa plugin terinstal.</translation>
+    </message>
+    <message>
+        <source>&quot;{selected}&quot; has no imagery here. You are looking at &quot;{other}&quot;. Pick it at the top of the panel, then click again.</source>
+        <translation>&quot;{selected}&quot; tidak memiliki imagery di sini. Anda sedang melihat &quot;{other}&quot;. Pilih lapisan itu di bagian atas panel, lalu klik lagi.</translation>
+    </message>
+    <message>
+        <source>39 EUR a month, cancel anytime. Opens your TerraLab dashboard.</source>
+        <translation>39 EUR per bulan, batalkan kapan saja. Membuka dasbor TerraLab Anda.</translation>
+    </message>
+    <message>
+        <source>Could not reach this layer&apos;s server. Check your connection, then click again.</source>
+        <translation>Tidak dapat menjangkau server lapisan ini. Periksa koneksi Anda, lalu klik lagi.</translation>
+    </message>
+    <message>
+        <source>Every run is kept with its image, ready to open months later.</source>
+        <translation>Setiap proses disimpan dengan gambarnya, siap dibuka bulan-bulan kemudian.</translation>
+    </message>
+    <message>
+        <source>Nothing to install, works right away.</source>
+        <translation>Tidak perlu instalasi, langsung bisa digunakan.</translation>
+    </message>
+    <message>
+        <source>Or click objects one by one in Semi-Auto, free on this computer.</source>
+        <translation>Atau klik objek satu per satu di Semi-Auto, gratis di komputer ini.</translation>
+    </message>
+    <message>
+        <source>Or end this session and work free on this computer. Your saved polygons are kept.</source>
+        <translation>Atau akhiri sesi ini dan bekerja gratis di komputer ini. Poligon tersimpan Anda tetap ada.</translation>
+    </message>
+    <message>
+        <source>Or work free with a smaller AI on this computer.</source>
+        <translation>Atau bekerja gratis dengan AI yang lebih kecil di komputer ini.</translation>
+    </message>
+    <message>
+        <source>Pro: 5,000 cloud detections a month</source>
+        <translation>Pro: 5.000 deteksi cloud per bulan</translation>
+    </message>
+    <message>
+        <source>Pro: 5,000 detections a month, on zones of any size</source>
+        <translation>Pro: 5.000 deteksi per bulan, pada zona ukuran apa pun</translation>
+    </message>
+    <message>
+        <source>QGIS cannot read this raster format here. Convert it to GeoTIFF, then start again.</source>
+        <translation>QGIS tidak dapat membaca format raster ini. Konversikan ke GeoTIFF, lalu mulai lagi.</translation>
+    </message>
+    <message>
+        <source>QGIS waits while this installs. To segment right away, stop the install and use Cloud AI.</source>
+        <translation>QGIS menunggu selama pemasangan berlangsung. Untuk langsung menyegmentasi, hentikan instalasi dan gunakan Cloud AI.</translation>
+    </message>
+    <message>
+        <source>Runs on this computer {dot} &lt;b&gt;save as many as you like&lt;/b&gt;</source>
+        <translation>Berjalan di komputer ini {dot} &lt;b&gt;simpan sebanyak yang Anda inginkan&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Setting up on your computer {dot} &lt;b&gt;wait for it to finish&lt;/b&gt;</source>
+        <translation>Menyiapkan di komputer Anda {dot} &lt;b&gt;tunggu sampai selesai&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Small objects still show up on wide areas.</source>
+        <translation>Objek kecil tetap terdeteksi pada area yang luas.</translation>
+    </message>
+    <message>
+        <source>Stop and use my computer</source>
+        <translation>Hentikan dan gunakan komputer saya</translation>
+    </message>
+    <message>
+        <source>Stop the install?</source>
+        <translation>Hentikan instalasi?</translation>
+    </message>
+    <message>
+        <source>Take back the last point you placed. Shortcut: Ctrl+Z</source>
+        <translation>Batalkan titik terakhir yang Anda tempatkan. Pintasan: Ctrl+Z</translation>
+    </message>
+    <message>
+        <source>The layer you picked has no imagery here. You are looking at &quot;{other}&quot;. Pick it at the top of the panel, then click again.</source>
+        <translation>Lapisan yang Anda pilih tidak memiliki imagery di sini. Anda sedang melihat &quot;{other}&quot;. Pilih lapisan itu di bagian atas panel, lalu klik lagi.</translation>
+    </message>
+    <message>
+        <source>The offline AI is not installed yet. Stop the install?</source>
+        <translation>AI luring belum terpasang. Hentikan instalasi?</translation>
+    </message>
+    <message>
+        <source>The same cloud AI, and the cleanest shapes.</source>
+        <translation>Cloud AI yang sama, dengan bentuk paling rapi.</translation>
+    </message>
+    <message>
+        <source>They come back on {date}.</source>
+        <translation>Kembali pada {date}.</translation>
+    </message>
+    <message>
+        <source>This layer has no imagery at this zoom. Zoom in until you see it on the map, then click again.</source>
+        <translation>Lapisan ini tidak memiliki imagery pada tingkat zoom ini. Perbesar zoom sampai terlihat di peta, lalu klik lagi.</translation>
+    </message>
+    <message>
+        <source>This layer&apos;s file is no longer where QGIS expects it. Reload it from where the file is now, then start again.</source>
+        <translation>Berkas lapisan ini tidak lagi berada di lokasi yang diharapkan QGIS. Muat ulang dari lokasi berkas yang sekarang, lalu mulai lagi.</translation>
+    </message>
+    <message>
+        <source>This layer&apos;s server refused the request. Pick another basemap at the top of the panel, then click again.</source>
+        <translation>Server lapisan ini menolak permintaan. Pilih basemap lain di bagian atas panel, lalu klik lagi.</translation>
+    </message>
+    <message>
+        <source>This polygon stays on the map, and Export still works.</source>
+        <translation>Poligon ini tetap di peta, dan Ekspor masih berfungsi.</translation>
+    </message>
+    <message>
+        <source>This polygon stays on the map, but it cannot be saved.</source>
+        <translation>Poligon ini tetap di peta, tetapi tidak dapat disimpan.</translation>
+    </message>
+    <message>
+        <source>This raster has no bands to read. Pick another layer at the top of the panel.</source>
+        <translation>Raster ini tidak memiliki band untuk dibaca. Pilih lapisan lain di bagian atas panel.</translation>
+    </message>
+    <message>
+        <source>Undo point</source>
+        <translation>Batalkan titik</translation>
+    </message>
+    <message>
+        <source>Use Semi-Auto</source>
+        <translation>Gunakan Semi-Auto</translation>
+    </message>
+    <message>
+        <source>Use my computer</source>
+        <translation>Gunakan komputer saya</translation>
+    </message>
+    <message>
+        <source>You place the corners, the same as on any QGIS layer. Free.</source>
+        <translation>Anda menempatkan sudut, sama seperti pada lapisan QGIS mana pun. Gratis.</translation>
+    </message>
+    <message>
+        <source>You used all {n}. They come back on {date}.</source>
+        <translation>Anda telah menggunakan semua {n}. Kembali pada {date}.</translation>
+    </message>
+    <message>
+        <source>Your click is outside this layer. Click on the imagery itself, or pick another layer at the top of the panel.</source>
+        <translation>Klik Anda berada di luar lapisan ini. Klik pada imagery itu sendiri, atau pilih lapisan lain di bagian atas panel.</translation>
+    </message>
+    <message>
+        <source>Your cloud detections are used up</source>
+        <translation>Deteksi cloud Anda telah habis</translation>
+    </message>
+    <message>
+        <source>Your free cloud detections are used up</source>
+        <translation>Deteksi cloud gratis Anda telah habis</translation>
     </message>
 </context>
 </TS>

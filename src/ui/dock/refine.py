@@ -40,6 +40,28 @@ from .styles import (
     _settings_zone,
 )
 
+#: How long a refine NUMBER must sit still before the outline is reshaped, in
+#: milliseconds. It exists to absorb a held-down or typed-into spinbox, not to
+#: pace the redraw: the shape itself is memoized (ui/plugin/manual_shape_cache),
+#: so the settled change costs a few milliseconds. Bounds keep a served value
+#: usable: below the floor a held arrow key reshapes on every step, above the
+#: ceiling the outline visibly trails the number.
+REFINE_SETTLE_DEFAULT_MS = 90
+_MIN_REFINE_SETTLE_MS = 30
+_MAX_REFINE_SETTLE_MS = 400
+
+
+def refine_settle_ms() -> int:
+    """The settle time in force. Server-tunable, cache-only, never raises."""
+    try:
+        from ...core.server_dials import dial_in_range
+
+        return int(dial_in_range(
+            "ui.refine_settle_ms", REFINE_SETTLE_DEFAULT_MS,
+            _MIN_REFINE_SETTLE_MS, _MAX_REFINE_SETTLE_MS))
+    except Exception:  # noqa: BLE001 -- a settle time is best-effort  # nosec B110
+        return REFINE_SETTLE_DEFAULT_MS
+
 
 def _refine_row_label(text: str, tooltip: str) -> QLabel:
     """Left label of one refine row: the same quiet 11px as the Automatic
@@ -338,14 +360,18 @@ class DockRefineMixin:
         self.points_spinbox.valueChanged.connect(self._on_refine_changed)
         self.simplify_spinbox.valueChanged.connect(self._on_refine_changed)
         self.clean_edges_spinbox.valueChanged.connect(self._on_refine_changed)
-        self.round_corners_checkbox.stateChanged.connect(self._on_refine_changed)
-        self.right_angles_checkbox.stateChanged.connect(self._on_refine_changed)
+        self.round_corners_checkbox.stateChanged.connect(self._on_refine_ticked)
+        # The two syncs are connected BEFORE the emit they belong with. A tick
+        # used to reach the emit 150 ms later, so the panel had always settled
+        # first; now the emit is immediate, and the order is what keeps it
+        # reading a settled panel.
         self.right_angles_checkbox.stateChanged.connect(
             self._sync_refine_right_angle_controls)
+        self.right_angles_checkbox.stateChanged.connect(self._on_refine_ticked)
         self.expand_spinbox.valueChanged.connect(self._on_refine_changed)
-        self.fill_holes_checkbox.stateChanged.connect(self._on_refine_changed)
         self.fill_holes_checkbox.stateChanged.connect(
             self._sync_fill_holes_max_row)
+        self.fill_holes_checkbox.stateChanged.connect(self._on_refine_ticked)
         self.fill_holes_max_spinbox.valueChanged.connect(self._on_refine_changed)
         self.min_size_spinbox.valueChanged.connect(self._on_refine_changed)
         self.max_size_spinbox.valueChanged.connect(self._on_refine_changed)
@@ -440,8 +466,24 @@ class DockRefineMixin:
         self._refresh_refine_header()
 
     def _on_refine_changed(self, value=None):
-        """Handle refine control changes with debounce."""
-        self._refine_debounce_timer.start(150)
+        """A refine NUMBER moved: wait out the rest of the run of values.
+
+        A spinbox held down, or typed into, emits once per step, and the
+        preview behind it re-shapes the whole outline. The wait absorbs the run
+        without letting the shape lag behind the number for longer than it
+        takes to read it.
+        """
+        self._refine_debounce_timer.start(refine_settle_ms())
+
+    def _on_refine_ticked(self, _state=None):
+        """A refine BOX was ticked: apply it now.
+
+        A checkbox has no run of values to wait out. It emits once, the user is
+        looking straight at the outline, and making them wait was the whole of
+        the delay they felt on Round corners, Right angles and Fill holes.
+        """
+        self._refine_debounce_timer.stop()
+        self._emit_refine_changed()
 
     def _emit_refine_changed(self):
         """Emit the refine settings changed signals after debounce.

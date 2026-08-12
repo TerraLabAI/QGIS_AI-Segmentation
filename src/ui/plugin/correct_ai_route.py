@@ -108,7 +108,13 @@ class CorrectAiRouteMixin:
             # Reaching into the key store from there is the deadlock this
             # plugin already carries a scar from. The cost is that a key
             # rotated mid-session is only picked up by the next session.
-            self.predictor = CloudSamPredictor(auth=get_auth_header())
+            # The answer callback is what makes the lane billable: the ledger
+            # charges an object only once a click on it came back from the
+            # network, so a fix the machine never got an answer for is free.
+            self.predictor = CloudSamPredictor(
+                auth=get_auth_header(),
+                on_remote_answer=self._note_manual_cloud_answer,
+            )
         except Exception as err:  # noqa: BLE001 -- fall back to the on-device path
             QgsMessageLog.logMessage(
                 f"Remote fix route unavailable, staying on-device: {err}",
@@ -119,7 +125,7 @@ class CorrectAiRouteMixin:
             "AI Segmentation", level=Qgis.MessageLevel.Info)
         return True
 
-    def _degrade_correct_ai_to_manual(self, reason: str) -> bool:
+    def _degrade_correct_ai_to_manual(self, reason: str, failure_class: str = "") -> bool:
         """The off-machine fix refused a click: hand the step to Manual.
 
         Returns True when the fallback took the failure, so the caller drops
@@ -135,6 +141,10 @@ class CorrectAiRouteMixin:
         The switch itself waits one event-loop turn: the click that failed is
         still unwinding on this stack, and folding its session from under it
         would rewrite the very state the caller is about to roll back.
+
+        ``failure_class`` is for a caller that already knows why, such as the
+        Save gate refusing an empty balance. Left empty, the reason is read off
+        the message the route answered with.
         """
         if not self._cloud_correct_predictor_active():
             return False
@@ -143,7 +153,8 @@ class CorrectAiRouteMixin:
         QgsMessageLog.logMessage(
             f"Correct step: AI fix refused a click, handing it to Manual: {reason}",
             "AI Segmentation", level=Qgis.MessageLevel.Warning)
-        self._correct_ai_failure_class = self._correct_ai_failure_kind(reason)
+        self._correct_ai_failure_class = (
+            failure_class or self._correct_ai_failure_kind(reason))
         QTimer.singleShot(0, self._switch_correct_to_manual_after_failure)
         return True
 

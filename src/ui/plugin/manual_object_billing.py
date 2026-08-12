@@ -31,18 +31,25 @@ class ManualObjectBillingMixin:
     # -- session lifetime ---------------------------------------------------
 
     def _start_manual_credit_session(self) -> None:
-        """Open a ledger for a Semi-Auto session whose clicks travel.
+        """Open a ledger for a session whose clicks travel.
 
         Called at Start, after the route is decided. A session that stays on the
         machine gets no ledger at all, which is what makes every question below
         answer "free" without a single check of its own.
+
+        Two kinds of session reach here, and both pay the same way: a Semi-Auto
+        session on Cloud AI, and one fix in the Automatic review's Correct step,
+        whose AI lane is answered off the machine and has no on-device side.
         """
         self._manual_credit_ledger = None
         # The engine row counts what THIS session spent, so it starts at zero
         # even when the account balance did not move.
         self._manual_cloud_objects_charged = 0
         self._tell_dock_manual_spend(0)
-        if not self._manual_cloud_predictor_active():
+        # Asks the predictor in hand, not the mode: the Semi-Auto check is the
+        # narrower of the two and would refuse the bare remote predictor the
+        # Correct lane holds.
+        if not self._cloud_correct_predictor_active():
             return
         try:
             from ...core.manual_object_credit import ManualObjectLedger
@@ -92,14 +99,30 @@ class ManualObjectBillingMixin:
             return None
 
     def _manual_save_is_billable(self, det_id) -> bool:
-        """Whether saving this object right now would spend a credit."""
+        """Whether saving this object right now would spend a credit.
+
+        ADDING an object costs one. CORRECTING an object that already exists
+        costs nothing, in Semi-Auto and in the Automatic review alike. That is
+        the rule the product is sold on, and the public copy says it in twelve
+        languages, so this function is where it has to be true.
+
+        Between v2.4.0 and now the gate above widened to cover the review's
+        remote predictor, which was right for the Add lane and wrong for the
+        Correct lane: it started charging a reshape of a detection the user had
+        already paid for once as a tile.
+
+        Two conditions, not one. `_active_refine_origin_entry` says this save
+        reworks a shape that was already on the map. `_refine_add_mode_active`
+        says the Add lane is armed, and an Add keep can weld itself into an
+        overlapping detection and inherit that entry, so the origin entry alone
+        would hand a genuine add away for free.
+        """
         ledger = getattr(self, "_manual_credit_ledger", None)
         if ledger is None:
             return False
-        # The Automatic review's Correct step commits through this same Save.
-        # A correction has never cost a credit and must not start now: the tile
-        # that produced the object was already paid for once.
-        if getattr(self, "_refine_handoff_active", False):
+        reworks_existing = bool(getattr(self, "_active_refine_origin_entry", None))
+        adding = bool(getattr(self, "_refine_add_mode_active", False))
+        if reworks_existing and not adding:
             return False
         try:
             return bool(ledger.object_is_billable(det_id))
@@ -127,8 +150,30 @@ class ManualObjectBillingMixin:
             self._refresh_auto_credits()
         except (RuntimeError, AttributeError):
             pass
+        self._track_manual_charge("exhausted", error_code="balance_empty")
+        # The review's Correct step has a free way on that Semi-Auto does not:
+        # the Manual lane beside it. Hand the step over and say so once, rather
+        # than leaving the user on a lane that can no longer answer.
+        if getattr(self, "_refine_handoff_active", False) and \
+                self._degrade_correct_ai_to_manual(
+                    "balance empty", failure_class="CREDITS_EXHAUSTED"):
+            return True
         self._say_manual_credits_exhausted()
         return True
+
+    def _track_manual_charge(self, outcome: str, error_code: str = "") -> None:
+        """Report what the account did with one object's credit. Best effort:
+        a counter is never a reason for a save to fail."""
+        try:
+            from ...core import telemetry_session_events
+
+            telemetry_session_events.track_manual_object_charged(
+                outcome=outcome,
+                objects_charged=int(getattr(self, "_manual_cloud_objects_charged", 0)),
+                error_code=error_code,
+            )
+        except Exception:  # noqa: BLE001  # nosec B110
+            pass
 
     def _say_manual_credits_exhausted(self) -> None:
         """Refuse the save, in the panel and once in the message bar.
@@ -145,9 +190,9 @@ class ManualObjectBillingMixin:
         try:
             self.iface.messageBar().pushMessage(
                 "AI Segmentation",
-                tr("No credits left. Each object you save with Cloud AI costs "
-                   "one credit. Switch to the offline AI to keep working for "
-                   "free, or upgrade from the panel."),
+                tr("No detections left. Each object you save with Cloud AI "
+                   "costs one. Switch to your own computer to keep working "
+                   "for free, or upgrade from the panel."),
                 level=Qgis.MessageLevel.Warning,
                 duration=8,
             )
@@ -223,6 +268,7 @@ class ManualObjectBillingMixin:
             self._manual_cloud_objects_charged = int(
                 getattr(self, "_manual_cloud_objects_charged", 0)) + 1
             self._tell_dock_manual_spend(self._manual_cloud_objects_charged)
+        self._track_manual_charge("charged")
         usage = (payload or {}).get("usage") if isinstance(payload, dict) else None
         if isinstance(usage, dict) and usage:
             try:
@@ -246,8 +292,22 @@ class ManualObjectBillingMixin:
             f"Semi-Auto: object charge refused ({code or 'unknown'})",
             "AI Segmentation",
             level=Qgis.MessageLevel.Warning if exhausted else Qgis.MessageLevel.Info)
+        self._track_manual_charge("exhausted" if exhausted else "refused",
+                                  error_code=code or "unknown")
         if not exhausted:
             return
+        # A Correct fix hands its step to the Manual lane. Semi-Auto has no such
+        # lane, so it ends the cloud session and puts the clicks back on the
+        # machine. Same ending, two different ways there.
+        if getattr(self, "_refine_handoff_active", False):
+            self._end_manual_credit_session()
+            if self._degrade_correct_ai_to_manual(
+                    code or "credits exhausted", failure_class="CREDITS_EXHAUSTED"):
+                try:
+                    self._refresh_auto_credits()
+                except (RuntimeError, AttributeError):
+                    pass
+                return
         try:
             self._end_cloud_click_session()
         except Exception:  # noqa: BLE001 -- the session stands either way  # nosec B110

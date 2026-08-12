@@ -178,7 +178,11 @@ class AutoCreditsWatchMixin:
 
             self.iface.messageBar().pushMessage(
                 "AI Segmentation",
-                tr("Pro is active on this account. Your credits are ready."),
+                # No figure here. This fires for a subscriber, and quota_limit
+                # is a purchase-time snapshot, so a legacy plan can be 10,000.
+                # The footer ring already shows the real balance.
+                tr("Pro is active on this account. Your cloud detections are "
+                   "ready."),
                 level=Qgis.MessageLevel.Success,
             )
         except (RuntimeError, AttributeError):

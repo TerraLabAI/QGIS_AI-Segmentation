@@ -8,6 +8,15 @@ import numpy as np
 from qgis.core import Qgis, QgsMessageLog
 
 from .i18n import tr
+
+# Re-exported: every caller that had to know about provider kinds already
+# imports them from here, and the definitions moved to a module light enough
+# for the dock to import on a panel refresh.
+from .raster_provider_kinds import (  # noqa: F401
+    CANVAS_RENDERED_PROVIDERS,
+    FILELESS_LOCAL_PROVIDERS,
+    ONLINE_PROVIDERS,
+)
 from .tile_read_completeness import online_read_is_complete
 
 # Raster formats that pip-installed rasterio may not support reliably.
@@ -18,24 +27,6 @@ _GDAL_ONLY_FORMATS = {
     ".gpkg",
     ".pdf",
 }
-
-# Online/remote raster providers that need rendering before encoding. QGIS
-# serves WMTS and XYZ through the "wms" provider, so those two names never
-# come back from provider.name(); they are kept because a build or a future
-# QGIS could report them, and an extra name here costs nothing.
-ONLINE_PROVIDERS = frozenset(["wms", "wmts", "xyz", "arcgismapserver", "wcs"])
-
-# Local providers that serve pixels but have no file behind them, so the
-# windowed file read has nothing to open. A PostGIS raster lives in a
-# database, a virtual raster is an expression over other layers. Both are
-# valid QgsRasterLayers, both are offered in the layer picker, and both used
-# to reach the file reader and fail there.
-FILELESS_LOCAL_PROVIDERS = frozenset(["postgresraster", "virtualraster"])
-
-# The real question every caller asks: must this layer be rendered through
-# QGIS instead of read from its own file? Online or fileless, the answer and
-# the code path are the same.
-CANVAS_RENDERED_PROVIDERS = ONLINE_PROVIDERS | FILELESS_LOCAL_PROVIDERS
 
 
 def _normalize_to_uint8(bands, nodata_value=None):
@@ -107,7 +98,7 @@ def _normalize_to_uint8(bands, nodata_value=None):
         if valid_pixels.size == 0:
             continue
 
-        p2, p98 = np.percentile(valid_pixels, [2, 98])
+        p2, p98 = _percentiles_2_98(valid_pixels)
 
         if is_uint8:
             # Only stretch if histogram is compressed
@@ -157,6 +148,50 @@ def _normalize_to_uint8(bands, nodata_value=None):
     return np.ascontiguousarray(np.transpose(result, (1, 2, 0)))
 
 
+#: Widest value range the histogram percentile below will count into bins. A
+#: 16-bit band fits; anything wider allocates more bins than the crop has
+#: pixels, which is the point at which sorting is the cheaper answer.
+_HISTOGRAM_PERCENTILE_MAX_RANGE = 65536
+
+
+def _percentiles_2_98(values):
+    """The 2nd and 98th percentiles of ``values``, exactly as np.percentile.
+
+    An integer band is counted into bins instead of sorted. Sorting a million
+    pixels is most of what a crop read spends on a raster that is not already
+    8-bit stretched, and the answer is the same one: the linear interpolation
+    below is numpy's own, read off the cumulative counts rather than off a
+    sorted copy. Measured on 1024x1024 bands, 6-8 ms down to about 1.5 ms.
+
+    Anything else (float, signed, a range wider than 16 bits) goes to
+    np.percentile untouched.
+    """
+    try:
+        if (values.dtype.kind != "u"
+                or values.size == 0
+                or int(values.max()) >= _HISTOGRAM_PERCENTILE_MAX_RANGE):
+            return np.percentile(values, [2, 98])
+        counts = np.bincount(values.ravel())
+    except (ValueError, TypeError, MemoryError):
+        return np.percentile(values, [2, 98])
+
+    total = int(counts.sum())
+    if total <= 0:
+        return np.percentile(values, [2, 98])
+    cumulative = np.cumsum(counts)
+    out = []
+    for q in (2.0, 98.0):
+        # numpy's default "linear" method: the percentile sits between the
+        # values at sorted positions floor(h) and floor(h)+1.
+        h = (total - 1) * q / 100.0
+        low = int(np.floor(h))
+        high = min(low + 1, total - 1)
+        value_low = int(np.searchsorted(cumulative, low + 1))
+        value_high = int(np.searchsorted(cumulative, high + 1))
+        out.append(value_low + (h - low) * (value_high - value_low))
+    return np.array(out, dtype=np.float64)
+
+
 def _apply_colormap(indices, colormap):
     """Map a (H, W) palette-index array to (H, W, 3) uint8 RGB.
 
@@ -186,6 +221,25 @@ def _apply_colormap(indices, colormap):
             lut[int(i), 2] = int(color[2]) & 0xFF
     flat = np.clip(idx.astype(np.int64), 0, max_i)
     return lut[flat]
+
+
+def _rasterio_source_is_paletted(src) -> bool:
+    """Whether band 1 of a rasterio source carries a usable colour table.
+
+    Asked BEFORE the band read, so a paletted raster does not decode its window
+    twice: the palette expansion reads band 1 itself, and everything the plain
+    read produced was thrown away. Mirrors the GDAL arm, which has always
+    checked first. False on any doubt, which is the plain read.
+    """
+    try:
+        from rasterio.enums import ColorInterp
+
+        interp = src.colorinterp
+        if not interp or interp[0] != ColorInterp.palette:
+            return False
+        return bool(src.colormap(1))
+    except Exception:  # noqa: BLE001 - any doubt means the plain read
+        return False
 
 
 def _read_palette_rgb_rasterio(src, window, out_h, out_w):
@@ -635,7 +689,10 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
     _set_option("PROJ_LIB", "")
     _set_option("GDAL_DATA", "")
     try:
-        ds = gdal.Open(raster_path)
+        # Held open between clicks: on these formats the open builds the whole
+        # decoder state, and it is the same file every click of a session.
+        from .raster_dataset_cache import acquire_gdal_dataset
+        ds = acquire_gdal_dataset(raster_path)
         if ds is None:
             return None, None, tr(
                 "Cannot open {ext} file. The format may not be supported "
@@ -801,7 +858,8 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
         ).format(ext=ext, error=str(e)), "crop_error_read_failed"
 
     finally:
-        ds = None
+        # No `ds = None` here: the dataset belongs to raster_dataset_cache,
+        # which closes it when the session ends.
         _set_option("PROJ_DATA", _proj_data_backup)
         _set_option("PROJ_LIB", _proj_lib_backup)
         _set_option("GDAL_DATA", _gdal_data_backup)
@@ -858,8 +916,12 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
             scale_factor, layer_extent, ground_aspect
         )
 
+    # The bare rasterio import is the availability probe, and it has to stay
+    # even though the dataset now comes from raster_dataset_cache: that module
+    # imports rasterio itself, and without this the failure would surface as a
+    # raw ImportError instead of the diagnosis below.
     try:
-        import rasterio
+        import rasterio  # noqa: F401
         from rasterio.enums import Resampling
         from rasterio.windows import Window
     except ImportError:
@@ -874,7 +936,7 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
         except Exception:  # noqa: BLE001 - the retry below reports the real cause
             pass  # nosec B110
         try:
-            import rasterio
+            import rasterio  # noqa: F401
             from rasterio.enums import Resampling
             from rasterio.windows import Window
         except ImportError as err:
@@ -888,7 +950,11 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
                     "crop_error_rasterio_unavailable")
 
     try:
-        with rasterio.open(raster_path) as src:
+        # Held open between clicks. A COG over http re-reads its header, its
+        # tile index and its overviews on every open, and that is the whole of
+        # the wait on a remote raster.
+        from .raster_dataset_cache import borrow_rasterio_dataset
+        with borrow_rasterio_dataset(raster_path) as src:
             raster_width = src.width
             raster_height = src.height
             raster_transform = src.transform
@@ -971,25 +1037,29 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
                 out_h = _ground_matched_out_rows(
                     out_w, actual_width, actual_height, row_ratio, crop_size)
 
-            if (scale_factor == 1.0 and out_h == actual_height
-                    and out_w == actual_width):
-                tile_data = src.read(indexes=read_bands, window=window)
-            else:
-                tile_data = src.read(
-                    indexes=read_bands,
-                    window=window,
-                    out_shape=(n_read, out_h, out_w),
-                    resampling=Resampling.bilinear
-                )
-
-            nodata = src.nodata
             # Paletted (colour-table) raster: expand class indices to their true
             # colours (read band 1 with nearest so indices are never blended).
-            palette_rgb = _read_palette_rgb_rasterio(src, window, out_h, out_w)
+            # Asked first, so the plain band read below is skipped entirely
+            # rather than decoded and discarded.
+            palette_rgb = None
+            if _rasterio_source_is_paletted(src):
+                palette_rgb = _read_palette_rgb_rasterio(
+                    src, window, out_h, out_w)
+
             if palette_rgb is not None:
                 image_np = palette_rgb
             else:
-                image_np = _normalize_to_uint8(tile_data, nodata_value=nodata)
+                if (scale_factor == 1.0 and out_h == actual_height
+                        and out_w == actual_width):
+                    tile_data = src.read(indexes=read_bands, window=window)
+                else:
+                    tile_data = src.read(
+                        indexes=read_bands,
+                        window=window,
+                        out_shape=(n_read, out_h, out_w),
+                        resampling=Resampling.bilinear
+                    )
+                image_np = _normalize_to_uint8(tile_data, nodata_value=src.nodata)
 
             # Pad to full crop_size if crop was clipped at raster edge.
             # Uses reflect padding instead of black borders for better
@@ -1094,6 +1164,32 @@ def online_layer_tile_host(layer) -> str:
         return ""
 
 
+def online_layer_tile_url_pattern(layer):
+    """Regex matching the tile URLs this layer asks its host for, or None.
+
+    Built from the ``url`` template in the layer's own source, every ``{x}``
+    style placeholder standing for one path or query value. The host alone does
+    not identify a tile: a basemap host answers other requests too, and one of
+    them coming back with an error was enough to file the layer itself as
+    refusing to serve.
+
+    None when the source names no template, which leaves the host check on its
+    own exactly as before.
+    """
+    try:
+        from qgis.core import QgsDataSourceUri
+
+        uri = QgsDataSourceUri()
+        uri.setEncodedUri(layer.source())
+        template = uri.param("url") or ""
+        if not template or "{" not in template:
+            return None
+        parts = [re.escape(part) for part in re.split(r"\{[^{}]*\}", template)]
+        return re.compile("[^/?&#]*".join(parts))
+    except Exception:  # noqa: BLE001 -- no template leaves the host check alone
+        return None
+
+
 class TileRequestErrorWatch:
     """Counts tile requests the host refused while one provider read runs.
 
@@ -1102,15 +1198,22 @@ class TileRequestErrorWatch:
     so a source that cannot answer and one that is merely slow look identical
     from the outside. The reply status is the only evidence in the process.
 
-    Replies are matched on the layer's own host, so another plugin's failing
-    request never counts. The network manager is per thread, so this sees the
-    requests made by the read on this thread and no others.
+    Replies are matched on the layer's own host AND on its tile URL template,
+    so neither another plugin's failing request nor a non-tile request to the
+    same basemap host ever counts. The network manager is per thread, so this
+    sees the requests made by the read on this thread and no others.
     """
 
-    def __init__(self, host: str):
+    def __init__(self, host: str, tile_url_pattern=None):
         self._host = host
+        self._tile_url_pattern = tile_url_pattern
         self._manager = None
         self.failed = False
+        # How many of the layer's own tile requests came back with an error,
+        # kept so the log can say whether one tile or the whole read was
+        # refused. "Refused" reads the same either way and they are not the
+        # same problem.
+        self.refusals = 0
         # First non-zero QNetworkReply error seen, kept so the caller can tell
         # a connection that never reached the host from a reply the host sent.
         self.reply_error = 0
@@ -1139,18 +1242,27 @@ class TileRequestErrorWatch:
     def _on_reply_finished(self, reply):
         """The signal has two overloads and hands over a QNetworkReply on one,
         a QgsNetworkReplyContent on the other. Only request() is on both, so
-        the host is read through it."""
+        the URL is read through it."""
         try:
             error = int(reply.error())
             if error == 0:
                 return
-            host = reply.request().url().host()
+            url = reply.request().url()
+            host = url.host()
         except (AttributeError, RuntimeError, TypeError, ValueError):
             return
-        if host == self._host:
-            self.failed = True
-            if not self.reply_error:
-                self.reply_error = error
+        if host != self._host:
+            return
+        if self._tile_url_pattern is not None:
+            try:
+                if not self._tile_url_pattern.fullmatch(url.toString()):
+                    return
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                return
+        self.failed = True
+        self.refusals += 1
+        if not self.reply_error:
+            self.reply_error = error
 
 
 class OnlineCropFetcher:
@@ -1212,8 +1324,10 @@ class OnlineCropFetcher:
         # still working, and the retry ladder is worth nothing against the
         # first.
         self._tile_host = online_layer_tile_host(layer)
+        self._tile_url_pattern = online_layer_tile_url_pattern(layer)
         self._tile_request_failed = False
         self._tile_error_code = 0
+        self._tile_refusals = 0
         # The read that passed the checks, kept so finish() builds the crop
         # from the picture that was checked and not from a fresh one.
         self._settled_block = None
@@ -1305,7 +1419,7 @@ class OnlineCropFetcher:
         """One provider.block() read, charged to the read budget. A tile the
         host refuses during it is recorded, because the provider reports
         nothing at all about it."""
-        watch = TileRequestErrorWatch(self._tile_host)
+        watch = TileRequestErrorWatch(self._tile_host, self._tile_url_pattern)
         started = time.monotonic()
         try:
             with watch:
@@ -1315,6 +1429,7 @@ class OnlineCropFetcher:
             self._read_seconds += time.monotonic() - started
             if watch.failed:
                 self._tile_request_failed = True
+                self._tile_refusals += watch.refusals
                 if not self._tile_error_code:
                     self._tile_error_code = watch.reply_error
 
@@ -1533,10 +1648,13 @@ class OnlineCropFetcher:
             # canvas, so imagery the user can SEE on screen can answer a click
             # even when fresh requests are refused. The reply error travels to
             # the log by number, because "refused" covers a 403, a 429 and a
-            # 400, and they point at three different fixes.
+            # 400, and they point at three different fixes. The count goes with
+            # it: one refused tile and a read the host answered nothing for
+            # read the same in a report and are not the same problem.
             QgsMessageLog.logMessage(
-                f"Online tiles refused (network reply error "
-                f"{self._tile_error_code}), trying the renderer fallback...",
+                f"Online tiles refused ({self._tile_refusals} tile requests, "
+                f"first network reply error {self._tile_error_code}), trying "
+                "the renderer fallback...",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning
             )
             image_np, render_extent, render_err = self._render_fallback()

@@ -142,19 +142,19 @@ def zone_over_free_cap_lines(area_km2: float, upgrade_url: str) -> tuple[str, st
     """
     from ...core.server_dials import dial_copy
 
-    # Three lines: the gap, the offer, the action. This is the highest-intent
-    # moment on the screen, so the middle line answers the exact thing the user
-    # was just refused (size) before anything else. The 5,000 is the Pro
-    # monthly quota (AI_SEGMENTATION_PRO_MONTHLY_DETECTIONS on the website);
-    # move both or the card starts lying.
+    # Two lines: the gap, then the action. The served head owns the numbers AND
+    # the reason to pay, so the tail carries the two ways out and nothing else.
+    # It used to carry an offer line of its own ("5,000 tiles a month"), which
+    # quoted the MONTHLY quota next to a SIZE refusal, in a unit the product no
+    # longer uses, and repeated the size promise the head already makes. No
+    # figure belongs here: the tail cannot be reached by a deploy, so any number
+    # in it goes stale on the next pricing change and stays stale until the user
+    # updates the plugin.
     shipped_head = tr(
         "This zone is {area} km². Free zones stop at {max} km².")
-    shipped_value = tr(
-        "Pro has no size limit. Any area you draw, 5,000 tiles a month, "
-        "maximum detail.")
-    shipped_action = tr(
-        '<a href="{url}">Upgrade to Pro</a>, or make this zone smaller.')
-    shipped_tail = shipped_value + "<br/>" + shipped_action
+    shipped_tail = tr(
+        '<a href="{url}">Upgrade to Pro</a> to run this zone as drawn, or make '
+        'it smaller.')
     # escape=True: the two lines go into a RichText label, where a served "&"
     # has to be an entity. The shipped fallback comes back untouched, so its
     # own markup survives.

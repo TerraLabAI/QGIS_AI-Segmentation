@@ -382,14 +382,19 @@ def feature_enabled(name: str) -> bool:
 def correct_ai_cloud_enabled() -> bool:
     """Whether the Automatic review's AI fix is answered off the machine.
 
-    Default OFF, which is the opposite of every other switch here and is the
-    point: off is exactly what the plugin did before the remote route existed,
-    so a fleet that never hears from the server keeps today's behaviour. Only
-    an explicit true opts a user in.
+    Default ON. The AI lane of the Correct step is a paid, server-answered
+    lane: it is the same model the run itself used, it costs a credit per fix,
+    and the on-device model is no longer an answer for it. The free way to fix
+    a polygon in Correct is the Manual lane beside it, which needs no network,
+    no account and no install.
 
-    Manual mode never reads this. It is on-device and offline by product rule.
+    An explicit false still withdraws the lane fleet-wide, and the step then
+    falls back to Manual, which is where a refused click already lands.
+
+    Semi-Auto never reads this. Its own engine cards decide, and its on-device
+    side stays offline by product rule.
     """
-    return dial_bool("features.correct_ai_cloud", False)
+    return dial_bool("features.correct_ai_cloud", True)
 
 
 def crop_webp_enabled() -> bool:

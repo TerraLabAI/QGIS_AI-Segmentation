@@ -166,6 +166,28 @@ class ManualCloudPredictorMixin:
         except Exception:  # noqa: BLE001 -- teardown must never raise  # nosec B110
             pass
 
+    def _track_manual_click_answered(self, started_at: float) -> None:
+        """Report one answered click: which AI gave it, and how long it took.
+
+        Runs on whichever thread answered the click, so it only tracks and
+        never flushes. Best effort: a count never costs a click.
+        """
+        try:
+            import time
+
+            from ...core import telemetry_session_events
+
+            on_cloud = (self._manual_cloud_predictor_active()
+                        or self._cloud_correct_predictor_active())
+            telemetry_session_events.track_manual_click_answered(
+                engine="cloud" if on_cloud else "local",
+                duration_ms=int((time.monotonic() - started_at) * 1000),
+                used_fallback=bool(getattr(self, "_manual_click_fell_back", False)),
+                is_correct=bool(getattr(self, "_refine_handoff_active", False)),
+            )
+        except Exception:  # noqa: BLE001 -- a count never breaks a click  # nosec B110
+            pass
+
     def _note_manual_cloud_fallback(self) -> None:
         """One quiet line when a click came back from this computer instead.
 
@@ -177,6 +199,9 @@ class ManualCloudPredictorMixin:
         a widget written from any thread but the one that drew it is a crash
         waiting for the wrong day.
         """
+        # Read back by the click that is still in flight, so its report says the
+        # answer came from here. One bool write, on the answering thread.
+        self._manual_click_fell_back = True
         try:
             if self._headless or not self.dock_widget:
                 return

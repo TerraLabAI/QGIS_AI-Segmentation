@@ -38,6 +38,7 @@ from .dock.install_lock import DockInstallLockMixin
 from .dock.manual_credit_gate import DockManualCreditGateMixin
 from .dock.manual_engine import DockManualEngineMixin
 from .dock.manual_local_install import DockManualLocalInstallMixin
+from .dock.manual_notice import DockManualNoticeMixin
 from .dock.qgis_bridge import DockQgisBridgeMixin
 from .dock.refine import DockRefineMixin
 from .dock.server_switches import DockServerSwitchesMixin
@@ -105,6 +106,7 @@ class AISegmentationDockWidget(
     DockServerSwitchesMixin,
     DockManualEngineMixin,
     DockManualLocalInstallMixin,
+    DockManualNoticeMixin,
     DockManualCreditGateMixin,
     DockActivationMixin,
     DockAutoPromptBoxMixin,

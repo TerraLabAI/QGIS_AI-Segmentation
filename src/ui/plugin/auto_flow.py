@@ -180,7 +180,7 @@ class AutoFlowMixin:
         import time as _time
         fetched_at = _time.monotonic()
         task = GenericRequestTask(
-            tr("Refreshing credits"),
+            tr("Refreshing your cloud detections"),
             lambda: client.get_usage(auth=auth),
             hidden=True,
         )
@@ -451,6 +451,7 @@ class AutoFlowMixin:
             from ...api.terralab_client import TerraLabClient
             from ...workers.generic_request_task import GenericRequestTask
             client = TerraLabClient()
+            self._warm_click_connection(client)
             self._warmup_task = GenericRequestTask(
                 tr("Warming up AI Segmentation"),
                 lambda: client.warmup(auth=auth),
@@ -462,6 +463,28 @@ class AutoFlowMixin:
         except Exception:
             # Warmup is purely cosmetic; never let it disrupt the flow.
             self._warmup_task = None
+
+    def _warm_click_connection(self, client) -> None:
+        """Open, from THIS thread, the connection a click will travel on.
+
+        The ping below runs on a task thread and the crop hand-over on a worker
+        of its own, and Qt keeps its connections per thread, so neither leaves
+        anything behind for the click: the first click of a session opens its
+        own, on the thread that draws, while the user waits. This sends a
+        throwaway probe from here so that cost is paid before the click.
+
+        Only worth anything when the clicks go straight to the detection host,
+        which is the one case where the click and this probe share a host.
+        Silent and best effort throughout.
+        """
+        try:
+            if not getattr(client, "detection_direct", False):
+                return
+            from ...api.click_transport import warm_click_connection
+
+            warm_click_connection(f"{client.detection_base_url}/health")
+        except Exception:  # noqa: BLE001 -- a warm must never disrupt the flow  # nosec B110
+            pass
 
     def _on_warmup_finished(self, _ok: object = None) -> None:
         """Main thread: release the finished warmup task. Result is ignored
@@ -587,12 +610,13 @@ class AutoFlowMixin:
         # slider across many levels would stutter. Coalesce to ~130ms of
         # inactivity (other callers still update immediately).
         self._schedule_credit_estimate()
-        # Active setup = the user is about to Detect: warm the backend (debounced
-        # to ~30s, gated on the Automatic flow + no active run). This is the
-        # activity-driven keep-warm: pings only while the user is actually working,
-        # so the backend goes idle on its own once they stop - a dock left open
-        # and idle (or a Manual-mode user) never holds the backend up.
-        self._maybe_warmup_auto()
+        # NO wake ping here, deliberately. Moving this slider says nothing about
+        # whether a run is coming: a user reads the cost at three levels and
+        # closes the dock. Every one of those moves used to wake a machine and
+        # hold it, and the measurement upstream is blunt about it: the pings
+        # alone held the card for a third of its billed life. The triggers that
+        # do carry intent still fire, and the prompt commit is the one every
+        # real run passes through, so nothing loses its runway.
         self._schedule_detail_telemetry("user")
 
     def _schedule_credit_estimate(self) -> None:

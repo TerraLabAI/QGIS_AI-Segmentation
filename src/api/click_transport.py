@@ -106,6 +106,61 @@ def click_wait_max_ms() -> int:
     return _CLICK_WAIT_MAX_MS
 
 
+# How long the connection warm may stay open before Qt ends it. It exists to
+# leave a live socket behind, not to read anything, and a request still hanging
+# long after the user started working is holding a socket nobody will use.
+_CONNECTION_WARM_TIMEOUT_MS = 20_000
+
+# The replies in flight for a warm, held only so Python does not collect one
+# mid-request. Cleared as each finishes.
+_warming_replies = set()
+
+
+def warm_click_connection(url: str) -> bool:
+    """Open the connection the first click will need, before the click.
+
+    A click is sent on the thread that draws, through that thread's network
+    manager. The crop hand-over travels on a worker thread with a manager of
+    its own, and the wake ping on a third, so neither leaves a socket the click
+    can reuse: the first click of every session pays a name lookup, a
+    connection and a TLS handshake of its own before its first byte moves. That
+    is a few hundred milliseconds on a slow link, and it is paid at the one
+    moment the user is watching.
+
+    So this sends one throwaway GET from the calling thread, which must be the
+    thread that will answer the clicks. The answer is dropped. What is kept is
+    the open connection Qt now holds for that host.
+
+    Returns whether a request went out. Never raises: a warm that fails leaves
+    the click exactly as slow as it is today, and nothing else.
+    """
+    if not url:
+        return False
+    try:
+        manager = QgsNetworkAccessManager.instance()
+        if manager is None:
+            return False
+        request = QNetworkRequest(QUrl(url))
+        request.setTransferTimeout(_CONNECTION_WARM_TIMEOUT_MS)
+        reply = manager.get(request)
+        if reply is None:
+            return False
+
+        def _done() -> None:
+            _warming_replies.discard(reply)
+            reply.deleteLater()
+
+        # Connected BEFORE the reply is held, so nothing can be held by a
+        # connection that never happened: a reply added first and then failing
+        # to connect would sit in this set for the life of the process with
+        # nothing left to take it out.
+        reply.finished.connect(_done)
+        _warming_replies.add(reply)
+        return True
+    except Exception:  # noqa: BLE001 -- a warm must never reach the user
+        return False
+
+
 class _SwallowMousePresses(QObject):
     """Eat map clicks for as long as it is installed. See _drop_held_clicks."""
 

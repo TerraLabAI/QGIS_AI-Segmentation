@@ -104,9 +104,9 @@ class DockAutoReviewCorrectMixin:
                 pass
         try:
             self.auto_add_lane_method_line.setText(
-                tr("You place the corners, the same as on any QGIS layer.")
+                tr("You place the corners, the same as on any QGIS layer. Free.")
                 if method == "manual" else
-                tr("The AI outlines it, free, on your computer."))
+                tr("The AI outlines it. One cloud detection per object."))
         except (RuntimeError, AttributeError):
             pass
         self._apply_shape_only_mode(method)
@@ -218,10 +218,17 @@ class DockAutoReviewCorrectMixin:
             else:
                 self.auto_add_lane_btn.setStyleSheet(_BTN_TILE)
                 self.set_add_lane_keep_available(False)
+                self.set_add_lane_undo_available(False)
+                # Byte-identical to the tooltip auto_correct_build.py sets at
+                # build time, so one catalogue entry serves both and they can
+                # never disagree again. This branch runs on every arm and
+                # disarm, so it overwrites the build-time text: it said the Add
+                # lane was on-device and free, which is wrong twice. The lane
+                # is remote, and adding an object is the one thing that costs.
                 self.auto_add_lane_btn.setToolTip(tr(
                     "Add an object the AI missed. In AI, point at it and the "
-                    "on-device model outlines it, free; in Manual, draw its "
-                    "corners."))
+                    "model outlines it for one cloud detection; in Manual, draw "
+                    "its corners for free."))
                 self._refresh_correct_method_ui()
             self._refresh_add_lane_line()
         except (RuntimeError, AttributeError):
@@ -239,8 +246,27 @@ class DockAutoReviewCorrectMixin:
             self.auto_add_lane_keep_btn.setVisible(bool(available))
         except (RuntimeError, AttributeError):
             pass
+        self._refresh_add_lane_action_row()
         self._refresh_add_lane_line()
         self._refresh_correct_selection_hint()
+
+    def set_add_lane_undo_available(self, available: bool) -> None:
+        """Show Undo exactly while the lane has a gesture to take back (a point
+        placed, an outline, a part of one). Same rule as Keep beside it."""
+        try:
+            self.auto_add_lane_undo_btn.setVisible(bool(available))
+        except (RuntimeError, AttributeError):
+            pass
+        self._refresh_add_lane_action_row()
+
+    def _refresh_add_lane_action_row(self) -> None:
+        """The row carrying Keep and Undo is up only while one of them is."""
+        try:
+            self.auto_add_lane_action_row.setVisible(
+                self.auto_add_lane_keep_btn.isVisible()
+                or self.auto_add_lane_undo_btn.isVisible())
+        except (RuntimeError, AttributeError):
+            pass
 
     def set_add_lane_progress(self, count: int) -> None:
         """How many objects this Add session has kept so far. The hero says

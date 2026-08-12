@@ -108,7 +108,8 @@ class PairingPollTask(QgsTask):
                 if offline_streak >= self.OFFLINE_STREAK:
                     self._failure = (
                         tr("No connection to the sign-in service. Check your "
-                           "internet connection, then click Connect to try again."),
+                           "internet connection, then click Sign in to try "
+                           "again."),
                         "NO_INTERNET",
                     )
                     return False
@@ -134,7 +135,7 @@ class PairingPollTask(QgsTask):
                 self._failure = (
                     tr(
                         "This account has no active AI Segmentation plan. "
-                        "Reactivate it on terra-lab.ai, then click Connect again."
+                        "Reactivate it on terra-lab.ai, then click Sign in again."
                     ),
                     "NO_PLAN",
                 )
@@ -144,7 +145,8 @@ class PairingPollTask(QgsTask):
                 # The user left the browser page without confirming. Terminal:
                 # stop polling right away instead of spinning until timeout.
                 self._failure = (
-                    tr("Sign-in was cancelled in the browser. Click Connect to try again."),
+                    tr("Sign-in was cancelled in the browser. Click Sign in to "
+                       "try again."),
                     "CANCELLED",
                 )
                 return False

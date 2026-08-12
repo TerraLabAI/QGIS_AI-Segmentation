@@ -186,51 +186,23 @@ class ManualPredictMixin:
         # NOTHING on the GUI thread may touch it. Remember this click (last one
         # wins) and replay it through the normal path when the encode finishes;
         # never start a second encode (PERF-01).
-        if self._encoding_in_progress:
+        #
+        # Unless the pipe is held by a crop NOBODY asked for. A warm-up reads a
+        # neighbourhood the user may never click, and making a real click wait
+        # it out is the one thing a warm-up must never cost. The abandon
+        # re-checks everything and refuses when the crop was asked for by name
+        # or already has a click waiting on it, so this can only ever drop
+        # speculative work.
+        if self._encoding_in_progress and not self._abandon_speculative_manual_crop():
             self._remember_pending_manual_click("positive", point)
             self._wear_busy_cursor_for_crop()
             return
 
-        # Refine-in-Manual, while editing: a left-click INSIDE another saved
-        # detection switches to it (auto-save the current object, then select
-        # the target). Clicks on empty ground or inside the active shape stay
-        # editing clicks, so growing an object is untouched.
-        is_editing_click = False
-        if self._refine_handoff_active:
-            is_editing_click = self._is_refining_saved_object
-            is_editing_click = is_editing_click or self.current_mask is not None
-            is_editing_click = is_editing_click or self._active_crop_points_positive
-        if is_editing_click:
-            idx = self._hit_test_saved_polygon(raster_pt)
-            if idx is not None:
-                if self.map_tool:
-                    self.map_tool.remove_last_marker()
-                target = self.saved_polygons[idx]
-                was_editing = self._is_refining_saved_object
-                try:
-                    self._on_save_polygon()
-                except Exception as e:  # noqa: BLE001
-                    QgsMessageLog.logMessage(
-                        f"Refine switch: save fold error: {e}",
-                        "AI Segmentation", level=Qgis.MessageLevel.Warning)
-                # The save may have re-shuffled saved_polygons (append/absorb):
-                # re-resolve the target by identity. Absorbed into the save =>
-                # nothing left to select.
-                for i, pg in enumerate(self.saved_polygons):
-                    if pg is target:
-                        self._select_saved_polygon(i)
-                        break
-                # Say it: the click landed on a different object, so the one that
-                # was open got saved and closed. Without a word for it, the edit
-                # session ending reads as the click having been swallowed.
-                if was_editing and not self._headless:
-                    self.iface.messageBar().pushMessage(
-                        "AI Segmentation",
-                        tr("That is another object. The one you were editing is saved, and this one is now selected."),  # noqa: E501
-                        level=Qgis.MessageLevel.Info,
-                        duration=4
-                    )
-                return
+        # An edit in progress owns every click. A click that lands on another
+        # detection used to save and jump to it, which took the session away
+        # mid-gesture and made the ground under a neighbour unreachable: the
+        # user could never grow the open object over it. One object is edited at
+        # a time, and the way to another one is to finish this one first.
 
         # Check crop status BEFORE adding to active points, so the zoom
         # detection sees the true "no active points" state after a save.
@@ -304,8 +276,6 @@ class ManualPredictMixin:
         undo_note = None
         if self._last_prediction_found_nothing():
             undo_note = tr("No object found here. Try clicking somewhere else.")
-        elif self._last_click_took_from_another_object():
-            undo_note = tr("That ground belongs to another object, so nothing was added. Edit that object instead, or join the two with Merge with neighbours.")  # noqa: E501
         elif self._last_click_stood_clear_of_shape():
             undo_note = tr("That area does not touch the object you are editing, so nothing was added. Reshaping works on one object at a time.")  # noqa: E501
         if undo_note and self._mask_state_history:
@@ -323,11 +293,6 @@ class ManualPredictMixin:
                 duration=5
             )
             return
-
-        # Live complete-don't-stack: if this selection now overlaps an existing
-        # detection, weld them into one shape on the canvas right away (refine
-        # handoff only; no-op otherwise).
-        self._weld_active_into_overlaps()
 
     @slot_guard(stage="segment")
     def _on_negative_click(self, point):
@@ -374,8 +339,9 @@ class ManualPredictMixin:
 
         # Transport lock: defer to the encode completion while a worker owns the
         # predictor pipe (PERF-01), so a right-click during an encode is
-        # remembered, never routed into a second encode.
-        if self._encoding_in_progress:
+        # remembered, never routed into a second encode. A crop nobody asked
+        # for is dropped instead of waited out, same rule as the left click.
+        if self._encoding_in_progress and not self._abandon_speculative_manual_crop():
             self._remember_pending_manual_click("negative", point)
             self._wear_busy_cursor_for_crop()
             return
@@ -672,6 +638,12 @@ class ManualPredictMixin:
         is_first_point = one_positive and no_negatives and mask_input is None
         use_multimask = is_first_point
 
+        # Timed from here: this is the wait the user actually sits through, on
+        # whichever route answers them.
+        import time as _click_clock
+        self._manual_click_fell_back = False
+        click_started_at = _click_clock.monotonic()
+
         try:
             masks, scores, low_res_masks = self.predictor.predict(
                 point_coords=point_coords,
@@ -792,6 +764,8 @@ class ManualPredictMixin:
                 )
             return False
 
+        self._track_manual_click_answered(click_started_at)
+
         if use_multimask:
             total_pixels = masks[0].shape[0] * masks[0].shape[1]
             mask_areas = [int(m.sum()) for m in masks]
@@ -871,18 +845,19 @@ class ManualPredictMixin:
         # skips this.
         self._last_prediction_empty = not bool(self.current_mask.any())
         self._last_click_stood_clear = False
-        self._last_click_took_from_another = False
         if getattr(self, "_last_click_polarity", "positive") == "positive":
             if self._is_refining_saved_object:
                 # Editing ONE object: the answer joins that object, or it is not
                 # part of it. Pixel size comes from this crop, so the weld gap is
-                # a ground distance whatever the resolution.
+                # a ground distance whatever the resolution. What the OTHER
+                # detections cover is not consulted: the object open for editing
+                # is the only one in play, and it may grow wherever the user
+                # points, overlap included.
                 px_size = (maxx - minx) / float(img_width) if img_width else 0.0
-                (self.current_mask, self._last_click_stood_clear,
-                 self._last_click_took_from_another) = \
-                    self._grow_open_object_with_click(
-                        self.current_mask, raw_answer, prev_mask_for_merge,
-                        crop_bounds, img_shape, px_size)
+                (self.current_mask, self._last_click_stood_clear) = \
+                    self._grown_in_one_piece(
+                        self.current_mask, prev_mask_for_merge,
+                        img_height, img_width, px_size, raw_answer)
             else:
                 self.current_mask = self._grown_by_shape_so_far(
                     self.current_mask, prev_mask_for_merge, img_height, img_width)
@@ -953,62 +928,6 @@ class ManualPredictMixin:
         except Exception:  # noqa: BLE001 -- never break a click over this
             return new_mask
 
-    def _grow_open_object_with_click(self, new_mask, raw_answer, prior_mask,
-                                     crop_bounds, img_shape, pixel_size_m):
-        """``(mask, stood_clear, took_from_another)`` for a keep click on the one
-        object that is open for editing.
-
-        Two rules, in this order. The click may not take ground that belongs to
-        another detection, and what is left must reach the object being edited.
-        Order matters: clipping second could leave the far side of a neighbour
-        hanging off the shape as an island again.
-
-        Ground the shape ALREADY held is never clipped, so a detection that
-        arrived overlapping a neighbour is not carved up by a click that went
-        nowhere near it.
-        """
-        import numpy as np
-
-        img_height, img_width = img_shape
-        took = False
-        answer = raw_answer
-        try:
-            others = self._other_objects_mask_for_crop(crop_bounds, img_shape)
-            if others is not None:
-                others = others[:img_height, :img_width].astype(bool)
-                if prior_mask is not None:
-                    prior_b = prior_mask[:img_height, :img_width].astype(bool)
-                    if prior_b.shape == others.shape:
-                        others = np.logical_and(others, np.logical_not(prior_b))
-                if others.shape == new_mask.shape:
-                    keep = np.logical_not(others)
-                    took = bool(np.logical_and(
-                        raw_answer.astype(bool), others).any())
-                    new_mask = np.logical_and(
-                        new_mask.astype(bool), keep).astype(new_mask.dtype,
-                                                            copy=False)
-                    answer = np.logical_and(raw_answer.astype(bool), keep)
-        except Exception as e:  # noqa: BLE001 -- a click must not fail over this
-            QgsMessageLog.logMessage(
-                f"Could not keep the click off the other objects: {e}",
-                "AI Segmentation", level=Qgis.MessageLevel.Warning)
-
-        grown, stood_clear = self._grown_in_one_piece(
-            new_mask, prior_mask, img_height, img_width, pixel_size_m, answer)
-
-        # Which of the two rules to report: the neighbour wins, because it is the
-        # one the user can act on (fix that object, or merge the two).
-        if took and prior_mask is not None:
-            try:
-                prior_b = prior_mask[:img_height, :img_width].astype(bool)
-                added = np.logical_and(np.asarray(grown).astype(bool),
-                                       np.logical_not(prior_b))
-                if not added.any():
-                    return grown, False, True
-            except Exception:  # noqa: BLE001 -- reporting aid only  # nosec B110
-                pass
-        return grown, stood_clear, False
-
     def _grown_in_one_piece(self, new_mask, prior_mask, img_height, img_width,
                             pixel_size_m, raw_answer=None):
         """``(mask, click_stood_clear)`` for a keep click on an open object.
@@ -1042,11 +961,6 @@ class ManualPredictMixin:
         """Did the last keep click answer with something that never reached the
         object being edited? Its area was dropped and the shape is unchanged."""
         return bool(getattr(self, "_last_click_stood_clear", False))
-
-    def _last_click_took_from_another_object(self) -> bool:
-        """Did the last keep click ask for ground that belongs to another
-        detection, and have nothing left once that was refused?"""
-        return bool(getattr(self, "_last_click_took_from_another", False))
 
     def _freeze_display_polygon_outside_crop(self, crop_bounds) -> None:
         """Park the part of the open object that lies outside the encoded crop.
@@ -1240,8 +1154,45 @@ class ManualPredictMixin:
                 self._remote_click_wait_cursor = True
             except (RuntimeError, AttributeError):
                 self._remote_click_wait_cursor = False
+        self._arm_remote_click_note()
         self._apply_mask_band_style()
         return True
+
+    # How long a travelling answer may be silent before the panel names the
+    # wait. Short enough that a machine which has to start up says so long
+    # before the user decides the plugin is broken, long enough that an answer
+    # on a warm machine, which is a tenth of a second, never flashes a line.
+    _REMOTE_CLICK_NOTE_MS = 1_200
+
+    def _arm_remote_click_note(self) -> None:
+        """Name the wait in the panel, but only once it is long enough to be
+        one. Never raises: a click must not fail over a line of text."""
+        if self._headless:
+            return
+        try:
+            from .shared import _debounce_timer
+
+            _debounce_timer(self, "_remote_click_note_timer", self.dock_widget,
+                            self._REMOTE_CLICK_NOTE_MS, self._show_remote_click_note)
+        except Exception:  # noqa: BLE001 -- a note must never break a click  # nosec B110
+            pass
+
+    def _show_remote_click_note(self) -> None:
+        """The answer is still travelling: say so. Re-checks the wait, because
+        the timer outlives the click that armed it."""
+        if not self._remote_click_wait_showing():
+            return
+        self._set_manual_encoding_note(True, phase="remote")
+
+    def _clear_remote_click_note(self) -> None:
+        """Take the line down, and disarm a timer that has not fired yet."""
+        timer = getattr(self, "_remote_click_note_timer", None)
+        if timer is not None:
+            try:
+                timer.stop()
+            except (RuntimeError, AttributeError):
+                pass
+        self._set_manual_encoding_note(False)
 
     def _end_click_wait(self) -> None:
         """Take this click's waiting outline and busy cursor back down. ONE pop
@@ -1256,6 +1207,7 @@ class ManualPredictMixin:
                 QApplication.restoreOverrideCursor()
             except (RuntimeError, AttributeError):
                 pass
+        self._clear_remote_click_note()
         self._apply_mask_band_style()
 
     def _apply_mask_band_style(self) -> None:
@@ -1683,40 +1635,13 @@ class ManualPredictMixin:
         (trim spikes, simplify, right angles, corner rounding) and the user
         Min/Max size window. The shared tail of the preview, save, export and
         freeze paths, so the polygon a user gets is always exactly the one
-        previewed. None when no active mask or nothing survives refinement."""
-        if self.current_mask is None or self.current_transform_info is None:
-            return None
-        from ...core.polygon_exporter import (
-            apply_mask_refinement,
-            mask_to_polygons,
-        )
-        mask = self.current_mask
-        fill_holes, max_hole_px = self._fill_holes_arguments()
-        if fill_holes or self._refine_expand != 0 or self._refine_min_area > 0:
-            mask = apply_mask_refinement(
-                self.current_mask,
-                expand_value=self._refine_expand,
-                fill_holes=fill_holes,
-                min_area=self._refine_min_area,
-                max_hole_px=max_hole_px,
-            )
-        # Mask-level simplify tolerance: a multiple of the mask pixel size, OFF
-        # (0.0) unless the server tunes it, so today's polygonize is unchanged.
-        from ...core.detection_policy import manual_simplify_multiple_of_px
-        _mult = manual_simplify_multiple_of_px()
-        _tol = (_mult * self._crop_pixel_size_units(self.current_transform_info)
-                if _mult > 0 else 0.0)
-        geometries = mask_to_polygons(mask, self.current_transform_info, _tol)
-        if not geometries:
-            return None
-        combined = QgsGeometry.unaryUnion(geometries)
-        combined = self._shape_active_geometry(combined, self.current_transform_info)
-        if combined is None or combined.isEmpty():
-            return None
-        combined = self._filter_geometry_parts_by_size(combined)
-        if combined is None or combined.isEmpty():
-            return None
-        return combined
+        previewed. None when no active mask or nothing survives refinement.
+
+        The work itself lives in ManualShapeCacheMixin, which remembers the
+        answer: the preview has usually computed this shape already, and Save
+        and Export used to pay for it a second time.
+        """
+        return self._manual_active_outline()
 
     def _fill_holes_pixel_cap(self):
         """The Fill-holes size threshold in MASK PIXELS.
@@ -1856,11 +1781,7 @@ class ManualPredictMixin:
 
         try:
             from ...core.detection_policy import manual_simplify_multiple_of_px
-            from ...core.polygon_exporter import (
-                apply_mask_refinement,
-                count_significant_regions,
-                mask_to_polygons,
-            )
+            from ...core.polygon_exporter import count_significant_regions
 
             # Mask-level simplify tolerance: same OFF-by-default server dial as
             # the save/export path, so the preview equals what a save keeps.
@@ -1868,39 +1789,13 @@ class ManualPredictMixin:
             _tol = (_mult * self._crop_pixel_size_units(self.current_transform_info)
                     if _mult > 0 else 0.0)
 
-            # Everything the mask stage reads. Six of the ten refine controls
-            # (Points, Simplify, Trim spikes, Round corners, Right angles,
-            # Min/Max size) change NONE of it, yet a move on any of them used to
-            # re-clean and re-polygonize the whole mask: tens of ms of scipy and
-            # rasterio per settled slider tick, on the GUI thread.
+            # The mask stage is memoized in ManualShapeCacheMixin: six of the
+            # ten refine controls (Points, Simplify, Trim spikes, Round corners,
+            # Right angles, Min/Max size) change none of its inputs, and a move
+            # on any of them used to re-clean and re-polygonize the whole mask.
             fill_holes, max_hole_px = self._fill_holes_arguments()
-            mask_key = (self._refine_expand, fill_holes,
-                        self._refine_min_area, max_hole_px, _tol)
-            memo = getattr(self, "_mask_preview_memo", None)
-            memo_hit = memo is not None
-            memo_hit = memo_hit and memo[0] is self.current_mask
-            memo_hit = memo_hit and memo[1] is self.current_transform_info
-            memo_hit = memo_hit and memo[2] == mask_key
-            if memo_hit:
-                mask_to_display, geometries = memo[3], memo[4]
-            else:
-                # Apply refinement to preview in both modes (refine affects current mask only)
-                mask_to_display = self.current_mask
-                # Apply mask-level refinements (fill holes, expand/contract, min region)
-                if fill_holes or self._refine_expand != 0 or self._refine_min_area > 0:
-                    mask_to_display = apply_mask_refinement(
-                        self.current_mask,
-                        expand_value=self._refine_expand,
-                        fill_holes=fill_holes,
-                        min_area=self._refine_min_area,
-                        max_hole_px=max_hole_px,
-                    )
-                geometries = mask_to_polygons(
-                    mask_to_display, self.current_transform_info, _tol)
-                # Holding the mask keeps the `is` check above honest: a live
-                # reference cannot have its id reused by a later array.
-                self._mask_preview_memo = (
-                    self.current_mask, mask_key, mask_to_display, geometries)
+            mask_to_display, geometries = self._manual_mask_polygons(
+                fill_holes, max_hole_px, _tol)
 
             # Detect disjoint regions and show message bar warning. The region
             # count dilates and labels the whole mask, so it is asked for only
@@ -1919,21 +1814,14 @@ class ManualPredictMixin:
             # Build composite: frozen polygons + active mask polygons
             all_geoms = [s.polygon for s in self._frozen_sessions]
 
+            # Trim spikes, simplify, right angles, round corners, then the user
+            # Min/Max size window: the SAME shape Save and Export keep, and the
+            # same memo they read it from, so the preview cannot drift from the
+            # file and neither of them recomputes it.
             if geometries:
-                active_combined = QgsGeometry.unaryUnion(geometries)
+                active_combined = self._manual_active_outline()
                 if active_combined and not active_combined.isEmpty():
-                    # Trim spikes, simplify, right angles, round corners: the
-                    # SAME geometry tail the save/export path runs, so the
-                    # preview equals what a save keeps.
-                    active_combined = self._shape_active_geometry(
-                        active_combined, self.current_transform_info)
-                    # User Min/Max size window (ground m2): the preview drops
-                    # exactly the parts a save would drop.
-                    if active_combined and not active_combined.isEmpty():
-                        active_combined = self._filter_geometry_parts_by_size(
-                            active_combined)
-                    if active_combined and not active_combined.isEmpty():
-                        all_geoms.append(active_combined)
+                    all_geoms.append(active_combined)
 
             if all_geoms:
                 combined = QgsGeometry.unaryUnion(all_geoms)
@@ -1970,7 +1858,22 @@ class ManualPredictMixin:
                 self.mask_rubber_band = None
 
     def _on_undo(self):
-        """Undo last point added, or restore last saved mask in batch mode."""
+        """Undo last point added, or restore last saved mask in batch mode.
+
+        A wrapper so the Add lane's two buttons follow every path out of the
+        undo below, including the early ones: what is on screen after an undo
+        is what decides whether Keep and Undo are still offered.
+        """
+        try:
+            self._undo_one_gesture()
+        finally:
+            refresh = getattr(self, "_refresh_ai_add_keep_button", None)
+            if refresh is not None:
+                refresh()
+
+    def _undo_one_gesture(self):
+        """Take back one gesture: the last point, else the last frozen part,
+        else the last deleted object."""
         # Transport lock: while an off-thread encode owns the predictor pipe,
         # the session state is mid-transition (a deferred click may be waiting
         # to replay against the incoming crop). Rewinding points, mask history
@@ -2383,8 +2286,23 @@ class ManualPredictMixin:
         self._current_crop_actual_mupp = None
         self._current_crop_scale_factor = None
 
-        # Reset online layer state
+        # Reset online layer state. The private copy the warm-ups read imagery
+        # through goes with it: it belongs to the layer this session had.
         self._is_online_layer = False
+        try:
+            from ...core.online_layer_twin import release_online_layer_twin
+            release_online_layer_twin()
+        except Exception:  # noqa: BLE001 -- a reset must never raise  # nosec B110
+            pass
+        # The raster held open for this session's windowed reads goes with it,
+        # so the file is free to be moved or deleted the moment the user is
+        # done with it.
+        try:
+            from ...core.raster_dataset_cache import release_raster_datasets
+            release_raster_datasets()
+        except Exception:  # noqa: BLE001 -- a reset must never raise  # nosec B110
+            pass
+        self._manual_shape_cache_reset()
 
         # Reset refinement settings to defaults (#12, #23)
         self._refine_simplify = float(REFINE_SIMPLIFY_DEFAULT)

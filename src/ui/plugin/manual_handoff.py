@@ -19,7 +19,6 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from ...core.i18n import tr
-from ...core.prompt_manager import FrozenCropSession
 from ...core.qt_compat import PolygonGeometry
 from ...core.review_defaults import REFINE_SMOOTH_ITERATIONS
 from ..canvas_palette import PENDING_FILL, PENDING_STROKE
@@ -90,6 +89,17 @@ class ManualHandoffMixin:
             set_cloud_consent(accepted)
         except Exception:  # noqa: BLE001 -- an unaskable notice is a no
             accepted = False
+        else:
+            # Counted here too. The notice asked from this door is the same
+            # question as the one at Start, and an answer read only from the
+            # panel would leave this whole route out of the number. In its own
+            # guard: a count may never turn a yes into a no.
+            try:
+                from ...core import telemetry_session_events
+
+                telemetry_session_events.track_manual_cloud_consent(accepted)
+            except Exception:  # noqa: BLE001  # nosec B110
+                pass
         if not accepted:
             # The hover warm-up may already have put a remote predictor in the
             # slot. Hand it back, or the session starts on it anyway.
@@ -850,12 +860,9 @@ class ManualHandoffMixin:
             # before anything downstream compares areas or overlaps against
             # them. No-op unless the import had to convert on the way in.
             entries = self._handoff_entries_to_run_crs(entries)
-            # Dissolve any remaining overlaps so the committed output is uniform
-            # (never stacked layers), while distinct touching objects stay split.
-            # Identity-aware: a dissolved group keeps its first member's det_id
-            # (so the Random colour survives the round trip) and its max score,
-            # instead of dropping both lists and reshuffling every colour.
-            geoms, ids, scores = self._dissolve_overlapping_entries(
+            # Shapes go back exactly as the user left them, each with its own
+            # identity. Nothing is unioned on the way out.
+            geoms, ids, scores = self._handoff_entry_identities(
                 [(g, i, s) for g, i, s, _t in entries])
             review["geoms"] = geoms
             review["scores"] = scores
@@ -1602,94 +1609,25 @@ class ManualHandoffMixin:
         stack.append(unit)
         del stack[:-25]  # bounded: 25 undo units is plenty for a review pass
 
-    # Fraction of the SMALLER object's area that must overlap for two entries of
-    # the SAME run to be treated as one object when the entry list is merged.
-    # Tile fragments of one object overlap on the seam; distinct neighbours that
-    # merely touch share ~zero area, so they stay separate (the instance count
-    # is preserved).
-    _COMPLETE_OVERLAP_FRAC = 0.1
+    def _note_handoff_shape_saved(self, geom):
+        """The one choke point every saved shape passes through in the handoff
+        (the Save-shape button and the S key both land here), so it drives the
+        footer's "edited" tally. Returns the geometry unchanged.
 
-    # Same ratio, but for absorbing an EXISTING saved detection into a shape the
-    # user is drawing now. It has to mean "one of the two is essentially inside
-    # the other", because absorbing deletes the neighbour outside the Ctrl+Z
-    # history: _snapshot_mask_state carries neither _frozen_sessions nor
-    # saved_polygons, so a wrongly eaten polygon cannot be undone. A big new
-    # shape clipping a corner off a small old one is a neighbour, not a
-    # completion, and must leave it alone and reachable.
-    _ABSORB_COVER_FRAC = 0.8
-
-    def _absorb_overlapping_saved(self, geom):
-        """Refine handoff only: union `geom` with any already-saved detections it
-        genuinely OVERLAPS (shared area, not a mere shared edge) and drop those,
-        so a NEW shape drawn over an existing one grows into one polygon instead
-        of stacking a layer on top. Distinct neighbours that only touch are left
-        alone. Returns the (possibly grown) geometry."""
+        It used to union the shape with any saved detection it covered, and
+        delete that detection. Both directions of that are gone: a session edits
+        ONE object, and the polygons around it neither grow, shrink nor
+        disappear. Joining two of them stays the explicit Merge with neighbours
+        gesture, which the user can see and undo.
+        """
         if not self._refine_handoff_active or geom is None or geom.isEmpty():
             return geom
-        # This is the single choke point for a saved shape in the handoff (the
-        # Save-shape button and the S key both land here), so it drives the
-        # footer's "edited" tally.
         if self.dock_widget:
             try:
                 self.dock_widget.note_handoff_shape_edited()
             except (RuntimeError, AttributeError):
                 pass
-        # Saving an object that was OPENED for editing never eats its
-        # neighbours. One object is edited at a time, and a click can no longer
-        # grow it over another detection (_grow_open_object_with_click), so an
-        # overlap here can only be one the run itself produced. Swallowing a
-        # neighbour over 10% of it, silently and outside the undo history, is not
-        # an edit of the object the user opened. Joining two detections is what
-        # Merge with neighbours is for.
-        if self._is_refining_saved_object:
-            return geom
-        merged = geom
-        merged_bb = merged.boundingBox()
-        new_polys: list = []
-        new_bands: list = []
-        absorbed_any = False
-        inc_ok = True
-        for i in range(len(self.saved_polygons)):
-            pg = self.saved_polygons[i]
-            rb = self.saved_rubber_bands[i] if i < len(self.saved_rubber_bands) else None
-            g = self._entry_geom(pg)
-            absorb = False
-            # Cheap bbox pre-filter before the costly intersection().
-            if g is not None and not g.isEmpty() and merged_bb.intersects(g.boundingBox()) and merged.intersects(g):
-                inter = merged.intersection(g)
-                if inter is not None and not inter.isEmpty():
-                    smaller = min(merged.area(), g.area())
-                    if smaller > 0 and inter.area() / smaller >= self._ABSORB_COVER_FRAC:
-                        union = merged.combine(g)
-                        if union is not None and not union.isEmpty():
-                            merged = union
-                            merged_bb = merged.boundingBox()
-                            absorb = True
-            if absorb:
-                absorbed_any = True
-                inc_ok = self._handoff_remove_entry_feature(pg) and inc_ok
-                if rb is not None:
-                    self._safe_remove_rubber_band(rb)
-            else:
-                new_polys.append(pg)
-                # Append the band UNCONDITIONALLY (even when None): the two lists
-                # must stay index-locked or _ensure_polygon_rubberband_sync will
-                # truncate saved_polygons as "repair" and drop real detections.
-                new_bands.append(rb)
-        self.saved_polygons = new_polys
-        self.saved_rubber_bands = new_bands
-        # The common case absorbs NOTHING: zero provider work (the full
-        # both-layers rebuild used to run on every single Save here).
-        if absorbed_any:
-            if not inc_ok:
-                self._rebuild_handoff_layers()
-            else:
-                try:
-                    self._refresh_handoff_selection_band()
-                    self._set_handoff_hover(None)
-                except (RuntimeError, AttributeError):
-                    pass
-        return merged
+        return geom
 
     def _next_handoff_det_id(self) -> int:
         """Next synthetic per-instance id for entries with no canonical det_id
@@ -1708,140 +1646,23 @@ class ManualHandoffMixin:
         self._handoff_det_id_seq = seq + 1
         return seq
 
-    def _dissolve_overlapping_entries(self, entries: list):
-        """Union overlapping-by-area entries, identity-aware: entries are (geom,
-        det_id, score) triples. Overlapping-by-area geometries union into one
-        whose det_id is the FIRST member's (colour stability) and whose score is
-        the max (a stitched object is as confident as its best part). Returns the
-        aligned (geoms, ids, scores) lists; ids are always ints (synthetic ones
-        were assigned at entry creation), scores may carry a 1.0 fallback."""
-        from qgis.core import QgsFeature, QgsSpatialIndex
+    def _handoff_entry_identities(self, entries: list):
+        """Split (geom, det_id, score) triples into the three aligned lists the
+        review speaks, filling in a synthetic id and a 1.0 score where the entry
+        carries none. Shapes are passed through untouched.
+
+        Overlapping entries used to be unioned here, so a hand-added object that
+        clipped a neighbour left the session as ONE polygon. Nothing joins two
+        objects behind the user's back any more: what they drew is what they
+        keep, overlap included, and Merge with neighbours is how two become one.
+        """
         items = [(g, i, s) for g, i, s in entries
                  if g is not None and not g.isEmpty()]
-        if len(items) <= 1:
-            geoms = [g for g, _i, _s in items]
-            ids = [int(i) if i is not None else self._next_handoff_det_id()
-                   for _g, i, _s in items]
-            scores = [float(s) if s is not None else 1.0 for _g, _i, s in items]
-            return geoms, ids, scores
-        index = QgsSpatialIndex()
-        keep: dict = {}
-        nid = 0
-        for g, det_id, score in items:
-            merged = g
-            m_id = det_id
-            m_score = score
-            matches = []
-            for fid in index.intersects(merged.boundingBox()):
-                rec = keep.get(fid)
-                if rec is None:
-                    continue
-                h = rec[0]
-                if not merged.intersects(h):
-                    continue
-                inter = merged.intersection(h)
-                if inter is None or inter.isEmpty():
-                    continue
-                smaller = min(merged.area(), h.area())
-                if smaller > 0 and inter.area() / smaller >= self._COMPLETE_OVERLAP_FRAC:
-                    matches.append(fid)
-            for fid in matches:
-                h, h_id, h_score = keep[fid]
-                union = merged.combine(h)
-                if union is not None and not union.isEmpty():
-                    merged = union
-                    # The EARLIER keeper's identity wins: its colour is what the
-                    # user has been looking at since the run streamed in.
-                    if h_id is not None:
-                        m_id = h_id if m_id is None else min(m_id, h_id)
-                    if h_score is not None:
-                        m_score = h_score if m_score is None else max(m_score, h_score)
-                    keep[fid] = None
-            feat = QgsFeature(nid)
-            feat.setGeometry(merged)
-            index.insertFeature(feat)
-            keep[nid] = (merged, m_id, m_score)
-            nid += 1
-        geoms, ids, scores = [], [], []
-        for rec in keep.values():
-            if rec is None:
-                continue
-            g, i, s = rec
-            geoms.append(g)
-            ids.append(int(i) if i is not None else self._next_handoff_det_id())
-            scores.append(float(s) if s is not None else 1.0)
+        geoms = [g for g, _i, _s in items]
+        ids = [int(i) if i is not None else self._next_handoff_det_id()
+               for _g, i, _s in items]
+        scores = [float(s) if s is not None else 1.0 for _g, _i, s in items]
         return geoms, ids, scores
-
-    def _weld_active_into_overlaps(self) -> None:
-        """Live 'complete-don't-stack' during a refine handoff: if the active SAM
-        selection now overlaps existing saved detection(s) by area, fold each into
-        a FROZEN session (and drop its saved entry) so the canvas shows ONE welded
-        shape immediately and a Save commits it as one polygon. Frozen sessions are
-        already composited with the active mask in both the preview and the save,
-        so no SAM re-call is needed - just a polygonize of the current crop mask
-        (cheap) plus a bbox-pruned overlap scan. Touching-only neighbours (~0
-        shared area) are left alone, preserving the instance count."""
-        if not self._refine_handoff_active:
-            return
-        if self._is_refining_saved_object:
-            # An OPEN edit absorbs its neighbours at Save time only
-            # (_absorb_overlapping_saved): a live weld here would delete them
-            # outside the Ctrl+Z history (undo would shrink the object but
-            # never bring the neighbours back).
-            return
-        if self.current_mask is None or self.current_transform_info is None:
-            return
-        from ...core.polygon_exporter import mask_to_polygons
-        geoms = mask_to_polygons(self.current_mask, self.current_transform_info)
-        if not geoms:
-            return
-        active = QgsGeometry.unaryUnion(geoms)
-        if active is None or active.isEmpty():
-            return
-        active_bb = active.boundingBox()
-        new_polys: list = []
-        new_bands: list = []
-        folded = False
-        inc_ok = True
-        for i in range(len(self.saved_polygons)):
-            pg = self.saved_polygons[i]
-            rb = self.saved_rubber_bands[i] if i < len(self.saved_rubber_bands) else None
-            g = self._entry_geom(pg)
-            absorb = False
-            if g is not None and not g.isEmpty() and active_bb.intersects(g.boundingBox()) and active.intersects(g):
-                inter = active.intersection(g)
-                if inter is not None and not inter.isEmpty():
-                    smaller = min(active.area(), g.area())
-                    if smaller > 0 and inter.area() / smaller >= self._ABSORB_COVER_FRAC:
-                        absorb = True
-            if absorb:
-                self._frozen_sessions.append(FrozenCropSession(polygon=g))
-                folded = True
-                inc_ok = self._handoff_remove_entry_feature(pg) and inc_ok
-                if rb is not None:
-                    self._safe_remove_rubber_band(rb)
-            else:
-                new_polys.append(pg)
-                # Append UNCONDITIONALLY (even None) to keep the two lists
-                # index-locked; see _absorb_overlapping_saved.
-                new_bands.append(rb)
-        if folded:
-            self.saved_polygons = new_polys
-            self.saved_rubber_bands = new_bands
-            if not inc_ok:
-                self._rebuild_handoff_layers()
-            else:
-                try:
-                    self._refresh_handoff_selection_band()
-                    self._set_handoff_hover(None)
-                except (RuntimeError, AttributeError):
-                    pass
-            if self.dock_widget:
-                try:
-                    self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
-                except (RuntimeError, AttributeError):
-                    pass
-            self._update_mask_visualization()
 
     def _clear_active_mask_without_saving(self) -> None:
         """Drop the active mask + its clicks/markers WITHOUT saving it (used by
@@ -2247,37 +2068,6 @@ class ManualHandoffMixin:
         if combined is None or combined.isEmpty():
             return None
         return combined
-
-    def _other_objects_mask_for_crop(self, bounds, img_shape):
-        """Every OTHER detection's ground on this crop's pixel grid, or None.
-
-        Editing runs on one object at a time, so the shape being edited must not
-        grow over its neighbours: an overlap reads as two objects claiming the
-        same ground, and the save used to answer that by swallowing the
-        neighbour whole. The object being edited is not in here, since opening
-        it took it out of ``saved_polygons``.
-        """
-        if not self._refine_handoff_active or not self.saved_polygons:
-            return None
-        try:
-            from qgis.core import QgsRectangle
-            crop = QgsRectangle(bounds[0], bounds[1], bounds[2], bounds[3])
-            parts = []
-            for entry in self.saved_polygons:
-                g = self._entry_geom(entry)
-                if g is None or g.isEmpty():
-                    continue
-                if not crop.intersects(g.boundingBox()):
-                    continue
-                parts.append(g)
-            if not parts:
-                return None
-            union = parts[0] if len(parts) == 1 else QgsGeometry.unaryUnion(parts)
-            if union is None or union.isEmpty():
-                return None
-            return self._rasterize_geom_to_crop(union, bounds, img_shape)
-        except Exception:  # noqa: BLE001 -- a click must not fail over this
-            return None
 
     def _rasterize_geom_to_crop(self, geom, bounds, img_shape):
         """The shape so far, on the crop's pixel grid. None only when there is

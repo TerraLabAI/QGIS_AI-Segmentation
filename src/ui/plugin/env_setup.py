@@ -605,6 +605,17 @@ class EnvSetupMixin:
         except (RuntimeError, AttributeError):
             return True
 
+    def _install_entry_kind(self) -> str:
+        """Which door the install now running came through.
+
+        Semi-Auto asks for the on-device AI in a window that holds QGIS until
+        it ends. Automatic asks for a lighter one in the background. They send
+        the same four events, so the two have to be readable apart.
+        """
+        return ("semi_auto_modal"
+                if getattr(self, "_install_includes_local_model", False)
+                else "background")
+
     def _on_install_requested(self, include_local_model: bool | None = None):
         # Which half of the install this is. Read once, here, and remembered
         # for the workers and for every status the run reports: the mode can
@@ -766,7 +777,8 @@ class EnvSetupMixin:
         self._install_attempt = _bump_install_attempt()
         try:
             from ...core import telemetry_session_events
-            telemetry_session_events.track_install_started()
+            telemetry_session_events.track_install_started(
+                entry=self._install_entry_kind())
         except Exception:
             pass  # nosec B110
 
@@ -1181,7 +1193,7 @@ class EnvSetupMixin:
         if self.dock_widget:
             self.dock_widget.show_pairing_idle()
             self.dock_widget.set_activation_message(
-                tr("Sign-in timed out. Click Connect to try again."),
+                tr("Sign-in timed out. Click Sign in to try again."),
                 is_error=True,
             )
         try:
@@ -1862,6 +1874,7 @@ class EnvSetupMixin:
                     python_minor=sys.version_info.minor,
                     retry_count=getattr(self, "_install_attempt", 0),
                     detail=message,
+                    entry=self._install_entry_kind(),
                 )
             except Exception:
                 pass  # nosec B110
@@ -1890,6 +1903,7 @@ class EnvSetupMixin:
                         duration_ms=int((_time.monotonic() - t0) * 1000),
                         python_minor=sys.version_info.minor,
                         retry_count=getattr(self, "_install_attempt", 0),
+                        entry=self._install_entry_kind(),
                     )
                     self._install_t0 = 0.0
                 _clear_install_attempts()
@@ -1994,6 +2008,7 @@ class EnvSetupMixin:
                     python_minor=sys.version_info.minor,
                     retry_count=getattr(self, "_install_attempt", 0),
                     detail=message,
+                    entry=self._install_entry_kind(),
                 )
             except Exception:
                 pass  # nosec B110
@@ -2022,7 +2037,8 @@ class EnvSetupMixin:
                 from ...core import telemetry_session_events
                 t0 = getattr(self, "_install_t0", 0.0)
                 telemetry_session_events.track_install_cancelled(
-                    duration_ms=int((_time.monotonic() - t0) * 1000) if t0 else None)
+                    duration_ms=int((_time.monotonic() - t0) * 1000) if t0 else None,
+                    entry=self._install_entry_kind())
             except Exception:
                 pass  # nosec B110
             QgsMessageLog.logMessage(

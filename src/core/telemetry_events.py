@@ -7,7 +7,7 @@ REGISTRY_VERSION together.
 """
 from __future__ import annotations
 
-REGISTRY_VERSION = 21
+REGISTRY_VERSION = 22
 
 # --- Lifecycle ------------------------------------------------------------
 PLUGIN_FIRST_OPEN = "plugin_first_open"
@@ -89,6 +89,11 @@ MANUAL_ABANDONED = "manual_abandoned"
 # being adopted, and how many people refuse it once they read what it sends.
 MANUAL_ENGINE_CHOSEN = "manual_engine_chosen"
 MANUAL_CLOUD_CONSENT = "manual_cloud_consent"
+# One click and its answer: which AI gave it, and how long the user waited.
+# Sampled, because a Semi-Auto session is hundreds of clicks.
+MANUAL_CLICK_ANSWERED = "manual_click_answered"
+# What the account did with the credit for one saved object.
+MANUAL_OBJECT_CHARGED = "manual_object_charged"
 
 # --- Monetization ---------------------------------------------------------
 PRO_UPSELL_VIEWED = "pro_upsell_viewed"
@@ -205,6 +210,8 @@ ALL_EVENTS = frozenset({
     MANUAL_ABANDONED,
     MANUAL_ENGINE_CHOSEN,
     MANUAL_CLOUD_CONSENT,
+    MANUAL_CLICK_ANSWERED,
+    MANUAL_OBJECT_CHARGED,
     PRO_UPSELL_VIEWED,
     PRO_UPSELL_CLICKED,
     FREE_TASTE_CONSUMED,
@@ -295,6 +302,9 @@ REQUIRED_PROPS: dict[str, tuple[str, ...]] = {
     MANUAL_ABANDONED: ("context",),
     MANUAL_ENGINE_CHOSEN: ("engine",),
     MANUAL_CLOUD_CONSENT: ("accepted",),
+    # sample_rate carries the 1-in-N factor, same rule as SEGMENTATION_RUN.
+    MANUAL_CLICK_ANSWERED: ("engine", "sample_rate"),
+    MANUAL_OBJECT_CHARGED: ("outcome",),
     # --- Monetization -----------------------------------------------------
     PRO_UPSELL_VIEWED: (),
     PRO_UPSELL_CLICKED: (),

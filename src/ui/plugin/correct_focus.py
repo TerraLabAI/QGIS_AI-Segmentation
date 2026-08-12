@@ -26,6 +26,13 @@ from qgis.PyQt.QtWidgets import QApplication
 from ...core.qt_compat import WaitCursor
 from ..canvas_palette import SESSION_DIM_FILL_STR, SESSION_DIM_STROKE_STR
 
+# The focus id for a session drawing an object that does not exist yet (the Add
+# lane). It matches no row, so every polygon on the map greys out and none of
+# them answers a click or a hover, which is the same rule as a fix session with
+# one more polygon in the pale set. Negative because a real det_id is a QGIS
+# feature id or a synthetic one from _next_handoff_det_id, and both are positive.
+FOCUS_ID_NEW_OBJECT = -1
+
 
 def dimmed_others_renderer(base_renderer, det_id: int):
     """Wrap a layer renderer so only ``det_id`` keeps its colours.

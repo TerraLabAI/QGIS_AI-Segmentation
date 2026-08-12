@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+from functools import lru_cache
 from pathlib import Path
 
 from qgis.core import (
@@ -77,6 +78,7 @@ from .plugin.manual_crops import ManualCropsMixin
 from .plugin.manual_handoff import ManualHandoffMixin
 from .plugin.manual_object_billing import ManualObjectBillingMixin
 from .plugin.manual_predict import ManualPredictMixin
+from .plugin.manual_shape_cache import ManualShapeCacheMixin
 from .plugin.manual_workflow import ManualWorkflowMixin
 from .plugin.qgis_edit_bridge import QgisEditBridgeMixin
 from .plugin.qgis_edit_tool_messages import QgisEditToolMessagesMixin
@@ -123,6 +125,7 @@ class AISegmentationPlugin(
     ManualWorkflowMixin,
     ManualCropsMixin,
     ManualCropWindowMixin,
+    ManualShapeCacheMixin,
     ManualPredictMixin,
 ):
     """The plugin controller. Behaviour is split across the mixins above
@@ -156,13 +159,13 @@ class AISegmentationPlugin(
         self.current_mask = None
         self.current_score = 0.0
         self.current_transform_info = None
-        # Manual preview memo: the mask-stage output (cleaned mask + its
-        # polygons) for one (mask object, mask-stage settings) pair. A refine
-        # slider that only moves a GEOMETRY dial reads it instead of
-        # re-cleaning and re-polygonizing the whole mask. Keyed on the mask
-        # OBJECT, which every writer rebinds rather than mutates, so a new
-        # prediction misses it with no explicit invalidation.
+        # The Semi-Auto session's two shape memos (ManualShapeCacheMixin): the
+        # mask stage, and the finished outline the preview draws and Save and
+        # Export keep. Both keyed on the mask OBJECT and the crop OBJECT, which
+        # every writer rebinds rather than mutates, so a new prediction misses
+        # them with no explicit invalidation.
         self._mask_preview_memo = None
+        self._manual_outline_memo = None
         self.current_low_res_mask = None  # For iterative refinement with negative points
         self.saved_polygons = []
         # Refine-in-Manual handoff: while True, a Manual session is refining the
@@ -852,8 +855,14 @@ class AISegmentationPlugin(
                 self._ensure_dock_height()
 
     @staticmethod
+    @lru_cache(maxsize=1)
     def _read_plugin_version() -> str:
-        """Read the plugin version from metadata.txt (plugin root)."""
+        """Read the plugin version from metadata.txt (plugin root).
+
+        Cached: the file cannot change while the plugin is loaded, and every
+        export used to open and scan it again on the click the user is waiting
+        on.
+        """
         plugin_dir = os.path.dirname(os.path.dirname(os.path.dirname(
             os.path.abspath(__file__))))
         metadata_path = os.path.join(plugin_dir, "metadata.txt")
@@ -946,6 +955,21 @@ class AISegmentationPlugin(
         # here, while the dock is alive, because it clears the panel note too.
         try:
             self._invalidate_manual_encode()
+        except Exception:  # noqa: BLE001 -- unload must never raise
+            pass  # nosec B110
+        # The private copy of a rendered layer that the warm-ups read through.
+        # Held by a module, so nothing else here would ever let it go.
+        try:
+            from ..core.online_layer_twin import release_online_layer_twin
+            release_online_layer_twin()
+        except Exception:  # noqa: BLE001 -- unload must never raise
+            pass  # nosec B110
+        # Same for the raster held open for windowed reads: a module holds it,
+        # so an unload that left it there would keep the file locked with no
+        # plugin left to free it.
+        try:
+            from ..core.raster_dataset_cache import release_raster_datasets
+            release_raster_datasets()
         except Exception:  # noqa: BLE001 -- unload must never raise
             pass  # nosec B110
         # Roll back and restore first if a QGIS digitizing bridge is open, so

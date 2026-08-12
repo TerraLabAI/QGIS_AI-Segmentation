@@ -391,12 +391,13 @@ class _RunCard(QFrame):
 
         # One credit per tile, so printing both numbers says the same thing
         # twice. The run detail carries the full billing breakdown.
-        meta_bits = [tr("{tiles} tiles").format(tiles=_fmt_count(run.get("tiles")))]
+        meta_bits = [tr("{tiles} cloud detections").format(
+            tiles=_fmt_count(run.get("tiles")))]
         tiles = int(run.get("tiles") or 0)
         credits = int(run.get("credits") or 0)
         if credits != tiles:
             meta_bits.append(
-                tr("{credits} credits").format(credits=_fmt_count(credits)))
+                tr("{credits} charged").format(credits=_fmt_count(credits)))
         when = _relative_when(_iso_norm(
             run.get("started_at") or run.get("created_at")))
         if when:
