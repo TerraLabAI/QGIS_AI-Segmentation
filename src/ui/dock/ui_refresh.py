@@ -19,7 +19,9 @@ from ...core.activation_manager import (
     has_tos_accepted,
     has_tos_locked,
 )
+from ...core.cloud_notice_seen import cloud_notice_seen
 from ...core.i18n import tr
+from .cloud_notice_line import cloud_notice_line_html
 from .font_scale import scale_qss_font_px, widget_pixel_ratio
 from .guidance import (
     HINT_EXEMPLAR_DRAW_BOX,
@@ -800,6 +802,14 @@ class DockStateMixin:
                 self._go_to_auto_step(1)
             else:
                 self._go_to_auto_step(2)
+        # The cloud disclosure on the Precision card, which is where the run is
+        # priced and the last screen before Detect sends a tile. Read here and
+        # nowhere else in this panel: the flag may only change what is drawn.
+        try:
+            self.auto_privacy_line.setText(cloud_notice_line_html())
+            self.auto_privacy_line.setVisible(not cloud_notice_seen())
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110 -- the widget can be gone during teardown
         self._refresh_auto_credits_display()
         self._update_auto_detect_enabled()
 

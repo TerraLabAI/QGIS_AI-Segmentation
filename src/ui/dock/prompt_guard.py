@@ -9,11 +9,11 @@ import unicodedata
 # ---------------------------------------------------------------------------
 # Prompt guard rail for the Automatic (cloud) text box.
 #
-# the cloud model segments a CONCEPT named by a short English noun phrase ("solar panel").
-# Its paper says it is NOT for sentences, questions, or referring expressions,
-# and Esri / Wherobots confirm it wants clear, countable objects. It also only
-# understands ENGLISH: a prompt in any other language silently returns garbage,
-# which reads as "the AI is bad" instead of "the prompt was off the rails".
+# The cloud engine grounds a CONCEPT named by a short English noun phrase
+# ("solar panel"). Sentences, questions and referring expressions are out of
+# scope, and so is any language other than English: a prompt in another
+# language returns nothing usable, so it is caught here and the user is routed
+# back to an English object word.
 #
 # validate_prompt blocks the off-rails cases (sentences, referring expressions,
 # abstract/subjective words, several objects at once, non-English input) and

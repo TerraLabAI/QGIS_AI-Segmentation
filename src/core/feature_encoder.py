@@ -584,9 +584,12 @@ def crop_read_is_thread_safe(raster_path):
     reading thread. Without them the shadow is process-wide, so a canvas
     render would look for proj.db while it is blanked and come back
     unprojected or empty: such a read stays on the GUI thread instead.
+
+    Asked of EVERY raster, not just the GDAL-only formats. A .tif used to be
+    answered True on the strength of reading through rasterio, and since
+    extract_crop_from_raster falls back to GDAL when rasterio is missing, that
+    answer was about to become a promise this module could not keep.
     """
-    if not _needs_gdal_conversion(raster_path):
-        return True
     try:
         from osgeo import gdal
     except ImportError:
@@ -940,14 +943,27 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
             from rasterio.enums import Resampling
             from rasterio.windows import Window
         except ImportError as err:
-            # Keep the real reason. A missing package and a package whose native
-            # extension will not load both land here, and only the second one
-            # says why (a dlopen failure, an ABI mismatch against the host numpy).
-            # The caller's automatic repair only helps the first, so discarding
-            # the text left every one of these undiagnosable. Telemetry scrubs
-            # paths out of the message before it leaves the machine.
-            return (None, None, f"rasterio is not available: {err}",
-                    "crop_error_rasterio_unavailable")
+            # Read it through QGIS's own GDAL instead of giving up. The crop is
+            # the same window either way, and _read_crop_with_gdal above has
+            # always produced it for the GDAL-only formats.
+            #
+            # Until 2.4.1 this branch was close to unreachable: Semi-Auto needed
+            # the ~2 GB local model, and the install that placed it placed
+            # rasterio too, so anyone who could click already had both. 2.4.1
+            # made cloud the default and shipped a short install, which puts
+            # rasterio on the critical path of a user who never asked for a
+            # local model. On Windows that install misses it often enough to
+            # dead-end a first click. Nothing downstream of the crop imports
+            # rasterio, so GDAL alone carries the whole cloud lane.
+            QgsMessageLog.logMessage(
+                f"rasterio is not available ({str(err)}), "
+                f"reading the crop through GDAL instead...",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning
+            )
+            return _read_crop_with_gdal(
+                raster_path, center_x, center_y, crop_size,
+                scale_factor, layer_extent, ground_aspect
+            )
 
     try:
         # Held open between clicks. A COG over http re-reads its header, its

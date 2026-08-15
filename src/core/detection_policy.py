@@ -804,18 +804,16 @@ def free_monthly_allowance(policy: dict | None = None) -> int:
     Only the per-run share cap (``free_run_fraction``) is derived from it;
     nothing here grants or spends anything. Read from
     ``seed.free_monthly_allowance`` so the number can move without a plugin
-    release. Fallback 200, the allowance a new free key gets since the
-    2026-08-11 cutover (keys minted before it keep 300, and their real number
-    reaches the UI through the server's ``free_detections_total``).
-    Must stay positive."""
+    release. Fallback 200. The live number is served, and the UI reads the
+    server's own ``free_detections_total``. Must stay positive."""
     val = int(_seed_float("free_monthly_allowance", 200.0, policy))
     return val if val > 0 else 200
 
 
 def free_zone_max_km2(fallback: float, policy: dict | None = None) -> float:
     """Max geodesic area (km2) a free-tier Detect zone may cover before the
-    draw is refused with an upsell. A monetization dial the server can loosen
-    or tighten without a plugin release. The fallback is the client's own
+    draw is refused with an upsell. Served, so it can move without a plugin
+    release. The fallback is the client's own
     generic constant (kept in the UI layer and passed in here so this core
     module stays free of any UI import). Must stay positive."""
     val = _seed_float("free_zone_max_km2", fallback, policy)
@@ -823,10 +821,10 @@ def free_zone_max_km2(fallback: float, policy: dict | None = None) -> float:
 
 
 def max_tiles_per_run(fallback: int, policy: dict | None = None) -> int:
-    """Hard ceiling on how many tiles (credits) one Detect may span. A cost /
-    abuse dial the server can raise (enterprise) or lower (cost control) without
-    a plugin release. The fallback is the client's own constant, passed in so
-    this core module stays UI-free. Must stay positive."""
+    """Hard ceiling on how many tiles (credits) one Detect may span. A served
+    ceiling, so it can move without a plugin release. The fallback is the
+    client's own constant, passed in so this core module stays UI-free. Must
+    stay positive."""
     val = int(_seed_float("max_tiles_per_run", float(fallback), policy))
     return val if val > 0 else fallback
 
@@ -1857,10 +1855,9 @@ def gate_prefilter_nodata_frac(policy: dict | None = None) -> float:
     no-data tile, the provably-safe point). Only fractions in (0, 1] are
     honoured.
 
-    The server may loosen it, but the benchmark corpus says not to yet: over
-    727 archived tiles the most no-data tile that returned real objects is
-    94.1% no-data and the emptiest that returned none is 90.6%, so no fraction
-    below 1.0 drops a barren tile without also dropping a productive one."""
+    Only a fully no-data tile can be dropped without risk, because no no-data
+    fraction below 1.0 separates a barren tile from a productive one. The
+    server may loosen it."""
     val = gate_prefilter_policy(policy).get("nodata_frac")
     if _is_finite_policy_value(val) and 0.0 < val <= 1.0:
         return float(val)
@@ -1884,9 +1881,8 @@ def gate_prefilter_nodata_rgb_eps(fallback: int, policy: dict | None = None) -> 
 def gate_prefilter_min_valid_px(fallback: float, policy: dict | None = None) -> float:
     """Valid (non-no-data) pixel count under which a rendered tile settles as
     empty. Fallback: the client constant, the pipeline's own noise floor
-    squared, which is the provable bound and fires on nothing in the benchmark
-    corpus (smallest archived valid region: 392600 px). Capped well under a
-    tile so a bad policy cannot turn a provable rule into a lossy skip."""
+    squared, which is the provable bound. Capped well under a tile so a bad
+    policy cannot turn a provable rule into a lossy skip."""
     val = gate_prefilter_policy(policy).get("min_valid_px")
     if _is_finite_policy_value(val) and 0.0 <= val <= 4096.0:
         return float(val)

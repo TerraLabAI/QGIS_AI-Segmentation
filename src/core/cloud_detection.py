@@ -249,28 +249,22 @@ _BLANK_TILE_QUANT: int = 16
 # Degenerate-tile prefilter, no-data by COLOUR. _tile_render_settings paints an
 # OPAQUE black background (setBackgroundColor(QColor(0, 0, 0))), so ground the
 # layer does not cover comes back as RGB (0, 0, 0) at alpha 255, never as a
-# transparent pixel. Measured on a window half off a real ortho: alpha == 0 over
-# 0.0% of the render, pure black over 50.0%. So an alpha-only no-data rule reads
-# every tile as fully valid and can never fire.
+# transparent pixel. An alpha-only no-data rule therefore reads every tile as
+# fully valid and can never fire.
 #
 # EXACT black is what separates no-data from dark ground, which is why the
-# tolerance is 0 and not a margin. Over the 727 archived tiles of the benchmark
-# corpus: a no-data tile holds 93.7% of its pixels at exactly (0, 0, 0) and
-# 94.1% at a tolerance of 48, so the region is flat black and widening the
-# tolerance adds nothing. The darkest genuinely dark tiles (deep water, shadow,
-# mean luminance 45) hold 0.0% at exactly black and up to 77% at a tolerance of
-# 48. No tile that is not no-data reaches 0.71% of exact black. A dark roof,
-# night water and deep shadow all carry sensor noise; a background fill does not.
+# tolerance is 0 and not a margin. A background fill is flat black, so widening
+# the tolerance adds nothing on a no-data region and starts matching deep
+# water, night scenes and shadow, which carry sensor noise a fill does not.
 _PREFILTER_NODATA_RGB_EPS: int = 0
 # Valid (non-no-data) pixel count under which a tile provably cannot produce a
 # shipped object, so it settles as empty with no request. The pipeline's own
 # noise floor is MIN_SIZE_NOISE_MASK_PX (3) mask pixels across, and a detection
 # smaller than that is dropped as noise at ANY review setting, so a valid region
 # under 3 x 3 pixels cannot survive whatever the user does with the Min size
-# spinbox. Deliberately the provable bound and nothing wider: on the same 727
-# archived tiles the SMALLEST valid region is 2057 m2 (392600 px), and the tile
-# holding it returned real objects, so the corpus offers no evidence for any cut
-# above the floor. The server can raise it once evidence exists.
+# spinbox. Deliberately the provable bound and nothing wider: a sliver of real
+# ground along a footprint edge still returns real objects, so nothing supports
+# a cut above the floor. The server can raise it once evidence exists.
 _PREFILTER_MIN_VALID_PX: float = 9.0
 
 # Unavailable-imagery skip. An online tile source that holds no image for a
@@ -1115,10 +1109,10 @@ def tile_is_degenerate_array(
     with one boat or a plain roof carrying panels has low variance but real
     content, and must never be settled here (the broader dominant-bucket
     ``tile_is_blank`` covers the retry-then-drop path for near-uniform
-    renders). Nor is it a mostly-black test: a tile can be 94% no-data and
-    still hold the objects the run is looking for along the footprint edge, and
-    over the benchmark corpus that tile returned real detections while a 91%
-    one returned none, so no fraction separates them and none is used.
+    renders). Nor is it a mostly-black test: a tile can be almost all no-data
+    and still hold the objects the run is looking for along the footprint edge,
+    so no no-data fraction separates a barren tile from a productive one and
+    none is used.
 
     The zero-loss claim also requires FULL-RES input: a downsampled sample can
     lose a small object entirely, so it can never prove absence.

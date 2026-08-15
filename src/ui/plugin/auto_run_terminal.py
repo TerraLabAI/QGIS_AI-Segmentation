@@ -44,6 +44,15 @@ class AutoRunTerminalMixin:
         self._auto_worker = None
         self._drop_auto_tile_bridge()
         self._auto_tel_stop_reason = "completed"
+        # The tiles went and the masks came back, so the disclosure has done
+        # its job and the line retires. Visibility only: nothing reads this
+        # back to decide whether a run may happen.
+        try:
+            from ...core.cloud_notice_seen import mark_cloud_notice_seen
+
+            mark_cloud_notice_seen()
+        except Exception:  # noqa: BLE001 -- a lost write shows the line again  # nosec B110
+            pass
         self._finalize_auto_results(tiles_succeeded)
 
     def _finalize_auto_results(self, tiles_succeeded: int) -> None:

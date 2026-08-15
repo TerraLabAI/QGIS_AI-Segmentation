@@ -114,17 +114,15 @@ class DockAutoCreditsMixin:
         the ceiling. Never raises: a slider move calls it.
 
         Four served ids, one per form: free or subscriber, ceiling known or
-        not. ``max_tiles_per_run_cap()`` is tier-BLIND (a flat cost/abuse dial,
-        800 by default), so this refusal fires at the same size on both plans
-        and Pro would be refused this zone too. The subscriber form is
-        therefore purely informational, and the free form promises only what is
-        true: a free run is separately bounded by ``free_run_fraction`` well
-        under the ceiling, so precision is what Pro buys back here. Neither
-        shipped sentence quotes the ceiling, because the number that stops a
-        free user is the other one. The {cap} fill stays on the cap-known
-        branch so a served override MAY quote it where it is meaningful (an
-        enterprise account whose dial was raised). str.replace, never format(),
-        so a stray brace in a served sentence cannot raise on a slider move.
+        not. ``max_tiles_per_run_cap()`` is the same on every plan, so this
+        refusal fires at the same size for everyone. A free run is separately
+        bounded by ``free_run_fraction`` well under that ceiling, which is why
+        the free form talks about precision. Neither shipped sentence quotes
+        the ceiling, because it is not the limit that stops the user in front
+        of it. The {cap} fill stays on the cap-known branch so a served
+        override MAY quote it where it is meaningful. str.replace, never
+        format(), so a stray brace in a served sentence cannot raise on a
+        slider move.
         """
         try:
             from ..plugin.shared import max_tiles_per_run_cap

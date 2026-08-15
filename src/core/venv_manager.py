@@ -1930,14 +1930,13 @@ def _build_install_cmd(python_path: str, pip_args: list) -> list:
                 skip_next = True
                 continue
             if arg == "--constraint" and i + 1 < len(pip_args):
-                # Never hand uv the constraints FILE. Two field reports
-                # (2026-08-01, 2026-08-04, both Windows homes with a space,
-                # e.g. "C:\Users\Gustavo GB\...") show uv parsing garbage in
-                # place of that file ("Couldn't parse requirement in ...",
-                # "no such comparison operator"), killing the install at step
-                # 1/6. The bound the file carries is one line, so pass it
-                # inline as a requirement instead: same resolver outcome, no
-                # file, no path, nothing to mis-read. pip keeps the file.
+                # Never hand uv the constraints FILE. A Windows home directory
+                # containing a space makes uv parse garbage in place of that
+                # file ("Couldn't parse requirement in ...", "no such
+                # comparison operator"), killing the install at step 1/6. The
+                # bound the file carries is one line, so pass it inline as a
+                # requirement instead: same resolver outcome, no file, no path,
+                # nothing to mis-read. pip keeps the file.
                 cmd.append("numpy" + _numpy_version_spec())
                 skip_next = True
                 continue

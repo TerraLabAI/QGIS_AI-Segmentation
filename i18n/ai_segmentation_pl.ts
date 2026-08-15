@@ -3,6 +3,10 @@
 <context>
     <name>AISegmentation</name>
     <message>
+        <source>Your selection is sent to our servers in Europe {dot} {privacy}</source>
+        <translation>Twój wybór jest wysyłany na nasze serwery w Europie {dot} {privacy}</translation>
+    </message>
+    <message>
         <source>Normal</source>
         <translation>Normalny</translation>
     </message>

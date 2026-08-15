@@ -60,56 +60,7 @@ class ManualHandoffMixin:
         except (RuntimeError, AttributeError):
             pass
 
-    def _settle_refine_cloud_consent(self) -> bool:
-        """Ask the cloud notice before the review hands a session to Semi-Auto.
-
-        The review's own lanes answer on imagery Automatic already sent, so
-        they carry no new question. The session this handoff opens is a
-        Semi-Auto session: every click in it uploads a crop, and it outlives
-        the review. That is what the notice covers, so it is asked here.
-
-        False only when the user refuses, which puts the handoff back on the
-        on-device path it took before the remote route existed. Silent and
-        True when the route is not remote or the answer is already yes. A
-        notice that cannot be shown counts as a refusal.
-        """
-        try:
-            if not self._correct_ai_route_is_remote():
-                return True
-            from ...core.manual_engine_choice import (
-                cloud_consent_given,
-                set_cloud_consent,
-            )
-
-            if cloud_consent_given():
-                return True
-            from ..dock.manual_cloud_consent import ask_cloud_consent
-
-            accepted = bool(ask_cloud_consent(self.iface.mainWindow()))
-            set_cloud_consent(accepted)
-        except Exception:  # noqa: BLE001 -- an unaskable notice is a no
-            accepted = False
-        else:
-            # Counted here too. The notice asked from this door is the same
-            # question as the one at Start, and an answer read only from the
-            # panel would leave this whole route out of the number. In its own
-            # guard: a count may never turn a yes into a no.
-            try:
-                from ...core import telemetry_session_events
-
-                telemetry_session_events.track_manual_cloud_consent(accepted)
-            except Exception:  # noqa: BLE001  # nosec B110
-                pass
-        if not accepted:
-            # The hover warm-up may already have put a remote predictor in the
-            # slot. Hand it back, or the session starts on it anyway.
-            try:
-                self._drop_cloud_correct_predictor()
-            except Exception:  # noqa: BLE001 -- teardown never raises  # nosec B110
-                pass
-        return accepted
-
-    def _manual_env_ready(self, allow_remote: bool = True) -> bool:
+    def _manual_env_ready(self) -> bool:
         """Best-effort 'the local AI is fully installed, or install/load is in
         flight'. Requires BOTH the venv AND the model checkpoint: deps-ready with
         a missing checkpoint leaves the predictor unable to load, which used to
@@ -121,11 +72,8 @@ class ManualHandoffMixin:
 
         The remote route comes first and answers for BOTH review lanes, because
         this is the gate they share: with it in force there is no venv, no
-        model, no download and nothing to check. ``allow_remote`` is how the
-        Refine handoff says the user refused the cloud notice: the remote route
-        is then not an answer, and the on-device checks below decide, exactly
-        as they did before the route existed."""
-        if allow_remote and self._ensure_cloud_correct_predictor():
+        model, no download and nothing to check."""
+        if self._ensure_cloud_correct_predictor():
             return True
         if self.predictor is not None:
             return True
@@ -225,15 +173,10 @@ class ManualHandoffMixin:
             self._reshape_open_anchor = (pt.x(), pt.y())
         else:
             self._reshape_open_anchor = None
-        # Cloud gate first: this opens a Semi-Auto session, and on the remote
-        # route every click in it uploads a crop. Asked before the env gate so
-        # a refusal is a plain on-device handoff, offer of the setup included,
-        # instead of a session with no model in the slot.
-        cloud_ok = self._settle_refine_cloud_consent()
         # Env gate: without the local AI the predictor never arrives. Offer the
         # one-time setup, which takes the review until it ends and then opens
         # this polygon itself.
-        if not self._manual_env_ready(allow_remote=cloud_ok):
+        if not self._manual_env_ready():
             if self._local_ai_install_pending():
                 return  # a setup is already running for this review
             # A setup already ran this session and the model still would not

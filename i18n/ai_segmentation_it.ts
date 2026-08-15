@@ -4,6 +4,10 @@
     <name>AISegmentation</name>
     
     <message>
+        <source>Your selection is sent to our servers in Europe {dot} {privacy}</source>
+        <translation>La tua selezione viene inviata ai nostri server in Europa {dot} {privacy}</translation>
+    </message>
+    <message>
         <source>Normal</source>
         <translation>Normale</translation>
     </message>

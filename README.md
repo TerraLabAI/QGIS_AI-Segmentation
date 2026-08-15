@@ -15,15 +15,18 @@
 
 AI Segmentation has two modes with different privacy profiles. **Semi-Auto mode
 asks you where the segmentation runs**, on the page you start it from. Pick *My
-computer* and your imagery and clicks never leave it. Pick *Cloud AI* and a
-small image crop around each click goes to our servers. Cloud AI is the offered
-choice, because it needs no download, and nothing is sent until you have read
-and accepted the notice that says so.
-**Automatic mode is
-cloud-powered**: the imagery tiles inside the zone you draw are sent to our
-detection service for processing during the run. If you sign in, the plugin
-also contacts our server to verify your license, plus optional anonymous usage
-stats (no personal data) you can switch off in *Account Settings*. See our
+computer* and your imagery and clicks never leave it. Pick *Cloud AI*, the
+offered choice because it needs no download, and small image crops of the area
+you are working on go to our servers in Europe. The card you pick from says so
+and links to this policy.
+
+**Automatic mode is cloud-powered**: the imagery tiles inside the zone you draw
+are sent to our detection service for processing during the run.
+
+If you sign in, the plugin contacts our server to check your licence and your
+credits. Usage statistics are on by default and you can switch them off in
+*Account Settings*. They carry errors, versions and the words you type, linked
+to your account, and never your imagery, layers or coordinates. See our
 [Privacy Policy](https://terra-lab.ai/privacy-policy).
 
 ---

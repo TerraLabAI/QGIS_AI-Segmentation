@@ -7,15 +7,19 @@ A plugin that never hears from a server still behaves exactly as it did before
 this file existed. That is carried by the second question, which is fail-closed
 (see ``manual_cloud_route_offered``), not by the first, which answers yes until
 the user says otherwise: the cloud engine is the one the product recommends, and
-a user who has never touched the cards gets it. Nothing travels on that alone.
-Imagery leaves the machine only once the data notice has been accepted, which
-the click path checks for itself.
+a user who has never touched the cards gets it.
+
+That means the FIRST click on the cloud half sends a crop. The disclosure is
+the engine card, which names the two halves and says where each one runs, plus
+a line under it naming the destination. It is visible before the click rather
+than a modal blocking it. Disclosure, not a gate: ``cloud_notice_seen`` decides
+whether that line is drawn and nothing else, so do not reach for it here.
 
 The choice lasts for the session and no longer. It used to sit in the user's
-QGIS profile under ``AISegmentation/manual_cloud_route``, which meant one
-afternoon spent on My computer held the machine there for months. That key is
-now abandoned on purpose: the profiles that carry it keep it, and nothing reads
-it. Picking My computer is a step the user takes when they want it, each time.
+QGIS profile under ``AISegmentation/manual_cloud_route``, which held a machine
+on one engine long after the afternoon that picked it. That key is now
+abandoned on purpose: the profiles that carry it keep it, and nothing reads it.
+Picking My computer is a step the user takes when they want it, each time.
 """
 from __future__ import annotations
 

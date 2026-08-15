@@ -343,9 +343,8 @@ class DockActivationMixin:
         layer = self.layer_combo.currentLayer()
         if not layer:
             return
-        # The engine box decides what this press means: a cloud session needs
-        # the data notice answered first, and a cleared box on a machine with
-        # no offline AI turns the press into the download.
+        # The engine box decides what this press means: a cleared box on a
+        # machine with no offline AI turns the press into the download.
         if not self._manual_engine_gate_start():
             return
         self.seal_tos_consent()

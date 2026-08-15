@@ -54,6 +54,7 @@ from ...core.review_defaults import (
 from ...core.server_dials import dial_copy
 from ...core.tile_manager import MAX_DETAIL_LEVEL
 from ..layer_tree_combobox import LayerTreeComboBox
+from .cloud_notice_line import build_cloud_notice_line
 from .guidance import (
     BLUE_TINT,
     GREEN_TINT,
@@ -781,6 +782,13 @@ class DockAutoBuildMixin:
         self.auto_detail_sub.setStyleSheet(
             "font-size: 11px; color: rgba(128, 128, 128, 0.95);")
         _detail_outer.addWidget(self.auto_detail_sub)
+        # Where the tiles go, under the line that says what they cost. This is
+        # the card that prices a run, and the last screen before Detect sends
+        # anything, so the disclosure belongs in it rather than in a box of its
+        # own. Word for word the Semi-Auto engine card's line: same data, same
+        # destination, same sentence. Retires itself once a run has completed.
+        self.auto_privacy_line = build_cloud_notice_line()
+        _detail_outer.addWidget(self.auto_privacy_line)
         # Non-blocking tip shown right under the credit estimate when the next
         # Detect would repeat the last run exactly (same prompt, detail and
         # example count): that re-run returns the same masks and only spends

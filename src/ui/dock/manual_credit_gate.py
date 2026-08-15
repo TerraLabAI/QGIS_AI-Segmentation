@@ -230,14 +230,11 @@ class DockManualCreditGateMixin:
         if gate is None:
             return
         try:
-            # Before a session, the picked half is the honest question: the
-            # data notice comes at Start. Inside one, the route is fixed and
-            # the strict answer is what says whether a save is billed at all,
-            # so a session the machine is answering for free never gets a
-            # paywall painted over it.
-            on_cloud = (self._manual_cloud_route_on()
-                        if getattr(self, "_segmentation_active", False)
-                        else self._manual_cloud_route_picked())
+            # The picked half is the whole answer, before a session and inside
+            # one: nothing else stands between the switch and the wire, so a
+            # session the machine is answering for free never gets a paywall
+            # painted over it.
+            on_cloud = self._manual_cloud_route_picked()
             show = bool(
                 self._plugin_activated
                 and self._mode == Mode.INTERACTIVE

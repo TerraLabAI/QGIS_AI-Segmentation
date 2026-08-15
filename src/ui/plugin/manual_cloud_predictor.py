@@ -29,25 +29,21 @@ class ManualCloudPredictorMixin:
         """True when this mode's clicks should be answered over the network.
 
         Fails closed on anything unexpected: an unreadable setting, an absent
-        switch, an unanswered data notice or no account all land on the
-        on-device path.
+        switch or no account all land on the on-device path.
 
-        The consent check is the one that carries the promise. The engine
-        cards open on Cloud AI, so the stored route says yes for a user who has
-        never touched it, and the dock asks the notice at Start. This
-        is what makes that safe everywhere else: a headless caller, a script or
-        an MCP session opens no dialog, and imagery must not leave the machine
-        on a default nobody was shown.
+        The switch carries the promise on its own. The engine cards open on
+        Cloud AI and the card says where the work runs and what leaves the
+        machine, so the route the user is looking at is the route a click
+        takes.
         """
         try:
             from ...core.manual_cloud_route import (
                 manual_cloud_route_enabled,
                 manual_cloud_route_offered,
             )
-            from ...core.manual_engine_choice import cloud_consent_given
 
-            if not (manual_cloud_route_enabled() and manual_cloud_route_offered()
-                    and cloud_consent_given()):
+            if not (manual_cloud_route_enabled()
+                    and manual_cloud_route_offered()):
                 return False
             from ...core.activation_manager import get_auth_token
 
@@ -185,6 +181,14 @@ class ManualCloudPredictorMixin:
                 used_fallback=bool(getattr(self, "_manual_click_fell_back", False)),
                 is_correct=bool(getattr(self, "_refine_handoff_active", False)),
             )
+            if on_cloud:
+                # A crop went and an outline came back, so the disclosure has
+                # done its job and the line retires. Visibility only, and it is
+                # written here because this is the one place that knows a cloud
+                # click was answered.
+                from ...core.cloud_notice_seen import mark_cloud_notice_seen
+
+                mark_cloud_notice_seen()
         except Exception:  # noqa: BLE001 -- a count never breaks a click  # nosec B110
             pass
 

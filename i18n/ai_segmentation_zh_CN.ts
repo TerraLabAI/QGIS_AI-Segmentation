@@ -4,6 +4,10 @@
     <name>AISegmentation</name>
     
     <message>
+        <source>Your selection is sent to our servers in Europe {dot} {privacy}</source>
+        <translation>您选择的内容会发送到我们在欧洲的服务器 {dot} {privacy}</translation>
+    </message>
+    <message>
         <source>Normal</source>
         <translation>普通</translation>
     </message>

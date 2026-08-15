@@ -191,7 +191,12 @@ def track_manual_engine_chosen(engine: str, local_installed: bool = False,
 
 
 def track_manual_cloud_consent(accepted: bool) -> None:
-    """The answer to the notice shown before any imagery leaves the machine."""
+    """The answer to the notice shown before any imagery leaves the machine.
+
+    DORMANT (2026-08-15): nothing calls it. The notice is a line in the engine
+    card now, not a modal, so there is no answer to count. Kept with its event
+    constant so the registry and the historical series stay readable.
+    """
     track(ev.MANUAL_CLOUD_CONSENT, {"accepted": bool(accepted)})
 
 

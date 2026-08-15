@@ -12,16 +12,12 @@ download, the subprocess.
 
 Semi-Auto mode does not get here on its own: the review check below keeps it
 out, and its own choice lives in ``manual_cloud_predictor.py``, where the two
-engine cards offer Cloud AI first and nothing is sent until the user has
-accepted the notice that says what goes. The on-device predictor stays behind
-it either way.
+engine cards offer Cloud AI first and the card says where the work runs and
+what leaves the machine. The on-device predictor stays behind it either way.
 
-There is one door between the two, and it asks. Refine-in-Manual hands a
-review session over to Semi-Auto and keeps whatever predictor is in the slot,
-so ``_settle_refine_cloud_consent`` in ``manual_handoff.py`` puts the same
-notice in front of that handoff and hands the remote predictor back on a no.
-Anything else that turns a review predictor into a Semi-Auto session owes the
-user the same question.
+There is one door between the two. Refine-in-Manual hands a review session
+over to Semi-Auto and keeps whatever predictor is in the slot, so that handoff
+runs on the route the review was already using.
 
 Part of AISegmentationPlugin (see ai_segmentation_plugin.py); methods here are
 plain mixin members and state lives on the plugin instance.

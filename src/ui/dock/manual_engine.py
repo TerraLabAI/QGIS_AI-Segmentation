@@ -36,14 +36,15 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
+from ...core.cloud_notice_seen import cloud_notice_seen
 from ...core.i18n import tr
 from ...core.manual_cloud_route import (
     manual_cloud_route_enabled,
     manual_cloud_route_offered,
     set_manual_cloud_route_enabled,
 )
-from ...core.manual_engine_choice import cloud_consent_given, set_cloud_consent
 from ...core.server_dials import dial_copy
+from .cloud_notice_line import build_cloud_notice_line, cloud_notice_line_html
 from .manual_local_install_dialog import local_install_minutes
 from .styles import (
     _CARD_CHILD_BTN_RESET_QSS,
@@ -132,6 +133,13 @@ class DockManualEngineMixin:
             "font-size: 11px; color: palette(text); background: transparent;")
         note_layout.addWidget(self.manual_engine_note)
 
+        # The data disclosure, permanently on the page instead of in a modal at
+        # the first cloud Start, so it is visible before the click instead of
+        # blocking it. Inside this box and not under it, because loose text is
+        # banned here. Same widget and same sentence as the Automatic panel.
+        self.manual_engine_privacy_line = build_cloud_notice_line()
+        note_layout.addWidget(self.manual_engine_privacy_line)
+
         self.manual_engine_note_box = note_box
         layout.addWidget(note_box)
 
@@ -185,9 +193,9 @@ class DockManualEngineMixin:
     def _manual_cloud_route_picked(self) -> bool:
         """Which half of the switch the user is on.
 
-        What the panel describes and what the next Start is about to open. It
-        does NOT ask whether the data notice has been answered: that question
-        is put at Start, and pressing the way out of it moves the switch here.
+        What the panel describes, what the next Start is about to open, and
+        what a click is billed on. Nothing else stands between the switch and
+        the wire: the data notice is a line in the panel now, not a gate.
 
         The account is part of the answer: the route needs one, so with no
         account the on-device install is still what a session depends on.
@@ -199,22 +207,6 @@ class DockManualEngineMixin:
                 and manual_cloud_route_offered()
             )
         except (RuntimeError, AttributeError):
-            return False
-
-    def _manual_cloud_route_on(self) -> bool:
-        """Whether a click would really be answered off the machine.
-
-        The same questions the click path asks, so the panel can never price a
-        session the machine is answering for free: an account, the switch, the
-        offer, and the data notice. The click path also reads a token, which
-        only the plugin side holds; `_plugin_activated` follows it, since a
-        sign-out and a failed key check both clear it.
-        """
-        if not self._manual_cloud_route_picked():
-            return False
-        try:
-            return bool(cloud_consent_given())
-        except Exception:  # noqa: BLE001 -- an unreadable answer is not a yes
             return False
 
     def _manual_engine_offered(self) -> bool:
@@ -300,6 +292,11 @@ class DockManualEngineMixin:
             self.manual_engine_switch.set_cloud(cloud)
             self._paint_manual_engine_card()
             self.manual_engine_note.setText(self._manual_engine_copy(cloud))
+            self.manual_engine_privacy_line.setText(cloud_notice_line_html())
+            # Cloud half only, and only until a cloud run has completed. The
+            # flag reaches nothing but this setVisible.
+            self.manual_engine_privacy_line.setVisible(
+                cloud and not cloud_notice_seen())
             self._write_manual_low_credit_line(low)
         except (RuntimeError, AttributeError):
             pass  # nosec B110 -- teardown
@@ -408,8 +405,8 @@ class DockManualEngineMixin:
             # this page have never started the on-device install, and they open
             # the plugin again and again without ever getting an object out.
             #
-            # Not where the machines are: that is disclosure, it belongs at the
-            # moment of consent, and manual_cloud_consent.py carries it in full.
+            # Not where the machines are: that is disclosure, and the privacy
+            # line right under this box carries it.
             #
             # One claim, not two. "Nothing to install, nothing to download" said
             # the same thing twice and spent the sentence on the word "nothing".
@@ -632,15 +629,12 @@ class DockManualEngineMixin:
 
     # -- the clicks ---------------------------------------------------------
 
-    def _track_manual_engine(self, what: str, accepted: bool = False,
+    def _track_manual_engine(self, what: str,
                              from_install_gate: bool = False) -> None:
         """Report a choice. Never raises: telemetry does not gate a click."""
         try:
             from ...core import telemetry_session_events
 
-            if what == "consent":
-                telemetry_session_events.track_manual_cloud_consent(accepted)
-                return
             telemetry_session_events.track_manual_engine_chosen(
                 what,
                 local_installed=self._manual_engine_local_ready(),
@@ -686,35 +680,22 @@ class DockManualEngineMixin:
         """Answer the Start button before a Semi-Auto session opens.
 
         True means start now. False means the click was spent on something
-        else and no session may open: the data notice came back refused, or
-        the offline AI has to be downloaded before it can answer anything.
+        else and no session may open: the offline AI has to be downloaded
+        before it can answer anything.
+
+        The cloud half asks nothing here any more. The disclosure it used to
+        put in a modal is a permanent line in the engine card, so the first
+        click starts a session instead of a question.
         """
         try:
             if self._mode != Mode.INTERACTIVE or not manual_cloud_route_offered():
                 return True
-            # The picked half, not the running one: the data notice is exactly
-            # what this is about to ask, so a predicate that already required
-            # it would send every first-time user down the other branch and
-            # the question would never be put.
             cloud = self._manual_cloud_route_picked()
         except (RuntimeError, AttributeError):
             return True
 
         if cloud:
-            if cloud_consent_given():
-                return True
-            from .manual_cloud_consent import ask_cloud_consent
-
-            accepted = ask_cloud_consent(self)
-            set_cloud_consent(accepted)
-            self._track_manual_engine("consent", accepted=accepted)
-            if accepted:
-                return True
-            # They read it and said no. Refusing is a valid answer, not an
-            # error to recover from, so the switch moves to the engine that
-            # asks no such question and the user presses Start again.
-            self._set_manual_engine_cloud(False)
-            return False
+            return True
 
         if self._manual_engine_local_ready():
             return True
