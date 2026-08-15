@@ -3,7 +3,7 @@ name=AI Segmentation by TerraLab
 description=Segment buildings, vegetation, or any object in your raster using AI, refine & export as vector polygons
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
-version=2.4.1
+version=2.4.2
 author=Yvann and Lilien from TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
@@ -29,6 +29,9 @@ about=
     • Multilingual: English, French, Portuguese, Spanish, German, Italian, Dutch, Polish, Indonesian, Japanese, Chinese
 
 changelog=
+    2.4.2
+    - Semi-Auto reads your raster even when part of the install did not land, so your first click on Windows no longer dead-ends
+    - The Cloud AI choice no longer opens a window: the panel names where the work runs, and your click starts straight away
     2.4.1
     - The first click of a session comes back in a moment, instead of keeping you waiting
     - Correct now runs the same AI as the run itself, and reshaping an object still costs nothing
