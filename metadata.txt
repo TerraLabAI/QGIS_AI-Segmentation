@@ -1,9 +1,9 @@
 [general]
 name=AI Segmentation by TerraLab
-description=Segment buildings, vegetation, or any object in your raster using AI, refine & export as vector polygons
+description=AI segmentation for QGIS: detect and extract building footprints, trees, vegetation or any object from your raster, then refine & export as vector polygons
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
-version=2.4.2
+version=2.4.3
 author=Yvann and Lilien from TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
@@ -29,6 +29,15 @@ about=
     • Multilingual: English, French, Portuguese, Spanish, German, Italian, Dutch, Polish, Indonesian, Japanese, Chinese
 
 changelog=
+    2.4.3
+    - Semi-Auto shows the shape before you click: the outline under your cursor is the one that gets saved
+    - Hovering the same object twice answers straight away, without asking again
+    - The Outline settings panel and the shape on the map always agree, and your settings come back next session
+    - Installing is steadier: the bar follows the real download, a slow line is not a timeout, and a refused mirror moves on to the next one
+    - A run reopened from your history is clipped to the zone you drew, keeps its courtyards, and no longer freezes QGIS
+    - Type what you are looking for in your own language, and pick from the suggestions
+    - Every object in a run gets its own colour, so neighbours read apart
+    - Right angles and Round corners say what they do, and Right angles starts on
     2.4.2
     - Semi-Auto reads your raster even when part of the install did not land, so your first click on Windows no longer dead-ends
     - The Cloud AI choice no longer opens a window: the panel names where the work runs, and your click starts straight away
@@ -181,7 +190,7 @@ tracker=https://github.com/TerraLabAI/QGIS_AI-Segmentation/issues
 repository=https://github.com/TerraLabAI/QGIS_AI-Segmentation
 homepage=https://terra-lab.ai/ai-segmentation
 
-hasProcessingProvider=no
+hasProcessingProvider=yes
 
 tags=segmentation, instance segmentation, image segmentation, ai, artificial intelligence, machine learning, deep learning, neural network, computer vision, object detection, feature extraction, classification, building detection, sam, sam2, segment anything, pytorch, raster, satellite, satellite imagery, satellite images, remote sensing, remote-sensing, aerial, orthophoto, ortofoto, drone, uav, sentinel, sentinel-2, landsat, geotiff, multispectral, buildings, vegetation, vectorization, vector, vetor, vector layer, polygon, polygons, digitizing, gpkg, geopackage, georeferencing, georreferenciamento, urban planning, agriculture, forestry, ia
 
