@@ -47,9 +47,13 @@ def recent_view(entry: dict, by_token: dict) -> dict:
     objects = entry.get("objects")
     det = entry.get("detections")
     if isinstance(objects, int):
-        bits.append(tr("{n} object(s)").format(n=objects))
+        bits.append(
+            tr("1 object") if objects == 1
+            else tr("{n} objects").format(n=objects))
     elif isinstance(det, int):
-        bits.append(tr("{n} detection(s)").format(n=det))
+        bits.append(
+            tr("1 detection") if det == 1
+            else tr("{n} detections").format(n=det))
     when = _relative_when(entry.get("ts", ""))
     if when:
         bits.append(when)
@@ -57,7 +61,10 @@ def recent_view(entry: dict, by_token: dict) -> dict:
     thumb = detection_history.thumb_abspath(entry)
     if thumb:
         view["_thumb"] = thumb
-    for key in ("extent", "crs", "layer_name"):
+    # zone_wkt rides along with the extent it belongs to: "Run again here"
+    # points at the drawn shape when the entry kept one, and at its bounding
+    # box otherwise.
+    for key in ("extent", "zone_wkt", "crs", "layer_name"):
         if entry.get(key):
             view[key] = entry[key]
     return view

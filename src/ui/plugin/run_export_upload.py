@@ -26,10 +26,12 @@ the text is built on the task thread, which the geometry calls leave free.
 from __future__ import annotations
 
 import json
+import math
 
 from qgis.core import QgsApplication, QgsTask
 
 from ...core.qt_compat import silent_task_flags
+from .run_zone_clip import ZONE_WKT_CRS_AUTHID
 
 # Geometry ceiling for the uploaded FeatureCollection. Above this the summary
 # row is still sent, just without the geometry. It mirrors the cap on the
@@ -198,6 +200,71 @@ def encode_run_export_body(summary: dict, geometry_rows: list, precision: int,
     return (opening + ",".join(pieces) + "]}}").encode("utf-8")
 
 
+# Ceiling on the zone outline carried in the run summary, in WKT characters.
+# The run row is read back by the library to point a re-run at the same
+# ground, and a traced coastline is tens of thousands of characters on a row
+# that is otherwise a few hundred bytes. Past this the summary travels without
+# it and the reader falls back to the tile union, as it always did.
+_MAX_ZONE_WKT_CHARS = 64_000
+
+
+def zone_outline_for_upload(plugin) -> tuple[str, str] | None:
+    """(zone WKT in WGS84, "EPSG:4326") of the polygon THIS run looked at, or
+    None.
+
+    The tiles a run billed cover its bounding box, not the shape the user
+    drew, so a run row that keeps only the tiles cannot say where the run was
+    confined. This carries the shape itself, so a restore can clip to it and a
+    re-run can point at it.
+
+    Always WGS84, never the run's own CRS: the run's predict call already
+    writes the same column in WGS84, and one column cannot hold two
+    conventions. A reader has no way to tell which one a row uses, and every
+    row written before the CRS field existed answers nothing at all.
+
+    None when the run had no drawn polygon (a rectangle or a headless zone),
+    when the outline cannot be written or moved to WGS84, or when it is past
+    the ceiling above. Best-effort like the rest of this module: never raises.
+    """
+    try:
+        from qgis.core import (
+            QgsCoordinateReferenceSystem,
+            QgsCoordinateTransform,
+            QgsGeometry,
+            QgsProject,
+        )
+
+        polygon = getattr(plugin, "_auto_clip_polygon", None)
+        if polygon is None or polygon.isEmpty():
+            return None
+        authid = str(getattr(plugin, "_auto_crs_authid", "") or "")
+        if not authid:
+            return None
+        outline = QgsGeometry(polygon)  # transform() edits its geometry
+        if authid != ZONE_WKT_CRS_AUTHID:
+            source = QgsCoordinateReferenceSystem(authid)
+            target = QgsCoordinateReferenceSystem(ZONE_WKT_CRS_AUTHID)
+            if not source.isValid() or not target.isValid():
+                return None
+            # 0 is success. Anything else leaves half-moved coordinates, and a
+            # zone on the wrong ground clips a later restore down to nothing,
+            # so the row travels without an outline instead.
+            if outline.transform(QgsCoordinateTransform(
+                    source, target,
+                    QgsProject.instance().transformContext())) != 0:
+                return None
+            if outline.isEmpty():
+                return None
+        # Seven decimals of a degree is about a centimetre on the ground, and
+        # full precision doubles a traced coastline for nothing.
+        wkt = str(outline.asWkt(7) or "")
+        if not wkt or len(wkt) > _MAX_ZONE_WKT_CHARS:
+            return None
+        return wkt, ZONE_WKT_CRS_AUTHID
+    except Exception:  # noqa: BLE001 -- an unreadable zone is simply absent
+        return None
+
+
 def _corrections_summary(plugin) -> dict | None:
     """A compact summary of the review's edit journal: {"count": n, "kinds":
     {kind: n, ...}}, or None when there is no journal or it holds no edits.
@@ -217,6 +284,81 @@ def _corrections_summary(plugin) -> dict | None:
         if isinstance(kind, str):
             kinds[kind] = kinds.get(kind, 0) + 1
     return {"count": len(entries), "kinds": kinds}
+
+
+def _geoms_fit_declared_crs(refined: list, crs) -> bool:
+    """False only when the exported set provably cannot be in ``crs``.
+
+    The check works on bounds, so the whole set is asked at once through its
+    union box. True on anything it cannot decide, including an empty set, so
+    the caller keeps its behaviour and only loses figures that are wrong.
+    """
+    try:
+        from qgis.core import QgsGeometry
+
+        from ...core.zone_crs_check import zone_fits_declared_crs
+
+        box = None
+        for geom in refined:
+            if geom is None or geom.isEmpty():
+                continue
+            rect = geom.boundingBox()
+            if box is None:
+                box = rect
+            else:
+                box.combineExtentWith(rect)
+        if box is None or box.isEmpty():
+            return True
+        return zone_fits_declared_crs(QgsGeometry.fromRect(box), crs)
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _exported_area_m2(refined: list, crs, plugin=None) -> float | None:
+    """Geodesic area (m2) of the whole exported set, or None when it cannot be
+    measured. One measurer for the batch, GUI thread only (the measurer reads
+    the project). Best-effort like everything in this module: never raises.
+
+    The export that just ran measured every geometry it wrote, so its total is
+    read back off ``plugin`` when it is there: measuring the same set again is
+    a second geodesic pass over every object, on the click the user is waiting
+    on. Falls through to the measurement when no total was recorded.
+
+    Same guard as the zone surface next door (_auto_zone_area_km2): a set whose
+    coordinates cannot be in the CRS the run declared measures degrees as
+    metres, and unknown beats wrong, because the caller omits an unknown
+    surface and stores a wrong one.
+    """
+    if not _geoms_fit_declared_crs(refined, crs):
+        return None
+    if plugin is not None:
+        try:
+            total = float(getattr(plugin, "_auto_exported_area_m2", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            total = 0.0
+        if math.isfinite(total) and total > 0:
+            return total
+    if not refined:
+        return None
+    try:
+        if crs is None or not crs.isValid():
+            # Without a real CRS the figure would be in unknown units.
+            return None
+        from ...core.layer_conventions import make_area_measurer
+
+        measurer = make_area_measurer(crs)
+        total = 0.0
+        for geom in refined:
+            if geom is None or geom.isEmpty():
+                continue
+            area = float(measurer.measureArea(geom))
+            if math.isfinite(area) and area > 0:
+                total += area
+        if math.isfinite(total) and total > 0:
+            return total
+    except Exception:  # noqa: BLE001
+        pass  # nosec B110
+    return None
 
 
 def build_run_export_payload(
@@ -285,7 +427,7 @@ def build_run_export_payload(
     except Exception:  # noqa: BLE001
         policy_rev = None
 
-    return {
+    payload = {
         "run_id": run_id,
         "prompt": (review.get("prompt") or "").strip() or None,
         "final_confidence": float(getattr(plugin, "_auto_confidence", 0.0) or 0.0),
@@ -302,6 +444,24 @@ def build_run_export_payload(
         "policy_rev": policy_rev,
         "corrections": _corrections_summary(plugin),
     }
+    # Ground surface, both optional and omitted when unknown: the run zone's
+    # geodesic area in km2 and the geodesic area of the exported set in m2.
+    try:
+        zone_km2 = float(plugin._auto_zone_area_km2())
+    except Exception:  # noqa: BLE001
+        zone_km2 = 0.0
+    if math.isfinite(zone_km2) and zone_km2 > 0:
+        payload["zone_km2"] = round(zone_km2, 4)
+    # The drawn outline, so a restore can confine the run to it and a re-run
+    # can point at it instead of at its bounding box. Both optional, both
+    # omitted when the run had no polygon.
+    outline = zone_outline_for_upload(plugin)
+    if outline is not None:
+        payload["zone_wkt"], payload["zone_crs_authid"] = outline
+    exported_area = _exported_area_m2(refined, crs, plugin)
+    if exported_area is not None:
+        payload["exported_area_m2"] = round(exported_area, 1)
+    return payload
 
 
 def queue_run_export_upload(

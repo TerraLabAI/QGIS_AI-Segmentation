@@ -132,6 +132,12 @@ class AutoZoneMixin:
         self._remove_zone_shortcut_filter()
         self._clear_auto_canvas()
 
+        # The stall watchdog is parented to the dock, so it dies with it. Drop
+        # our reference too, or the next run arms a timer whose C++ half is
+        # gone and every call on it raises.
+        self._stop_auto_stall_watchdog()
+        self._auto_stall_timer = None
+
         # Was one try catching TypeError only, so a RuntimeError from a project
         # torn down before us escaped _teardown_auto_mode entirely and skipped
         # everything below.
@@ -139,10 +145,14 @@ class AutoZoneMixin:
         safe_disconnect(proj, "cleared", self._on_project_cleared_auto)
         safe_disconnect(proj, "readProject", self._on_project_cleared_auto)
 
+        # The zone clear below drops the last run's context along with its
+        # clip artefacts. The autosave further down stamps the saved review
+        # with that context, so it is held across the clear and let go only
+        # once the save has read it.
+        pending_run_ctx = self._auto_run_ctx
         self._store_auto_zone(None)
         self._auto_zone_polygon = None
         self._tile_manager = None
-        self._auto_run_ctx = None
         # Drop the last-run signature so the identical-re-run note never fires
         # against a run from a torn-down flow.
         self._auto_last_run_sig = None
@@ -153,7 +163,11 @@ class AutoZoneMixin:
         # Save a still-pending review before tearing down (unload / mode reset):
         # a billed detection must not be lost just because the user quit QGIS or
         # switched away without clicking Finish.
+        self._auto_run_ctx = pending_run_ctx
         self._autosave_pending_auto_review(exit_path="unload")
+        # Cleared only now: the autosave above reads the run context to stamp
+        # the saved review, and nulling it earlier saved the run without it.
+        self._auto_run_ctx = None
         self._auto_review = None  # discard review without UI update (widget may be gone)
         self._remove_auto_selection_layer()
 
@@ -274,16 +288,19 @@ class AutoZoneMixin:
         QTimer.singleShot(0, lambda: self._history_reuse_prompt(text))
 
     def _history_rerun_here(self, entry: dict) -> None:
-        """Same zone + same object. The zone is rebuilt as a rectangle from the
-        stored extent, transformed from its CRS to the canvas CRS, then fed
-        through the normal draw path so the wrong-layer guard, the free-trial
-        cap, the badge, grid and credit estimate all apply for free."""
+        """Same zone + same object. The zone is rebuilt from the shape the run
+        was drawn with when the entry kept it, and from the stored extent
+        otherwise, transformed from its CRS to the canvas CRS, then fed through
+        the normal draw path so the wrong-layer guard, the free-trial cap, the
+        badge, grid and credit estimate all apply for free."""
         if self._auto_worker is not None or self._auto_review is not None:
             self._history_rerun_busy_notice()
             return
         prompt = (entry.get("prompt") or "").strip()
-        geom = self._zone_geom_from_extent(
-            entry.get("extent"), str(entry.get("crs") or ""))
+        authid = str(entry.get("crs") or "")
+        geom = self._zone_geom_from_wkt(entry.get("zone_wkt"), authid)
+        if geom is None:
+            geom = self._zone_geom_from_extent(entry.get("extent"), authid)
         self._enter_auto_flow_for_history(prompt)
         if geom is None:
             # No usable stored extent: degrade to the new-zone path (the flow is
@@ -390,6 +407,45 @@ class AutoZoneMixin:
             except (RuntimeError, AttributeError):
                 pass
 
+    def _zone_geom_from_wkt(self, wkt, authid: str) -> QgsGeometry | None:
+        """The polygon a past run was drawn with, in the canvas CRS, or None.
+
+        None on everything the caller then answers with the bounding box: an
+        entry from before the outline was stored, an unreadable shape, an
+        unresolvable CRS, a transform the projection refuses. The rebuilt
+        polygon goes through the same commit path as a fresh draw, so every
+        guard still runs on it.
+
+        The WKT and the authid come off the same record, so the shape is read
+        in the CRS its own entry names. Nothing is assumed when the entry
+        names none: a zone rebuilt on the wrong ground is a zone the user then
+        pays to run.
+        """
+        if not wkt or not isinstance(wkt, str) or not authid:
+            return None
+        geom = QgsGeometry.fromWkt(wkt)
+        if geom is None or geom.isEmpty():
+            return None
+        src = QgsCoordinateReferenceSystem(authid)
+        if not src.isValid():
+            return None
+        try:
+            canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+        except (RuntimeError, AttributeError):
+            return None
+        if canvas_crs.isValid() and src != canvas_crs:
+            try:
+                xform = QgsCoordinateTransform(
+                    src, canvas_crs, QgsProject.instance())
+                # 0 is success. Anything else leaves part of the ring moved and
+                # part of it where it was, which draws a zone over ground
+                # nobody picked.
+                if geom.transform(xform) != 0:
+                    return None
+            except Exception:  # nosec B110 -- antimeridian, invalid CRS, etc.
+                return None
+        return None if geom.isEmpty() else geom
+
     def _zone_geom_from_extent(self, extent, authid: str) -> QgsGeometry | None:
         """Rectangle geometry in the canvas CRS from a stored run's extent +
         CRS authid, or None when the entry has no usable zone (old format,
@@ -415,7 +471,10 @@ class AutoZoneMixin:
             try:
                 xform = QgsCoordinateTransform(
                     src, canvas_crs, QgsProject.instance())
-                geom.transform(xform)
+                # 0 is success; a refused transform leaves a half-moved
+                # rectangle, which is ground the user never picked.
+                if geom.transform(xform) != 0:
+                    return None
             except Exception:  # nosec B110 -- antimeridian, invalid CRS, etc.
                 return None
             if geom.isEmpty():
@@ -550,7 +609,11 @@ class AutoZoneMixin:
                     return "ok"
                 xform = QgsCoordinateTransform(
                     canvas_crs, layer_crs, QgsProject.instance())
-                zone.transform(xform)
+                # 0 is success. A half-moved zone would be compared against the
+                # raster's extent as if it were on the ground, and the answer
+                # would be a warning about the wrong place: skip the check.
+                if zone.transform(xform) != 0:
+                    return "ok"
                 if zone.isEmpty():
                     return "ok"
             extent_geom = QgsGeometry.fromRect(extent)
@@ -586,10 +649,19 @@ class AutoZoneMixin:
             ).format(layer=name),
         )
 
-    def _zone_geodesic_area_km2(self, geom: QgsGeometry, crs=None) -> float:
-        """Geodesic area (km2, WGS84 ellipsoid) of a zone geometry expressed
-        in ``crs`` (default: the canvas CRS). Returns 0.0 on any failure so
-        callers fail open (a zone that cannot be measured is never blocked)."""
+    def _zone_geodesic_area_km2(self, geom, crs=None) -> float:
+        """Geodesic area (km2, WGS84 ellipsoid) of a zone expressed in ``crs``
+        (default: the canvas CRS). Returns 0.0 on any failure so callers fail
+        open (a zone that cannot be measured is never blocked).
+
+        ``geom`` may be a QgsGeometry or a QgsRectangle: the zone is stored as
+        a rectangle and drawn as a polygon, and handing measureArea a rectangle
+        raised a TypeError that a wide except turned into 0.0, which read as a
+        zone under every cap.
+
+        The except is deliberately narrow now, so a type error can never hide
+        in here again.
+        """
         try:
             # make_area_measurer handles the "NONE" project-ellipsoid trap
             # (planar degrees^2 on a geographic CRS); one owner for all
@@ -597,12 +669,14 @@ class AutoZoneMixin:
             from ...core.layer_conventions import make_area_measurer
             if crs is None:
                 crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+            if isinstance(geom, QgsRectangle):
+                geom = QgsGeometry.fromRect(geom)
             da = make_area_measurer(crs)
             return max(0.0, da.measureArea(geom) / 1_000_000.0)
-        except Exception:  # nosec B110 -- measurement guard, never blocks
+        except (TypeError, ValueError, RuntimeError, AttributeError):
             return 0.0
 
-    def _free_zone_cap_exceeded_km2(self, geom: QgsGeometry, crs=None) -> float | None:
+    def _free_zone_cap_exceeded_km2(self, geom, crs=None) -> float | None:
         """Free-trial zone cap check: return the zone's geodesic area (km2)
         when a free-tier user's zone exceeds FREE_TRIAL_MAX_ZONE_KM2, else
         None (zone allowed). Subscribers are never capped. Usage never
@@ -610,7 +684,12 @@ class AutoZoneMixin:
         is UNKNOWN, not free: capping then would reject a paying subscriber's
         valid zone with a free-trial upsell, so the check fails open and the
         server enforces the real quota. ``crs`` is the CRS the geometry is
-        expressed in (default: canvas CRS)."""
+        expressed in (default: canvas CRS).
+
+        The shape is confined to the raster's own extent before it is measured,
+        because that is the surface the run is billed on. Measuring the raw
+        drawn zone refused a coastline draw at "2.0 km2, free runs stop at 1.5"
+        for a run the server would have billed 1.1."""
         try:
             usage_known = bool(self._last_usage)
             _credits, is_free = self._auto_credit_snapshot()
@@ -618,10 +697,26 @@ class AutoZoneMixin:
             usage_known, is_free = False, True
         if not usage_known or not is_free:
             return None
-        area = self._zone_geodesic_area_km2(geom, crs)
+        area = self._zone_geodesic_area_km2(
+            self._zone_billable_shape(geom, crs), crs)
         if area > free_zone_cap_km2():
             return area
         return None
+
+    def _zone_billable_shape(self, geom, crs=None):
+        """``geom`` as the polygon the run is billed on: a QgsGeometry, clipped
+        to the raster's extent. Returns the input untouched when the CRS cannot
+        be resolved, so the cap can only ever measure less, never more."""
+        if isinstance(geom, QgsRectangle):
+            geom = QgsGeometry.fromRect(geom)
+        if crs is None:
+            try:
+                crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+            except (RuntimeError, AttributeError):
+                return geom
+        if crs is None or not crs.isValid():
+            return geom
+        return self._zone_clipped_to_data(geom, crs)
 
     def _reject_zone_over_free_cap(self, area_km2: float) -> None:
         """Refuse a free-tier zone above FREE_TRIAL_MAX_ZONE_KM2 (contextual
@@ -705,6 +800,31 @@ class AutoZoneMixin:
             return True
         return not (getattr(dock, "_auto_run_active", False) or getattr(dock, "_auto_review_active", False))
 
+    def _tile_grid_revealed(self) -> bool:
+        """True once the user has opened Advanced settings.
+
+        The grid is a control someone asks for, not a thing that appears. It
+        is the heaviest overlay this flow draws on the user's imagery, and a
+        user who has not asked how their zone is split reads it as damage. So
+        it travels with the panel that explains it: shut, no grid; open, the
+        slider and the picture of what it does arrive together.
+
+        A dock-less plugin (the MCP surface, a headless run) has no fold to
+        open, so it keeps the old behaviour and draws.
+        """
+        dock = self.dock_widget
+        if dock is None:
+            return True
+        return bool(getattr(dock, "_auto_advanced_open", False))
+
+    def _on_auto_advanced_toggled(self, opened: bool) -> None:
+        """The Advanced settings fold flipped: put the grid on the canvas or
+        take it off, now, without waiting for the next zone or slider move."""
+        if opened:
+            self._update_credit_estimate()
+        else:
+            self._clear_zone_tile_grid()
+
     def _restore_tile_grid_after_run(self) -> None:
         """The flow is back on the pre-Detect setup screen with the zone kept:
         let the grid draw again, and redraw it with the cost label.
@@ -735,6 +855,32 @@ class AutoZoneMixin:
                 self._hide_auto_cost_label()
             return
 
+        # The free per-zone cap is checked again here, not only at draw time.
+        # The draw-time check fails open while the usage fetch is in flight, so
+        # a zone drawn in the first seconds of a session was never measured
+        # against the cap; this chokepoint runs on every detail move, layer
+        # change and zone edit, by which time the tier is known. The re-entry
+        # flag stops the rejection from looping: _reject_zone_over_free_cap
+        # clears the zone, which calls straight back into this method.
+        _rejecting = getattr(self, "_auto_zone_cap_rejecting", False)
+        if self._auto_zone is not None and not _rejecting:
+            # A geometry, in the CRS the zone was drawn in. Handing the stored
+            # rectangle straight to the measurer raised a TypeError inside sip,
+            # which came back as 0.0 km2, so this late cap never once fired and
+            # the cold-start hole it exists to close stayed open.
+            zone_shape = (self._auto_zone_polygon
+                          if self._auto_zone_polygon is not None
+                          else QgsGeometry.fromRect(self._auto_zone))
+            over_cap = self._free_zone_cap_exceeded_km2(
+                QgsGeometry(zone_shape), self._zone_source_crs(self._auto_zone))
+            if over_cap is not None:
+                self._auto_zone_cap_rejecting = True
+                try:
+                    self._reject_zone_over_free_cap(over_cap)
+                finally:
+                    self._auto_zone_cap_rejecting = False
+                return
+
         # Tiling is a user choice for every layer type now; the slider only
         # needs a zone to be meaningful.
         if self.dock_widget:
@@ -755,7 +901,11 @@ class AutoZoneMixin:
                     layer, zone_in_layer, self._resolved_auto_object_class())
                 self.dock_widget.set_auto_detail_range(
                     low, high, object_bound=high < machine_max)
-                self.dock_widget.set_auto_free_run_cap(self._free_run_tile_cap())
+                # The band can move the value the seed just set. Follow it, or
+                # a clamp the user never made would read as a user override.
+                if getattr(self, "_auto_detail_seeded", None) is not None:
+                    self._auto_detail_seeded = max(
+                        low, min(high, self._auto_detail_seeded))
 
         grid = self._compute_auto_grid(layer)
         if grid is None:
@@ -773,10 +923,11 @@ class AutoZoneMixin:
         # slider value squared, or it contradicts the credit count.
         tiles_list = self._tile_manager.compute_grid(pixel_w, pixel_h)
         if tiles_list is not None:
-            # Count only tiles inside the drawn polygon, so "N credits" matches
-            # what the run actually bills (no-op for the rectangle/MCP path).
+            # Count only tiles inside the drawn polygon and over the raster's
+            # own extent, so "N credits" matches what the run actually bills.
             tiles_list = self._tiles_in_polygon(
-                tiles_list, grid["bbox"], pixel_w, pixel_h, layer)
+                tiles_list, grid["bbox"], pixel_w, pixel_h, layer,
+                grid.get("crs"))
         credit_count = len(tiles_list) if tiles_list is not None else -1
         # credit_count == -1 means > MAX_TILES
         self._auto_est_tiles = credit_count  # cached for detail_changed telemetry
@@ -790,11 +941,13 @@ class AutoZoneMixin:
         # Only reflect the estimate in the dock while a zone is set; the
         # zone-less path estimates the full raster for the overlay only.
         if self.dock_widget and self._auto_zone is not None:
+            # What the run is billed on: the surface of the drawn zone, not the
+            # grid. The same function the server is sent (clip polygon in the
+            # run CRS, else the zone rectangle in its own CRS), so the card and
+            # the bill never disagree. Pushed before the tile estimate, so the
+            # MAX_TILES refusal still gets the last word on the same label.
+            self.dock_widget.set_auto_zone_surface(self._auto_zone_area_km2())
             self.dock_widget.set_auto_credit_estimate(credit_count)
-            # A refusal for want of credits is judged against a balance that
-            # can be minutes old, so read it again before it stands (throttled;
-            # a fresh balance re-runs the gate on its own).
-            self._recheck_balance_if_underfunded()
             # Detail, layer, zone and post-zero returns all pass here, so this
             # is the single chokepoint that re-evaluates the identical-re-run
             # note against the current prompt/detail/example count.
@@ -851,14 +1004,14 @@ class AutoZoneMixin:
             self._show_zone_tile_grid(layer, grid)
 
     def _hide_auto_cost_label(self) -> None:
-        """Blank the 'N tile(s) = N credit(s)' label when there is nothing to
-        estimate (layer removed, zone dropped); it used to go stale. The
-        credit-block callout prices the same estimate, so it goes too."""
+        """Blank the zone-surface label when there is nothing to estimate
+        (layer removed, zone dropped); it used to go stale. The monthly wall
+        reads the same zone, so it goes with it (set_auto_zone_surface)."""
         if not self.dock_widget:
             return
         try:
+            self.dock_widget.set_auto_zone_surface(None)
             self.dock_widget.auto_credit_cost_label.setVisible(False)
-            self.dock_widget.set_auto_credit_block(None)
         except (RuntimeError, AttributeError):
             pass
 
@@ -872,15 +1025,21 @@ class AutoZoneMixin:
         same row and column counts, honest cost, readable layout. A rubber
         band, not a memory layer: nothing lands in the project's layer tree.
 
-        force=True is the review's debug toggle asking for the grid on top of
-        a finished result; every other caller is refused once Detect is
-        clicked (see _tile_grid_allowed). Refusing does NOT clear what is
-        already drawn, so a stray recompute cannot wipe the debug overlay the
-        user just switched on.
+        Two refusals sit in front of it: the run and review latch
+        (_tile_grid_allowed) and the Advanced settings fold
+        (_tile_grid_revealed). force=True is the review's debug toggle asking
+        for the grid on top of a finished result, and it clears both. The
+        latch refusal does NOT clear what is already drawn, so a stray
+        recompute cannot wipe the debug overlay the user just switched on.
         """
         if not force and not self._tile_grid_allowed():
             return
         self._clear_zone_tile_grid()
+        # After the clear, never before it: a recompute that lands while the
+        # fold is shut (a zone edit, a layer swap) must also take away a grid
+        # left over from when it was open.
+        if not force and not self._tile_grid_revealed():
+            return
         if self._tile_manager is None or self._auto_zone is None:
             return
         tiles = self._tile_manager.compute_grid(grid["pixel_w"], grid["pixel_h"])
@@ -1019,7 +1178,23 @@ class AutoZoneMixin:
         left out, which is right for a draw; a caller that converted the zone
         itself passes the CRS its conversion actually reached, because a failed
         conversion leaves numbers the canvas cannot speak for.
+
+        It also drops the last run's clip artefacts, because they describe the
+        zone that RAN and this call replaces it. They outlive their run on
+        purpose (the review reads them), and the surface card prefers the clip
+        polygon over the drawn one (_auto_billable_zone_geometry), so leaving
+        them here made a fresh small zone quote the old run's km2: the monthly
+        wall stayed up and Detect stayed grey over a zone that fitted easily.
+        The last run's inputs go the same way and for the same reason: the
+        estimate card resolves the billable raster through them, so a run on
+        raster A followed by a fresh zone over raster B was quoted against A's
+        extent while the claim was built against B's.
+        Every path that sets or clears a zone comes through here, which is why
+        the drop belongs here and not in each of them.
         """
+        self._auto_clip_polygon = None
+        self._auto_clip_engine = None
+        self._auto_run_ctx = None
         if zone is None:
             self._auto_zone = None
             self._forget_zone_crs()
@@ -1298,22 +1473,40 @@ class AutoZoneMixin:
             return geom
         try:
             xform = QgsCoordinateTransform(zone_crs, target_crs, QgsProject.instance())
-            geom.transform(xform)
+            # 0 is success. A half-moved clip polygon is worse than none: every
+            # detection is tested against it, so the run would come back empty
+            # with nothing to say why.
+            if geom.transform(xform) != 0:
+                return None
         except Exception:  # nosec B110 -- antimeridian, invalid CRS, etc.
             return None
         return geom
 
-    def _tiles_in_polygon(self, tiles, bbox, pixel_w, pixel_h, layer):
-        """Keep only tiles whose geographic footprint intersects the drawn
-        polygon, so ground outside the shape is never rendered or billed.
+    def _tiles_in_polygon(self, tiles, bbox, pixel_w, pixel_h, layer,
+                          crs_authid=None):
+        """Keep only tiles whose geographic footprint touches the drawn polygon
+        AND the raster's own extent, so ground outside the shape and ground the
+        image has no data for are never rendered or billed.
 
         tiles: list of (tx, ty, tw, th) pixel rects in the rendered image space.
         bbox:  (minx, miny, maxx, maxy) of that image in the RUN CRS (image row
                0 maps to maxy; pixel Y grows downward).
-        Returns tiles unchanged when no polygon was drawn (rectangle/MCP path)
-        or on any error, and never culls to an empty list (safety fallback)."""
+        crs_authid: authid of that run CRS, needed to bring the layer extent
+               into the same units; the extent test is skipped without it.
+        Returns tiles unchanged when neither test applies (no polygon drawn and
+        no usable extent, the rectangle/MCP path on an online source) or on any
+        error, and never culls to an empty list (safety fallback)."""
         poly = self._polygon_in_run_crs(layer)
-        if poly is None or poly.isEmpty() or not tiles:
+        if poly is not None and poly.isEmpty():
+            poly = None
+        # The raster's extent in the run CRS. An online source answers with a
+        # world-sized or null extent, so this is a no-op there.
+        data_bb = None
+        if layer is not None and crs_authid:
+            data_bb = self._layer_extent_in_run_crs(layer, crs_authid)
+            if data_bb is not None and data_bb.isEmpty():
+                data_bb = None
+        if (poly is None and data_bb is None) or not tiles:
             return tiles
         if pixel_w <= 0 or pixel_h <= 0:
             return tiles
@@ -1325,8 +1518,8 @@ class AutoZoneMixin:
         # run start AND on every credit-estimate refresh, so it is worth it. Also
         # bbox-cull cheaply first: tiles in the image corners outside the drawn
         # shape's extent skip the GEOS call entirely.
-        engine = self._prepare_clip_engine(poly)
-        pbb = poly.boundingBox()
+        engine = self._prepare_clip_engine(poly) if poly is not None else None
+        pbb = poly.boundingBox() if poly is not None else None
         kept = []
         for tile in tiles:
             tx, ty, tw, th = tile
@@ -1334,6 +1527,13 @@ class AutoZoneMixin:
             gx1 = minx + ((tx + tw) / pixel_w) * span_x
             gy1 = maxy - (ty / pixel_h) * span_y          # top edge (row ty)
             gy0 = maxy - ((ty + th) / pixel_h) * span_y   # bottom edge
+            if data_bb is not None and (
+                    gx1 < data_bb.xMinimum() or gx0 > data_bb.xMaximum()
+                    or gy1 < data_bb.yMinimum() or gy0 > data_bb.yMaximum()):
+                continue  # tile sits off the image; no data to detect on
+            if pbb is None:
+                kept.append(tile)
+                continue
             if gx1 < pbb.xMinimum() or gx0 > pbb.xMaximum() or gy1 < pbb.yMinimum() or gy0 > pbb.yMaximum():
                 continue  # tile extent does not even overlap the polygon bbox
             cell = QgsGeometry.fromRect(QgsRectangle(gx0, gy0, gx1, gy1))

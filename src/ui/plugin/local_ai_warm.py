@@ -42,6 +42,8 @@ copy, no warm-up: the click then pays for its own imagery, as it always did.
 """
 from __future__ import annotations
 
+import os
+
 from qgis.core import (
     Qgis,
     QgsCoordinateTransform,
@@ -61,6 +63,11 @@ CORRECT_HOVER_WARM_MS = 200
 # Same idea on the Manual map, a little longer: there is no object under the
 # cursor to aim at, so a moving mouse crosses many candidate crops.
 MANUAL_HOVER_WARM_MS = 300
+
+# The same rest when the imagery is a file on this machine. Reading one crop
+# off a local raster costs a few milliseconds, so the rest IS the delay, and a
+# crop the cursor turns out not to want costs almost nothing to have read.
+MANUAL_LOCAL_HOVER_WARM_MS = 120
 
 # Ceiling on either delay. Past a few seconds the cursor has moved on and the
 # warm-up prepares a crop nobody is aiming at any more.
@@ -114,6 +121,23 @@ def manual_hover_warm_ms() -> int:
                                  _MIN_HOVER_WARM_MS, _MAX_HOVER_WARM_MS))
     except Exception:  # noqa: BLE001 -- a warm-up delay is best-effort  # nosec B110
         return MANUAL_HOVER_WARM_MS
+
+
+def manual_local_hover_warm_ms() -> int:
+    """The Manual rest time when the crop comes off a file on this machine.
+
+    Its own dial, so the two cases can be tuned apart: a rendered or online
+    layer pays a network fetch for a crop nobody asked for, a file pays a
+    windowed read. Same floor and same ceiling as the others.
+    """
+    try:
+        from ...core.server_dials import dial_in_range
+
+        return int(dial_in_range("ui.warm_hover_ms.manual_local",
+                                 MANUAL_LOCAL_HOVER_WARM_MS,
+                                 _MIN_HOVER_WARM_MS, _MAX_HOVER_WARM_MS))
+    except Exception:  # noqa: BLE001 -- a warm-up delay is best-effort  # nosec B110
+        return MANUAL_LOCAL_HOVER_WARM_MS
 
 
 class LocalAiWarmMixin:
@@ -514,8 +538,39 @@ class LocalAiWarmMixin:
         self._manual_warm_canvas_point = canvas_point
         if not self._manual_warm_allowed():
             return
+        rest_ms = (manual_local_hover_warm_ms() if self._manual_warm_reads_a_file()
+                   else manual_hover_warm_ms())
         _debounce_timer(self, "_manual_hover_warm_timer", self.dock_widget,
-                        manual_hover_warm_ms(), self._warm_hovered_manual_crop)
+                        rest_ms, self._warm_hovered_manual_crop)
+
+    def _manual_warm_reads_a_file(self) -> bool:
+        """Whether the crop under the cursor comes off a raster file on disk.
+
+        The imagery of the live Manual session, not the layer the user has
+        selected somewhere: this decides how long the warm-up waits before
+        reading it. False for anything QGIS renders and for a GDAL source that
+        is not a file here (a URL, a service), because those pay a fetch."""
+        if getattr(self, "_is_online_layer", False):
+            return False
+        source = getattr(self, "_current_raster_path", None)
+        if not source:
+            return False
+        # Answered once per raster and remembered: this runs on every mouse
+        # move over the map, and a disk stat per move is a stat per pixel of
+        # travel, on a network share as easily as on a local file.
+        memo = getattr(self, "_manual_warm_file_memo", None)
+        if memo is not None and memo[0] == source:
+            return memo[1]
+        try:
+            provider = self._current_layer.dataProvider()
+            if provider is None or provider.name() != "gdal":
+                reads_a_file = False
+            else:
+                reads_a_file = os.path.isfile(source)
+        except (RuntimeError, AttributeError, OSError, ValueError):
+            return False
+        self._manual_warm_file_memo = (source, reads_a_file)
+        return reads_a_file
 
     def _replay_hover_warm_when_ready(self) -> None:
         """The model just arrived: warm the crop the cursor has been resting on.

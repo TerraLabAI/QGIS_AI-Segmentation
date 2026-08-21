@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import threading
 from typing import TYPE_CHECKING, Any
 
@@ -17,6 +18,7 @@ from qgis.core import (  # noqa: E402
     QgsGeometry,
     QgsLineString,
     QgsMessageLog,
+    QgsMultiPolygon,
     QgsPointXY,
     QgsPolygon,
     QgsSpatialIndex,
@@ -25,7 +27,7 @@ from qgis.PyQt.QtCore import QMetaObject, QObject, pyqtSlot  # noqa: E402
 
 from .merger import IncrementalMerger  # noqa: E402,F401
 from .polygon_packing import pack_disjoint_crops  # noqa: E402
-from .qt_compat import field_type_double, field_type_string  # noqa: E402
+from .qt_compat import field_type_string  # noqa: E402
 
 
 def mask_to_polygons_rasterio(
@@ -37,17 +39,33 @@ def mask_to_polygons_rasterio(
     # Empty masks are normal in dense auto runs; return silently. This function
     # runs once per detected instance (hundreds to thousands per run), so any
     # per-call logging here floods the message panel and adds main-thread cost.
-    if mask is None or mask.sum() == 0:
+    if mask is None:
         return []
 
     try:
         from rasterio.features import shapes as get_shapes
 
-        mask_uint8 = mask.astype(np.uint8)
+        # shapes() walks every cell of the array it is handed, so what it costs
+        # is the size of that array, not the size of the object in it. A click
+        # mask holds one object inside a whole crop, so hand over the object's
+        # own box and move the affine's origin onto that box: same cells, same
+        # ground, on the object instead of the crop. apply_mask_refinement
+        # already narrows its own steps the same way.
+        window = _mask_bounding_window(mask)
+        if window is None:
+            return []
+        row0, row1, col0, col1 = window
+        mask_uint8 = np.ascontiguousarray(
+            mask[row0:row1, col0:col1], dtype=np.uint8)
+        if row0 or col0:
+            transform = transform * transform.translation(col0, row0)
 
+        # The source doubles as the mask: it is uint8 with 0 for background,
+        # which is what shapes() asks a mask to be, so the background is
+        # skipped without building a second array to say so.
         shape_generator = get_shapes(
             mask_uint8,
-            mask=mask_uint8 > 0,
+            mask=mask_uint8,
             connectivity=4,
             transform=transform,
         )
@@ -213,6 +231,25 @@ def masks_to_polygons_packed(
         ]
 
 
+def _polygon_from_geojson_rings(rings: list) -> QgsPolygon:
+    """One GeoJSON ring list as a QgsPolygon, first ring outer, rest inner.
+
+    Each ring goes over in two coordinate lists, which QGIS turns into a ring
+    in one call. Handing it a point object per vertex instead costs one Python
+    object per vertex, and a polygonized mask carries a vertex per step of the
+    boundary's staircase, so that is thousands of them for one object.
+    """
+    polygon = QgsPolygon()
+    for index, ring in enumerate(rings):
+        line = QgsLineString([point[0] for point in ring],
+                             [point[1] for point in ring])
+        if index == 0:
+            polygon.setExteriorRing(line)
+        else:
+            polygon.addInteriorRing(line)
+    return polygon
+
+
 def _geojson_to_geometry(geojson: dict) -> QgsGeometry | None:
     """Build a QgsGeometry directly from a rasterio shapes() GeoJSON dict.
 
@@ -226,15 +263,13 @@ def _geojson_to_geometry(geojson: dict) -> QgsGeometry | None:
     coords = geojson.get("coordinates", [])
 
     if geom_type == "Polygon":
-        rings = [[QgsPointXY(x, y) for x, y in ring] for ring in coords]
-        return QgsGeometry.fromPolygonXY(rings)
+        return QgsGeometry(_polygon_from_geojson_rings(coords))
 
     if geom_type == "MultiPolygon":
-        polygons = [
-            [[QgsPointXY(x, y) for x, y in ring] for ring in polygon]
-            for polygon in coords
-        ]
-        return QgsGeometry.fromMultiPolygonXY(polygons)
+        multi = QgsMultiPolygon()
+        for polygon in coords:
+            multi.addGeometry(_polygon_from_geojson_rings(polygon))
+        return QgsGeometry(multi)
 
     return None
 
@@ -247,8 +282,10 @@ def mask_to_polygons(
     full_shape: tuple[int, int] | None = None,
 ) -> list[QgsGeometry]:
     # Empty masks are normal and frequent; return silently (see note in
-    # mask_to_polygons_rasterio about per-instance logging cost).
-    if mask is None or mask.sum() == 0:
+    # mask_to_polygons_rasterio about per-instance logging cost). any() stops
+    # at the first set pixel; summing the whole array to compare it to zero
+    # reads every cell of the crop for the same answer.
+    if mask is None or not mask.any():
         return []
 
     try:
@@ -364,30 +401,47 @@ def mask_to_polygons_fallback(
         if not contours:
             return []
 
-        geometries = []
+        rings = []
         for contour in contours:
             if len(contour) < 3:
                 continue
 
             map_points = []
             for px, py in contour:
-                mx, my = pixel_to_map_coords(px, py, transform_info)
+                # A traced coordinate names a CELL; pixel_to_map_coords maps a
+                # grid corner. Half a cell is the difference, and without it
+                # every fallback outline sits half a pixel up and left of the
+                # same object polygonized the normal way.
+                mx, my = pixel_to_map_coords(px + 0.5, py + 0.5, transform_info)
                 map_points.append(QgsPointXY(mx, my))
 
             if map_points[0] != map_points[-1]:
                 map_points.append(map_points[0])
-
             if len(map_points) >= 4:
-                line = QgsLineString(list(map_points))
-                polygon = QgsPolygon()
-                polygon.setExteriorRing(line)
-                geom = QgsGeometry(polygon)
+                rings.append(map_points)
 
-                if simplify_tolerance > 0:
-                    geom = geom.simplify(simplify_tolerance)
+        # A traced boundary comes back one ring per outline, with nothing
+        # saying which ring is a hole in another. Attach them, or a courtyard
+        # reaches the map as a solid object inside its own building.
+        from .contour_rings import rings_to_polygons
 
-                if geom.isGeosValid():
-                    geometries.append(geom)
+        geometries = []
+        for geom in rings_to_polygons(rings):
+            if geom is None or geom.isEmpty():
+                continue
+            if not geom.isGeosValid():
+                # A traced ring can touch itself at a single cell. Repair it,
+                # never drop it: dropping loses the whole object silently, and
+                # this is the path a user without the geometry packages runs.
+                fixed = polygonal_part_of(geom.makeValid())
+                if fixed is None:
+                    continue
+                geom = fixed
+            if simplify_tolerance > 0:
+                simplified = geom.simplify(simplify_tolerance)
+                if simplified is not None and not simplified.isEmpty():
+                    geom = simplified
+            geometries.append(geom)
 
         return geometries
 
@@ -401,13 +455,56 @@ def mask_to_polygons_fallback(
         return []
 
 
-def find_contours(mask: np.ndarray) -> list[list[tuple[int, int]]]:
+def polygonal_part_of(geom: QgsGeometry | None) -> QgsGeometry | None:
+    """The polygonal part of ``geom``, or None when it holds none.
+
+    Repairing a self-touching ring can answer with a COLLECTION: the polygon
+    plus the dangling lines and points the touch degenerates into. Handed to a
+    polygon layer as it is, that writes a feature with no usable shape, so keep
+    the polygonal parts and drop the rest.
+    """
+    from .qt_compat import PolygonGeometry
+
+    if geom is None or geom.isEmpty():
+        return None
+    if geom.type() == PolygonGeometry:
+        return geom
+    parts = [
+        part for part in geom.asGeometryCollection()
+        if part is not None and not part.isEmpty()
+        and part.type() == PolygonGeometry
+    ]
+    if not parts:
+        return None
+    if len(parts) == 1:
+        return parts[0]
+    collected = QgsGeometry.collectGeometry(parts)
+    if collected is None or collected.isEmpty():
+        return parts[0]
+    return collected
+
+
+def find_contours(mask: np.ndarray) -> list[list[tuple[float, float]]]:
+    """Closed (x, y) rings around every set region of ``mask``, in cell units.
+
+    A ring is not told apart from a hole here; see core.contour_rings.
+    """
     try:
         from skimage import measure
-        raw_contours = measure.find_contours(mask.astype(float), 0.5)
+
+        # One empty cell all the way round, so an object that runs off the
+        # edge of the mask still traces a CLOSED ring. Without the border its
+        # contour ends on the edge, and joining the two ends cuts a straight
+        # chord across the object.
+        bordered = np.pad(mask.astype(float), 1, mode="constant",
+                          constant_values=0.0)
+        raw_contours = measure.find_contours(bordered, 0.5)
         contours = []
         for contour in raw_contours:
-            points = [(int(c[1]), int(c[0])) for c in contour]
+            # Keep the sub-cell position the tracer measured. Truncating it to
+            # a whole cell moves every vertex toward the origin, which on a
+            # small object is a visible bite out of one corner.
+            points = [(float(c[1]) - 1.0, float(c[0]) - 1.0) for c in contour]
             if len(points) >= 3:
                 contours.append(points)
         return contours
@@ -563,6 +660,71 @@ def apply_mask_refinement(
     # astype already returns a fresh array, so a .copy() before it would
     # allocate and fill a whole extra mask on every refine repaint.
     result = mask.astype(np.uint8, order="C")
+    if expand_value == 0 and not fill_holes and min_area <= 0:
+        return result
+
+    # The steps below cost what they are given, and a crop is mostly empty
+    # around one object. So they run on the object's own window, which answers
+    # exactly as the whole frame does (see _mask_bounding_window).
+    window = _mask_bounding_window(
+        result, abs(int(expand_value)) + _REFINE_MARGIN_PX)
+    if window is None:
+        return result  # nothing set: every step leaves an empty mask empty
+    row0, row1, col0, col1 = window
+    region = _apply_refinement_steps(
+        np.ascontiguousarray(result[row0:row1, col0:col1]),
+        expand_value, fill_holes, min_area, max_hole_px)
+    if region.shape == result.shape:
+        return region
+    result = np.zeros_like(result)
+    result[row0:row1, col0:col1] = region
+    return result
+
+
+# Rows and columns kept around the mask's own box before the refinement steps
+# run on it, on top of whatever the expand step reaches. One is all the fill
+# needs (the background ring that makes a hole a hole); the rest is slack.
+_REFINE_MARGIN_PX = 2
+
+
+def _mask_bounding_window(mask: np.ndarray, margin: int = 0) -> tuple | None:
+    """``(row0, row1, col0, col1)`` of the set pixels' own box grown by
+    ``margin`` and clipped to the array, or None when nothing is set.
+
+    Doubles as the empty test: None means no pixel is set, so a caller needs
+    no separate pass over the array to find that out.
+
+    A crop is mostly empty around one object, and the work that follows costs
+    what it is given. Every step in apply_mask_refinement reads a pixel's
+    answer from that pixel's own neighbourhood, and polygonizing reads the
+    boundary between set and unset; outside this window there is nothing to
+    read. The box holds every set pixel, the margin covers the reach of the
+    expand step and leaves the ring of background a hole is judged against,
+    and the clip keeps the array's own edge exactly where it was. Whatever
+    sits outside stays background either way, so the window answers as the
+    full frame does, at the cost of the object instead of the crop.
+    """
+    rows = np.flatnonzero(mask.any(axis=1))
+    if rows.size == 0:
+        return None
+    cols = np.flatnonzero(mask.any(axis=0))
+    height, width = mask.shape
+    return (max(0, int(rows[0]) - margin),
+            min(height, int(rows[-1]) + 1 + margin),
+            max(0, int(cols[0]) - margin),
+            min(width, int(cols[-1]) + 1 + margin))
+
+
+def _apply_refinement_steps(
+    mask: np.ndarray,
+    expand_value: int,
+    fill_holes: bool,
+    min_area: int,
+    max_hole_px: int | None,
+) -> np.ndarray:
+    """The three refinement steps, in the order apply_mask_refinement runs
+    them, over whatever array it is handed."""
+    result = mask
 
     # 1. Expand/Contract first so fill-holes operates on the adjusted mask
     if expand_value != 0:
@@ -1228,11 +1390,14 @@ def apply_geometry_refinement(
         snapped shape drifts too far. Which classes get this and the tuning
         come from the server policy; an unset dial keeps the engine default.
       - unit_aspect: ground metres per y unit over ground metres per x unit of
-        the geometry's CRS, so the squaring lands on the ground rather than on
-        raw coordinates. 1.0, the default, is exact for a projected CRS. A
-        caller working in a geographic one (a local image is often supplied in
-        degrees) MUST measure and pass it, or every square corner arrives
-        tilted, the more so the further the data sits from the equator.
+        the geometry's CRS. The whole step chain runs in a frame stretched by
+        it (core.ground_frame), so every distance dial below means one ground
+        distance on both axes and not just along x. 1.0, the default, is exact
+        for a projected CRS. A caller working in a geographic one (a local
+        image is often supplied in degrees) MUST measure and pass it, at the
+        object's own position, or the buffers reach further along one axis than
+        the other and every square corner arrives tilted, the more so the
+        further the data sits from the equator.
       - expand_dist: buffer out (positive) or shrink in (negative), ground units.
       - smooth: Chaikin round the corners (native QgsGeometry.smooth).
 
@@ -1278,6 +1443,26 @@ def apply_geometry_refinement(
                 g = r
         except (AttributeError, TypeError, ValueError):
             pass
+    # Every step from here on reads raw coordinates: a buffer, a simplify
+    # tolerance and a Chaikin offset are all ONE number applied to both axes,
+    # which is a ground distance only where one x unit and one y unit cover the
+    # same ground. Stretch y into the x unit once, run the whole chain in that
+    # frame, map straight back (core.ground_frame). The dials arrive converted
+    # with the x-axis factor, so in the stretched frame each of them means one
+    # ground distance again on both axes.
+    from .ground_frame import stretch_y, unstretch_y, usable_aspect
+
+    aspect = usable_aspect(unit_aspect)
+    unstretched = g
+    stretched = stretch_y(g, aspect)
+    if stretched is not None:
+        g = stretched
+        # The frame is isotropic now, so the two steps that correct for the
+        # aspect themselves must not correct for it a second time.
+        step_aspect = 1.0
+    else:
+        unstretched = None
+        step_aspect = aspect
     # Cut the thin spikes and necks the raw mask carries (a tile-seam join, an
     # uncertain point) BEFORE squaring. Shared with the Manual tail.
     g = despike_thin_necks(g, despike_m, preserve_parts=preserve_input_parts)
@@ -1356,11 +1541,12 @@ def apply_geometry_refinement(
                 max_deviation_fraction=vertex_max_deviation_fraction,
                 keep_fraction=vertex_keep_fraction,
                 dial_max_cap_fraction=dial_cap,
-                # Same axis correction the regularizer below is given: without
-                # it a geographic CRS counts a degree of longitude and one of
-                # latitude as the same length, and the budget thins one axis
-                # against the wrong ground distance.
-                unit_aspect=unit_aspect)
+                # 1.0 whenever the frame above is already isotropic; the
+                # aspect itself when the stretch could not be made. Without
+                # one or the other a geographic CRS counts a degree of
+                # longitude and one of latitude as the same length, and the
+                # budget thins one axis against the wrong ground distance.
+                unit_aspect=step_aspect)
             if r is not None and not r.isEmpty():
                 g = r
         except Exception:  # noqa: BLE001 -- refine is best-effort  # nosec B110
@@ -1383,7 +1569,9 @@ def apply_geometry_refinement(
                     allow_circles=allow_circles,
                     min_keep_iou=regularize_min_iou,
                     policy=envelope,
-                    unit_aspect=unit_aspect,
+                    # 1.0 once the chain above put the object in an isotropic
+                    # frame; the regularizer then makes no second frame change.
+                    unit_aspect=step_aspect,
                     **_regularize_shape_kwargs(
                         diagonal_reduction, circle_threshold,
                         multi_direction, multi_max_groups,
@@ -1434,6 +1622,12 @@ def apply_geometry_refinement(
     if smooth:
         # Round corners plus its vertex diet, shared with the Manual tail.
         g = rounded_corner_outline(g, simplify_tol, smooth_settings)
+    if unstretched is not None:
+        # Back into the caller's own CRS. A shape that cannot be mapped back is
+        # stuck in the working frame, so the input is returned instead: no
+        # refine at all beats a shape at the wrong latitude.
+        back = unstretch_y(g, aspect)
+        g = back if back is not None else unstretched
     return g
 
 
@@ -2004,8 +2198,89 @@ def driver_extension(driver: str) -> str:
     return _DRIVER_EXTENSIONS.get(driver, ".gpkg")
 
 
-def _release_project_layers_on_gui(path: str) -> int:
+def _uri_layer_name(source: str) -> str:
+    """The table an OGR URI names outright, or "" when it names none.
+
+    A provider URI is the file plus pipe-separated options, one of which is
+    ``layername=``. A file with one table is usually opened without it.
+    """
+    for part in str(source or "").split("|")[1:]:
+        key, sep, value = part.partition("=")
+        if sep and key.strip().lower() == "layername":
+            return value.strip()
+    return ""
+
+
+def _tables_in_file(path: str) -> list[str]:
+    """Table names inside an OGR file, indexed by the number the provider uses.
+
+    Empty when the file cannot be read, which the caller treats as "unknown"
+    and not as "no tables".
+    """
+    from qgis.core import QgsProviderRegistry
+
+    try:
+        details = QgsProviderRegistry.instance().querySublayers(path)
+    except (AttributeError, RuntimeError, TypeError, ValueError):
+        return []
+    numbered: dict[int, str] = {}
+    for detail in details or []:
+        try:
+            numbered[int(detail.layerNumber())] = str(detail.name() or "")
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            continue
+    if not numbered:
+        return []
+    return [numbered.get(i, "") for i in range(max(numbered) + 1)]
+
+
+def _layer_table(layer: Any, source: str, path: str, cache: dict) -> str:
+    """The table ``layer`` reads inside ``path``, or "" when it cannot be told.
+
+    Three URIs reach the same table. One names it with ``layername=``. One
+    names it by index with ``layerid=``. One names nothing at all, and then the
+    provider opens the file's first table. Only the first says the table in the
+    URI, so the other two are resolved against the file itself, once per file.
+    """
+    named = _uri_layer_name(source)
+    if named:
+        return named
+    try:
+        if str(layer.providerType() or "").lower() != "ogr":
+            return ""
+    except (AttributeError, RuntimeError):
+        return ""
+    parts: dict = {}
+    with contextlib.suppress(Exception):
+        from qgis.core import QgsProviderRegistry
+
+        parts = QgsProviderRegistry.instance().decodeUri("ogr", source) or {}
+    decoded = parts.get("layerName")
+    if decoded is not None and str(decoded) and str(decoded) != "NULL":
+        return str(decoded)
+    if path not in cache:
+        cache[path] = _tables_in_file(path)
+    tables = cache[path]
+    if not tables:
+        return ""
+    try:
+        index = int(parts.get("layerId") or 0)
+    except (TypeError, ValueError):
+        index = 0
+    if 0 <= index < len(tables):
+        return tables[index]
+    return ""
+
+
+def _release_project_layers_on_gui(path: str, table: str = "") -> int:
     """Drop project layers reading this exact file. GUI thread only.
+
+    ``table`` narrows the drop to the layers reading that one table. A
+    GeoPackage holds several tables and the others are nobody's business here,
+    so a layer whose table cannot be told apart is LEFT on the map: a stale
+    layer the caller reloads a moment later is a nuisance, while an unrelated
+    layer taken off the map is somebody's work gone. With no ``table`` the
+    whole file is being rewritten and every layer holding it has to go.
 
     Best effort: a failure to read one layer skips it rather than stopping the
     export. normcase before comparing, because the same Windows file has many
@@ -2020,14 +2295,22 @@ def _release_project_layers_on_gui(path: str) -> int:
         target = os.path.normcase(os.path.abspath(path))
     except (OSError, ValueError):
         return 0
+    wanted = str(table or "").strip()
+    tables_by_file: dict[str, list[str]] = {}
     doomed = []
     for layer_id, layer in QgsProject.instance().mapLayers().items():
         try:
             # A provider URI can carry "|layername=..." and friends; the file
             # is everything before the first pipe.
-            source = (layer.source() or "").split("|")[0]
-            if source and os.path.normcase(os.path.abspath(source)) == target:
-                doomed.append(layer_id)
+            source = layer.source() or ""
+            file_part = source.split("|")[0]
+            if not file_part:
+                continue
+            if os.path.normcase(os.path.abspath(file_part)) != target:
+                continue
+            if wanted and _layer_table(layer, source, file_part, tables_by_file) != wanted:
+                continue
+            doomed.append(layer_id)
         except (AttributeError, RuntimeError, OSError, ValueError):
             continue
     if doomed:
@@ -2049,16 +2332,17 @@ class _LayerReleaseCall(QObject):
     ``finished`` is what the calling thread waits on.
     """
 
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, table: str = "") -> None:
         super().__init__()
         self._path = path
+        self._table = table
         self.count = 0
         self.finished = threading.Event()
 
     @pyqtSlot()
     def run(self) -> None:
         try:
-            self.count = _release_project_layers_on_gui(self._path)
+            self.count = _release_project_layers_on_gui(self._path, self._table)
         except Exception:  # noqa: BLE001 -- the release never stops an export
             self.count = 0
         finally:
@@ -2073,8 +2357,12 @@ class _LayerReleaseCall(QObject):
 _pending_layer_releases: set[_LayerReleaseCall] = set()
 
 
-def _release_project_layers_at(path: str) -> int:
+def _release_project_layers_at(path: str, table: str = "") -> int:
     """Drop project layers reading this exact file. Returns how many went.
+
+    ``table`` narrows the drop to one table inside the file, which is what a
+    GeoPackage export wants: the other tables in the same file belong to other
+    work and must stay on the map.
 
     Safe from any thread. A map layer belongs to the GUI thread and dropping
     one from a worker corrupts the project, so off the GUI thread the work is
@@ -2090,10 +2378,10 @@ def _release_project_layers_at(path: str) -> int:
     try:
         app = QgsApplication.instance()
         if app is None or QThread.currentThread() == app.thread():
-            return _release_project_layers_on_gui(path)
+            return _release_project_layers_on_gui(path, table)
     except (RuntimeError, AttributeError):
         return 0
-    call = _LayerReleaseCall(path)
+    call = _LayerReleaseCall(path, table)
     try:
         call.moveToThread(app.thread())
         _pending_layer_releases.add(call)
@@ -2116,6 +2404,52 @@ def _release_project_layers_at(path: str) -> int:
     return call.count
 
 
+def _on_gui_thread() -> bool:
+    """Whether the caller is on the thread QgsProject belongs to.
+
+    True when the answer cannot be established, so code that reads the project
+    behaves as it always did wherever this cannot tell.
+    """
+    from qgis.core import QgsApplication
+    from qgis.PyQt.QtCore import QThread
+
+    try:
+        app = QgsApplication.instance()
+        return app is None or QThread.currentThread() == app.thread()
+    except (RuntimeError, AttributeError):
+        return True
+
+
+def _batch_area_measurer(crs, transform_context=None, ellipsoid: str = ""):
+    """The measurer the export loop reuses for every feature, or None when the
+    values it needs are neither captured nor readable from here.
+
+    ``transform_context`` and ``ellipsoid`` are the project's own values, read
+    by the caller on the GUI thread. Given them, nothing here reads QgsProject,
+    which is what lets the write run on a worker thread. Without them the
+    project is read as before, so a GUI-thread caller is unchanged, and off
+    that thread the measure is given up: a planar fallback would write degrees
+    squared into a column named area_m2.
+    """
+    from .layer_conventions import make_area_measurer
+
+    if transform_context is None:
+        if not _on_gui_thread():
+            QgsMessageLog.logMessage(
+                "Export: no project measurement context on this thread, so "
+                "area_m2 and perimeter_m are written empty",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning,
+            )
+            return None
+        # None, not "": the project's own ellipsoid is what a GUI-thread
+        # caller that named none has always been measured on.
+        return make_area_measurer(crs, None, str(ellipsoid) or None)
+    # A caller that captured the context captured the ellipsoid with it, so an
+    # empty one is the project saying "measure planar" and never "go and ask
+    # the project", which off this thread is the one thing barred.
+    return make_area_measurer(crs, transform_context, str(ellipsoid or ""))
+
+
 def export_geometries_to_file(
     geoms: list,
     crs,
@@ -2124,6 +2458,9 @@ def export_geometries_to_file(
     source_layer_name: str = "",
     layer_name: str | None = None,
     stats: dict | None = None,
+    project_crs=None,
+    transform_context=None,
+    ellipsoid: str = "",
 ):
     """Write polygon geometries to a vector file and return the loaded layer.
 
@@ -2152,6 +2489,16 @@ def export_geometries_to_file(
                            read ``written`` when telling the user how many
                            polygons they got. Optional on purpose: an older
                            caller passes nothing and is unchanged.
+        project_crs:       The project CRS, for the output-CRS choice.
+        transform_context: The project's coordinate transform context.
+        ellipsoid:         The project's ellipsoid, for the geodesic measures.
+
+    The last three are the project values a caller reads on the GUI thread when
+    the write itself runs on a worker thread, where QgsProject is out of bounds.
+    They travel into the output-CRS choice as well as into the write. Left out,
+    they are read from the project here, which is the behaviour every
+    GUI-thread caller already had; off that thread the geodesic measures are
+    given up rather than taken from the project.
 
     Returns:
         The loaded QgsVectorLayer on success (NOT added to the project), or
@@ -2170,8 +2517,8 @@ def export_geometries_to_file(
 
     from .layer_conventions import (
         apply_output_conventions,
-        make_area_measurer,
         make_committed_renderer,
+        measure_field,
         pick_output_crs,
         repair_polygon,
         round_measure,
@@ -2191,7 +2538,6 @@ def export_geometries_to_file(
 
     # Field-type enums: Qt6/PyQt6 (QGIS 4) scoped QMetaType vs Qt5 QVariant.
     field_str = field_type_string()
-    field_dbl = field_type_double()
 
     stem = os.path.splitext(os.path.basename(output_path))[0]
     name = layer_name or stem or "detections"
@@ -2203,8 +2549,11 @@ def export_geometries_to_file(
     pr = temp_layer.dataProvider()
     if not pr.addAttributes([
         QgsField("label", field_str),
-        QgsField("area_m2", field_dbl),
-        QgsField("perimeter_m", field_dbl),
+        # Declared width and decimals, because a Shapefile writes each number
+        # to what its column header says and a column that declares nothing
+        # arrives as whole metres. See layer_conventions.measure_field.
+        measure_field("area_m2"),
+        measure_field("perimeter_m"),
     ]):
         QgsMessageLog.logMessage(
             "Export: could not build the attribute schema",
@@ -2213,7 +2562,7 @@ def export_geometries_to_file(
         return None
     temp_layer.updateFields()
 
-    measurer = make_area_measurer(crs)
+    measurer = _batch_area_measurer(crs, transform_context, ellipsoid)
     feats = []
     skipped = 0
     for geom in geoms:
@@ -2226,11 +2575,16 @@ def export_geometries_to_file(
             continue
         feat = QgsFeature(temp_layer.fields())
         feat.setGeometry(geom)
-        try:
-            area = measurer.measureArea(geom)
-            perimeter = measurer.measurePerimeter(geom)
-        except (RuntimeError, AttributeError):
-            area, perimeter = geom.area(), geom.length()
+        if measurer is None:
+            # No usable measurer (see _batch_area_measurer): an empty cell is
+            # an honest unknown, a planar number in a metric column is not.
+            area, perimeter = None, None
+        else:
+            try:
+                area = measurer.measureArea(geom)
+                perimeter = measurer.measurePerimeter(geom)
+            except (RuntimeError, AttributeError):
+                area, perimeter = geom.area(), geom.length()
         feat.setAttributes(
             ["", round_measure(area), round_measure(perimeter)])
         feats.append(feat)
@@ -2283,21 +2637,48 @@ def export_geometries_to_file(
         if driver == "GPKG" and os.path.exists(output_path)
         else QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteFile
     )
-    if driver != "GPKG" and os.path.exists(output_path):
-        # Those drivers all take CreateOrOverwriteFile, which unlinks the
-        # target first, and the comment above applies to them too: the OGR
-        # provider holds a handle for every loaded layer. Exporting a second
-        # time over a name the user already has open fails on Windows, and a
-        # Shapefile unlinks its sidecars one by one, so it can leave a .shp
-        # with no .dbf. The caller reloads the file right after the write, so
-        # dropping the stale layer here is the same layer coming back current.
-        released = _release_project_layers_at(output_path)
+    if os.path.exists(output_path):
+        # The OGR provider holds a file handle for every loaded layer, and on
+        # Windows a file with a live handle cannot be replaced at all. The
+        # other drivers take CreateOrOverwriteFile, which unlinks the target
+        # first: exporting a second time over a name the user already has open
+        # fails there, and a Shapefile unlinks its sidecars one by one, so it
+        # can leave a .shp with no .dbf. A GeoPackage is rewritten one table at
+        # a time, and rewriting a table another connection is reading is the
+        # same locked-file refusal.
+        #
+        # So drop the layers holding it first. For a GeoPackage that means the
+        # ONE table being replaced, never the whole file: its other tables are
+        # other people's layers. The caller reloads the file right after the
+        # write, so dropping the stale layer here is the same layer coming back
+        # current, on every platform.
+        released = _release_project_layers_at(
+            output_path, name if driver == "GPKG" else "")
         if released:
             QgsMessageLog.logMessage(
                 f"Export: released {released} project layer(s) holding the "
                 f"target file open before overwriting it",
                 "AI Segmentation", level=Qgis.MessageLevel.Info,
             )
+    # The two project values the CRS choice and the write both need, resolved
+    # once so they cannot disagree. What the caller captured wins; what it left
+    # out is read from the project on the GUI thread and stood in for off it,
+    # because reaching for the project from a worker thread is what this whole
+    # path exists to avoid.
+    write_context = transform_context
+    write_ellipsoid = str(ellipsoid or "")
+    if write_context is None:
+        if _on_gui_thread():
+            write_context = QgsProject.instance().transformContext()
+            if not write_ellipsoid:
+                write_ellipsoid = str(QgsProject.instance().ellipsoid() or "")
+        else:
+            # A bare context is the datum-transform table PROJ picks with no
+            # project override, and an empty ellipsoid name reaches the same
+            # reference ellipsoid downstream, so this is what a caller that
+            # captured nothing would have been given anyway.
+            from qgis.core import QgsCoordinateTransformContext
+            write_context = QgsCoordinateTransformContext()
     if driver in _WGS84_ONLY_DRIVERS:
         # Both formats define their coordinates on WGS84 and nowhere else, so
         # they get reprojected coordinates whatever the project is set to. A
@@ -2306,13 +2687,19 @@ def export_geometries_to_file(
         target = QgsCoordinateReferenceSystem("EPSG:4326")
     else:
         # Ground metres, so a length read off the file is a length on the
-        # ground. See layer_conventions.pick_output_crs.
-        target = pick_output_crs(crs, temp_layer.extent())
+        # ground. See layer_conventions.pick_output_crs. It compares candidate
+        # CRSs through transforms and an ellipsoidal measure, both of which
+        # read the project when nothing is handed to them, so the resolved
+        # values travel into the choice as well as into the write.
+        target = pick_output_crs(
+            crs, temp_layer.extent(), project_crs,
+            transform_context=write_context,
+            ellipsoid=write_ellipsoid)
     if (crs is not None and crs.isValid() and target is not None and target.isValid() and target != crs):
-        options.ct = QgsCoordinateTransform(crs, target, QgsProject.instance())
+        options.ct = QgsCoordinateTransform(crs, target, write_context)
 
     error = QgsVectorFileWriter.writeAsVectorFormatV3(
-        temp_layer, output_path, QgsProject.instance().transformContext(), options,
+        temp_layer, output_path, write_context, options,
     )
     if error[0] != QgsVectorFileWriter.WriterError.NoError:
         QgsMessageLog.logMessage(
@@ -2321,10 +2708,15 @@ def export_geometries_to_file(
         )
         return None
 
-    result_layer = QgsVectorLayer(output_path, name, "ogr")
+    # Open the table by the name it was written under, before trying the bare
+    # path: a file that holds several tables leaves the choice to the provider,
+    # which some GDAL builds resolve to another table and others report as
+    # invalid. The bare path stays as the fallback for a driver that renames
+    # the table (a Shapefile takes the file stem).
+    result_layer = QgsVectorLayer(
+        f"{output_path}|layername={name}", name, "ogr")
     if not result_layer.isValid():
-        result_layer = QgsVectorLayer(
-            f"{output_path}|layername={name}", name, "ogr")
+        result_layer = QgsVectorLayer(output_path, name, "ogr")
     if not result_layer.isValid():
         QgsMessageLog.logMessage(
             "Export: file saved but could not be loaded back",

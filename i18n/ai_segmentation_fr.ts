@@ -421,6 +421,10 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
         <translation>Copier l'adresse email</translation>
     </message>
     <message>
+        <source>buildings</source>
+        <translation>bâtiments</translation>
+    </message>
+    <message>
         <source>or</source>
         <translation>ou</translation>
     </message>
@@ -495,6 +499,10 @@ export AI_SEGMENTATION_CACHE_DIR=/votre/chemin</translation>
     
 
     
+    <message>
+        <source>trees</source>
+        <translation>arbres</translation>
+    </message>
     <message>
         <source>{ext} format is not directly supported. GDAL is not available.
 Please convert your raster to GeoTIFF (.tif) before using AI Segmentation.</source>
@@ -811,7 +819,7 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     <message>
         <location filename="../src/ui/ai_segmentation_plugin.py" line="0" />
         <source>Preparing your zone...</source>
-        <translation>Préparation de votre zone...</translation>
+        <translation>Préparation de votre emprise...</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_plugin.py" line="0" />
@@ -836,12 +844,12 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     <message>
         <location filename="../src/ui/ai_segmentation_plugin.py" line="0" />
         <source>Draw a zone first. Automatic detection on online layers needs a zone.</source>
-        <translation>Dessinez d'abord une zone. La détection automatique sur les couches en ligne nécessite une zone.</translation>
+        <translation>Dessinez d'abord une emprise. La détection automatique sur les couches en ligne nécessite une emprise.</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_plugin.py" line="0" />
         <source>The zone is outside the selected raster layer. Pick the right layer or redraw the zone.</source>
-        <translation>La zone est en dehors de la couche raster sélectionnée. Choisissez la bonne couche ou redessinez la zone.</translation>
+        <translation>L'emprise est en dehors de la couche raster sélectionnée. Choisissez la bonne couche ou redessinez l'emprise.</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
@@ -1066,7 +1074,7 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     <message>
         <location filename="../src/ui/ai_segmentation_plugin.py" line="0" />
         <source>Draw your example inside the selected zone.</source>
-        <translation>Dessinez votre exemple à l'intérieur de la zone sélectionnée.</translation>
+        <translation>Dessinez votre exemple à l'intérieur de l'emprise sélectionnée.</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
@@ -1111,7 +1119,7 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Your {total} detections will be discarded. You keep your zone, object and settings. Running Detect again spends new cloud detections.</source>
-        <translation>Vos {total} détections seront rejetées. Vous conservez votre zone, objet et paramètres. Relancer Détecter dépense de nouvelles détections cloud.</translation>
+        <translation>Vos {total} détections seront rejetées. Vous conservez votre emprise, objet et paramètres. Relancer Détecter dépense de nouvelles détections cloud.</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
@@ -1146,22 +1154,22 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     <message>
         <location filename="../src/ui/dock/auto_build.py" line="0" />
         <source>Draw your zone</source>
-        <translation>Dessinez votre zone</translation>
+        <translation>Dessinez votre emprise</translation>
     </message>
     <message>
         <location filename="../src/ui/dock/auto_build.py" line="0" />
         <source>Click on the map to outline the area to scan.</source>
-        <translation>Cliquez sur la carte pour délimiter la zone à analyser.</translation>
+        <translation>Cliquez sur la carte pour délimiter l'emprise à analyser.</translation>
     </message>
     <message>
         <location filename="../src/ui/dock/auto_state.py" line="0" />
         <source>Keep clicking around the area, at least 3 points.</source>
-        <translation>Continuez à cliquer autour de la zone, au moins 3 points.</translation>
+        <translation>Continuez à cliquer autour de l'emprise, au moins 3 points.</translation>
     </message>
     <message>
         <location filename="../src/ui/dock/auto_state.py" line="0" />
         <source>Click the first point to close the zone.</source>
-        <translation>Cliquez sur le premier point pour fermer la zone.</translation>
+        <translation>Cliquez sur le premier point pour fermer l'emprise.</translation>
     </message>
     <message>
         <location filename="../src/ui/dock/auto_build.py" line="0" />
@@ -1416,7 +1424,7 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     <message>
         <location filename="../src/ui/plugin/auto_run.py" line="0" />
         <source>Could not place the example on the image. Redraw the example box inside the zone and try again.</source>
-        <translation>Impossible de placer l'exemple sur l'image. Retracez l'exemple à l'intérieur de la zone et réessayez.</translation>
+        <translation>Impossible de placer l'exemple sur l'image. Retracez l'exemple à l'intérieur de l'emprise et réessayez.</translation>
     </message>
     <message>
         <location filename="../src/core/run_restore.py" line="0" />
@@ -1451,7 +1459,7 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     <message>
         <location filename="../src/ui/dock/about.py" line="0" />
         <source>Finish the zone</source>
-        <translation>Fermer la zone</translation>
+        <translation>Fermer l'emprise</translation>
     </message>
     <message>
         <location filename="../src/ui/dock/about.py" line="0" />
@@ -1511,7 +1519,7 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Part of your zone is outside "{layer}" - only the overlapping area will return objects.</source>
-        <translation>Une partie de votre zone est hors de « {layer} » - seule la partie couverte renverra des objets.</translation>
+        <translation>Une partie de votre emprise est hors de « {layer} » - seule la partie couverte renverra des objets.</translation>
     </message>
     <message>
         <location filename="../src/ui/plugin/auto_run.py" line="0" />
@@ -1541,7 +1549,7 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     <message>
         <location filename="../src/ui/zone_selection_maptool.py" line="0" />
         <source>Remove zone</source>
-        <translation>Supprimer la zone</translation>
+        <translation>Supprimer l'emprise</translation>
     </message>
     <message>
         <location filename="../src/ui/account_settings_dialog.py" line="0" />
@@ -1601,12 +1609,12 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
         <source>Your zone is outside "{layer}". Pick the right layer or draw inside it.</source>
-        <translation>Votre zone est hors de « {layer} ». Choisissez la bonne couche ou tracez à l'intérieur.</translation>
+        <translation>Votre emprise est hors de « {layer} ». Choisissez la bonne couche ou tracez à l'intérieur.</translation>
     </message>
     <message>
         <location filename="../src/ui/plugin/auto_zone.py" line="0" />
         <source>Zone too large. Reduce the area to {max} tiles or fewer.</source>
-        <translation>Zone trop grande. Réduisez la surface à {max} tuiles ou moins.</translation>
+        <translation>Emprise trop grande. Réduisez la surface à {max} tuiles ou moins.</translation>
     </message>
     <message>
         <location filename="../src/ui/ai_segmentation_dockwidget.py" line="0" />
@@ -1653,15 +1661,15 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     </message>
     <message>
         <source>Reload this zone and object, ready to detect.</source>
-        <translation>Recharge cette zone et cet objet, prêt à détecter.</translation>
+        <translation>Recharge cette emprise et cet objet, prêt à détecter.</translation>
     </message>
     <message>
         <source>Same object, new zone</source>
-        <translation>Même objet, nouvelle zone</translation>
+        <translation>Même objet, nouvelle emprise</translation>
     </message>
     <message>
         <source>Keep this object and draw a new zone on the map.</source>
-        <translation>Conserve cet objet et dessine une nouvelle zone sur la carte.</translation>
+        <translation>Conserve cet objet et dessine une nouvelle emprise sur la carte.</translation>
     </message>
     <message>
         <source>Upgrade to Pro</source>
@@ -1690,10 +1698,6 @@ Après l'installation, redémarrez QGIS et réessayez.</translation>
     <message>
         <source>0 shown - lower the Min size filter to reveal them</source>
         <translation>0 affiché - baissez le filtre Taille min pour les révéler</translation>
-    </message>
-    <message>
-        <source>5,000 cloud detections every month, zones of any size. Cancel anytime.</source>
-        <translation>5 000 détections cloud chaque mois, zones de n'importe quelle taille. Annulez à tout moment.</translation>
     </message>
     <message>
         <source>A Component Failed to Load</source>
@@ -1851,7 +1855,7 @@ Essayez de l'ouvrir dans QGIS pour vérifier qu'il s'affiche, ou convertissez-le
     </message>
     <message>
         <source>Right level for {obj} in this zone.</source>
-        <translation>Bon niveau pour {obj} dans cette zone.</translation>
+        <translation>Bon niveau pour {obj} dans cette emprise.</translation>
     </message>
     <message>
         <source>Rotated raster</source>
@@ -1988,12 +1992,12 @@ Essayez de l'ouvrir dans QGIS pour vérifier qu'il s'affiche, ou convertissez-le
     
     <message>
         <source>This zone is {area} km². Free zones stop at {max} km².</source>
-        <translation>Cette zone fait {area} km². Les zones gratuites s'arrêtent à {max} km².</translation>
+        <translation>Cette emprise fait {area} km². Les emprises gratuites s'arrêtent à {max} km².</translation>
     </message>
 
     <message>
         <source>&lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to run this zone as drawn, or make it smaller.</source>
-        <translation>&lt;a href="{url}"&gt;Passez à Pro&lt;/a&gt; pour exécuter cette zone telle quelle, ou réduisez-la.</translation>
+        <translation>&lt;a href="{url}"&gt;Passez à Pro&lt;/a&gt; pour exécuter cette emprise telle quelle, ou réduisez-la.</translation>
     </message>
     <message>
         <source>Sending to the AI...</source>
@@ -2118,7 +2122,7 @@ Essayez de l'ouvrir dans QGIS pour vérifier qu'il s'affiche, ou convertissez-le
     </message>
     <message>
         <source>Automatic: draw the zone</source>
-        <translation>Automatique : tracer la zone</translation>
+        <translation>Automatique : tracer l'emprise</translation>
     </message>
     <message>
         <source>Automatic: merge with neighbours</source>
@@ -2290,7 +2294,7 @@ Essayez de l'ouvrir dans QGIS pour vérifier qu'il s'affiche, ou convertissez-le
     </message>
     <message>
         <source>Go back to your zone, references and settings, then detect the whole zone again. Nothing is saved.</source>
-        <translation>Revenir à votre zone, vos références et vos réglages, puis détecter toute la zone à nouveau. Rien n'est sauvegardé.</translation>
+        <translation>Revenir à votre emprise, vos références et vos réglages, puis détecter toute l'emprise à nouveau. Rien n'est sauvegardé.</translation>
     </message>
     <message>
         <source>Grow / shrink</source>
@@ -2366,7 +2370,7 @@ Essayez de l'ouvrir dans QGIS pour vérifier qu'il s'affiche, ou convertissez-le
     </message>
     <message>
         <source>No matches in this zone. A different object word often fixes it.</source>
-        <translation>Aucune correspondance dans cette zone. Un mot d'objet différent résout souvent le problème.</translation>
+        <translation>Aucune correspondance dans cette emprise. Un mot d'objet différent résout souvent le problème.</translation>
     </message>
     <message>
         <source>Nothing changed. The line has to cross the outline twice, starting and ending outside the shape.</source>
@@ -2446,7 +2450,7 @@ Essayez de l'ouvrir dans QGIS pour vérifier qu'il s'affiche, ou convertissez-le
     </message>
     <message>
         <source>Re-run the whole zone</source>
-        <translation>Relancer toute la zone</translation>
+        <translation>Relancer toute l'emprise</translation>
     </message>
     <message>
         <source>Reading the imagery around this polygon...</source>
@@ -2886,7 +2890,7 @@ Essayez de l'ouvrir dans QGIS pour vérifier qu'il s'affiche, ou convertissez-le
     </message>
     <message>
         <source>Run this zone again</source>
-        <translation>Relancer cette zone</translation>
+        <translation>Relancer cette emprise</translation>
     </message>
     <message>
         <source>Shape updated. Keep editing, or click Save.</source>
@@ -2922,7 +2926,7 @@ Essayez de l'ouvrir dans QGIS pour vérifier qu'il s'affiche, ou convertissez-le
     </message>
     <message>
         <source>This run did not keep where it looked, so it cannot be pointed at the same place. Draw the zone again.</source>
-        <translation>Ce run n'a pas gardé l'endroit qu'il couvrait, il ne peut donc pas être repositionné au même endroit. Redessinez la zone.</translation>
+        <translation>Ce run n'a pas gardé l'endroit qu'il couvrait, il ne peut donc pas être repositionné au même endroit. Redessinez l'emprise.</translation>
     </message>
     <message>
         <source>Undo the last thing you did here: the point you just placed, or the last edit.</source>
@@ -3014,10 +3018,6 @@ Essayez de l'ouvrir dans QGIS pour vérifier qu'il s'affiche, ou convertissez-le
     </message>
     
     <message>
-        <source>Pro: 5,000 cloud detections a month, zones of any size, up to 800 cloud detections in one run. Same AI, same free clicks and corrections, every machine you work on.</source>
-        <translation>Pro : 5 000 détections cloud par mois, zones de n'importe quelle taille, jusqu'à 800 détections cloud en une seule analyse. Même IA, mêmes clics gratuits et corrections, sur tous les appareils sur lesquels vous travaillez.</translation>
-    </message>
-    <message>
         <source>A free run covers up to {cap} cloud detections. This one needs more. Pro covers up to 800 in one run.</source>
         <translation>Une analyse gratuite couvre jusqu'à {cap} détections cloud. Celle-ci en a besoin de plus. Pro couvre jusqu'à 800 en une seule analyse.</translation>
     </message>
@@ -3031,7 +3031,7 @@ Essayez de l'ouvrir dans QGIS pour vérifier qu'il s'affiche, ou convertissez-le
     </message>
     <message>
         <source>Automatic mode sweeps your zone in a grid. Each grid cell costs one cloud detection, so this run costs about {n}. More precision means a finer grid and more cloud detections.</source>
-        <translation>Le mode automatique balaie votre zone en grille. Chaque cellule de grille coûte une détection cloud, donc cette analyse coûtera environ {n}. Plus de précision signifie une grille plus fine et plus de détections cloud.</translation>
+        <translation>Le mode automatique balaie votre emprise en grille. Chaque cellule de grille coûte une détection cloud, donc cette analyse coûtera environ {n}. Plus de précision signifie une grille plus fine et plus de détections cloud.</translation>
     </message>
     <message>
         <source>Cancel setup</source>
@@ -3095,7 +3095,7 @@ Essayez de l'ouvrir dans QGIS pour vérifier qu'il s'affiche, ou convertissez-le
     </message>
     <message>
         <source>More precision sweeps your zone in a finer grid, so it catches smaller objects. Each grid cell costs one cloud detection.</source>
-        <translation>Plus de précision balaie votre zone en grille plus fine, elle capture donc les objets plus petits. Chaque cellule de grille coûte une détection cloud.</translation>
+        <translation>Plus de précision balaie votre emprise en grille plus fine, elle capture donc les objets plus petits. Chaque cellule de grille coûte une détection cloud.</translation>
     </message>
     <message>
         <source>Keep installing</source>
@@ -3115,7 +3115,7 @@ Essayez de l'ouvrir dans QGIS pour vérifier qu'il s'affiche, ou convertissez-le
     </message>
     <message>
         <source>Max precision for this zone - draw a larger zone to go finer.</source>
-        <translation>Précision maximale pour cette zone - tracez une zone plus grande pour plus de précision.</translation>
+        <translation>Précision maximale pour cette emprise - tracez une emprise plus grande pour plus de précision.</translation>
     </message>
     <message>
         <source>More precision finds smaller objects and uses more cloud detections.</source>
@@ -3127,7 +3127,7 @@ Essayez de l'ouvrir dans QGIS pour vérifier qu'il s'affiche, ou convertissez-le
     </message>
     <message>
         <source>More precision keeps helping {obj} in this zone.</source>
-        <translation>Plus de précision continue d'aider {obj} dans cette zone.</translation>
+        <translation>Plus de précision continue d'aider {obj} dans cette emprise.</translation>
     </message>
     <message>
         <source>Name the object (or draw an example) first - Precision then tunes itself to it.</source>
@@ -3143,15 +3143,11 @@ Essayez de l'ouvrir dans QGIS pour vérifier qu'il s'affiche, ou convertissez-le
     </message>
     <message>
         <source>No detection in this zone. Try a more specific object word, or more precision.</source>
-        <translation>Aucune détection dans cette zone. Essayez un mot plus précis, ou plus de précision.</translation>
+        <translation>Aucune détection dans cette emprise. Essayez un mot plus précis, ou plus de précision.</translation>
     </message>
     <message>
         <source>No image over this zone at this precision, so nothing was analyzed (not charged). Lower Precision, or pick a layer that covers this area.</source>
         <translation>Aucune image sur cette zone à cette précision, donc rien n'a été analysé (non facturé). Baissez la Précision, ou choisissez une couche qui couvre cette zone.</translation>
-    </message>
-    <message>
-        <source>This run needs {n} cloud detections and you have {left} left. Lower the precision or shrink the zone. Pro gives you 5,000 cloud detections a month.</source>
-        <translation>Cette analyse a besoin de {n} détections cloud et vous en avez {left} restantes. Baissez la précision ou réduisez la zone. Pro vous donne 5 000 détections cloud par mois.</translation>
     </message>
     <message>
         <source>Opens your terra-lab.ai dashboard: your plan, your cloud detections and your payment details.</source>
@@ -3289,7 +3285,7 @@ Il a peut-être été déplacé ou renommé, ou le disque ou le partage réseau 
     </message>
     <message>
         <source>This layer has no image over your zone at this precision. The map source answered with an empty tile, so there is nothing to detect on. Lower Precision, zoom the layer out until the imagery shows, or pick a layer that covers this area.</source>
-        <translation>Cette couche n'a pas d'image sur votre zone à cette précision. La source cartographique a répondu par une tuile vide, donc il n'y a rien à détecter. Baissez la Précision, dézoomez la couche jusqu'à ce que l'imagerie apparaisse, ou choisissez une couche qui couvre cette zone.</translation>
+        <translation>Cette couche n'a pas d'image sur votre emprise à cette précision. La source cartographique a répondu par une tuile vide, donc il n'y a rien à détecter. Baissez la Précision, dézoomez la couche jusqu'à ce que l'imagerie apparaisse, ou choisissez une couche qui couvre cette zone.</translation>
     </message>
     <message>
         <source>This polygon only. Every other one follows the Shapes step.</source>
@@ -3305,23 +3301,19 @@ Il a peut-être été déplacé ou renommé, ou le disque ou le partage réseau 
     </message>
     <message>
         <source>One free run covers fewer cloud detections than this. Lower the precision or shrink the zone to stay free. Pro runs up to 800 cloud detections in one go, so a wide zone keeps a fine grid.</source>
-        <translation>Une analyse gratuite couvre moins de détections cloud que cela. Baissez la précision ou réduisez la zone pour rester gratuit. Pro monte jusqu'à 800 détections cloud en une seule fois, donc une zone large maintient une grille fine.</translation>
+        <translation>Une analyse gratuite couvre moins de détections cloud que cela. Baissez la précision ou réduisez l'emprise pour rester gratuit. Pro monte jusqu'à 800 détections cloud en une seule fois, donc une emprise large maintient une grille fine.</translation>
     </message>
     <message>
         <source>This zone is too large for sharp detections, even at full precision. Draw a smaller zone for the best results.</source>
-        <translation>Cette zone est trop grande pour des détections nettes, même à la précision maximale. Dessinez une zone plus petite pour de meilleurs résultats.</translation>
+        <translation>Cette emprise est trop grande pour des détections nettes, même à la précision maximale. Dessinez une emprise plus petite pour de meilleurs résultats.</translation>
     </message>
     <message>
         <source>You are never charged for a part of the zone your layer has no image for, so a run can cost less than this, never more.</source>
-        <translation>Vous ne serez jamais facturé pour une partie de la zone où votre couche n'a pas d'image, donc une analyse peut coûter moins que cela, jamais plus.</translation>
+        <translation>Vous ne serez jamais facturé pour une partie de l'emprise où votre couche n'a pas d'image, donc une analyse peut coûter moins que cela, jamais plus.</translation>
     </message>
     <message>
         <source>Type a word for the object, or draw an example.</source>
         <translation>Tapez un mot pour l'objet, ou dessinez un exemple.</translation>
-    </message>
-    <message>
-        <source>Finish this zone with Pro: 5,000 cloud detections a month.</source>
-        <translation>Terminez cette zone avec Pro : 5 000 détections cloud par mois.</translation>
     </message>
     <message>
         <source>Wait for the on-device AI to finish installing.</source>
@@ -3422,7 +3414,7 @@ Il a peut-être été déplacé ou renommé, ou le disque ou le partage réseau 
     </message>
     <message>
         <source>Draw a zone, name one kind of object, and get all of them in one run. Use Semi-Auto mode to work one object at a time.</source>
-        <translation>Dessinez une zone, nommez un type d'objet, et obtenez-les tous en une détection. Utilisez le mode Semi-Auto pour travailler un objet à la fois.</translation>
+        <translation>Dessinez une emprise, nommez un type d'objet, et obtenez-les tous en une détection. Utilisez le mode Semi-Auto pour travailler un objet à la fois.</translation>
     </message>
     <message>
         <source>Each click sends a small square of the image to our servers in Europe, and the outline comes back.</source>
@@ -3486,7 +3478,7 @@ Il a peut-être été déplacé ou renommé, ou le disque ou le partage réseau 
     </message>
     <message>
         <source>One precision level fits {obj} in a zone this size - draw a larger zone for a choice.</source>
-        <translation>Un seul niveau de précision convient à {obj} pour une zone de cette taille - tracez une zone plus grande pour avoir le choix.</translation>
+        <translation>Un seul niveau de précision convient à {obj} pour une emprise de cette taille - tracez une emprise plus grande pour avoir le choix.</translation>
     </message>
     <message>
         <source>One-time setup</source>
@@ -3686,7 +3678,7 @@ Il a peut-être été déplacé ou renommé, ou le disque ou le partage réseau 
     </message>
     <message>
         <source>One run covers up to {cap} cloud detections. This zone at this precision needs more. Draw a smaller zone, or lower the precision.</source>
-        <translation>Une analyse couvre jusqu'à {cap} détections cloud. Cette zone à cette précision en a besoin de plus. Dessinez une zone plus petite, ou baissez la précision.</translation>
+        <translation>Une analyse couvre jusqu'à {cap} détections cloud. Cette emprise à cette précision en a besoin de plus. Dessinez une emprise plus petite, ou baissez la précision.</translation>
     </message>
     <message>
         <source>QGIS could not open a browser. The sign-in address is copied to your clipboard: paste it into a browser to finish, then come back here. It works once.</source>
@@ -3718,11 +3710,11 @@ Il a peut-être été déplacé ou renommé, ou le disque ou le partage réseau 
     </message>
     <message>
         <source>This run found nothing. Add the object yourself below, or press Exit and run again with another word or a smaller zone.</source>
-        <translation>Cette détection n'a rien trouvé. Ajoutez vous-même l'objet ci-dessous, ou appuyez sur Quitter et relancez avec un autre mot ou une zone plus petite.</translation>
+        <translation>Cette détection n'a rien trouvé. Ajoutez vous-même l'objet ci-dessous, ou appuyez sur Quitter et relancez avec un autre mot ou une emprise plus petite.</translation>
     </message>
     <message>
         <source>This zone at this precision needs more cloud detections than one run covers. Draw a smaller zone, or lower the precision.</source>
-        <translation>Cette zone à cette précision a besoin de plus de détections cloud qu'une analyse n'en couvre. Dessinez une zone plus petite, ou baissez la précision.</translation>
+        <translation>Cette emprise à cette précision a besoin de plus de détections cloud qu'une analyse n'en couvre. Dessinez une emprise plus petite, ou baissez la précision.</translation>
     </message>
     <message>
         <source>Undo every correction of this round at once. The count is in the label, so you can see what goes.</source>
@@ -3760,11 +3752,11 @@ Il a peut-être été déplacé ou renommé, ou le disque ou le partage réseau 
     </message>
     <message>
         <source>This zone at this precision needs more than one run covers. Draw a smaller zone, or lower the precision. Free runs stop well below that ceiling, so Pro keeps more precision on a zone this size.</source>
-        <translation>Cette zone à cette précision nécessite plus que détections cloud par passage. Dessinez une zone plus petite, ou baissez la précision. Les passages gratuits s'arrêtent bien en dessous de ce plafond, donc Pro garde plus de précision sur une zone de cette taille.</translation>
+        <translation>Cette emprise à cette précision nécessite plus que détections cloud par passage. Dessinez une emprise plus petite, ou baissez la précision. Les passages gratuits s'arrêtent bien en dessous de ce plafond, donc Pro garde plus de précision sur une emprise de cette taille.</translation>
     </message>
     <message>
         <source>This zone at this precision needs more cloud detections than one run covers. Draw a smaller zone, or lower the precision. Free runs stop well below that ceiling, so Pro keeps more precision on a zone this size.</source>
-        <translation>Cette zone à cette précision nécessite plus de détections cloud qu'un seul passage n'en couvre. Dessinez une zone plus petite, ou baissez la précision. Les passages gratuits s'arrêtent bien en dessous de ce plafond, donc Pro garde plus de précision sur une zone de cette taille.</translation>
+        <translation>Cette emprise à cette précision nécessite plus de détections cloud qu'un seul passage n'en couvre. Dessinez une emprise plus petite, ou baissez la précision. Les passages gratuits s'arrêtent bien en dessous de ce plafond, donc Pro garde plus de précision sur une emprise de cette taille.</translation>
     </message>
     <message>
         <source>Pick a raster layer at the top of the panel first.</source>
@@ -3772,7 +3764,7 @@ Il a peut-être été déplacé ou renommé, ou le disque ou le partage réseau 
     </message>
     <message>
         <source>This zone at this precision is too big for one run. Draw a smaller zone, or lower the precision.</source>
-        <translation>Cette zone à cette précision est trop grande pour une seule analyse. Dessinez une zone plus petite, ou baissez la précision.</translation>
+        <translation>Cette emprise à cette précision est trop grande pour une seule analyse. Dessinez une emprise plus petite, ou baissez la précision.</translation>
     </message>
     <message>
         <source>No cloud detections left this month. Semi-Auto mode runs on your computer, free and unlimited.</source>
@@ -3780,11 +3772,11 @@ Il a peut-être été déplacé ou renommé, ou le disque ou le partage réseau 
     </message>
     <message>
         <source>This run costs more cloud detections than you have left. Lower the precision, or draw a smaller zone.</source>
-        <translation>Cette analyse coûte plus de détections cloud que vous ne vous en avez restantes. Baissez la précision, ou dessinez une zone plus petite.</translation>
+        <translation>Cette analyse coûte plus de détections cloud que vous ne vous en avez restantes. Baissez la précision, ou dessinez une emprise plus petite.</translation>
     </message>
     <message>
         <source>One free run covers fewer cloud detections than this. Lower the precision, or draw a smaller zone.</source>
-        <translation>Une analyse gratuite couvre moins de détections cloud que cela. Baissez la précision, ou dessinez une zone plus petite.</translation>
+        <translation>Une analyse gratuite couvre moins de détections cloud que cela. Baissez la précision, ou dessinez une emprise plus petite.</translation>
     </message>
     <message>
         <source>Load imagery in QGIS, then pick it above to start.</source>
@@ -3796,7 +3788,7 @@ Il a peut-être été déplacé ou renommé, ou le disque ou le partage réseau 
     </message>
     <message>
         <source>Draw a zone, name one kind of object, get all of them in one run. Runs on our servers and uses your cloud detections.</source>
-        <translation>Dessinez une zone, nommez un type d'objet, obtenez-les tous en une seule analyse. Tourne sur nos serveurs et utilise vos détections cloud.</translation>
+        <translation>Dessinez une emprise, nommez un type d'objet, obtenez-les tous en une seule analyse. Tourne sur nos serveurs et utilise vos détections cloud.</translation>
     </message>
     <message>
         <source>This layer has no file to read. Pick another layer at the top of the panel, then start again.</source>
@@ -3837,14 +3829,6 @@ Il a peut-être été déplacé ou renommé, ou le disque ou le partage réseau 
     <message>
         <source>Or work free with a smaller AI on this computer.</source>
         <translation>Ou travaillez gratuitement avec une IA plus légère sur cet ordinateur.</translation>
-    </message>
-    <message>
-        <source>Pro: 5,000 cloud detections a month</source>
-        <translation>Pro : 5 000 détections cloud par mois</translation>
-    </message>
-    <message>
-        <source>Pro: 5,000 detections a month, on zones of any size</source>
-        <translation>Pro : 5 000 détections par mois, sur des zones de toute taille</translation>
     </message>
     <message>
         <source>QGIS cannot read this raster format here. Convert it to GeoTIFF, then start again.</source>
@@ -3949,6 +3933,1074 @@ Il a peut-être été déplacé ou renommé, ou le disque ou le partage réseau 
     <message>
         <source>Your free cloud detections are used up</source>
         <translation>Vos détections cloud gratuites sont épuisées</translation>
+    </message>
+    <message>
+        <source>You used your Automatic allowance for this month. Semi-Auto runs on your computer, free, with no counter.</source>
+        <translation>Vous avez utilisé votre quota d'Automatic pour ce mois-ci. Le Semi-Auto s'exécute sur votre ordinateur, gratuitement, sans compteur.</translation>
+    </message>
+    <message>
+        <source>{n} km² left</source>
+        <translation>Il reste {n} km²</translation>
+    </message>
+    <message>
+        <source>{n} km² of Automatic left this month</source>
+        <translation>Il reste {n} km² d'Automatic ce mois-ci</translation>
+    </message>
+    <message>
+        <source>{used} of {total} km² of Automatic used this month</source>
+        <translation>{used} sur {total} km² d'Automatic utilisés ce mois-ci</translation>
+    </message>
+    <message>
+        <source>{n} cloud objects left this month</source>
+        <translation>Il vous reste {n} objets cloud ce mois-ci</translation>
+    </message>
+    <message>
+        <source>{used} of {total} cloud objects saved this month</source>
+        <translation>{used} sur {total} objets cloud enregistrés ce mois-ci</translation>
+    </message>
+    <message>
+        <source>It comes back on {date}. Semi-Auto on this computer keeps working.</source>
+        <translation>Votre quota revient le {date}. Le Semi-Auto continue de fonctionner sur cet ordinateur.</translation>
+    </message>
+    <message>
+        <source>You covered your {n} km² of Automatic this month</source>
+        <translation>Vous avez utilisé vos {n} km² d'Automatic ce mois-ci</translation>
+    </message>
+    <message>
+        <source>This run needs {n} cloud detections and you have {left} left this month. Lower the precision or shrink the zone. Pro covers 300 km² of Automatic a month, on zones of any size.</source>
+        <translation>Ce traitement nécessite {n} détections cloud et il vous en reste {left} ce mois-ci. Réduisez la précision ou l'emprise. Pro couvre 300 km² d'Automatic par mois, sur des emprises de toute taille.</translation>
+    </message>
+    <message>
+        <source>One detection covers 0.04 to 0.25 km², depending on the precision you ask for.</source>
+        <translation>Une détection couvre de 0,04 à 0,25 km², selon la précision demandée.</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} km² of Automatic used, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bientôt épuisé : {used} sur {total} km² d'Automatic utilisés, renouvellement le {date}. &lt;a href="{url}"&gt;Passer à Pro&lt;/a&gt; pour continuer.</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} km² of Automatic used. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bientôt épuisé : {used} sur {total} km² d'Automatic utilisés. &lt;a href="{url}"&gt;Passer à Pro&lt;/a&gt; pour continuer.</translation>
+    </message>
+    <message>
+        <source>You saved your {n} cloud objects this month</source>
+        <translation>Vous avez enregistré vos {n} objets cloud ce mois-ci</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} cloud objects saved this month, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bientôt épuisé : {used} sur {total} objets cloud enregistrés ce mois-ci, renouvellement le {date}. &lt;a href="{url}"&gt;Passer à Pro&lt;/a&gt; pour continuer.</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} cloud objects saved this month. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bientôt épuisé : {used} sur {total} objets cloud enregistrés ce mois-ci. &lt;a href="{url}"&gt;Passer à Pro&lt;/a&gt; pour continuer.</translation>
+    </message>
+    <message>
+        <source>300 km² of Automatic every month, on zones of any size</source>
+        <translation>300 km² d'Automatic chaque mois, sur des emprises de toute taille</translation>
+    </message>
+    <message>
+        <source>Finish this zone with Pro: 300 km² of Automatic a month.</source>
+        <translation>Terminez cette emprise avec Pro : 300 km² d'Automatic par mois.</translation>
+    </message>
+    <message>
+        <source>Zone too large. Reduce the area to {max} detections or fewer.</source>
+        <translation>Emprise trop grande. Réduisez l'emprise à {max} détections ou moins.</translation>
+    </message>
+    <message>
+        <source>You saved your cloud objects for this month. Switch to your own computer to keep working free, or upgrade from the panel.</source>
+        <translation>Vous avez enregistré vos objets cloud pour ce mois-ci. Passez sur votre propre ordinateur pour continuer à travailler gratuitement, ou passez à Pro depuis le panneau.</translation>
+    </message>
+    <message>
+        <source>Your cloud allowance for this month is used, so the AI fix cannot answer. Switched to editing by hand, which is free.</source>
+        <translation>Votre quota cloud pour ce mois-ci est épuisé, la correction par IA ne peut donc pas répondre. Passage à la modification manuelle, qui est gratuite.</translation>
+    </message>
+    <message>
+        <source>Your monthly allowance ran out at {done}/{total}. Everything found so far is kept below and stays yours.</source>
+        <translation>Votre quota mensuel a été épuisé à {done}/{total}. Tout ce qui a été trouvé jusqu'à présent est conservé ci-dessous et reste à vous.</translation>
+    </message>
+    <message>
+        <source>Pro: 2,000 objects a month in Semi-Auto with Cloud AI</source>
+        <translation>Pro : 2 000 objets par mois en Semi-Auto avec Cloud AI</translation>
+    </message>
+    <message>
+        <source>Pro: 2,000 objects a month in Semi-Auto with Cloud AI, and 300 km² of Automatic. Same AI, same free clicks and corrections, every machine you work on.</source>
+        <translation>Pro : 2 000 objets par mois en Semi-Auto avec Cloud AI, et 300 km² en Automatic. La même IA, les mêmes clics et corrections gratuits, sur chaque machine sur laquelle vous travaillez.</translation>
+    </message>
+    <message>
+        <source>2,000 objects a month in Semi-Auto, 300 km² in Automatic. Cancel anytime.</source>
+        <translation>2 000 objets par mois en Semi-Auto, 300 km² en Automatic. Annulez à tout moment.</translation>
+    </message>
+    <message>
+        <source>300 km² of Automatic a month, on zones of any size.</source>
+        <translation>300 km² d'Automatic par mois, sur des emprises de toute taille.</translation>
+    </message>
+    <message>
+        <source>The same AI on every machine you work on.</source>
+        <translation>La même IA sur chaque machine où vous travaillez.</translation>
+    </message>
+    <message>
+        <source>39 EUR a month, cancel anytime.</source>
+        <translation>39 EUR par mois, résiliable à tout moment.</translation>
+    </message>
+    <message>
+        <source>2,000 cloud objects every month in Semi-Auto</source>
+        <translation>2 000 objets cloud chaque mois en Semi-Auto</translation>
+    </message>
+    <message>
+        <source>{n} of {total} cloud objects left in Semi-Auto this month</source>
+        <translation>{n} sur {total} objets cloud restants en Semi-Auto ce mois-ci</translation>
+    </message>
+    <message>
+        <source>{n} of {total} km² left in Automatic this month</source>
+        <translation>{n} sur {total} km² restants en Automatic ce mois-ci</translation>
+    </message>
+    <message>
+        <source>Draw a whole city and let it run, at the finest precision.</source>
+        <translation>Dessinez une ville entière et lancez Automatic avec la précision la plus fine.</translation>
+    </message>
+    <message>
+        <source>Or click objects one by one in Semi-Auto.</source>
+        <translation>Ou cliquez sur les objets un par un en Semi-Auto.</translation>
+    </message>
+    <message>
+        <source>(optional)</source>
+        <translation>(facultatif)</translation>
+    </message>
+    <message>
+        <source>More precision sweeps your zone in a finer grid, so it catches smaller objects.</source>
+        <translation>Une précision accrue parcourt votre emprise selon une grille plus fine et détecte les objets plus petits.</translation>
+    </message>
+    <message>
+        <source>Your Automatic allowance ran out mid-zone.</source>
+        <translation>Votre quota Automatic a été épuisé au milieu de l'emprise.</translation>
+    </message>
+    <message>
+        <source>Pro picks it up where it stopped and finishes the zone.</source>
+        <translation>Pro reprend là où l'Automatic s'est arrêté et termine l'emprise.</translation>
+    </message>
+    <message>
+        <source>Finish with Pro</source>
+        <translation>Terminer avec Pro</translation>
+    </message>
+    <message>
+        <source>This zone at this precision is more than one run covers. Draw a smaller zone, or lower the precision.</source>
+        <translation>Cette emprise, avec cette précision, dépasse ce qu'une exécution peut couvrir. Dessinez une emprise plus petite ou réduisez la précision.</translation>
+    </message>
+    <message>
+        <source>This zone at this precision is more than one run covers. Draw a smaller zone, or lower the precision. Free runs stop well below that ceiling, so Pro keeps more precision on a zone this size.</source>
+        <translation>Cette emprise, avec cette précision, dépasse ce qu'une exécution peut couvrir. Dessinez une emprise plus petite ou réduisez la précision. Les exécutions gratuites s'arrêtent bien avant cette limite, donc Pro conserve davantage de précision sur une emprise de cette taille.</translation>
+    </message>
+    <message>
+        <source>{n} km²</source>
+        <translation>{n} km²</translation>
+    </message>
+    <message>
+        <source>Automatic is counted by surface. Precision changes how finely the zone is scanned, never the price. A run never costs more than the zone you drew.</source>
+        <translation>Automatic est comptabilisé selon la surface. La précision modifie la finesse du balayage de l'emprise, jamais le prix. Une exécution ne coûte jamais plus que l'emprise dessinée.</translation>
+    </message>
+    <message>
+        <source>Pro raises the month to 300 km² of Automatic.</source>
+        <translation>Pro porte le quota mensuel à 300 km² d'Automatic.</translation>
+    </message>
+    <message>
+        <source>This zone is {zone} km². You have {left} km² left in Automatic this month.</source>
+        <translation>Cette emprise fait {zone} km². Il vous reste {left} km² d'Automatic ce mois-ci.</translation>
+    </message>
+    <message>
+        <source>Or draw a smaller zone.</source>
+        <translation>Ou dessinez une emprise plus petite.</translation>
+    </message>
+    <message>
+        <source>This zone is {area} km². Free runs stop at {max} km².</source>
+        <translation>Cette emprise fait {area} km². Les exécutions gratuites s'arrêtent à {max} km².</translation>
+    </message>
+    <message>
+        <source>Pro has no size limit and runs the zone as you drew it.</source>
+        <translation>Pro n'impose aucune limite de taille et traite l'emprise telle que vous l'avez dessinée.</translation>
+    </message>
+    <message>
+        <source>Or make the zone smaller and run it free.</source>
+        <translation>Ou réduisez l'emprise et traitez-la gratuitement.</translation>
+    </message>
+    <message>
+        <source>{n} km² of Automatic left, back on {date}.</source>
+        <translation>{n} km² d'Automatic restants, de nouveau disponibles le {date}.</translation>
+    </message>
+    <message>
+        <source>{n} km² of Automatic left this month.</source>
+        <translation>{n} km² d'Automatic restants ce mois-ci.</translation>
+    </message>
+    <message>
+        <source>{n} free detections left, back on {date}.</source>
+        <translation>{n} détections gratuites restantes, de nouveau disponibles le {date}.</translation>
+    </message>
+    <message>
+        <source>{n} free detections left.</source>
+        <translation>{n} détections gratuites restantes.</translation>
+    </message>
+    <message>
+        <source>Pro gives you 300 km² of Automatic a month, so you keep working.</source>
+        <translation>Pro vous donne 300 km² d'Automatic par mois pour continuer à travailler.</translation>
+    </message>
+    <message>
+        <source>Advanced settings</source>
+        <translation>Paramètres avancés</translation>
+    </message>
+    <message>
+        <source>Zoom in for a finer outline. The AI reads the image at your current zoom.</source>
+        <translation>Zoomez pour obtenir un contour plus précis. L'IA lit l'image selon votre niveau de zoom actuel.</translation>
+    </message>
+    <message>
+        <source>Keep clicking with the same cloud AI, nothing to install.</source>
+        <translation>Continuez à cliquer avec le même Cloud AI, sans rien installer.</translation>
+    </message>
+    <message>
+        <source>You saved your {n} cloud objects in Semi-Auto this month</source>
+        <translation>Vous avez économisé {n} objets cloud en Semi-Auto ce mois-ci</translation>
+    </message>
+    <message>
+        <source>Or keep clicking for free with a smaller AI on this computer.</source>
+        <translation>Ou continuez à cliquer gratuitement avec une IA plus légère sur cet ordinateur.</translation>
+    </message>
+    <message>
+        <source>{n} of {total} cloud objects left in Semi-Auto, back on {date}.</source>
+        <translation>{n} sur {total} objets cloud restants en Semi-Auto, de nouveau disponibles le {date}.</translation>
+    </message>
+    <message>
+        <source>{n} of {total} cloud objects left in Semi-Auto this month.</source>
+        <translation>{n} sur {total} objets cloud restants en Semi-Auto ce mois-ci.</translation>
+    </message>
+    <message>
+        <source>{n} cloud detections left, back on {date}.</source>
+        <translation>{n} détections cloud restantes, de nouveau disponibles le {date}.</translation>
+    </message>
+    <message>
+        <source>{n} cloud detections left.</source>
+        <translation>{n} détections cloud restantes.</translation>
+    </message>
+    <message>
+        <source>Pro gives you 2,000 cloud objects a month in Semi-Auto.</source>
+        <translation>Pro vous donne 2 000 objets cloud par mois en Semi-Auto.</translation>
+    </message>
+    <message>
+        <source>More settings</source>
+        <translation>Paramètres supplémentaires</translation>
+    </message>
+    <message>
+        <source>{left} / {cap} km²</source>
+        <translation>{left} / {cap} km²</translation>
+    </message>
+    <message>
+        <source>{left} of {cap} km² left in Automatic this month</source>
+        <translation>{left} sur {cap} km² restants en Automatic ce mois-ci</translation>
+    </message>
+    <message>
+        <source>{left} of {cap} cloud objects left in Semi-Auto this month</source>
+        <translation>{left} sur {cap} objets cloud restants en Semi-Auto ce mois-ci</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the surface you have left this month. Draw a smaller zone.</source>
+        <translation>Cette emprise est plus grande que la surface qu'il vous reste ce mois-ci. Dessinez une emprise plus petite.</translation>
+    </message>
+    <message>
+        <source>It comes back on {date}.</source>
+        <translation>Elle sera de nouveau disponible le {date}.</translation>
+    </message>
+    <message>
+        <source>A zone detection is already running. Wait for it to finish, or stop it, before starting another.</source>
+        <translation>Une détection d'emprise est déjà en cours. Attendez qu'elle se termine ou arrêtez-la avant d'en démarrer une autre.</translation>
+    </message>
+    <message>
+        <source>Type what to find first. An example is optional.</source>
+        <translation>Décrivez d'abord ce qu'il faut détecter. Un exemple est facultatif.</translation>
+    </message>
+    <message>
+        <source>Your plan is already running on its maximum number of computers. Close AI Segmentation on one of them, then run Detect again.</source>
+        <translation>Votre forfait est déjà utilisé sur le nombre maximal d’ordinateurs. Fermez AI Segmentation sur l’un d’eux, puis relancez Detect.</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the area you have left this month. Draw a smaller zone, or subscribe for a larger monthly area.</source>
+        <translation>Cette emprise est plus grande que la surface qu’il vous reste ce mois-ci. Dessinez une emprise plus petite ou abonnez-vous pour bénéficier d’une surface mensuelle plus grande.</translation>
+    </message>
+    <message>
+        <source>Your monthly allowance ran out, so this run did not start.</source>
+        <translation>Votre quota mensuel est épuisé, cette exécution n’a donc pas démarré.</translation>
+    </message>
+    <message>
+        <source>"{word}" is hard to spot from above - "{term}" detects better. Your word still runs.</source>
+        <translation>"{word}" est difficile à repérer vue du ciel - "{term}" donne de meilleurs résultats. Votre mot est quand même utilisé.</translation>
+    </message>
+    <message>
+        <source>"{word}" cannot be seen from above. Pick an object on the ground - the Library has ready-to-use ones.</source>
+        <translation>"{word}" est invisible vue du ciel. Choisissez un objet au sol - la Bibliothèque en propose plusieurs prêts à l'emploi.</translation>
+    </message>
+    <message>
+        <source>"{obj}" is not an object the AI knows well. The run may come back empty - a more common word finds more.</source>
+        <translation>"{obj}" n'est pas un objet que l'AI reconnaît bien. Le résultat peut être vide - un mot plus courant donne de meilleurs résultats.</translation>
+    </message>
+    <message>
+        <source>(~{n} min left)</source>
+        <translation>(~{n} min restantes)</translation>
+    </message>
+    <message>
+        <source>(~{n} sec left)</source>
+        <translation>(~{n} s restantes)</translation>
+    </message>
+    <message>
+        <source>1 detection</source>
+        <translation>1 détection</translation>
+    </message>
+    <message>
+        <source>1 free cloud detection remaining</source>
+        <translation>1 détection cloud gratuite restante</translation>
+    </message>
+    <message>
+        <source>1 shape edited this session</source>
+        <translation>1 forme modifiée pendant cette session</translation>
+    </message>
+    <message>
+        <source>AI not available</source>
+        <translation>IA indisponible</translation>
+    </message>
+    <message>
+        <source>Automatic is temporarily unavailable. Try again later.</source>
+        <translation>Automatique est temporairement indisponible. Réessayez plus tard.</translation>
+    </message>
+    <message>
+        <source>Could not read the pixel grid of this raster. Check the layer opens and shows in QGIS, then try again.</source>
+        <translation>Impossible de lire la grille de pixels de ce raster. Vérifiez que la couche s&apos;ouvre et s&apos;affiche dans QGIS, puis réessayez.</translation>
+    </message>
+    <message>
+        <source>Detection stopped before any result came back. Run Detect again when you are ready.</source>
+        <translation>La détection s&apos;est arrêtée avant tout résultat. Relancez Détecter quand vous êtes prêt.</translation>
+    </message>
+    <message>
+        <source>Export now?</source>
+        <translation>Exporter maintenant ?</translation>
+    </message>
+    <message>
+        <source>Export what you saved and end this session?</source>
+        <translation>Exporter ce que vous avez sauvegardé et terminer cette session ?</translation>
+    </message>
+    <message>
+        <source>Finish or close the review first.</source>
+        <translation>Terminez ou fermez d&apos;abord la révision.</translation>
+    </message>
+    <message>
+        <source>No Automatic surface left this month. Semi-Auto still works until it comes back.</source>
+        <translation>Il ne vous reste plus de surface Automatique ce mois-ci. Semi-Auto continue de fonctionner jusqu&apos;à son rétablissement.</translation>
+    </message>
+    <message>
+        <source>No Automatic surface left this month. Semi-Auto still works, and Automatic comes back on {date}.</source>
+        <translation>Il ne vous reste plus de surface Automatique ce mois-ci. Semi-Auto continue de fonctionner et Automatique sera de nouveau disponible le {date}.</translation>
+    </message>
+    <message>
+        <source>None of the objects came out as a shape the file could take. Turn the cleanup settings down and try Finish again.</source>
+        <translation>Aucun objet n&apos;a produit une forme acceptée par le fichier. Réduisez les paramètres de nettoyage, puis réessayez de terminer.</translation>
+    </message>
+    <message>
+        <source>Nothing is visible to save. Lower Confidence, or widen the size range, then try Finish again.</source>
+        <translation>Aucun élément visible à sauvegarder. Réduisez la Confiance ou élargissez la plage de tailles, puis réessayez de terminer.</translation>
+    </message>
+    <message>
+        <source>Off until a selection is on screen. Click the object first, then Save polygon keeps it in your session; Export writes all kept polygons to a layer.</source>
+        <translation>Désactivé jusqu&apos;à l&apos;affichage d&apos;une sélection. Cliquez d&apos;abord sur l&apos;objet ; Sauvegarder le polygone le conserve dans votre session, tandis qu&apos;Exporter écrit tous les polygones conservés dans une couche.</translation>
+    </message>
+    <message>
+        <source>Removes the last point you placed on the object.</source>
+        <translation>Supprime le dernier point placé sur l&apos;objet.</translation>
+    </message>
+    <message>
+        <source>Saved all {n} objects found to {name}, including any the Confidence slider hid.</source>
+        <translation>Les {n} objets trouvés ont tous été sauvegardés dans {name}, y compris ceux masqués par le curseur de Confiance.</translation>
+    </message>
+    <message>
+        <source>Saved the 1 object found to {name}.</source>
+        <translation>L&apos;objet trouvé a été sauvegardé dans {name}.</translation>
+    </message>
+    <message>
+        <source>Sign in to run Automatic.</source>
+        <translation>Connectez-vous pour exécuter Automatique.</translation>
+    </message>
+    <message>
+        <source>Team or organization? Write to us: {email}</source>
+        <translation>Une équipe ou une organisation ? Écrivez-nous : {email}</translation>
+    </message>
+    <message>
+        <source>The AI Segmentation panel is closed, so there is nothing to detect from. Open it and try again.</source>
+        <translation>Le panneau AI Segmentation est fermé : aucune détection n&apos;est possible. Ouvrez-le et réessayez.</translation>
+    </message>
+    <message>
+        <source>The AI did not load, so this click was not answered. Use the Install button in the panel to set it up again.</source>
+        <translation>L&apos;IA n&apos;a pas chargé, ce clic n&apos;a donc pas été pris en compte. Utilisez le bouton Installer du panneau pour la configurer à nouveau.</translation>
+    </message>
+    <message>
+        <source>The AI is still loading, so this click was not answered. Try again in a few seconds.</source>
+        <translation>L&apos;IA est toujours en cours de chargement, ce clic n&apos;a donc pas été pris en compte. Réessayez dans quelques secondes.</translation>
+    </message>
+    <message>
+        <source>The click tool stays on while this session is open. Stop the session to use another map tool.</source>
+        <translation>L&apos;outil de clic reste actif pendant cette session. Arrêtez la session pour utiliser un autre outil cartographique.</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding. Keeping the 1 cloud detection already paid for.</source>
+        <translation>La détection ne répond plus. La détection cloud déjà payée est conservée.</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding. Keeping the {n} cloud detections already paid for.</source>
+        <translation>La détection ne répond plus. Les {n} détections cloud déjà payées sont conservées.</translation>
+    </message>
+    <message>
+        <source>The object you are working on is not saved yet, so it will not be in the layer.</source>
+        <translation>L&apos;objet sur lequel vous travaillez n&apos;est pas encore sauvegardé ; il ne figurera donc pas dans la couche.</translation>
+    </message>
+    <message>
+        <source>The offline AI did not load, so this session cannot start. Use the Install button in the panel to set it up again.</source>
+        <translation>L&apos;IA hors ligne n&apos;a pas chargé ; cette session ne peut donc pas démarrer. Utilisez le bouton Installer du panneau pour la configurer à nouveau.</translation>
+    </message>
+    <message>
+        <source>This computer is no longer signed in. Sign out, then sign in again to reconnect it.</source>
+        <translation>Cet ordinateur n&apos;est plus connecté. Déconnectez-vous, puis reconnectez-vous pour le relier à nouveau.</translation>
+    </message>
+    <message>
+        <source>This sign-in code has expired. Click Cancel, then Sign in to get a new one.</source>
+        <translation>Ce code de connexion a expiré. Cliquez sur Annuler, puis sur Se connecter pour en obtenir un nouveau.</translation>
+    </message>
+    <message>
+        <source>This will discard 1 polygon.</source>
+        <translation>Cela supprimera 1 polygone.</translation>
+    </message>
+    <message>
+        <source>This will discard {count} polygons.</source>
+        <translation>Cela supprimera {count} polygones.</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the surface you have left this month. Draw a smaller zone, or subscribe for a larger monthly surface.</source>
+        <translation>Cette zone est plus grande que la surface restante ce mois-ci. Dessinez une zone plus petite ou abonnez-vous pour obtenir une surface mensuelle plus importante.</translation>
+    </message>
+    <message>
+        <source>You can also open this address by hand:
+{}</source>
+        <translation>Vous pouvez aussi ouvrir cette adresse manuellement :
+{}</translation>
+    </message>
+    <message>
+        <source>You have 1 unsaved polygon.</source>
+        <translation>Vous avez 1 polygone non sauvegardé.</translation>
+    </message>
+    <message>
+        <source>You have been signed out. Sign in again to keep using the cloud features.</source>
+        <translation>Vous avez été déconnecté. Reconnectez-vous pour continuer à utiliser les fonctionnalités cloud.</translation>
+    </message>
+    <message>
+        <source>You have {count} unsaved polygons.</source>
+        <translation>Vous avez {count} polygones non sauvegardés.</translation>
+    </message>
+    <message>
+        <source>You used your Automatic allowance for this month. Semi-Auto on your computer keeps working, free, with no counter.</source>
+        <translation>Vous avez utilisé votre quota Automatique pour ce mois-ci. Semi-Auto continue de fonctionner gratuitement sur votre ordinateur, sans compteur.</translation>
+    </message>
+    <message>
+        <source>Your plan is already running on its maximum number of computers. Close AI Segmentation on one of them, then try again.</source>
+        <translation>Votre forfait est déjà utilisé sur le nombre maximal d&apos;ordinateurs. Fermez AI Segmentation sur l&apos;un d&apos;eux, puis réessayez.</translation>
+    </message>
+    <message>
+        <source>polygon</source>
+        <translation>polygone</translation>
+    </message>
+    <message>
+        <source>{left} / {cap}</source>
+        <translation>{left} / {cap}</translation>
+    </message>
+    <message>
+        <source>{n} detections</source>
+        <translation>{n} détections</translation>
+    </message>
+    <message>
+        <source>{n} free cloud detections remaining</source>
+        <translation>{n} détections cloud gratuites restantes</translation>
+    </message>
+    <message>
+        <source>{n} shapes edited this session</source>
+        <translation>{n} formes modifiées pendant cette session</translation>
+    </message>
+    <message>
+        <source>     {step} to build the AI engine again</source>
+        <translation>     {step} pour reconstruire le moteur IA</translation>
+    </message>
+    <message>
+        <source>  - Antivirus software (Windows Defender, etc.) blocking pip</source>
+        <translation>  - Un logiciel antivirus (Windows Defender, etc.) bloque pip</translation>
+    </message>
+    <message>
+        <source>  - Corrupted virtual environment</source>
+        <translation>  - Environnement virtuel corrompu</translation>
+    </message>
+    <message>
+        <source>  - exclude these hosts from inspection:</source>
+        <translation>  - excluez ces hôtes de l&apos;inspection :</translation>
+    </message>
+    <message>
+        <source>  - install the network&apos;s root certificate on this machine, or</source>
+        <translation>  - installez le certificat racine du réseau sur cette machine, ou</translation>
+    </message>
+    <message>
+        <source>  1. Add an antivirus exclusion for the folder:</source>
+        <translation>  1. Ajoutez une exclusion antivirus pour le dossier :</translation>
+    </message>
+    <message>
+        <source>  1. Close all QGIS windows (File &gt; Exit)</source>
+        <translation>  1. Fermez toutes les fenêtres QGIS (Fichier &gt; Quitter)</translation>
+    </message>
+    <message>
+        <source>  1. Delete the folder: {folder}</source>
+        <translation>  1. Supprimez le dossier : {folder}</translation>
+    </message>
+    <message>
+        <source>  1. Free up disk space (empty the trash, remove large unused files)</source>
+        <translation>  1. Libérez de l&apos;espace disque (videz la corbeille, supprimez les fichiers volumineux inutilisés)</translation>
+    </message>
+    <message>
+        <source>  1. If that folder is inside OneDrive or another sync tool, pause
+     syncing (or mark the folder &apos;Always keep on this device&apos;)</source>
+        <translation>  1. Si ce dossier se trouve dans OneDrive ou un autre outil de synchronisation, mettez la
+     synchronisation en pause (ou définissez le dossier sur « Toujours conserver sur cet appareil »)</translation>
+    </message>
+    <message>
+        <source>  1. Install the latest VC++ Redistributable (x64):
+     {url}</source>
+        <translation>  1. Installez la dernière version de VC++ Redistributable (x64) :
+     {url}</translation>
+    </message>
+    <message>
+        <source>  1. Temporarily disable real-time antivirus scanning</source>
+        <translation>  1. Désactivez temporairement l&apos;analyse antivirus en temps réel</translation>
+    </message>
+    <message>
+        <source>  1. Upgrade your distribution to a version released after 2019</source>
+        <translation>  1. Mettez à niveau votre distribution vers une version publiée après 2019</translation>
+    </message>
+    <message>
+        <source>  1. Use a QGIS build bundling Python 3.12 or older, or</source>
+        <translation>  1. Utilisez une version de QGIS intégrant Python 3.12 ou une version antérieure, ou</translation>
+    </message>
+    <message>
+        <source>  1. {step} to build again with fresh data</source>
+        <translation>  1. {step} pour reconstruire avec des données vierges</translation>
+    </message>
+    <message>
+        <source>  2. Add an exclusion for the plugin folder:</source>
+        <translation>  2. Ajoutez une exclusion pour le dossier du plugin :</translation>
+    </message>
+    <message>
+        <source>  2. If it persists, update QGIS to the latest LTR release
+     (newer QGIS ships a newer Python) and try again</source>
+        <translation>  2. Si le problème persiste, mettez QGIS à jour vers la dernière version LTR
+     (les versions récentes de QGIS intègrent une version plus récente de Python), puis réessayez</translation>
+    </message>
+    <message>
+        <source>  2. If you cannot upgrade, this plugin&apos;s AI engine is unfortunately
+     not supported on this machine</source>
+        <translation>  2. Si vous ne pouvez pas mettre à niveau, le moteur IA de ce plugin n&apos;est malheureusement
+     pas pris en charge sur cette machine</translation>
+    </message>
+    <message>
+        <source>  2. On Apple Silicon, run the native (arm64) QGIS rather than the
+     Intel build under Rosetta</source>
+        <translation>  2. Sur Apple Silicon, utilisez la version native (arm64) de QGIS plutôt que la
+     version Intel via Rosetta</translation>
+    </message>
+    <message>
+        <source>  2. Or set the AI_SEGMENTATION_CACHE_DIR environment variable to a
+     short local folder outside any synced area (e.g. C:\qgis_ai),
+     then restart QGIS</source>
+        <translation>  2. Ou définissez la variable d&apos;environnement AI_SEGMENTATION_CACHE_DIR sur un
+     court chemin local hors de toute zone synchronisée (par ex. C:\qgis_ai),
+     puis redémarrez QGIS</translation>
+    </message>
+    <message>
+        <source>  2. Reopen QGIS</source>
+        <translation>  2. Rouvrez QGIS</translation>
+    </message>
+    <message>
+        <source>  2. Restart QGIS and try again</source>
+        <translation>  2. Redémarrez QGIS et réessayez</translation>
+    </message>
+    <message>
+        <source>  2. Restart your computer after installing</source>
+        <translation>  2. Redémarrez votre ordinateur après l&apos;installation</translation>
+    </message>
+    <message>
+        <source>  2. The environment is installed under: {location}</source>
+        <translation>  2. L&apos;environnement est installé dans : {location}</translation>
+    </message>
+    <message>
+        <source>  2. {step} to build everything again</source>
+        <translation>  2. {step} pour tout reconstruire</translation>
+    </message>
+    <message>
+        <source>  3. Check folder permissions: {command}</source>
+        <translation>  3. Vérifiez les permissions du dossier : {command}</translation>
+    </message>
+    <message>
+        <source>  3. If the error is still there after the reboot:</source>
+        <translation>  3. Si l&apos;erreur est toujours présente après le redémarrage :</translation>
+    </message>
+    <message>
+        <source>  3. If the issue persists, reinstall QGIS</source>
+        <translation>  3. Si le problème persiste, réinstallez QGIS</translation>
+    </message>
+    <message>
+        <source>  3. Open the AI Segmentation panel - installation will resume</source>
+        <translation>  3. Ouvrez le panneau AI Segmentation : l&apos;installation reprendra</translation>
+    </message>
+    <message>
+        <source>  3. Run QGIS as administrator (right-click &gt; Run as administrator)</source>
+        <translation>  3. Exécutez QGIS en tant qu&apos;administrateur (clic droit &gt; Exécuter en tant qu&apos;administrateur)</translation>
+    </message>
+    <message>
+        <source>  3. To install on another drive, set the AI_SEGMENTATION_CACHE_DIR
+     environment variable to a folder on a disk with more space,
+     then restart QGIS and try again</source>
+        <translation>  3. Pour installer sur un autre disque, définissez la variable d&apos;environnement
+     AI_SEGMENTATION_CACHE_DIR sur un dossier situé sur un disque disposant de plus d&apos;espace,
+     puis redémarrez QGIS et réessayez</translation>
+    </message>
+    <message>
+        <source>  3. {step} again</source>
+        <translation>  3. {step} à nouveau</translation>
+    </message>
+    <message>
+        <source>  3. {step} to build it again</source>
+        <translation>  3. {step} pour le reconstruire</translation>
+    </message>
+    <message>
+        <source>  4. Check that no other Python (Anaconda, Miniconda, standalone Python)
+     puts conflicting torch DLLs on your system PATH.
+     Open a terminal and run: where python
+     If you see multiple results, remove the extra ones from PATH</source>
+        <translation>  4. Vérifiez qu&apos;aucun autre Python (Anaconda, Miniconda, Python autonome)
+     ne place de DLL torch incompatibles dans votre PATH système.
+     Ouvrez un terminal et exécutez : where python
+     Si plusieurs résultats s&apos;affichent, supprimez les entrées supplémentaires du PATH</translation>
+    </message>
+    <message>
+        <source>  4. If the issue persists, run QGIS as administrator</source>
+        <translation>  4. Si le problème persiste, exécutez QGIS en tant qu&apos;administrateur</translation>
+    </message>
+    <message>
+        <source>  4. Try the installation again</source>
+        <translation>  4. Réessayez l&apos;installation</translation>
+    </message>
+    <message>
+        <source>  4. Uninstall the plugin (Plugins &gt; Manage and Install Plugins &gt; Installed &gt; AI Segmentation)</source>
+        <translation>  4. Désinstallez le plugin (Extensions &gt; Gérer et installer les extensions &gt; Installées &gt; AI Segmentation)</translation>
+    </message>
+    <message>
+        <source>  5. Restart QGIS</source>
+        <translation>  5. Redémarrez QGIS</translation>
+    </message>
+    <message>
+        <source>  6. Reinstall the plugin</source>
+        <translation>  6. Réinstallez le plugin</translation>
+    </message>
+    <message>
+        <source>A required DLL failed to initialize.</source>
+        <translation>L&apos;initialisation d&apos;une DLL requise a échoué.</translation>
+    </message>
+    <message>
+        <source>Ask your IT department to add a path-based allow rule for this folder:</source>
+        <translation>Demandez à votre service informatique d&apos;ajouter une règle d&apos;autorisation basée sur le chemin pour ce dossier :</translation>
+    </message>
+    <message>
+        <source>Ask your IT department to either:</source>
+        <translation>Demandez à votre service informatique de :</translation>
+    </message>
+    <message>
+        <source>Cache error, retrying {package}... ({done}/{total})</source>
+        <translation>Erreur de cache, nouvelle tentative pour {package}... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Creating virtual environment...</source>
+        <translation>Création de l&apos;environnement virtuel...</translation>
+    </message>
+    <message>
+        <source>Disabling antivirus or running QGIS as administrator will not help.</source>
+        <translation>Désactiver l&apos;antivirus ou exécuter QGIS en tant qu&apos;administrateur ne résoudra pas le problème.</translation>
+    </message>
+    <message>
+        <source>Downloaded {mb} MB, saving...</source>
+        <translation>{mb} Mo téléchargés, enregistrement...</translation>
+    </message>
+    <message>
+        <source>Downloading PyTorch (~180 MB)... {elapsed}</source>
+        <translation>Téléchargement de PyTorch (~180 Mo)... {elapsed}</translation>
+    </message>
+    <message>
+        <source>Downloading Python: {done} MB</source>
+        <translation>Téléchargement de Python : {done} Mo</translation>
+    </message>
+    <message>
+        <source>Downloading Python: {done} MB of {total} MB</source>
+        <translation>Téléchargement de Python : {done} Mo sur {total} Mo</translation>
+    </message>
+    <message>
+        <source>Downloading uv package installer...</source>
+        <translation>Téléchargement de l&apos;installateur de paquets uv...</translation>
+    </message>
+    <message>
+        <source>Failed to create venv: this Python is missing its venv support.
+
+</source>
+        <translation>Échec de la création du venv : la prise en charge de venv est absente de ce Python.
+
+</translation>
+    </message>
+    <message>
+        <source>How to fix this:</source>
+        <translation>Comment résoudre ce problème :</translation>
+    </message>
+    <message>
+        <source>If it still fails after restarting QGIS:</source>
+        <translation>Si l&apos;échec persiste après le redémarrage de QGIS :</translation>
+    </message>
+    <message>
+        <source>Install it, then retry:
+</source>
+        <translation>Installez-le, puis réessayez :
+</translation>
+    </message>
+    <message>
+        <source>Install the venv module for your Python with your system&apos;s package manager, then retry.</source>
+        <translation>Installez le module venv pour votre Python avec le gestionnaire de paquets de votre système, puis réessayez.</translation>
+    </message>
+    <message>
+        <source>Installation failed due to network restrictions.</source>
+        <translation>Échec de l&apos;installation en raison de restrictions réseau.</translation>
+    </message>
+    <message>
+        <source>Installation failed: Python&apos;s SSL module is not available.</source>
+        <translation>Échec de l&apos;installation : le module SSL de Python n&apos;est pas disponible.</translation>
+    </message>
+    <message>
+        <source>Installation failed: no compatible AI engine build exists for this
+combination of Intel Mac and Python version.</source>
+        <translation>Échec de l&apos;installation : aucune version compatible du moteur IA n&apos;existe pour cette
+combinaison de Mac Intel et de version Python.</translation>
+    </message>
+    <message>
+        <source>Installation failed: the download server presented a certificate this computer does not trust.</source>
+        <translation>Échec de l&apos;installation : le serveur de téléchargement a présenté un certificat auquel cet ordinateur ne fait pas confiance.</translation>
+    </message>
+    <message>
+        <source>Installation failed: your Linux distribution is too old for the
+current AI engine. PyTorch wheels now require a recent system
+library (glibc 2.28+, i.e. Ubuntu 20.04 / Debian 10 / CentOS 8 or
+newer).</source>
+        <translation>Échec de l&apos;installation : votre distribution Linux est trop ancienne pour le
+moteur IA actuel. Les paquets PyTorch nécessitent désormais une bibliothèque
+système récente (glibc 2.28+, c&apos;est-à-dire Ubuntu 20.04 / Debian 10 / CentOS 8 ou
+une version ultérieure).</translation>
+    </message>
+    <message>
+        <source>Installation failed: your disk ran out of space.</source>
+        <translation>Échec de l&apos;installation : votre disque n&apos;a plus assez d&apos;espace.</translation>
+    </message>
+    <message>
+        <source>Installation was blocked, likely by antivirus software or security policy.</source>
+        <translation>L&apos;installation a été bloquée, probablement par un antivirus ou une politique de sécurité.</translation>
+    </message>
+    <message>
+        <source>Installing {package} (~180 MB)... ({done}/{total})</source>
+        <translation>Installation de {package} (~180 Mo)... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Installing {package}... ({done}/{total})</source>
+        <translation>Installation de {package}... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Installing {package}... {elapsed}</source>
+        <translation>Installation de {package}... {elapsed}</translation>
+    </message>
+    <message>
+        <source>Intel (x86_64) Macs are supported only up to PyTorch 2.2.2, which
+ships for Python 3.8 to 3.12. Your Python is newer than that.</source>
+        <translation>Les Mac Intel (x86_64) sont pris en charge uniquement jusqu&apos;à PyTorch 2.2.2, qui
+est disponible pour Python 3.8 à 3.12. Votre version de Python est plus récente.</translation>
+    </message>
+    <message>
+        <source>Network error, retry {attempt}/{total} in {wait}s...</source>
+        <translation>Erreur réseau, nouvelle tentative {attempt}/{total} dans {wait}s...</translation>
+    </message>
+    <message>
+        <source>Network error, retrying in {seconds}s...</source>
+        <translation>Erreur réseau, nouvelle tentative dans {seconds}s...</translation>
+    </message>
+    <message>
+        <source>Not enough free disk space to install dependencies: {free_gb:.1f} GB available at {cache_dir}, at least {min_free_gb:.1f} GB is required.
+
+Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR environment variable to a directory on a larger drive, then restart QGIS.</source>
+        <translation>Espace disque libre insuffisant pour installer les dépendances : {free_gb:.1f} Go disponibles dans {cache_dir}, au moins {min_free_gb:.1f} Go sont requis.
+
+Libérez de l&apos;espace disque ou définissez la variable d&apos;environnement AI_SEGMENTATION_CACHE_DIR sur un dossier situé sur un disque plus grand, puis redémarrez QGIS.</translation>
+    </message>
+    <message>
+        <source>Once the rule is in place, restart QGIS and try again.</source>
+        <translation>Une fois la règle en place, redémarrez QGIS et réessayez.</translation>
+    </message>
+    <message>
+        <source>Open the AI Segmentation panel and click Install</source>
+        <translation>Ouvrez le panneau AI Segmentation et cliquez sur Installer</translation>
+    </message>
+    <message>
+        <source>Please contact your IT department to allow access to:</source>
+        <translation>Contactez votre service informatique pour autoriser l&apos;accès à :</translation>
+    </message>
+    <message>
+        <source>Please try:</source>
+        <translation>Essayez :</translation>
+    </message>
+    <message>
+        <source>Python standalone ready</source>
+        <translation>Python autonome prêt</translation>
+    </message>
+    <message>
+        <source>Retrying {package}... ({done}/{total})</source>
+        <translation>Nouvelle tentative pour {package}... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>SSL bypass retry for {package}... ({done}/{total})</source>
+        <translation>Nouvelle tentative sans vérification SSL pour {package}... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>SSL error, retrying {package} (system certs)... ({done}/{total})</source>
+        <translation>Erreur SSL, nouvelle tentative pour {package} (certificats système)... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>The AI engine needs roughly 4 GB free during installation.</source>
+        <translation>Le moteur IA nécessite environ 4 Go d&apos;espace libre pendant l&apos;installation.</translation>
+    </message>
+    <message>
+        <source>The environment installs under: {location}</source>
+        <translation>L&apos;environnement s&apos;installe dans : {location}</translation>
+    </message>
+    <message>
+        <source>The install has not reported anything for a while. QGIS is yours again: leave this running, or stop it and use Cloud AI.</source>
+        <translation>L&apos;installation n&apos;a rien signalé depuis un moment. QGIS est de nouveau disponible : laissez-la s&apos;exécuter ou arrêtez-la et utilisez Cloud AI.</translation>
+    </message>
+    <message>
+        <source>The installer process crashed unexpectedly (access violation).</source>
+        <translation>Le processus d&apos;installation s&apos;est arrêté de manière inattendue (violation d&apos;accès).</translation>
+    </message>
+    <message>
+        <source>The next installation will rebuild it from scratch automatically.</source>
+        <translation>La prochaine installation le reconstruira automatiquement depuis zéro.</translation>
+    </message>
+    <message>
+        <source>The package resolver could not find a compatible set of versions.
+This usually comes from stale cached package data or a Python
+version the AI packages no longer support.</source>
+        <translation>Le résolveur de paquets n&apos;a pas trouvé d&apos;ensemble de versions compatibles.
+Cela est généralement dû à des données de paquets obsolètes en cache ou à une
+version de Python qui n&apos;est plus prise en charge par les paquets IA.</translation>
+    </message>
+    <message>
+        <source>The plugin always uses this folder, so one rule keeps working across updates.
+It contains a standalone Python runtime, the uv installer and Python packages,
+all downloaded from their official open-source sources.</source>
+        <translation>Le plugin utilise toujours ce dossier, afin qu&apos;une seule règle reste valable après les mises à jour.
+Il contient un environnement Python autonome, l&apos;installateur uv et les paquets Python,
+tous téléchargés depuis leurs sources officielles open source.</translation>
+    </message>
+    <message>
+        <source>The plugin&apos;s Python environment is damaged (files are missing inside it).</source>
+        <translation>L&apos;environnement Python du plugin est endommagé (des fichiers sont manquants).</translation>
+    </message>
+    <message>
+        <source>The plugin&apos;s local Python runtime is damaged and cannot start.
+This is usually caused by antivirus quarantine or an interrupted
+first installation.</source>
+        <translation>L&apos;environnement Python local du plugin est endommagé et ne peut pas démarrer.
+Cela est généralement dû à une mise en quarantaine par l&apos;antivirus ou à une première
+installation interrompue.</translation>
+    </message>
+    <message>
+        <source>This is usually caused by:</source>
+        <translation>Cela est généralement dû à :</translation>
+    </message>
+    <message>
+        <source>This usually means the Python installation is incomplete or corrupted.</source>
+        <translation>Cela signifie généralement que l&apos;installation de Python est incomplète ou corrompue.</translation>
+    </message>
+    <message>
+        <source>This usually means the install folder is cloud-synced (OneDrive/Dropbox), contains unusual characters, or the path grew past the Windows length limit.</source>
+        <translation>Cela signifie généralement que le dossier d&apos;installation est synchronisé dans le cloud (OneDrive/Dropbox), contient des caractères inhabituels ou que le chemin dépasse la longueur maximale de Windows.</translation>
+    </message>
+    <message>
+        <source>Try these steps in order:</source>
+        <translation>Suivez ces étapes dans l&apos;ordre :</translation>
+    </message>
+    <message>
+        <source>Upgrading pip...</source>
+        <translation>Mise à niveau de pip...</translation>
+    </message>
+    <message>
+        <source>Using system Python (NixOS)...</source>
+        <translation>Utilisation de Python système (NixOS)...</translation>
+    </message>
+    <message>
+        <source>Using system Python (fallback)...</source>
+        <translation>Utilisation de Python système (solution de repli)...</translation>
+    </message>
+    <message>
+        <source>Using uv package installer...</source>
+        <translation>Utilisation de l&apos;installateur de paquets uv...</translation>
+    </message>
+    <message>
+        <source>Verification complete</source>
+        <translation>Vérification terminée</translation>
+    </message>
+    <message>
+        <source>Verifying {package}... ({done}/{total})</source>
+        <translation>Vérification de {package}... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Virtual environment created</source>
+        <translation>Environnement virtuel créé</translation>
+    </message>
+    <message>
+        <source>Virtual environment created (uv)</source>
+        <translation>Environnement virtuel créé (uv)</translation>
+    </message>
+    <message>
+        <source>Virtual environment ready</source>
+        <translation>Environnement virtuel prêt</translation>
+    </message>
+    <message>
+        <source>Windows refused a file path during installation.</source>
+        <translation>Windows a refusé un chemin de fichier pendant l&apos;installation.</translation>
+    </message>
+    <message>
+        <source>You can also try checking your proxy settings in QGIS (Settings &gt; Options &gt; Network).</source>
+        <translation>Vous pouvez également vérifier les paramètres du proxy dans QGIS (Paramètres &gt; Options &gt; Réseau).</translation>
+    </message>
+    <message>
+        <source>Your network inspects secure connections and re-signs them with its own certificate, and that certificate is not in the computer&apos;s certificate store.</source>
+        <translation>Votre réseau inspecte les connexions sécurisées et les resigne avec son propre certificat, qui ne figure pas dans le magasin de certificats de l&apos;ordinateur.</translation>
+    </message>
+    <message>
+        <source>Your organization&apos;s security policy (application control, e.g. AppLocker or WDAC)
+is blocking the plugin&apos;s local AI environment.</source>
+        <translation>La politique de sécurité de votre organisation (contrôle des applications, par ex. AppLocker ou WDAC)
+bloque l&apos;environnement IA local du plugin.</translation>
+    </message>
+    <message>
+        <source>uv package installer ready</source>
+        <translation>Installateur de paquets uv prêt</translation>
+    </message>
+    <message>
+        <source>uv: ready</source>
+        <translation>uv : prêt</translation>
+    </message>
+    <message>
+        <source>uv: unavailable, using pip</source>
+        <translation>uv : indisponible, utilisation de pip</translation>
+    </message>
+    <message>
+        <source>{free_gb:.1f} GB free at {cache_dir}, under the {min_free_gb:.0f} GB the local model needs. Installing the Automatic packages only. Free up space and install again to turn Semi-Auto mode on.</source>
+        <translation>{free_gb:.1f} Go libres dans {cache_dir}, moins que les {min_free_gb:.0f} Go nécessaires au modèle local. Installation des paquets Automatique uniquement. Libérez de l&apos;espace et relancez l&apos;installation pour activer le mode Semi-Auto.</translation>
+    </message>
+    <message>
+        <source>{package} unavailable</source>
+        <translation>{package} indisponible</translation>
+    </message>
+    <message>
+        <source>{step}. The plugin builds it again from scratch.</source>
+        <translation>{step}. Le plugin le reconstruit depuis zéro.</translation>
+    </message>
+    <message>
+        <source>✓ All dependencies installed</source>
+        <translation>✓ Toutes les dépendances sont installées</translation>
+    </message>
+    <message>
+        <source>✓ Automatic mode ready</source>
+        <translation>✓ Mode Automatique prêt</translation>
+    </message>
+    <message>
+        <source>✓ {package} installed</source>
+        <translation>✓ {package} installé</translation>
+    </message>
+    <message>
+        <source>An old version is installed. Click Install to replace it.</source>
+        <translation>Une ancienne version est installée. Cliquez sur Installer pour la remplacer.</translation>
+    </message>
+    <message>
+        <source>Some AI components are missing. Click Install to complete them.</source>
+        <translation>Certains composants d’IA sont manquants. Cliquez sur Installer pour les compléter.</translation>
+    </message>
+    <message>
+        <source>The AI components are not installed. Click Install to add them.</source>
+        <translation>Les composants d’IA ne sont pas installés. Cliquez sur Installer pour les ajouter.</translation>
+    </message>
+    <message>
+        <source>The AI components are not ready. Click Install to set them up.</source>
+        <translation>Les composants d’IA ne sont pas prêts. Cliquez sur Installer pour les configurer.</translation>
+    </message>
+    <message>
+        <source>The AI components did not load. Click Install to repair them.</source>
+        <translation>Les composants d’IA ne se sont pas chargés. Cliquez sur Installer pour les réparer.</translation>
+    </message>
+    <message>
+        <source>The AI components did not pass the check. Click Install to repair them.</source>
+        <translation>Les composants d’IA n’ont pas passé la vérification. Cliquez sur Installer pour les réparer.</translation>
+    </message>
+    <message>
+        <source>The AI components need an update. The update starts now.</source>
+        <translation>Les composants d’IA doivent être mis à jour. La mise à jour commence maintenant.</translation>
+    </message>
+    <message>
+        <source>The AI runtime is damaged. Click Install to repair it.</source>
+        <translation>L’environnement d’exécution de l’IA est endommagé. Cliquez sur Installer pour le réparer.</translation>
+    </message>
+    <message>
+        <source>The AI workspace is missing. Click Install to build it.</source>
+        <translation>L’espace de travail de l’IA est manquant. Cliquez sur Installer pour le créer.</translation>
+    </message>
+    <message>
+        <source>The last install did not finish. Click Install to start again.</source>
+        <translation>La dernière installation n’est pas terminée. Cliquez sur Installer pour recommencer.</translation>
+    </message>
+    <message>
+        <source>The on-device AI is not installed. Click Install to add it.</source>
+        <translation>L’IA sur l’appareil n’est pas installée. Cliquez sur Installer pour l’ajouter.</translation>
+    </message>
+    <message>
+        <source>Cannot close download file: {error}</source>
+        <translation>Impossible de fermer le fichier téléchargé : {error}</translation>
+    </message>
+    <message>
+        <source>Cannot open download file: {error}</source>
+        <translation>Impossible d’ouvrir le fichier téléchargé : {error}</translation>
+    </message>
+    <message>
+        <source>Cannot save download: {error}</source>
+        <translation>Impossible d’enregistrer le téléchargement : {error}</translation>
+    </message>
+    <message>
+        <source>Cannot write download file: {error}</source>
+        <translation>Impossible d’écrire dans le fichier téléchargé : {error}</translation>
+    </message>
+    <message>
+        <source>Download failed</source>
+        <translation>Échec du téléchargement</translation>
+    </message>
+    <message>
+        <source>the download did not finish in time</source>
+        <translation>le téléchargement ne s’est pas terminé à temps</translation>
+    </message>
+    <message>
+        <source>the download stalled, no data was received</source>
+        <translation>le téléchargement est bloqué, aucune donnée n’a été reçue</translation>
     </message>
 </context>
 </TS>

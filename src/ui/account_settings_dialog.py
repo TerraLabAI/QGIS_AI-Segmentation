@@ -34,6 +34,7 @@ from ..core.activation_manager import (
 )
 from ..core.i18n import tr
 from ..core.qt_compat import safe_disconnect
+from ..core.server_dials import dial_copy
 from ..workers.generic_request_task import GenericRequestTask
 from .ai_segmentation_dockwidget import (
     BRAND_BLUE,
@@ -43,6 +44,8 @@ from .ai_segmentation_dockwidget import (
     BRAND_RED,
 )
 from .dock.font_scale import scale_px_length
+from .dock.ui_refresh import format_quota_count
+from .dock.upsell_card import UpsellCard
 
 PRODUCT_NAME = "AI Segmentation"
 
@@ -506,10 +509,28 @@ class AccountSettingsDialog(QDialog):
                      min(self._height_for_cards(width), cap))
         if height != self.height() or width != self.width():
             self.resize(width, height)
+        # Centred on the window that opened it, so it lands over QGIS rather
+        # than in the middle of a screen QGIS may be nowhere near. The screen
+        # work area still bounds it, so it can never open off the desktop.
         frame = self.frameGeometry()
-        frame.moveCenter(available.center())
-        self.move(max(available.left(), frame.left()),
-                  max(available.top(), frame.top()))
+        frame.moveCenter(self._centre_anchor(available))
+        left = min(max(available.left(), frame.left()),
+                   max(available.left(), available.right() - frame.width()))
+        top = min(max(available.top(), frame.top()),
+                  max(available.top(), available.bottom() - frame.height()))
+        self.move(left, top)
+
+    def _centre_anchor(self, available: QRect):
+        """The point this window centres on: the parent window, else the screen."""
+        try:
+            parent = self.parentWidget()
+            if parent is not None and parent.isVisible():
+                centre = parent.frameGeometry().center()
+                if available.contains(centre):
+                    return centre
+        except (AttributeError, RuntimeError):
+            pass  # nosec B110 -- placement is best-effort
+        return available.center()
 
     def _available_screen_rect(self) -> QRect | None:
         """Work area of the screen this window sits on, None when Qt has none.
@@ -576,6 +597,23 @@ class AccountSettingsDialog(QDialog):
                 "method or review your plan."))
             self._retry_btn.setVisible(False)
             self._error_manage_btn.setVisible(True)
+        elif (code or "").strip().upper() == "INVALID_KEY":
+            # Retry sends the same rejected key and fails the same way. The one
+            # move that clears it is signing in again.
+            self._error_label.setText(tr(
+                "This computer is no longer signed in. Sign out, then sign in "
+                "again to reconnect it."))
+            self._retry_btn.setVisible(False)
+            self._error_manage_btn.setVisible(False)
+        elif (code or "").strip().upper() == "DEVICE_LIMIT_EXCEEDED":
+            # Same sentence the run path uses, so both surfaces name the same
+            # action. Retry cannot free a slot, so it is not offered.
+            self._error_label.setText(tr(
+                "Your plan is already running on its maximum number of "
+                "computers. Close AI Segmentation on one of them, then try "
+                "again."))
+            self._retry_btn.setVisible(False)
+            self._error_manage_btn.setVisible(False)
         elif (code or "").strip().upper() in _ACCOUNT_OFFLINE_CODES:
             self._error_label.setText(tr(
                 "Could not reach TerraLab. Check your internet connection, "
@@ -810,47 +848,49 @@ class AccountSettingsDialog(QDialog):
         # balance has to be able to tell whether to wait or to pay.
         from ..core.quota_reset_date import format_quota_reset_date
         reset_str = format_quota_reset_date(reset_date)
-        if is_subscriber and remaining is not None:
+        # Native two-envelope rows whenever the account row carries them:
+        # cloud objects (Semi-Auto saves) and km² of Automatic. Older servers
+        # send none of the fields and the wallet rows below stand unchanged.
+        from ..core.quota_envelopes import quota_envelopes_from_account_row
+        envelopes = quota_envelopes_from_account_row(sub)
+        if envelopes is not None and self._add_envelope_rows(
+                card_layout, envelopes):
+            pass
+        elif is_subscriber and remaining is not None:
             # Credits line for Pro subscribers. Lime fill for the bar; the
             # darker green tone for the number so it stays AA-readable on the
             # light dialog (mirrors AI Edit); red across the board once
             # exhausted.
             fill = BRAND_GREEN if remaining > 0 else BRAND_RED
-            text_color = BRAND_GREEN_TEXT if remaining > 0 else BRAND_RED
+            text_color = "palette(text)" if remaining > 0 else BRAND_RED
             credits_text = tr("{remaining} / {total} cloud detections").format(
-                remaining=f"{remaining:,}", total=f"{total:,}"
+                remaining=format_quota_count(remaining),
+                total=format_quota_count(total),
             )
             # The count is also the way out to the website: the user who cannot
             # find their credits here is the same one who cannot find the
             # dashboard, so the line they came to read carries the link.
-            credits_lbl = QLabel(
-                f'<a href="{get_dashboard_url()}" style="text-decoration: none;">'
-                f'<span style="color: {text_color};">{credits_text}</span>'
-                f' <span style="color: {BRAND_BLUE};">↗</span></a>'
-            )
-            credits_lbl.setOpenExternalLinks(True)
-            credits_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
-            credits_lbl.setToolTip(tr(
-                "Opens your terra-lab.ai dashboard: your plan, your cloud "
-                "detections and your payment details."))
-            credits_lbl.setStyleSheet(f"font-size: 12px; color: {text_color};")
-            card_layout.addWidget(credits_lbl)
+            card_layout.addWidget(
+                self._dashboard_quota_label(credits_text, text_color))
             bar = self._credits_bar(remaining, total, fill)
         elif not is_subscriber and free_left is not None:
             # Free-taste line (monthly free allowance)
             fill = BRAND_GREEN if free_left > 0 else BRAND_RED
-            text_color = BRAND_GREEN_TEXT if free_left > 0 else BRAND_RED
+            text_color = "palette(text)" if free_left > 0 else BRAND_RED
             # The monthly free total is a newer usage field; only draw the gauge
             # and the "of N" phrasing when the server reports it (older
             # responses omit it).
             free_total = usage.get("free_detections_total")
             if free_total:
                 free_text = tr("{n} of {total} free cloud detections left").format(
-                    n=free_left, total=int(free_total))
+                    n=format_quota_count(free_left),
+                    total=format_quota_count(free_total))
                 bar = self._credits_bar(free_left, int(free_total), fill)
+            elif free_left == 1:
+                free_text = tr("1 free cloud detection remaining")
             else:
-                free_text = tr("{n} free cloud detection(s) remaining").format(
-                    n=free_left)
+                free_text = tr("{n} free cloud detections remaining").format(
+                    n=format_quota_count(free_left))
             free_lbl = QLabel(free_text)
             free_lbl.setStyleSheet(f"font-size: 12px; color: {text_color};")
             card_layout.addWidget(free_lbl)
@@ -869,29 +909,47 @@ class AccountSettingsDialog(QDialog):
             reset_row.addStretch()
             card_layout.addLayout(reset_row)
 
-        # Upgrade CTA (Free accounts only): the one primary button of the whole
-        # dialog, with a small benefit caption under it. Pro accounts have no
-        # big button here; the header's Manage link covers plan management.
+        # Upgrade CTA (Free accounts only): the shared upsell card, so this
+        # screen reads as the same offer the dock shows. Pro accounts have no
+        # upgrade block here; the header's Manage link covers plan management.
         if not is_subscriber:
             card_layout.addSpacing(6)
-            upgrade_btn = QPushButton(tr("Upgrade to Pro"))
-            upgrade_btn.setStyleSheet(_PRIMARY_BTN)
-            upgrade_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            upgrade_btn.setMinimumHeight(36)
-            upgrade_btn.setToolTip(
-                tr("Opens terra-lab.ai in your browser."))
-            upgrade_btn.clicked.connect(self._on_upgrade_clicked)
-            card_layout.addWidget(upgrade_btn)
-            benefit = QLabel(tr(
-                "5,000 cloud detections every month, zones of any size. "
-                "Cancel anytime."))
-            benefit.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-            benefit.setStyleSheet(
-                "font-size: 10px; color: rgba(128,128,128,0.9);")
-            card_layout.addWidget(benefit)
+            upgrade_card = UpsellCard(
+                "accountUpgradeCard", "star",
+                on_cta=self._on_upgrade_clicked)
+            upgrade_card.set_text(
+                # Both lines quote the offer, so both are served: the monthly
+                # envelope is a commercial figure that moves without waiting
+                # for a plugin release.
+                title=dial_copy(
+                    "account.upgrade_title",
+                    tr("300 km² of Automatic a month, on zones of any "
+                       "size.")),
+                body=dial_copy(
+                    "account.upgrade_body",
+                    tr("The same AI on every machine you work on.")),
+                cta=dial_copy("upsell.cta", tr("Upgrade to Pro")),
+                escape=dial_copy(
+                    "upsell.cta_hint",
+                    tr("39 EUR a month, cancel anytime.")),
+                star=dial_copy(
+                    "upsell.bullet_quota_manual",
+                    tr("2,000 cloud objects every month in Semi-Auto")),
+            )
+            upgrade_card.button.setToolTip(dial_copy(
+                "account.upgrade_tooltip",
+                tr("Opens terra-lab.ai in your browser.")))
+            card_layout.addWidget(upgrade_card)
 
+        # One sentence, one key. Glued fragments cannot be reordered, and every
+        # language that needs a different order lost it here. The address is
+        # served so it can be moved without a plugin release.
+        contact_email = dial_copy(
+            "account.contact_email", "yvann.barbot@terra-lab.ai", max_chars=120,
+            escape=True)
         contact = QLabel(
-            tr("Team or organization?") + " " + tr("Write to us:") + " <b>yvann.barbot@terra-lab.ai</b>"
+            tr("Team or organization? Write to us: {email}").format(
+                email=f"<b>{contact_email}</b>")
         )
         contact.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         contact.setWordWrap(True)
@@ -900,6 +958,87 @@ class AccountSettingsDialog(QDialog):
         card_layout.addWidget(contact)
 
         return card
+
+    def _dashboard_quota_label(self, text: str, text_color: str) -> QLabel:
+        """One quota row, linked to the dashboard, with its arrow and tooltip.
+
+        The row a user comes to read is also the way out to the website, so
+        every balance on this card carries the same link rather than one of
+        them looking like the only clickable one.
+        """
+        label = QLabel(
+            f'<a href="{get_dashboard_url()}" style="text-decoration: none;">'
+            f'<span style="color: {text_color};">{text}</span>'
+            f' <span style="color: {BRAND_BLUE};">↗</span></a>'
+        )
+        label.setOpenExternalLinks(True)
+        label.setCursor(Qt.CursorShape.PointingHandCursor)
+        label.setToolTip(tr(
+            "Opens your terra-lab.ai dashboard: your plan, your cloud "
+            "detections and your payment details."))
+        label.setStyleSheet(f"font-size: 12px; color: {text_color};")
+        return label
+
+    def _add_envelope_rows(self, card_layout, env) -> bool:
+        """Draw the objects and km² rows of the two-envelope quota.
+
+        Both plans read the same way: what is left this month, and a bar that
+        empties as the month is spent. A None cap or a None used figure drops
+        its row rather than drawing a zero: None means unknown or exempt,
+        never empty. Returns False when neither row can be drawn, so the
+        caller falls back to the wallet rows.
+        """
+        from .dock.ui_refresh import format_km2_left
+
+        rows_drawn = False
+        if env.has_objects_gauge():
+            objects_left = (env.objects_remaining
+                            if env.objects_remaining is not None
+                            else max(0, env.objects_cap - env.objects_used))
+            spent = objects_left <= 0
+            # The line reads in the normal text colour: it states a balance,
+            # and a balance is not a status. Green on every row made the card
+            # shout at a user who has done nothing wrong. Red only when the
+            # month is spent, where the colour is the message.
+            text_color = BRAND_RED if spent else "palette(text)"
+            fill = BRAND_RED if spent else BRAND_GREEN
+            objects_text = tr(
+                "{n} of {total} cloud objects left in Semi-Auto this month").format(
+                    n=format_quota_count(objects_left),
+                    total=format_quota_count(env.objects_cap))
+            card_layout.addWidget(
+                self._dashboard_quota_label(objects_text, text_color))
+            card_layout.addWidget(self._credits_bar(
+                objects_left, env.objects_cap, fill))
+            rows_drawn = True
+        if env.has_km2_gauge():
+            km2_left = (env.km2_remaining if env.km2_remaining is not None
+                        else max(0.0, env.km2_cap - env.km2_used))
+            km2_spent = km2_left <= 0
+            km2_color = BRAND_RED if km2_spent else "palette(text)"
+            km2_fill = BRAND_RED if km2_spent else BRAND_GREEN
+            km2_text = tr(
+                "{n} of {total} km² left in Automatic this month").format(
+                    n=format_km2_left(km2_left),
+                    total=format_km2_left(env.km2_cap))
+            # Same shape as the objects row above it: two balances on one card
+            # cannot be one a link and the other plain text, or the row that is
+            # not underlined reads as the one with nowhere to go.
+            card_layout.addWidget(
+                self._dashboard_quota_label(km2_text, km2_color))
+            # The km² gauge is the same 6 px bar as the objects one: two
+            # resources, two bars, read the same way. The bar counts whole
+            # units, so pass hundredths of a km² or 2.4 of 3 draws as 2 of 3.
+            # A balance too small to fill one unit keeps one anyway: the line
+            # above it reads "< 0.01" and still allows a run, and an empty bar
+            # under it says the month is spent.
+            km2_units = int(round(km2_left * 100))
+            if km2_units <= 0 and km2_left > 0:
+                km2_units = 1
+            card_layout.addWidget(self._credits_bar(
+                km2_units, int(round(env.km2_cap * 100)), km2_fill))
+            rows_drawn = True
+        return rows_drawn
 
     def _on_upgrade_clicked(self):
         """The account dialog's Upgrade CTA. Reports through the same event as

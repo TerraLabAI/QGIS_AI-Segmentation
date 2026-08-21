@@ -7,7 +7,7 @@ are plain mixin members: widgets/signals live on the dock instance.
 from __future__ import annotations
 
 from qgis.core import QgsProject, QgsRasterLayer
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtCore import QLocale, Qt
 from qgis.PyQt.QtWidgets import (
     QFrame,
     QLabel,
@@ -26,9 +26,11 @@ from .font_scale import scale_qss_font_px, widget_pixel_ratio
 from .guidance import (
     HINT_EXEMPLAR_DRAW_BOX,
     HINT_EXEMPLAR_EXCLUDE_BOX,
+    HINT_PREVIEW_ZOOM,
     HINT_TUTORIAL_FIRST_STEPS,
     is_hint_dismissed,
 )
+from .setup_status_text import setup_status_sentence
 from .styles import (
     _BTN_EXPORT_DISABLED,
     _BTN_EXPORT_READY,
@@ -53,6 +55,72 @@ _SIGN_ADD = "\U0001F7E2"
 _SIGN_TRIM = "\u274C"
 
 
+def format_km2_left(value) -> str:
+    """A km² balance for a gauge: at most one decimal, no trailing ".0".
+
+    One decimal is what a user can act on (3, 2.4). A balance smaller than
+    0.05 km² keeps a second decimal, because rounding it to 0 would read as
+    spent while the run is still allowed. Under the second decimal too, the
+    figure becomes "< 0.01": a balance that still allows a run must never be
+    printed as 0.
+    """
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "0"
+    rounded = round(number, 1)
+    if number > 0 and rounded == 0:
+        rounded = round(number, 2)
+        if rounded == 0:
+            return "< 0.01"
+    return f"{rounded:g}"
+
+
+def _gauge_percent_used(used, cap, left) -> int:
+    """The share of an envelope spent, as a whole percent for a ring arc.
+
+    Held one short of full while anything is left: a ring drawn full says the
+    allowance is gone, and the user can still run.
+    """
+    try:
+        percent = min(100, int(round(100.0 * float(used) / float(cap))))
+    except (TypeError, ValueError, ZeroDivisionError):
+        return 0
+    if percent >= 100 and (left or 0) > 0:
+        return 99
+    return max(0, percent)
+
+
+def format_quota_count(value) -> str:
+    """A quota count with its thousands grouped the way the user's locale does.
+
+    A hard-coded comma reads as a decimal point to a large part of the fleet,
+    so 1,500 objects left can read as one and a half.
+    """
+    try:
+        return QLocale().toString(int(value or 0))
+    except (TypeError, ValueError):
+        return "0"
+
+
+def format_km2_surface(value) -> str:
+    """The surface of one drawn zone, as many digits as it is worth reading.
+
+    Precision follows size: under 1 km² two decimals (0.41), under 10 one
+    (2.3), above that none (14). A zone is priced by this number, so a small
+    one must not round to 0 and a large one must not carry noise digits.
+    """
+    try:
+        number = max(0.0, float(value))
+    except (TypeError, ValueError):
+        return "0"
+    if number < 1:
+        return f"{round(number, 2):g}"
+    if number < 10:
+        return f"{round(number, 1):g}"
+    return f"{int(round(number))}"
+
+
 class DockStateMixin:
     """Install progress, session state, instructions, exemplar chips, cleanup."""
 
@@ -63,6 +131,7 @@ class DockStateMixin:
 
         if ok:
             self.setup_status_label.setText(message)
+            self.setup_status_label.setToolTip("")
             self.setup_status_label.setVisible(True)
             self.setup_status_label.setStyleSheet("font-weight: bold; color: palette(text);")
             self.install_button.setVisible(False)
@@ -71,13 +140,17 @@ class DockStateMixin:
             self.setup_progress.setVisible(False)
             self.setup_progress_label.setVisible(False)
         else:
+            # The startup check answers in raw English written for a log line.
+            # Read the two flags below off that raw text, then show the user
+            # the sentence for it in their own language.
             is_update = "updating" in message.lower() or "upgrading" in message.lower()
             is_dll_error = "dll" in message.lower() and "failed" in message.lower()
+            display = setup_status_sentence(message) or message
             if is_dll_error:
-                short_msg = tr(
+                display = tr(
                     "Missing Visual C++ Redistributable. "
                     "Install it, restart your computer, then click Retry.")
-                self.setup_status_label.setText(short_msg)
+                self.setup_status_label.setText(display)
                 self.setup_status_label.setStyleSheet(
                     f"font-weight: bold; color: {ERROR_TEXT};")
                 self.setup_status_label.setVisible(True)
@@ -88,14 +161,19 @@ class DockStateMixin:
                 # with no local runtime, a removal of the downloaded AI data),
                 # so hiding it left the panel saying nothing at all about a
                 # click that had just done nothing.
-                self.setup_status_label.setText(message)
+                self.setup_status_label.setText(display)
                 self.setup_status_label.setStyleSheet(
                     "font-weight: bold; color: palette(text);")
-                self.setup_status_label.setVisible(bool(message))
+                self.setup_status_label.setVisible(bool(display))
                 if is_update:
                     self.install_button.setText(tr("Update"))
                 else:
                     self.install_button.setText(tr("Install"))
+            # The raw text is what a bug report needs, so it stays one hover
+            # away. Cleared when the line already shows it, so no tooltip
+            # repeats the sentence under it.
+            self.setup_status_label.setToolTip(
+                message if display != message else "")
             self.install_button.setVisible(True)
             self.install_button.setEnabled(True)
             self.setup_group.setVisible(True)
@@ -156,9 +234,11 @@ class DockStateMixin:
                     max_remaining = 480
                     remaining = min(remaining, max_remaining)
                     if remaining > 60:
-                        time_info = f" (~{int(remaining / 60)} min left)"
+                        time_info = " " + tr("(~{n} min left)").format(
+                            n=int(remaining / 60))
                     elif remaining > 10:
-                        time_info = f" (~{int(remaining)} sec left)"
+                        time_info = " " + tr("(~{n} sec left)").format(
+                            n=int(remaining))
 
         if percent > self._last_percent:
             self._last_percent_time = now
@@ -294,6 +374,16 @@ class DockStateMixin:
             except (RuntimeError, AttributeError):
                 pass  # nosec B110 -- teardown
             self._manual_install_wants_model = False
+            # The caller carries the reason the model refused to load. Without
+            # it on screen the panel goes back to its idle text and the click
+            # that just failed reads as if it did nothing.
+            if message:
+                self.setup_status_label.setText(message)
+                self.setup_status_label.setStyleSheet(
+                    f"font-weight: bold; color: {ERROR_TEXT};")
+                self.setup_status_label.setVisible(True)
+                self.setup_group.setVisible(True)
+                self._setup_section_wanted = True
         if ok:
             self.setup_status_label.setText(message)
             self.setup_status_label.setStyleSheet("font-weight: bold; color: palette(text);")
@@ -323,7 +413,10 @@ class DockStateMixin:
 
         # A live session owns its raster. The combo otherwise follows the map
         # view, and a pan away from the work would swap the layer under it.
+        # Freezing goes with it: the tracking flag alone leaves the layer-tree
+        # signals free to re-pick when a layer is hidden, added or reordered.
         self.layer_combo.set_view_tracking(not active)
+        self.layer_combo.set_frozen(active)
 
         self._update_button_visibility()
         self._update_ui_state()
@@ -386,6 +479,10 @@ class DockStateMixin:
             # handoff the blue refine hint already says this, so hide it to avoid
             # two stacked hints saying the same thing.
             self.batch_info_widget.setVisible(not self._refine_handoff)
+
+            # The zoom-precision tip belongs to the same state as the hover
+            # ghost it explains. Hidden everywhere else, never greyed.
+            self.preview_zoom_hint.setVisible(self._preview_zoom_tip_wanted())
         else:
             # Not segmenting - show label, unlock combo, restore dropdown arrow
             self.layer_label.setVisible(True)
@@ -394,6 +491,7 @@ class DockStateMixin:
 
             self.start_container.setVisible(True)
             self.instructions_label.setVisible(False)
+            self.preview_zoom_hint.setVisible(False)
             self.refine_group.setVisible(False)
             self.save_mask_button.setVisible(False)
             self.export_button.setVisible(False)
@@ -428,8 +526,44 @@ class DockStateMixin:
         if banner is not None:
             banner.setVisible(self._should_show_auto_tutorial())
 
+    def _refine_preview_live(self) -> bool:
+        """Whether the hover ghost makes refine worth showing before any click.
+
+        A cloud session with previews on re-shapes the ghost live as a refine
+        control moves, so the panel earns its place from the first hover. An
+        offline session has no ghost, and there the panel keeps waiting for
+        the first mask. An empty balance has no ghost either, so the credits
+        gate belongs here too. Fail-closed: an unreadable gate means no
+        preview.
+        """
+        try:
+            from ...core.hover_preview_client import hover_preview_offered
+
+            return bool(self._manual_cloud_route_picked()
+                        and hover_preview_offered()
+                        and not self._manual_credits_exhausted())
+        except Exception:  # noqa: BLE001 -- an unreadable gate is a closed one
+            return False
+
+    def _preview_zoom_tip_wanted(self) -> bool:
+        """The zoom tip belongs to ONE state: a live base Semi-Auto session
+        whose clicks go to Cloud AI with the hover preview on. The offline
+        engine never sees this cloud-only affordance (hidden, never greyed),
+        and the handoff has its own guidance."""
+        if not self._segmentation_active or self._refine_handoff:
+            return False
+        if is_hint_dismissed(HINT_PREVIEW_ZOOM):
+            return False
+        return self._refine_preview_live()
+
     def _update_refine_panel_visibility(self):
         """Update refine panel visibility based on mask state."""
+        # Which engine answers the clicks decides what the panel carries, and
+        # this runs on every refresh, so a switch before Start lands here.
+        try:
+            self._sync_refine_shape_toggles()
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110 -- panel not built yet, or torn down
         if not self._segmentation_active:
             self.refine_group.setVisible(False)
             return
@@ -441,7 +575,13 @@ class DockStateMixin:
             self.refine_group.setVisible(self._has_mask or getattr(self, "_handoff_editing", False))
             return
 
-        self.refine_group.setVisible(self._has_mask)
+        # One panel in both engines, open from the start of the session: the
+        # settings are what a user reads before their first click, and an
+        # offline session that hid them until a mask existed made the mode look
+        # like it had fewer of them. What differs between the engines is the
+        # two cloud-only toggles inside (_sync_refine_shape_toggles), not
+        # whether the panel is there.
+        self.refine_group.setVisible(True)
 
     def _update_export_button_style(self):
         count = self._saved_polygon_count
@@ -635,6 +775,10 @@ class DockStateMixin:
         self._manual_encoding = False
         self._manual_encoding_phase = "imagery"
         self.reset_refine_sliders()
+        # The plugin side of these settings resets to the shipped defaults
+        # while the panel goes back to what this user last chose, so the reset
+        # is only half done until the panel says what it now holds.
+        self.publish_refine_settings()
         self._update_button_visibility()
         self._update_ui_state()
 
@@ -814,8 +958,62 @@ class DockStateMixin:
         self._update_auto_detect_enabled()
 
     def _is_free_exhausted(self) -> bool:
-        """True when a non-subscriber has confirmed zero free detections left."""
-        return not self._auto_is_subscriber and self._auto_free_left is not None and self._auto_free_left <= 0
+        """True when a non-subscriber has confirmed zero free Automatic
+        allowance left. The km² envelope answers when the account sent it;
+        the wallet figure keeps answering for older servers."""
+        if self._auto_is_subscriber:
+            return False
+        env = getattr(self, "_quota_envelopes", None)
+        if env is not None and env.has_km2_gauge():
+            # Same cap-minus-used fallback as the gauge and the gate, so a
+            # server that sends the pair without the remainder does not silently
+            # keep offering a run that is already spent.
+            left = (env.km2_remaining if env.km2_remaining is not None
+                    else max(0.0, env.km2_cap - env.km2_used))
+            return left <= 0
+        return self._auto_free_left is not None and self._auto_free_left <= 0
+
+    def _envelope_gauge_view(self):
+        """(label, tooltip, ring_used, ring_total) for the footer gauge, from
+        the two-envelope snapshot, or None to keep the wallet display.
+
+        One headline unit per surface: in Automatic the gauge speaks km², in
+        Semi-Auto it counts saved cloud objects. Both plans count down, so the
+        figure a user reads first is what is left. Ring values are percent, so
+        the arc knows nothing about units.
+        """
+        env = getattr(self, "_quota_envelopes", None)
+        if env is None:
+            return None
+        if self._mode == Mode.AUTOMATIC:
+            if not env.has_km2_gauge():
+                return None
+            km2_left = (env.km2_remaining if env.km2_remaining is not None
+                        else max(0.0, env.km2_cap - env.km2_used))
+            left = format_km2_left(km2_left)
+            cap = format_km2_left(env.km2_cap)
+            pct_used = _gauge_percent_used(env.km2_used, env.km2_cap, km2_left)
+            label = tr("{left} / {cap} km²").format(left=left, cap=cap)
+            tooltip = tr("{left} of {cap} km² left in Automatic this "
+                         "month").format(left=left, cap=cap)
+        else:
+            if not env.has_objects_gauge():
+                return None
+            objects_left = (env.objects_remaining
+                            if env.objects_remaining is not None
+                            else max(0, env.objects_cap - env.objects_used))
+            pct_used = _gauge_percent_used(
+                env.objects_used, env.objects_cap, objects_left)
+            left_text = format_quota_count(objects_left)
+            cap_text = format_quota_count(env.objects_cap)
+            label = tr("{left} / {cap}").format(left=left_text, cap=cap_text)
+            tooltip = tr("{left} of {cap} cloud objects left in Semi-Auto "
+                         "this month").format(left=left_text, cap=cap_text)
+        reset_day = getattr(self, "_auto_reset_display", "")
+        if reset_day:
+            tooltip += "\n" + tr("Resets {date}").format(date=reset_day)
+        tooltip += "\n" + tr("Click to open your dashboard")
+        return label, tooltip, pct_used, 100
 
     def _set_btn_armed(self, btn, armed: bool) -> None:
         """Toggle the [armed] dynamic property + re-polish so the filled 'armed'
@@ -1145,11 +1343,11 @@ class DockStateMixin:
                 pass
         # Numbered badge, top-left.
         badge = QLabel(str(index), card)
-        badge.setStyleSheet(
+        badge.setStyleSheet(scale_qss_font_px(
             "QLabel { background: rgba(0,0,0,0.6); color: rgba(255,255,255,0.92);"
             " font-size: 9px; font-weight: bold; border: none;"
             " border-top-left-radius: 3px; border-bottom-right-radius: 3px;"
-            " padding: 0 3px; }")
+            " padding: 0 3px; }"))
         badge.adjustSize()
         badge.move(1, 1)
         # Remove x, top-right.
@@ -1158,10 +1356,10 @@ class DockStateMixin:
         remove.setCursor(Qt.CursorShape.PointingHandCursor)
         remove.setToolTip(tr("Remove"))
         remove.setFixedSize(16, 16)
-        remove.setStyleSheet(
+        remove.setStyleSheet(scale_qss_font_px(
             "QToolButton { background: rgba(0,0,0,0.6); color: #fff; border: none;"
             " border-radius: 8px; font-size: 9px; font-weight: bold; }"
-            "QToolButton:hover { background: rgba(211,47,47,0.9); }")
+            "QToolButton:hover { background: rgba(211,47,47,0.9); }"))
         remove.move(side - 17, 1)
         remove.clicked.connect(
             lambda _checked=False, eid=exemplar_id: self.auto_exemplar_remove_requested.emit(eid))
@@ -1219,15 +1417,19 @@ class DockStateMixin:
         """Enable the Detect button based on current Automatic mode state."""
         if not self._plugin_activated or self._auto_review_active:
             self.auto_detect_btn.setEnabled(False)
+            # The tooltip belongs to the state the button is in. Left alone it
+            # keeps the last reason, so a review opened after a blocked run
+            # still explains a zone the user has since replaced.
+            self.auto_detect_btn.setToolTip(
+                tr("Sign in to run Automatic.") if not self._plugin_activated
+                else tr("Finish or close the review first."))
             return
         from ...core.detect_gate import can_detect
         has_layer = self.auto_layer_combo.currentLayer() is not None
-        # The big green Detect enables on the floor: a typed prompt, or one
-        # drawn example, or both. Each of the three is a query the model can
-        # run, and asking for the full prompt-plus-example combination before
-        # lighting the button hid the two single-input paths behind a link
-        # nobody read. The combination is still the most accurate mode, so the
-        # cards keep nudging toward it; it is no longer a gate.
+        # The big green Detect enables on one thing: a typed prompt. An
+        # example sharpens the word, it does not stand in for it, so the
+        # example card is marked optional and never lights the button on its
+        # own (see core/detect_gate.can_detect).
         has_text = bool(self.auto_prompt_input.text().strip())
         positives = self._auto_positive_exemplars if self._EXEMPLARS_ENABLED else 0
         # An object CONCEPT exists once a prompt is typed or one example is
@@ -1250,26 +1452,33 @@ class DockStateMixin:
         else:
             free_left = self._auto_free_left
             credits_ok = (free_left is not None and free_left > 0) or free_left is None
-        # Hard credit gate: block when the drawn zone would cost more tiles than
-        # the balance can cover, so a run never launches under-funded and stops
-        # mid-zone at 0 (set in set_auto_credit_estimate).
-        credits_enough = not self._auto_insufficient_credits
-        # Free-plan per-run cap: the detail slider deliberately keeps its full
-        # (Pro) travel, so a gated level greys Detect here instead (the red
-        # cost line + detail hint name the fix: lower detail, or upgrade).
-        premium_ok = not getattr(self, "_auto_premium_gated", False)
+        # Monthly surface envelope: the zone is larger than the km² the account
+        # has left. Only fires when the server told us both figures; unknown
+        # envelopes fail open and the server enforces (set_auto_km2_block).
+        km2_ok = not getattr(self, "_auto_km2_exceeded", False)
         # Consent gates DETECT (the moment credits are spent), not Start: the
         # checkbox sits right above this button (see auto_build).
         tos_ok = has_tos_locked() or has_tos_accepted()
+        # The server can take Automatic off the whole fleet. Until now the run
+        # refused at the click, so the button stayed green over a mode that
+        # could not run. Fails open, so an unreachable configuration changes
+        # nothing.
+        try:
+            from ...core.activation_manager import is_automatic_mode_enabled
+            auto_available = bool(is_automatic_mode_enabled())
+        except Exception:  # noqa: BLE001 -- a dead switch must not block a run
+            auto_available = True
         hard_ok = has_layer and not_too_large and credits_ok
-        hard_ok = hard_ok and credits_enough and premium_ok and tos_ok
+        hard_ok = hard_ok and tos_ok and km2_ok and auto_available
         run_allowed = hard_ok and can_run
         self.auto_detect_btn.setEnabled(run_allowed and not self._auto_run_active)
         # A disabled button with no reason reads as broken. Every gate gets a
         # sentence naming the way out: the silent branches covered most of the
         # blocked runs, and a user who cannot see why the button is dead has no
         # move left but to close the panel.
-        if not tos_ok:
+        if not auto_available:
+            tip = tr("Automatic is temporarily unavailable. Try again later.")
+        elif not tos_ok:
             tip = tr("Accept the Terms and Privacy Policy first.")
         elif not has_layer:
             tip = tr("Pick a raster layer at the top of the panel first.")
@@ -1277,16 +1486,17 @@ class DockStateMixin:
             tip = tr("This zone at this precision is too big for one run. "
                      "Draw a smaller zone, or lower the precision.")
         elif not credits_ok:
-            tip = tr("No cloud detections left this month. Semi-Auto mode runs "
-                     "on your computer, free and unlimited.")
-        elif not credits_enough:
-            tip = tr("This run costs more cloud detections than you have left. "
-                     "Lower the precision, or draw a smaller zone.")
-        elif not premium_ok:
-            tip = tr("One free run covers fewer cloud detections than this. "
-                     "Lower the precision, or draw a smaller zone.")
-        elif hard_ok and not has_object:
-            tip = tr("Type a word for the object, or draw an example.")
+            # Semi-Auto is free only on the on-device engine. The default route
+            # is the cloud one, which is counted, so the sentence names the
+            # engine instead of promising the mode.
+            tip = tr("You used your Automatic allowance for this month. "
+                     "Semi-Auto on your computer keeps working, free, with no "
+                     "counter.")
+        elif not km2_ok:
+            tip = tr("This zone is larger than the surface you have left this "
+                     "month. Draw a smaller zone.")
+        elif hard_ok and not can_run:
+            tip = tr("Type what to find first. An example is optional.")
         else:
             tip = ""
         self.auto_detect_btn.setToolTip(tip)
@@ -1294,12 +1504,16 @@ class DockStateMixin:
         # (layer + object) but a hard gate (credits / zone too large) blocks it.
         reason = None
         if has_layer and has_object and not self._auto_run_active and not run_allowed:
-            if not not_too_large:
+            if not auto_available:
+                # The run path used to report this one; it no longer gets the
+                # click, so the signal is raised where the refusal now happens.
+                reason = "kill_switch"
+            elif not not_too_large:
                 reason = "zone_too_large"
-            elif not credits_ok or not credits_enough:
+            elif not km2_ok:
+                reason = "km2_envelope"
+            elif not credits_ok:
                 reason = "credits"
-            elif not premium_ok:
-                reason = "detail_premium_cap"
         if reason and reason != getattr(self, "_detect_blocked_last", None):
             try:
                 from ...core import telemetry_session_events
@@ -1319,9 +1533,25 @@ class DockStateMixin:
         remaining = self._auto_credits
         total = self._auto_credits_total
 
-        show_gauge = signed_in and remaining is not None
+        # Native two-envelope gauge whenever the account sent the fields:
+        # Automatic is an area (km², free counts up, Pro counts down) and
+        # Semi-Auto counts saved cloud objects. Old servers send none of it
+        # and the wallet figures below keep the gauge exactly as it was.
+        envelope_view = self._envelope_gauge_view()
+        show_gauge = signed_in and (
+            envelope_view is not None or remaining is not None)
         if show_gauge:
-            if total is not None and total > 0:
+            if envelope_view is not None:
+                label, tooltip, ring_used, ring_total = envelope_view
+                self._footer_credits_label.setText(label)
+                if ring_total:
+                    self._credit_ring.set_credits(
+                        ring_used, ring_total,
+                        free_tier=not self._auto_is_subscriber)
+                    self._credit_ring.setVisible(True)
+                else:
+                    self._credit_ring.setVisible(False)
+            elif total is not None and total > 0:
                 self._footer_credits_label.setText(f"{remaining} / {total}")
                 self._credit_ring.set_credits(
                     max(0, total - remaining), total,
@@ -1330,24 +1560,31 @@ class DockStateMixin:
             else:
                 self._footer_credits_label.setText(str(remaining))
                 self._credit_ring.setVisible(False)
-            if self._auto_is_subscriber:
+            if envelope_view is not None:
+                pass
+            elif self._auto_is_subscriber:
                 tooltip = tr("{n} cloud detections remaining").format(n=remaining)
             elif total is not None and total > 0:
                 tooltip = tr("{n} of {total} free cloud detections left").format(
                     n=remaining, total=total)
+            elif remaining == 1:
+                tooltip = tr("1 free cloud detection remaining")
             else:
-                tooltip = tr("{n} free cloud detection(s) remaining").format(n=remaining)
+                tooltip = tr("{n} free cloud detections remaining").format(n=remaining)
             # A balance with no return date cannot be acted on: the quota
             # renews on the sign-up anniversary, which nobody can guess.
             # Pre-formatted by set_auto_credits, empty on servers that send no
             # period_end, and the line simply drops out then.
             reset_day = getattr(self, "_auto_reset_display", "")
-            if reset_day:
-                tooltip += "\n" + tr(
-                    "Your cloud detections come back on {date}").format(
-                        date=reset_day)
-            # The gauge is a link, so the tooltip says where it goes.
-            tooltip += "\n" + tr("Click to open your dashboard")
+            if envelope_view is None:
+                # The envelope tooltip already carries its own reset and
+                # dashboard lines.
+                if reset_day:
+                    tooltip += "\n" + tr(
+                        "Your cloud detections come back on {date}").format(
+                            date=reset_day)
+                # The gauge is a link, so the tooltip says where it goes.
+                tooltip += "\n" + tr("Click to open your dashboard")
             self._footer_credits_label.setToolTip(tooltip)
             self._credit_ring.setToolTip(tooltip)
             gauge = getattr(self, "_credit_gauge", None)
@@ -1387,14 +1624,37 @@ class DockStateMixin:
 
         # Name the free way out beside the paid one, whenever the server told
         # us when the quota renews.
+        env = getattr(self, "_quota_envelopes", None)
         reset_line = getattr(self, "_auto_upsell_reset", None)
         if reset_line is not None:
             reset_day = getattr(self, "_auto_reset_display", "")
-            if reset_day:
-                reset_line.setText(tr(
-                    "Your free detections come back on {date}.").format(
-                        date=reset_day))
+            if reset_day and env is not None and env.km2_cap:
+                # The note under the fact, so it says WHEN and nothing else.
+                # It used to add "Semi-Auto on this computer keeps working",
+                # which is the free way out the card already names at its foot.
+                # Served, and filled with str.replace: format() on a served
+                # sentence raises on a stray brace, and this one paints the
+                # wall.
+                reset_line.setText(dial_copy(
+                    "trial.reset_km2",
+                    tr("It comes back on {date}."),
+                ).replace("{date}", reset_day))
+            elif reset_day:
+                reset_line.setText(dial_copy(
+                    "trial.reset_count",
+                    tr("Your free detections come back on {date}."),
+                ).replace("{date}", reset_day))
             reset_line.setVisible(bool(reset_day))
+
+        if env is not None and env.km2_cap:
+            # The wall opens with what the month covered, in the envelope's
+            # own unit. Congratulate, never scold.
+            from ...core.quota_envelopes import format_km2_value
+            title.setText(dial_copy(
+                "trial.exhausted_km2",
+                tr("You covered your {n} km² of Automatic this month"),
+            ).replace("{n}", format_km2_value(env.km2_cap)))
+            return
 
         total = self._auto_credits_total
         if total and total > 0:
@@ -1529,12 +1789,16 @@ class DockStateMixin:
         if getattr(self, "_plugin_opened_emitted", False):
             return
         try:
+            from ...core.telemetry import is_telemetry_enabled
             from ...core.telemetry_session_events import track_plugin_first_open, track_plugin_opened
             # First-ever open on this machine (self-guarded by a persistent
             # QSettings flag) precedes the per-session plugin_opened, so the
             # install -> first-open -> activation funnel has a clean entry.
             track_plugin_first_open()
             track_plugin_opened()
-            self._plugin_opened_emitted = True
+            # The once-per-session latch is only earned when the events could
+            # go out. Setting it while telemetry is off means a user who opts
+            # in and reopens the dock never gets an open marker at all.
+            self._plugin_opened_emitted = bool(is_telemetry_enabled())
         except Exception:
             pass  # nosec B110

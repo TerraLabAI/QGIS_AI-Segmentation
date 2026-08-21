@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import time
 
-from qgis.PyQt.QtCore import QEvent, QObject, pyqtSignal
+from qgis.PyQt.QtCore import QObject, Qt, pyqtSignal
 
 from ...core.i18n import tr
 
@@ -42,24 +42,50 @@ _IDLE_GAP_S = 180
 
 
 class MainWindowActivationRelay(QObject):
-    """Emits ``activated`` when the QGIS main window comes back to the front.
+    """Emits ``activated`` when QGIS comes back to the front.
 
-    A QObject of its own because an event filter needs one and the plugin
-    controller is not a QObject. Installed on the main window, never on
-    QApplication.
+    It listens to the application's own state signal. The first shape of this
+    filtered every event the main window received, which is a Python call per
+    mouse move to catch a moment that happens a few times an hour. A QObject
+    of its own because a signal needs one and the plugin controller is not one.
     """
 
     activated = pyqtSignal()
 
-    def eventFilter(self, _obj, event):  # noqa: N802 (Qt API)
-        # Runs for every event the main window receives, so it stays cheap and
-        # never raises: an exception here would travel up through Qt.
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._listening = False
         try:
-            if event.type() == QEvent.Type.WindowActivate:
+            from qgis.PyQt.QtWidgets import QApplication
+
+            app = QApplication.instance()
+            if app is not None:
+                app.applicationStateChanged.connect(self._on_application_state)
+                self._listening = True
+        except (RuntimeError, AttributeError, TypeError):
+            self._listening = False
+
+    def _on_application_state(self, state) -> None:
+        # Never raises: this runs inside Qt's own emission.
+        try:
+            if state == Qt.ApplicationState.ApplicationActive:
                 self.activated.emit()
-        except (RuntimeError, AttributeError):
+        except (RuntimeError, AttributeError, TypeError):
             pass
-        return False
+
+    def detach(self) -> None:
+        """Stop listening. Safe to call more than once."""
+        if not self._listening:
+            return
+        self._listening = False
+        try:
+            from qgis.PyQt.QtWidgets import QApplication
+
+            app = QApplication.instance()
+            if app is not None:
+                app.applicationStateChanged.disconnect(self._on_application_state)
+        except (RuntimeError, AttributeError, TypeError):
+            pass
 
 
 class AutoCreditsWatchMixin:
@@ -76,7 +102,6 @@ class AutoCreditsWatchMixin:
         if self._credits_activation_relay is None:
             try:
                 relay = MainWindowActivationRelay(self.dock_widget)
-                self.iface.mainWindow().installEventFilter(relay)
                 relay.activated.connect(self._on_qgis_window_activated)
                 self._credits_activation_relay = relay
             except (RuntimeError, AttributeError):
@@ -107,7 +132,7 @@ class AutoCreditsWatchMixin:
         self._credits_activation_relay = None
         if relay is not None:
             try:
-                self.iface.mainWindow().removeEventFilter(relay)
+                relay.detach()
             except (RuntimeError, AttributeError):
                 pass
 
@@ -131,22 +156,6 @@ class AutoCreditsWatchMixin:
         if not self._credits_watch_wanted():
             return
         if (time.time() - self._credits_last_read_unix) < _ACTIVATE_GAP_S:
-            return
-        self._read_credits_now()
-
-    def _recheck_balance_if_underfunded(self) -> None:
-        """The cost row has just refused the run for want of credits. Read the
-        balance once before that refusal stands.
-
-        The figure it was judged against can be minutes old, and the commonest
-        reason for it to be wrong is the user paying for more and coming
-        straight back. A fresh balance re-runs the gate on its own (see
-        set_auto_credits), so nothing else is needed here.
-        """
-        dock = self.dock_widget
-        if dock is None or not getattr(dock, "_auto_insufficient_credits", False):
-            return
-        if (time.time() - self._credits_last_read_unix) < _UNDERFUNDED_GAP_S:
             return
         self._read_credits_now()
 

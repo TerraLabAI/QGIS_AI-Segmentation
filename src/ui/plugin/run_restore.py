@@ -19,7 +19,9 @@ caller can show progress and stop. ``run_merge_separate``, ``restore_run`` and
 CRITICAL invariant kept: masks map to ground by their OWN pixel shape (the
 cloud model returns masks at its internal size, not the uploaded tile size);
 mask_to_polygons derives the grid from mask.shape / full_shape, never from the
-tile dimensions we sent.
+tile dimensions we sent. The second invariant, that a run's output stays
+inside the polygon the user drew, is reapplied here through
+``run_zone_clip``: the archive keeps the tiles, and tiles cover a box.
 """
 from __future__ import annotations
 
@@ -32,13 +34,40 @@ from ...core.qt_compat import (
     field_type_int,
     field_type_string,
 )
+from .run_zone_clip import (
+    clip_geometry_to_zone,
+    prepare_zone_engine,
+    zone_geometry_from_run,
+    zone_polygon_from_wkt,
+)
 
 # Whole-tile blob guard in SEPARATE (count) mode; mirrors the worker's
 # _MAX_TILE_COVERAGE (auto_detection_worker.py). Kept as a local constant so
 # the core layer never imports the QThread worker module.
 _MAX_TILE_COVERAGE = 0.55
 
+# Anti-sliver floor in detection pixels per side; mirrors the worker's
+# _MIN_KEEP_PX, and kept local for the same reason as the guard above.
+_MIN_KEEP_PX = 1.5
+
 _DEFAULT_START_CONFIDENCE = 0.30
+
+# The project values ``export_decoded_run`` needs, read on the GUI thread.
+# A direct Export writes its file on the library's fetch thread, where
+# QgsProject must not be touched at all, so the last GUI-thread step before
+# that thread starts leaves them here (see capture_project_export_context).
+_project_export_context: dict = {}
+
+# How many objects a restore will run the footprint alignment pass over. The
+# pass is synchronous and does not yield, so past this the window it opens
+# under would sit frozen; a bigger archive comes back with the shapes it was
+# saved with instead.
+_RESTORE_ALIGN_MAX_OBJECTS = 400
+
+# Wall clock the same pass may spend under that ceiling. The count bounds how
+# many objects it walks, never how long each one takes, so a set inside the
+# ceiling can still hold the window for far longer than the ceiling suggests.
+_RESTORE_ALIGN_BUDGET_S = 2.0
 
 
 def _log(msg: str, level=None) -> None:
@@ -80,10 +109,12 @@ def _tile_bbox(tile: dict):
 def zone_extent_from_tiles(tiles: list) -> tuple[tuple, str] | None:
     """The zone a stored run covered, as ((xmin, ymin, xmax, ymax), crs_authid).
 
-    A run does not keep the polygon the user drew, but it keeps every tile it
-    billed, and the grid was built to cover that polygon. Their union is
-    therefore the same ground the run looked at, which is what "run this again"
-    has to point at. Returns None when no tile carries a usable box.
+    The fallback for a run with no stored outline. A run keeps every tile it
+    billed, and the grid was built to cover the drawn polygon, so their union
+    is the polygon's bounding box. That is the same ground only for a
+    rectangle: see ``run_zone_clip.zone_geometry_from_run`` for the shape
+    itself, which a newer run carries and which every caller prefers.
+    Returns None when no tile carries a usable box.
     """
     boxes = [b for b in (_tile_bbox(t) for t in tiles if isinstance(t, dict)) if b]
     if not boxes:
@@ -124,25 +155,123 @@ def _run_gsd(tiles: list) -> float:
     return widest / TILE_SIZE if widest > 0 else 0.0
 
 
-def _run_simplify_mult(run: dict, tiles: list) -> float:
-    """The staircase simplify multiplier THIS run was vectorized with.
+def _run_stored_float(run: dict, tiles: list, key: str) -> float:
+    """A positive vectorization dial THIS run recorded, or 0.0.
 
-    A run resolves the multiplier ONCE at its start and keeps it for every one
-    of its tiles. A replay has to reuse that run's own value: reading a fresh
-    one would change an archived run's geometry the day the value moves, and a
+    A run resolves each dial ONCE at its start and keeps it for every one of
+    its tiles. A replay has to reuse that run's own value: reading a fresh one
+    would change an archived run's geometry the day the value moves, and a
     replay must reproduce the run it replays, not today's settings.
 
-    Runs archived before the value was recorded carry nothing. 0.0 is then
-    returned, which makes ``tile_simplify_tolerance`` apply the shipped
-    constant, and that constant is exactly what those runs ran with.
+    Runs archived before a dial was recorded carry nothing. 0.0 is then
+    returned, which makes the vectorizer apply the shipped constant, and that
+    constant is exactly what those runs ran with.
     """
     sources = [run]
     sources.extend(t for t in tiles if isinstance(t, dict))
     for src in sources:
-        val = src.get("tile_simplify_mult")
+        val = src.get(key)
         if isinstance(val, (int, float)) and not isinstance(val, bool) and val > 0:
             return float(val)
     return 0.0
+
+
+def _run_simplify_mult(run: dict, tiles: list) -> float:
+    """The staircase simplify multiplier THIS run was vectorized with."""
+    return _run_stored_float(run, tiles, "tile_simplify_mult")
+
+
+def _run_pinhole_m(run: dict, tiles: list) -> float:
+    """The pinhole ceiling (ground metres across) THIS run filled holes at."""
+    return _run_stored_float(run, tiles, "pinhole_m")
+
+
+def _run_ground_unit_metres(crs, tiles: list) -> tuple[float, float]:
+    """Ground metres per x unit and per y unit of ``crs``, for this run.
+
+    The worker measures this once per run to carry its pixel-denominated dials
+    into ground metres, and this measures it the same way: across the FIRST
+    tile of the grid, on the WGS84 ellipsoid, one span per axis. A replay that
+    sampled elsewhere, or on another ellipsoid, would convert the anti-sliver
+    floor and the pinhole ceiling by a factor the run never used, and on a
+    geographic CRS a zone tall enough for the latitude to matter is exactly
+    where the two answers part.
+
+    Reaches QgsProject for nothing, because the decode runs on the library's
+    fetch thread. (1.0, 1.0) on any failure and on a CRS whose units are
+    already ground metres, which is the behaviour of code that never asked.
+    """
+    import math
+
+    box = None
+    for tile in tiles:
+        if not isinstance(tile, dict):
+            continue
+        box = _tile_bbox(tile)
+        if box is not None:
+            break
+    if box is None:
+        return 1.0, 1.0
+    try:
+        from qgis.core import (
+            QgsCoordinateTransformContext,
+            QgsDistanceArea,
+            QgsPointXY,
+        )
+
+        from ...core.qt_compat import DistanceMeters
+
+        if crs is None or not crs.isValid():
+            return 1.0, 1.0
+        xmin, ymin, xmax, ymax = box
+        span_x = float(xmax - xmin)
+        span_y = float(ymax - ymin)
+        if span_x <= 0.0 or span_y <= 0.0:
+            return 1.0, 1.0
+        measurer = QgsDistanceArea()
+        measurer.setSourceCrs(crs, QgsCoordinateTransformContext())
+        measurer.setEllipsoid("WGS84")
+        xmid = (xmin + xmax) / 2.0
+        ymid = (ymin + ymax) / 2.0
+        width_m = measurer.convertLengthMeasurement(measurer.measureLine(
+            QgsPointXY(xmin, ymid), QgsPointXY(xmax, ymid)), DistanceMeters)
+        height_m = measurer.convertLengthMeasurement(measurer.measureLine(
+            QgsPointXY(xmid, ymin), QgsPointXY(xmid, ymax)), DistanceMeters)
+        # Finite first: every comparison against NaN is False, and measureLine
+        # answers NaN for a tile outside the source CRS validity domain, so a
+        # bare "> 0" test would let it through and poison every dial below.
+        if (math.isfinite(width_m) and width_m > 0.0
+                and math.isfinite(height_m) and height_m > 0.0):
+            return width_m / span_x, height_m / span_y
+    except Exception:  # noqa: BLE001 -- an unusable CRS answers for nothing  # nosec B110
+        pass
+    return 1.0, 1.0
+
+
+def capture_project_export_context() -> dict:
+    """Read the project values a direct Export needs. GUI THREAD ONLY.
+
+    The export writes its file on the library's fetch thread, and every one of
+    these comes from QgsProject, which belongs to the GUI thread: the CRS the
+    output-CRS choice compares against, the transform context the writer and
+    the reprojection take, and the ellipsoid the area and perimeter columns are
+    measured on. Read here, kept, and handed to the exporter by
+    ``export_decoded_run``. Empty on failure, which leaves the exporter on the
+    values it reads itself.
+    """
+    from qgis.core import QgsProject
+
+    try:
+        project = QgsProject.instance()
+        _project_export_context.clear()
+        _project_export_context.update({
+            "project_crs": project.crs(),
+            "transform_context": project.transformContext(),
+            "ellipsoid": str(project.ellipsoid() or ""),
+        })
+    except (RuntimeError, AttributeError):
+        _project_export_context.clear()
+    return dict(_project_export_context)
 
 
 def run_merge_separate(plugin, run: dict) -> bool:
@@ -152,7 +281,11 @@ def run_merge_separate(plugin, run: dict) -> bool:
     catalogue, so it is answered here and handed to the decode as a plain bool:
     the decode runs on a worker thread and must touch neither the plugin nor
     anything it caches.
+
+    This is the last GUI-thread step before that thread starts, so the
+    project values a direct Export needs are taken here too.
     """
+    capture_project_export_context()
     try:
         return bool(plugin._default_merge_separate((run.get("prompt") or "").strip()))
     except (AttributeError, RuntimeError, TypeError):
@@ -176,17 +309,23 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
     [] when nothing decoded), crs_authid, gsd and the merge policy it folded
     with. None means the caller cancelled part way.
     """
-    import numpy as np
+    import math
 
+    import numpy as np
+    from qgis.core import QgsCoordinateReferenceSystem
+
+    from ...core import detection_policy
     from ...core.cloud_detection import (
         iter_detection_masks,
         mask_cell_size,
+        pinhole_fill_limit_px,
         tile_simplify_tolerance,
     )
     from ...core.layer_conventions import repair_polygon, to_multipolygon
     from ...core.polygon_exporter import (
         IncrementalMerger,
         apply_mask_refinement,
+        drop_covered_objects,
         mask_to_polygons,
     )
     from ...core.tile_manager import OVERLAP_FRACTION, TILE_SIZE
@@ -194,18 +333,67 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
     crs_authid = run.get("crs_authid") or (tiles[0].get("crs_authid") if tiles else None) or "EPSG:4326"
     gsd = _run_gsd(tiles)
     simplify_mult = _run_simplify_mult(run, tiles)
+    pinhole_m = _run_pinhole_m(run, tiles)
+    prompt = (run.get("prompt") or "").strip()
+
+    # Ground metres per CRS unit, both axes, exactly what the worker measures
+    # once per run: the gsd above is in run CRS units, and every dial below is
+    # a ground quantity. (1.0, 1.0) on a CRS that already measures metres.
+    ground_kx, ground_ky = _run_ground_unit_metres(
+        QgsCoordinateReferenceSystem(crs_authid), tiles)
+    area_scale = ground_kx * ground_ky
+    if not math.isfinite(area_scale) or area_scale <= 0:
+        area_scale = 1.0
+    length_scale = math.sqrt(area_scale)
 
     # Same smart default a live run uses (discrete objects stay SEPARATE,
     # continuous features MERGE across seams), same seam-gate formula as
-    # plugin._auto_seam_min_dim, evaluated with this run's grid GSD.
+    # plugin._auto_seam_min_dim, evaluated with this run's grid GSD. BOTH
+    # policies take the overlap span when the GSD is known: with +inf for
+    # SEPARATE, an object bigger than the overlap strip comes back truncated
+    # flat along the tile grid.
     merge_separate = bool(merge_separate)
-    if merge_separate:
-        seam_min_dim = float("inf")
+    if gsd > 0:
+        seam_min_dim = OVERLAP_FRACTION * TILE_SIZE * gsd
     else:
-        seam_min_dim = OVERLAP_FRACTION * TILE_SIZE * gsd if gsd > 0 else 0.0
-    merger = IncrementalMerger(seam_min_dim=seam_min_dim)
+        seam_min_dim = float("inf") if merge_separate else 0.0
+    # The rest of the live seed: the additive-union select branch and the
+    # erosion scale it needs, the per-class partition give-back, and every
+    # shared merge scalar the served policy carries. A merger built on its own
+    # defaults folds an archived run differently from the run itself.
+    merge_scalars = detection_policy.merge_scalars()
+    merger = IncrementalMerger(
+        seam_min_dim=seam_min_dim,
+        select_duplicates=merge_separate,
+        gsd=gsd,
+        restore_partitions=(
+            merge_separate
+            and detection_policy.restore_partitions_for(
+                prompt, exemplar_only=not prompt)),
+        **detection_policy.merge_scalar_kwargs(IncrementalMerger, merge_scalars),
+    )
 
-    min_keep_area = (1.5 * gsd) ** 2 if gsd > 0 else 0.0
+    # Anti-sliver floor, as the worker computes it: the pixel floor keyed to
+    # the run's own resolution, raised by the served ground floor. The floor is
+    # compared against geom.area(), which is CRS units squared, so the ground
+    # value is divided back into CRS units first; on a geographic CRS the two
+    # differ by ten orders of magnitude and a ground floor read as a degree
+    # floor drops every object in the run.
+    min_keep_px = detection_policy.min_keep_px(_MIN_KEEP_PX)
+    min_keep_area = (
+        max((min_keep_px * gsd) ** 2,
+            detection_policy.min_keep_floor_m2(0.0) / area_scale)
+        if gsd > 0 else 0.0
+    )
+
+    # The drawn outline this run was confined to, resolved once with its
+    # prepared engine. The archive keeps the tiles, which cover the zone's
+    # bounding box, so without it the replay hands back the boundary overflow
+    # the run itself never kept. No outline on the row means no clip, which is
+    # every run archived before it was stored.
+    zone = zone_geometry_from_run(run, crs_authid)
+    zone_engine = prepare_zone_engine(zone)
+    dropped_outside = 0
 
     decoded_tiles = 0
     total = len(tiles)
@@ -263,8 +451,14 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
             row0, col0 = int(ys.min()), int(xs.min())
             sub = mask[row0:int(ys.max()) + 1, col0:int(xs.max()) + 1]
             sub = np.pad(sub, 1, constant_values=False)
+            # Interior PINHOLES only, never every hole: an unconditional fill
+            # returns a courtyard building as a solid block, which is not the
+            # shape the run produced. The ceiling is ground metres across, so
+            # the grid it is divided by is carried into ground metres too.
             sub = apply_mask_refinement(
-                sub, expand_value=0, fill_holes=True, min_area=0)
+                sub, expand_value=0, fill_holes=True, min_area=0,
+                max_hole_px=pinhole_fill_limit_px(
+                    gsd * length_scale, cell * length_scale, pinhole_m))
             for geom in mask_to_polygons(
                 sub, tile_transform,
                 simplify_tolerance=tile_simplify_tolerance(
@@ -273,25 +467,85 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
             ):
                 if geom is None or geom.isEmpty():
                     continue
-                geom = to_multipolygon(repair_polygon(geom) or geom)
+                # Confine the detection to the drawn outline HERE, before the
+                # merge, which is where the live worker clips it. A shape
+                # outside the zone that reaches the merger absorbs the one
+                # inside it, and the pair comes back as one object crossing
+                # ground the run never looked at.
+                clipped = clip_geometry_to_zone(geom, zone, zone_engine)
+                if clipped is None:
+                    dropped_outside += 1
+                    continue
+                geom = to_multipolygon(repair_polygon(clipped) or clipped)
                 if geom is None or geom.isEmpty():
                     continue
+                # After the clip, as in the worker: a detection trimmed to a
+                # boundary sliver is dropped too, not only an intrinsically
+                # tiny one.
                 if min_keep_area > 0.0 and geom.area() < min_keep_area:
                     continue
                 merger.add(geom, float(score))
 
     if on_tile is not None:
         on_tile(total, total)
+    # Every tile is in, which is the one legal moment to give back the objects a
+    # coarse reading swallowed. The live run does this here too; without it a
+    # replay armed with the same partition rule still hands back the blob.
+    merger.restore_absorbed_partitions()
     # Ided triples, because the review builder keys each object's stable colour
     # on the merger fid and reads (fid, geom, score) in that order.
     merged_scored = merger.result_scored_ided()
+    # The live run's end-of-run redundancy sweep, which reads nothing but the
+    # merger output: a leftover partial mostly painted over by larger objects
+    # was dropped from the run and has to be dropped from its replay, or the
+    # restored map shows debris the user never reviewed.
+    merged_scored = drop_covered_objects(merged_scored)
+    if dropped_outside:
+        _log(f"Run restore: {dropped_outside} detection(s) outside the run's "
+             f"zone dropped")
     _log(f"Run restore: decoded {decoded_tiles} tile(s) into {len(merged_scored)} object(s)")
     return {
         "objects": merged_scored,
         "crs_authid": crs_authid,
         "gsd": gsd,
         "merge_separate": merge_separate,
+        "zone_wkt": zone.asWkt() if zone is not None else "",
     }
+
+
+def _align_restore_footprints(plugin, rows: list) -> list:
+    """The run-wide footprint alignment, held to a wall clock.
+
+    Same pass the live run applies, stepped here instead of run to the end:
+    the object count bounds how many shapes it walks, not how long they take,
+    and a restore runs it in a click handler with a window already on screen.
+    Rows still waiting when the budget runs out keep the shape they were
+    archived with, so the cost of the stop is a shape left untidied, never a
+    missing object.
+    """
+    import time
+
+    if len(rows) > _RESTORE_ALIGN_MAX_OBJECTS:
+        _log(f"Run restore: footprint alignment skipped on {len(rows)} object(s) "
+             f"(over the {_RESTORE_ALIGN_MAX_OBJECTS} this caller can wait for)")
+        return rows
+    try:
+        sweep = plugin._auto_footprint_align_sweep(rows)
+    except (AttributeError, RuntimeError):
+        return rows
+    if sweep is None:
+        return rows
+    deadline = time.monotonic() + _RESTORE_ALIGN_BUDGET_S
+    try:
+        while not sweep.step(64):
+            if time.monotonic() >= deadline:
+                _log("Run restore: footprint alignment stopped at its time "
+                     "budget; the rest keep their archived shape")
+                break
+        plugin._log_footprint_alignment(sweep)
+        return sweep.result()
+    except Exception:  # noqa: BLE001 -- alignment must never block a restore
+        return rows
 
 
 def _run_start_confidence(run: dict, tiles: list) -> float:
@@ -369,9 +623,12 @@ def _make_restore_selection_layer(crs_authid: str):
             pass
         # Private working layer: renders via its tree node but stays out of
         # the Layers panel. Flag BEFORE the add so the panel never flashes it.
-        from ...core.output_store import mark_temp_layer
+        from ...core.output_store import drop_from_snapping, mark_temp_layer
         mark_temp_layer(layer)
         QgsProject.instance().addMapLayer(layer, False)
+        # Post-add: keep the scratch layer out of the snapping config (a
+        # dangling entry there crashes the next project save; see helper).
+        drop_from_snapping(layer)
         QgsProject.instance().layerTreeRoot().insertLayer(0, layer)
         return layer
     except (RuntimeError, AttributeError):
@@ -429,7 +686,7 @@ def _run_age_days(run: dict) -> int:
 
 
 def export_decoded_run(decoded: dict, confidence: float, path: str,
-                       driver: str) -> dict:
+                       driver: str, project_context: dict | None = None) -> dict:
     """Filter WHOLE objects at ``confidence`` and write them to ``path``.
 
     Runs on the library's fetch thread, next to the decode that produced
@@ -443,6 +700,10 @@ def export_decoded_run(decoded: dict, confidence: float, path: str,
     The QgsVectorLayer the exporter loads back is dropped HERE, on the thread
     that created it (a map layer must never be destroyed from another thread);
     the GUI re-opens the finished file with ``load_exported_layer``.
+
+    ``project_context`` is what ``capture_project_export_context`` read on the
+    GUI thread, so nothing here reaches QgsProject. It defaults to the values
+    captured when this run's fetch started.
     """
     from qgis.core import QgsCoordinateReferenceSystem
 
@@ -452,10 +713,15 @@ def export_decoded_run(decoded: dict, confidence: float, path: str,
              if g is not None and not g.isEmpty() and s >= confidence]
     if not geoms:
         return {"count": 0, "written": False}
+    context = (project_context if isinstance(project_context, dict)
+               else _project_export_context)
     stats: dict = {}
     layer = export_geometries_to_file(
         geoms, QgsCoordinateReferenceSystem(decoded.get("crs_authid") or "EPSG:4326"),
-        path, driver=driver, stats=stats)
+        path, driver=driver, stats=stats,
+        project_crs=context.get("project_crs"),
+        transform_context=context.get("transform_context"),
+        ellipsoid=str(context.get("ellipsoid") or ""))
     written = layer is not None
     del layer
     return {"count": int(stats.get("written") or 0), "written": written}
@@ -477,9 +743,14 @@ def load_exported_layer(path: str, driver: str):
     from ...core.output_store import apply_fast_canvas_render
 
     name = os.path.splitext(os.path.basename(path))[0] or "detections"
-    layer = QgsVectorLayer(path, name, "ogr")
+    # Open the table by the name it was written under, before trying the bare
+    # path: a file that holds several tables leaves the choice to the provider,
+    # which some GDAL builds resolve to another table and others report as
+    # invalid. The bare path stays as the fallback for a driver that renames
+    # the table (a Shapefile takes the file stem).
+    layer = QgsVectorLayer(f"{path}|layername={name}", name, "ogr")
     if not layer.isValid():
-        layer = QgsVectorLayer(f"{path}|layername={name}", name, "ogr")
+        layer = QgsVectorLayer(path, name, "ogr")
     if not layer.isValid():
         _log(f"Run export: file saved but could not be loaded back: {path}",
              Qgis.MessageLevel.Warning)
@@ -582,7 +853,12 @@ def restore_run(plugin, run: dict, tiles: list, decoded: dict) -> bool:
     plugin._auto_raw_count = len(merged_scored)
     plugin._auto_dense_tiles = 0
     plugin._auto_preview_geoms = []
-    plugin._auto_clip_polygon = None
+    # The ground this run was confined to, when the archive kept it. Nothing
+    # re-detects from here, so it is not a live clip: it is what a later
+    # Finish records as the run's zone, instead of the exported layer's own
+    # extent, which is the objects' box and not the ground that was looked at.
+    plugin._auto_clip_polygon = zone_polygon_from_wkt(
+        (decoded or {}).get("zone_wkt"))
     plugin._auto_clip_engine = None
     plugin._auto_zone = None
     plugin._auto_zone_polygon = None
@@ -599,6 +875,10 @@ def restore_run(plugin, run: dict, tiles: list, decoded: dict) -> bool:
     }
 
     # Canonical whole objects (geom, score, area) via the existing builder.
+    # The run-wide footprint alignment re-applies first, against the policy
+    # served NOW (a server retune between the run and this restore changes
+    # the restored shapes; a no-op returning the rows unchanged when off).
+    merged_scored = _align_restore_footprints(plugin, merged_scored)
     plugin._auto_objects = plugin._build_auto_objects(merged_scored)
     if not plugin._auto_objects:
         return False
@@ -623,6 +903,12 @@ def restore_run(plugin, run: dict, tiles: list, decoded: dict) -> bool:
         # A restored run answers the same question as a fresh one: scores that
         # cannot order the objects give the review nothing to filter on.
         dock.set_auto_review_score_useful(plugin._run_scores_rank_objects())
+        # Same clamp a live run applies: detections under the noise floor were
+        # already dropped, so a cutoff below it filters nothing and reads as a
+        # slider with dead travel at its left end.
+        import math as _math
+        dock.set_review_conf_floor(
+            int(_math.ceil(plugin._review_noise_floor() * 100)))
     except (RuntimeError, AttributeError):
         pass
 
@@ -664,6 +950,18 @@ def restore_run(plugin, run: dict, tiles: list, decoded: dict) -> bool:
         # raster-independent, so pin the run's own grid scale for the shape
         # refine px->ground conversions.
         plugin._auto_review["pixel_size"] = pixel_size
+    # Seed and clamp in the live run's order, now that the review page is open.
+    # Opening it reseeds the controls from the pre-run dial, so the floor
+    # applied above was applied to the PREVIOUS review's remembered value and
+    # this run's own cutoff never reached the handle. Both are cheap and
+    # idempotent, so doing them again here costs a repaint.
+    try:
+        import math as _math
+        dock.seed_review_confidence(int(round(conf * 100)))
+        dock.set_review_conf_floor(
+            int(_math.ceil(plugin._review_noise_floor() * 100)))
+    except (RuntimeError, AttributeError):
+        pass
 
     _zoom_to_tiles(plugin, tiles, crs_authid)
 

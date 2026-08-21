@@ -873,7 +873,11 @@ class ManualHandoffMixin:
                 exempted.append(det_id)
         # Deletions: recomputed against the folded bases, so a reshaped object
         # (its base now IS the edited geometry) is never read as removed.
-        new_removed = self._removed_canonical_objects(geoms)
+        # The diff only covers what THIS session imported, and a session never
+        # imports what an earlier one deleted, so the earlier deletions are
+        # carried over rather than replaced: a wholesale write brought every one
+        # of them back on the second Done.
+        new_removed = manual_removed_before | self._removed_canonical_objects(geoms)
         self._auto_manual_removed = new_removed
         from ...core.shape_edits import KIND_REFINE, ShapeEdit
         edit = ShapeEdit(
@@ -1007,6 +1011,13 @@ class ManualHandoffMixin:
         layer = getattr(self, "_handoff_source_layer", None)
         self._refine_handoff_active = False
         self._handoff_source_layer = None
+        # The panel was seeded from the review for this edit. Give it back to
+        # base Manual, or the next Semi-Auto session opens on values that
+        # belong to a run the user has left.
+        try:
+            self.dock_widget.reset_refine_sliders()
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110 -- no dock, or torn down
         # The session is over, so the remote predictor and the crop it holds go
         # with it. The next fix builds its own; construction costs nothing.
         self._drop_cloud_correct_predictor()
@@ -1891,7 +1902,10 @@ class ManualHandoffMixin:
         """Close the open edit session WITHOUT validating it: the object (with
         any deltas applied) returns to the pending set, identity intact. Used
         by Esc and by the harvest fallback when a Save is not possible (encode
-        in flight). No-op when no edit is open."""
+        in flight). No-op when no edit is open. A close that kept real edits
+        is a committed correction, so it counts a segmentation run like a
+        Save (a Save fired first closes the session, so one edit never fires
+        twice)."""
         if not self._is_refining_saved_object:
             return
         base = self._harvest_open_edit_geometry()
@@ -1909,10 +1923,29 @@ class ManualHandoffMixin:
             # Editing clicks and Shape-settings changes count as hand edits
             # (protected from confidence re-filtering); an untouched close
             # keeps the original flag.
-            if getattr(self, "_refine_geom_history", None) or any(self.prompts.point_count):
+            touched = bool(getattr(self, "_refine_geom_history", None)
+                           or any(self.prompts.point_count))
+            if touched:
                 entry["manual_touched"] = True
             self.saved_polygons.append(entry)
             appended = entry
+            if touched and not entry.get("run_counted"):
+                # The correction is committed: the same run event a Save fires.
+                # The stamp travels with the entry (dict(origin) carries it),
+                # so re-opening one saved object over several edits still
+                # counts one run, not one per close. No save counter here: a
+                # correction is not a save, and the Save path keeps its own.
+                entry["run_counted"] = True
+                try:
+                    import time as _time
+
+                    from ...core.telemetry_session_events import track_segmentation_run
+                    start_ts = getattr(self, "_segmentation_start_ts", None)
+                    duration_ms = int((_time.time() - start_ts) * 1000) if start_ts else None
+                    track_segmentation_run(success=True, duration_ms=duration_ms)
+                    self._segmentation_start_ts = None
+                except Exception:
+                    pass  # nosec B110
             if self._refine_handoff_active:
                 # Drawn by the pending layer; None keeps the lists index-locked.
                 self.saved_rubber_bands.append(None)

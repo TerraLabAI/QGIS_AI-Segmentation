@@ -7,7 +7,9 @@ swapped to AI Segmentation's brand green.
 from __future__ import annotations
 
 import calendar
+import os
 import time
+from datetime import date
 
 from qgis.PyQt.QtCore import QLocale
 from qgis.PyQt.QtWidgets import QLabel, QWidget
@@ -331,10 +333,17 @@ def _relative_when(ts: str) -> str:
     """
     try:
         parsed = time.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
-        secs = time.time() - calendar.timegm(parsed)
+        stamp = calendar.timegm(parsed)
     except (ValueError, TypeError):
         return ""
-    days = int(secs // 86400)
+    # Whole calendar days apart, on the user's own clock, not blocks of 24
+    # hours: a run saved late last night reads "yesterday" this morning, where
+    # counting elapsed hours still called it today.
+    try:
+        then = date(*time.localtime(stamp)[:3])
+        days = (date.today() - then).days
+    except (ValueError, OverflowError, OSError):
+        days = int((time.time() - stamp) // 86400)
     if days <= 0:
         return tr("today")
     if days == 1:
@@ -391,6 +400,26 @@ def _fmt_count(value) -> str:
         return QLocale().toString(int(value or 0))
     except (TypeError, ValueError):
         return "0"
+
+
+def _project_layer_reading(source: str):
+    """A layer already in the project reading this exact source, or None.
+
+    Compared with normcase, because Windows hands the same file back in more
+    than one casing and two spellings of one path would read as two files.
+    """
+    if not source:
+        return None
+    from qgis.core import QgsProject
+
+    want = os.path.normcase(str(source))
+    for layer in QgsProject.instance().mapLayers().values():
+        try:
+            if os.path.normcase(str(layer.source())) == want:
+                return layer
+        except (RuntimeError, AttributeError):
+            continue
+    return None
 
 
 def _run_key(run: dict) -> str:

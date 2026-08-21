@@ -301,7 +301,10 @@ class AutoCorrectMixin:
         edits = self._auto_correct_journal.count
         text = tr("{n} kept").format(n=kept)
         if edits:
-            text += " · " + tr("{n} shape(s) edited this session").format(n=edits)
+            # Two whole sentences rather than "(s)": a translator cannot make
+            # that bracket agree in a language whose plural is not an s.
+            text += " · " + (tr("1 shape edited this session") if edits == 1
+                             else tr("{n} shapes edited this session").format(n=edits))
         return text
 
     def _zero_review_crs(self, layer):
@@ -484,6 +487,16 @@ class AutoCorrectMixin:
         try:
             self.dock_widget.set_correction_summary(
                 self._auto_correct_journal.count)
+        except (RuntimeError, AttributeError):
+            pass
+        # Hand edits change the score spread: a drawn object rates 1.0, and a
+        # merge or a delete can leave one value behind. The verdict was taken
+        # once when the run finished, so the Confidence control could stay
+        # offered on a set that no longer ranks (or stay hidden on one that
+        # now does). This is the one call every edit and every undo makes.
+        try:
+            self.dock_widget.set_auto_review_score_useful(
+                self._run_scores_rank_objects())
         except (RuntimeError, AttributeError):
             pass
 

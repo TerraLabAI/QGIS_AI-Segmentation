@@ -45,6 +45,7 @@ from ...core.review_defaults import (
 from .auto_correct_build import _review_step_heading
 from .font_scale import scale_px_length
 from .styles import _settings_zone
+from .widgets import label_with_target_hint
 
 
 def build_shapes_page(dock) -> QWidget:
@@ -163,7 +164,8 @@ def build_shapes_page(dock) -> QWidget:
     # Round corners + Right angles toggles, and the Grow / shrink spinbox: one
     # control per row, each landing on the right-aligned rail.
     _round_row = QHBoxLayout()
-    _round_lbl = QLabel(tr("Round corners"))
+    _round_lbl = QLabel(label_with_target_hint(
+        tr("Round corners"), tr("trees")))
     _round_lbl.setStyleSheet("font-size: 11px;")
     _round_lbl.setToolTip(tr(
         "Round corners for natural shapes like trees and bushes. "
@@ -179,7 +181,8 @@ def build_shapes_page(dock) -> QWidget:
     # ALL visible objects when checked (an explicit user intent beats an
     # automatic rectangularity gate, which would skip L/U-shaped buildings).
     _ortho_row = QHBoxLayout()
-    _ortho_lbl = QLabel(tr("Right angles"))
+    _ortho_lbl = QLabel(label_with_target_hint(
+        tr("Right angles"), tr("buildings")))
     _ortho_lbl.setStyleSheet("font-size: 11px;")
     _ortho_lbl.setToolTip(tr(
         "Snap walls to right angles, 45 degree walls included. Made for "

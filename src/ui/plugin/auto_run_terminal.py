@@ -91,7 +91,7 @@ class AutoRunTerminalMixin:
             # "processed", not "billed": the count includes re-split quadrants,
             # which are free (RESPLIT_CHARGE_EVERY=0). The charged number is the
             # quoted base grid, shown by the dock's count row. Logging it as
-            # "billed" read as a 2-3x overcharge in a 2026-08-04 field report.
+            # "billed" reads as an overcharge.
             QgsMessageLog.logMessage(
                 "Auto detection: run summary - render {} ms, detect {} ms, "
                 "{} tile(s) processed, {} raw detection(s), mask/render px ratio "
@@ -205,32 +205,14 @@ class AutoRunTerminalMixin:
         # the run signals completion. Headless blocks its caller and has no UI
         # to protect: drain synchronously and finalize inline, as before.
         if self._auto_headless_run:
-            self._drain_auto_tiles_now()
-            self._reset_auto_live_pipeline()
-            # Same exemplar-only count-vs-map decision as the interactive path
-            # (a MAP decision keeps the live merger, a SEPARATE one re-merges the
-            # retained fragments), so the MCP contract reflects the same grouping.
-            merged_ided = self._resolve_exemplar_finalize_ided()
-            self._auto_merger = None
-            if not merged_ided:
-                self._record_auto_zero_result(tiles_succeeded)
-                return
-            # Sweep + build synchronously and export the default-filtered
-            # visible set. No forced shape refine here: the Automatic path
-            # stays faithful by default (the user opts into simplify/round/
-            # expand/fill in the review).
-            from ...core.polygon_exporter import drop_covered_objects
-            merged_ided = drop_covered_objects(merged_ided)
-            if not merged_ided:
-                self._record_auto_zero_result(tiles_succeeded)
-                return
-            self._auto_objects = self._build_auto_objects(merged_ided)
-            self._reset_review_refine_cache()
-            visible, vis_scores = self._compute_visible_objects(
-                self._fresh_review_params(), self._auto_refine_pixel_size(),
-                with_scores=True)
-            self._complete_auto_finalize(
-                visible, tiles_succeeded, scores=vis_scores)
+            try:
+                self._finalize_headless_run(tiles_succeeded)
+            finally:
+                # The run ends here, and its blocking caller may already have
+                # returned (its own timeout, or a cancel inside its grace
+                # window). Whoever ends the run drops the flag, so a later
+                # interactive run is never mistaken for a headless one.
+                self._auto_headless_run = False
             return
 
         # Hold the run screen until the review opens. The slices below yield to
@@ -259,6 +241,42 @@ class AutoRunTerminalMixin:
             "gen": self._auto_finalize_gen,
         }
         self._step_auto_finalize_refine()
+
+    def _finalize_headless_run(self, tiles_succeeded: int) -> None:
+        """Finalize a run with no human: drain, sweep, build and export inline.
+
+        The caller blocks on this run and has no UI to protect, so every step
+        runs synchronously here where the interactive path time-slices them.
+        """
+        self._drain_auto_tiles_now()
+        self._reset_auto_live_pipeline()
+        # Same exemplar-only count-vs-map decision as the interactive path
+        # (a MAP decision keeps the live merger, a SEPARATE one re-merges the
+        # retained fragments), so the MCP contract reflects the same grouping.
+        merged_ided = self._resolve_exemplar_finalize_ided()
+        self._auto_merger = None
+        if not merged_ided:
+            self._record_auto_zero_result(tiles_succeeded)
+            return
+        # Sweep + build synchronously and export the default-filtered
+        # visible set. No forced shape refine here: the Automatic path
+        # stays faithful by default (the user opts into simplify/round/
+        # expand/fill in the review).
+        from ...core.polygon_exporter import drop_covered_objects
+        merged_ided = drop_covered_objects(merged_ided)
+        if not merged_ided:
+            self._record_auto_zero_result(tiles_succeeded)
+            return
+        # Run-wide footprint alignment, server-gated per prompt family
+        # (a no-op returning the rows unchanged when the pass is off).
+        merged_ided = self._align_auto_footprints_now(merged_ided)
+        self._auto_objects = self._build_auto_objects(merged_ided)
+        self._reset_review_refine_cache()
+        visible, vis_scores = self._compute_visible_objects(
+            self._fresh_review_params(), self._auto_refine_pixel_size(),
+            with_scores=True)
+        self._complete_auto_finalize(
+            visible, tiles_succeeded, scores=vis_scores)
 
     def _finalize_drain_done(self, state: dict) -> None:
         """Drain phase complete: read the merger, stop the live pump machinery
@@ -432,27 +450,45 @@ class AutoRunTerminalMixin:
         # offline user their zone is empty is misleading, so surface the real
         # cause instead. Same predicate the telemetry uses to record this run as
         # a NETWORK failure rather than a healthy empty completion.
-        network_failed = self._auto_run_network_dead(tiles_billed)
+        # A run the server refused on quota already has its line, written where
+        # the refusal was read. It outranks everything below: telling a user
+        # their zone holds no objects, when nothing was ever looked at, sends
+        # them to change a word that was never the problem.
+        quota_stop = getattr(self, "_auto_quota_stop_banner", None)
+        self._auto_quota_stop_banner = None
+        network_failed = (not quota_stop
+                          and self._auto_run_network_dead(tiles_billed))
         # Nothing billed, and nothing there to bill: every tile was dropped
         # before submit because the source had no image over the zone. "No
         # matches in this zone" would blame the model for a run that never
         # looked, so this one keeps its own line. It replaces the old message
         # bar banner, which fired on every partial hole as well.
         coverage_dead = bool(
-            not network_failed and tiles_billed <= 0
+            not network_failed and not quota_stop and tiles_billed <= 0
             and (int(getattr(self, "_auto_unavailable_tiles", 0) or 0)
                  + int(getattr(self, "_auto_render_failed_tiles", 0) or 0))
         )
+        # The user stopped the run (or it stopped responding) before a single
+        # tile answered. Nothing was ever looked at, so "no matches, try
+        # another word" blames a word for a run that never ran.
+        stopped_early = bool(
+            not quota_stop and not network_failed and not coverage_dead
+            and tiles_billed <= 0
+            and getattr(self, "_auto_tel_stop_reason", None) in ("cancelled", "stalled"))
         _can_add_example = False
         _has_examples = False
-        if not network_failed and not coverage_dead:
+        if (not network_failed and not coverage_dead and not quota_stop
+                and not stopped_early):
             try:
                 _can_add_example = not self._auto_exemplar_store.is_full_for(1)
                 _has_examples = self._auto_exemplar_store.count() > 0
             except (RuntimeError, AttributeError):
                 _can_add_example = False
         report_payload = None
-        if network_failed:
+        if quota_stop:
+            msg = quota_stop
+            log_msg = "Auto detection: run stopped on the monthly allowance"
+        elif network_failed:
             msg = tr("Could not reach the service. Check your connection and try again.")
             log_msg = "Auto detection: run ended with no successful tiles (network/timeout)"
             # A run whose every tile failed to reach the service is a dead end:
@@ -465,6 +501,10 @@ class AutoRunTerminalMixin:
                      "analyzed (not charged). Lower Precision, or pick a layer "
                      "that covers this area.")
             log_msg = "Auto detection: run ended with no analyzable tiles (no imagery)"
+        elif stopped_early:
+            msg = tr("Detection stopped before any result came back. "
+                     "Run Detect again when you are ready.")
+            log_msg = "Auto detection: stopped before any tile answered"
         elif _can_add_example:
             # One info per state: the banner states the fact, the rescue
             # button right below it carries the action (draw an example -

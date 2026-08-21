@@ -83,6 +83,33 @@ def ground_per_pixel_at_least_native(requested: float, native: float) -> float:
     return max(want, floor)
 
 
+# The widest ground one crop may cover, in metres. A file-based crop is already
+# bounded, at eight times the raster's own pixel, but a tiled source has no
+# native pixel to multiply, so its window followed the map scale with nothing
+# under it: a click taken while the map showed a whole country asked for a
+# window a thousand kilometres wide, and every object in it was smaller than
+# one pixel. The ceiling is deliberately far above any scale a person works at.
+MAX_CROP_GROUND_WIDTH_M = 2560.0
+
+
+def ground_per_pixel_within_ceiling(requested: float, ceiling: float) -> float:
+    """Cap a tiled window's step so the crop cannot cover absurd ground.
+
+    ``ceiling`` is the coarsest step allowed, in the same units as
+    ``requested``, or 0 when it cannot be told, in which case the request is
+    left alone. This is the roof over the floor
+    `ground_per_pixel_at_least_native` puts under the same number.
+    """
+    try:
+        want = float(requested)
+        roof = float(ceiling)
+    except (TypeError, ValueError):
+        return requested
+    if not want > 0 or not roof > 0:
+        return requested
+    return min(want, roof)
+
+
 def scale_floor_is_usable(min_scale) -> bool:
     """Can this floor be the base of the scale ladder below?
 

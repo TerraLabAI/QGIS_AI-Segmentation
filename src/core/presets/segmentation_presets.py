@@ -24,6 +24,8 @@ from __future__ import annotations
 
 from qgis.PyQt.QtCore import QSettings
 
+from .segmentation_search_terms import preset_search_terms
+
 LANGS = ("en", "fr", "es", "pt", "de", "it", "nl", "pl", "id", "ja", "zh_CN", "zh_TW")
 
 # The "Popular" tab, in display order: the objects users ask for most. Also the
@@ -55,7 +57,7 @@ def _p(pid: str, prompt: str, en: str, fr: str, es: str, pt: str, *, weak: bool 
         "label": {"en": en, "fr": fr, "es": es, "pt": pt, **_PRESET_L10N.get(pid, {})},
         "top_pick": pid in TOP_PICKS,
         "weak": weak,
-        "search_terms": _preset_search_terms(pid),
+        "search_terms": preset_search_terms(pid),
     }
 
 
@@ -197,110 +199,55 @@ _PRESET_L10N: dict[str, dict] = {
     "bush": _l("Strauch", "Cespuglio", "Struik", "Krzak", "Semak", "灌木", "灌木", "灌木"),
     "vineyard": _l("Weinberg", "Vigneto", "Wijngaard", "Winnica", "Kebun anggur", "ぶどう畑", "葡萄园", "葡萄園"),
     "farm_field": _l("Acker", "Campo agricolo", "Akker", "Pole uprawne", "Lahan pertanian", "農地", "农田", "農田"),
+    "lawn": _l("Rasenfläche", "Prato", "Gazon", "Trawnik", "Halaman berumput", "芝地", "草坪", "草坪"),
+    "hedge": _l("Hecke", "Siepe", "Haag", "Żywopłot", "Pagar tanaman", "生垣", "绿篱", "綠籬"),
+    "orchard": _l("Obstanlage", "Frutteto", "Boomgaard", "Sad", "Kebun buah", "果樹園", "果园", "果園"),
+    "crop_field": _l(
+        "Kulturfläche",
+        "Campo coltivato",
+        "Landbouwperceel",
+        "Uprawa rolna",
+        "Ladang tanaman",
+        "耕作地",
+        "作物田",
+        "作物田",
+    ),
+    "soil": _l("Bodenfläche", "Terreno", "Bodem", "Gleba", "Tanah", "土壌", "土壤", "土壤"),
+    "stone": _l("Stein", "Pietra", "Steen", "Kamień", "Batu", "岩石", "石块", "石塊"),
+    "pond": _l("Teich", "Stagno", "Vijver", "Staw", "Kolam", "池", "池塘", "池塘"),
+    "river": _l("Fluss", "Fiume", "Rivier", "Rzeka", "Sungai", "河川", "河流", "河流"),
+    "roof": _l(
+        "Dachfläche",
+        "Copertura edilizia",
+        "Dakvlak",
+        "Pokrycie dachowe",
+        "Atap bangunan",
+        "建物屋根",
+        "屋面",
+        "建築屋面",
+    ),
+    "driveway": _l("Zufahrt", "Accesso carrabile", "Oprit", "Podjazd", "Jalan masuk", "進入路", "车道", "車道"),
+    "taxiway": _l(
+        "Rollbahn",
+        "Via di rullaggio",
+        "Taxibaan",
+        "Droga kołowania",
+        "Jalur taxi",
+        "誘導路",
+        "滑行道",
+        "滑行道",
+    ),
+    "water_tower": _l(
+        "Wasserturm",
+        "Torre piezometrica",
+        "Watertoren",
+        "Wieża ciśnień",
+        "Menara air",
+        "配水塔",
+        "水塔",
+        "水塔",
+    ),
 }
-
-# Extra words the search box should also match, per preset id, as
-# ``(en, fr, es, pt)`` space-separated lists. They cover what a user types when
-# it is not the label: a synonym, a plural, a regional word, or the same word
-# without its accents (the search compares raw text, so both spellings earn
-# their place). Optional by design: a preset with no entry gets an empty dict,
-# and a catalogue payload without the field still searches on label + prompt.
-_SEARCH_TERMS: dict[str, tuple[str, str, str, str]] = {
-    "building": ("structure footprint block outline", "immeuble construction emprise batiment bati",
-                 "inmueble construccion edificacion huella", "imovel construcao edificacao"),
-    "rooftop": ("roof roofs tiles roof outline", "toit toits toiture couverture",
-                "techo techos cubierta azotea", "telhado telhados cobertura laje"),
-    "house": ("home dwelling residential villa", "maison pavillon habitation villa",
-              "vivienda chalet casas residencial", "moradia residencia casas"),
-    "warehouse": ("depot logistics hangar industrial building", "entrepot hangar logistique depot",
-                  "nave industrial bodega deposito almacen", "armazem galpao deposito logistica"),
-    "greenhouse": ("glasshouse polytunnel nursery", "serre serres tunnel horticulture",
-                   "invernaderos umbraculo vivero", "estufa estufas viveiro"),
-    "shed": ("outbuilding hut barn garage", "abri remise grange garage",
-             "caseta cobertizo granero garaje", "barracao abrigo celeiro garagem"),
-    "silo": ("grain silo granary farm silo", "silos grenier", "silos granero", "silos celeiro"),
-    "storage_tank": ("tank oil tank fuel tank cistern", "cuve citerne reservoir",
-                     "tanque cisterna deposito", "tanque cisterna reservatorio"),
-    "tree": ("trees canopy crown forest woodland", "arbres houppier canopee foret forêt",
-             "arboles copa dosel bosque", "arvores copa dossel floresta"),
-    "tree_canopy": ("forest woodland woods canopy cover tree cover crown", "foret bois couvert arbore boisement massif",
-                    "bosque arbolado masa forestal cubierta arborea", "floresta mata bosque cobertura arborea"),
-    "bush": ("shrub scrub brush bushes", "arbuste broussaille fourre",
-             "matorral arbustos maleza", "arbustos moita mato"),
-    "grass": ("lawn turf meadow pasture grassland green space", "pelouse gazon prairie paturage espace vert",
-              "cesped pasto pradera prado zona verde", "gramado relva pasto pastagem area verde"),
-    "vegetation": ("vegetated green cover greenery plants undergrowth scrub",
-                   "vegetal couvert vegetal verdure plantes broussaille",
-                   "cubierta vegetal verde plantas maleza", "cobertura vegetal verde plantas mato"),
-    "road": ("street highway motorway asphalt pavement", "rue chaussee autoroute voirie bitume",
-             "calle via autopista pavimento asfalto", "rua via rodovia asfalto pavimento"),
-    "parking_lot": ("car park parking parking space", "stationnement aire de stationnement places",
-                    "aparcamiento playa de estacionamiento", "estacionamento vaga patio"),
-    "bridge": ("viaduct overpass flyover footbridge", "viaduc passerelle ouvrage d'art",
-               "viaducto paso elevado pasarela", "viaduto passarela"),
-    "roundabout": ("traffic circle rotary junction", "giratoire carrefour rond point",
-                   "glorieta redondel", "rotula retorno"),
-    "sidewalk": ("pavement footpath walkway path pedestrian", "trottoirs chemin pieton allee",
-                 "aceras banqueta senda peatonal", "calcadas passeio caminho pedestre"),
-    "runway": ("airstrip taxiway apron airport", "aerodrome aeroport taxiway",
-               "pista de aterrizaje aeropuerto", "pista de pouso aeroporto"),
-    "dock": ("quay wharf pier jetty marina port harbour harbor", "quai ponton jetee port marina",
-             "muelle embarcadero dique puerto", "cais pier atracadouro porto"),
-    "water": ("water body waterbody surface water pond basin wetland flood lake river stream reservoir",
-              "eau plan d'eau etendue d'eau mare bassin zone humide lac riviere etang",
-              "agua cuerpo de agua masa de agua estanque humedal lago rio",
-              "agua corpo dagua massa de agua lagoa acude lago rio"),
-    "bare_ground": ("bare soil dirt sand cleared land earth", "terre nue sable terrain nu remblai",
-                    "tierra desnuda arena terreno despejado", "solo nu areia terreno limpo"),
-    "rock": ("rocks stone boulder outcrop bedrock rocky", "roches pierre rocher affleurement rocheux",
-             "rocas piedra canto rodado afloramiento rocoso", "rochas pedra pedregulho afloramento rochoso"),
-    "quarry": ("mine pit gravel pit open pit extraction", "mine graviere carriere extraction",
-               "mina gravera cantera", "mina cascalheira mineracao"),
-    "car": ("vehicle auto automobile cars van", "vehicule voitures automobile camionnette",
-            "vehiculo automovil autos furgoneta", "veiculo automovel carros van"),
-    "truck": ("lorry semi hgv freight van", "poids lourd semi-remorque fourgon",
-              "camiones trailer furgon", "caminhoes carreta furgao"),
-    "train": ("railcar wagon locomotive rolling stock", "wagon locomotive rame",
-              "vagon locomotora tren", "vagao locomotiva composicao"),
-    "farm_field": ("field cropland farmland parcel crop agriculture", "champ parcelle culture terre agricole",
-                   "campo cultivo parcela agricultura", "campo lavoura cultura agricultura"),
-    "field": ("fields cropland farmland parcel plot paddock crop", "champs parcelle culture terrain lopin",
-              "campos parcela cultivo terreno lote", "campos talhao parcela cultivo terreno lote"),
-    "vineyard": ("vines grapes wine", "vignoble vignes parcelle viticole",
-                 "vina vinedo parras", "vinha parreiral uva"),
-    "solar_panel": ("pv photovoltaic solar module rooftop solar solar farm solar park",
-                    "photovoltaique pv module solaire centrale solaire",
-                    "fotovoltaico pv placa solar modulo parque solar",
-                    "fotovoltaico pv placa solar modulo usina solar"),
-    "wind_turbine": ("windmill wind farm turbine wind power", "aerogenerateur parc eolien moulin",
-                     "eolico molino parque eolico", "eolica cata-vento parque eolico"),
-    "swimming_pool": ("pool pools swimming water", "piscines bassin eau",
-                      "alberca pileta piscinas", "piscinas tanque"),
-    "tennis_court": ("tennis court padel", "tennis terrain padel", "tenis cancha padel", "tenis quadra padel"),
-    "soccer_field": ("football pitch sports field", "football terrain de sport foot",
-                     "futbol cancha campo deportivo", "futebol campo quadra"),
-    "running_track": ("athletics track oval", "athletisme piste stade",
-                      "atletismo pista tartan", "atletismo pista tartan"),
-    "stadium": ("arena sports ground grandstand", "arene enceinte sportive tribune",
-                "arena gradas coliseo", "arena arquibancada"),
-    "airplane": ("plane aircraft jet aviation", "avions aeronef jet aviation",
-                 "aviones aeronave jet", "avioes aeronave jato"),
-    "boat": ("vessel yacht dinghy sailboat canoe ship cargo ship", "barque voilier yacht embarcation navire cargo",
-             "barca velero lancha yate buque", "lancha veleiro canoa navio"),
-    "construction_site": ("building site works excavation earthworks", "chantiers travaux terrassement",
-                          "obras construccion movimiento de tierras", "obras canteiro terraplenagem"),
-    "crane": ("tower crane gantry port crane", "grues portique", "gruas portico", "guindastes portico"),
-    "shipping_container": ("container containers freight intermodal", "conteneurs container caisse",
-                           "contenedores contenedor maritimo", "conteineres container"),
-}
-
-_SEARCH_TERM_LANGS = ("en", "fr", "es", "pt")
-
-
-def _preset_search_terms(pid: str) -> dict[str, str]:
-    """The extra search words for one preset, empty when it has none."""
-    row = _SEARCH_TERMS.get(pid)
-    return dict(zip(_SEARCH_TERM_LANGS, row)) if row else {}
 
 
 # Sidebar emoji by category key. Covers BOTH the offline taxonomy keys below
@@ -367,6 +314,8 @@ _CATEGORIES: list[dict] = [
                 "Tanque de almacenamiento",
                 "Tanque de armazenamento",
             ),
+            _p("roof", "roof", "Roof", "Toit", "Cubierta", "Cobertura"),
+            _p("water_tower", "water tower", "Water tower", "Château d'eau", "Torre de agua", "Torre de água"),
         ],
     ),
     _cat(
@@ -381,6 +330,8 @@ _CATEGORIES: list[dict] = [
             _p("bush", "bush", "Bush", "Buisson", "Arbusto", "Arbusto"),
             _p("grass", "grass", "Grass", "Herbe", "Hierba", "Grama", weak=True),
             _p("vegetation", "vegetation", "Vegetation", "Végétation", "Vegetación", "Vegetação", weak=True),
+            _p("lawn", "lawn", "Lawn", "Pelouse", "Césped", "Gramado", weak=True),
+            _p("hedge", "hedge", "Hedge", "Haie", "Seto", "Sebe"),
         ],
     ),
     _cat(
@@ -397,6 +348,8 @@ _CATEGORIES: list[dict] = [
             _p("roundabout", "roundabout", "Roundabout", "Rond-point", "Rotonda", "Rotatória"),
             _p("runway", "runway", "Runway", "Piste", "Pista", "Pista"),
             _p("dock", "dock", "Dock", "Quai", "Muelle", "Doca"),
+            _p("driveway", "driveway", "Driveway", "Allée carrossable", "Acceso vehicular", "Acesso de garagem"),
+            _p("taxiway", "taxiway", "Taxiway", "Voie de circulation", "Calle de rodaje", "Pista de táxi"),
         ],
     ),
     _cat(
@@ -410,6 +363,10 @@ _CATEGORIES: list[dict] = [
             _p("bare_ground", "bare ground", "Bare ground", "Sol nu", "Suelo desnudo", "Solo exposto", weak=True),
             _p("rock", "rock", "Rock", "Roche", "Roca", "Rocha"),
             _p("quarry", "quarry", "Quarry", "Carrière", "Cantera", "Pedreira"),
+            _p("soil", "soil", "Soil", "Terrain nu", "Tierra", "Solo", weak=True),
+            _p("stone", "stone", "Stone", "Pierre", "Piedra", "Pedra"),
+            _p("pond", "pond", "Pond", "Mare", "Estanque", "Lagoa"),
+            _p("river", "river", "River", "Rivière", "Río", "Rio", weak=True),
         ],
     ),
     _cat(
@@ -448,6 +405,8 @@ _CATEGORIES: list[dict] = [
             ),
             _p("field", "field", "Field", "Champ", "Campo", "Campo"),
             _p("vineyard", "vineyard", "Vineyard", "Vigne", "Viñedo", "Vinhedo"),
+            _p("orchard", "orchard", "Orchard", "Verger", "Huerto frutal", "Pomar"),
+            _p("crop_field", "crop field", "Crop field", "Culture", "Terreno de cultivo", "Área de cultivo"),
         ],
     ),
     _cat(
@@ -544,25 +503,138 @@ def fallback_categories() -> list[dict]:
     return _CATEGORIES
 
 
+def catalog_revision() -> str:
+    """A stamp that changes whenever the cached served catalogue changes.
+
+    Anything that builds an index over the catalogue keys it on this, so a
+    background refresh landing while a widget is open is picked up on the next
+    read instead of being missed for the rest of the session. Empty when
+    nothing was ever fetched, which is the shipped-fallback case.
+    """
+    try:
+        # Lazy import: the client module imports this one for its fallbacks.
+        # Its cache timestamp is the one value that moves on every refresh, so
+        # it is read from there rather than spelled out a second time here.
+        from .segmentation_presets_client import _CACHE_TS_KEY
+
+        return str(QSettings().value(_CACHE_TS_KEY, "") or "")
+    except Exception:  # noqa: BLE001 -- no cache is the normal offline case
+        return ""
+
+
+def merged_categories(served: list[dict] | None) -> list[dict]:
+    """The served categories with anything the shipped catalogue has and they
+    do not appended, keyed by prompt token.
+
+    A served catalogue is authoritative for every object it carries: its label,
+    its search words and its order all win, and nothing here rewrites them. But
+    a cache is kept and reused for as long as the fetch keeps failing, so an
+    object shipped in a later plugin version stayed invisible behind a cache
+    written before it existed. Appending the missing ones costs the served
+    catalogue nothing and gives the new objects somewhere to appear.
+
+    Every shape is checked on the way in, because this reads JSON off the
+    network and off a cache written by an older plugin: a category that is not
+    a dict, a ``presets`` value that is not a list, and a preset that is not a
+    dict are all dropped. Iterating one of them instead raises on a read path
+    the whole library and the prompt box sit on, which turns one bad payload
+    into a plugin that cannot list a single object.
+    """
+    if not served:
+        return fallback_categories()
+    known: set[str] = set()
+    out: list[dict] = []
+    for category in served:
+        if not isinstance(category, dict):
+            continue
+        presets = category.get("presets")
+        if presets is None:
+            presets = []
+        if not isinstance(presets, list):
+            continue
+        clean = [preset for preset in presets if isinstance(preset, dict)]
+        # A copy, never the served dict: the list below is rebuilt on it, and
+        # the caller may be holding the object the fetch handed back.
+        out.append(dict(category, presets=clean))
+        for preset in clean:
+            token = str(preset.get("prompt") or "").strip().lower()
+            if token:
+                known.add(token)
+    if not out:
+        return fallback_categories()
+    by_key = {str(cat.get("key") or ""): cat for cat in out}
+    for category in _CATEGORIES:
+        missing = [
+            preset for preset in category["presets"]
+            if str(preset.get("prompt") or "").strip().lower() not in known
+        ]
+        if not missing:
+            continue
+        target = by_key.get(category["key"])
+        if target is None:
+            out.append(dict(category, presets=list(missing)))
+            by_key[category["key"]] = out[-1]
+            continue
+        # A rebuilt list, never an append: the served list object may be held
+        # by the caller and would otherwise grow on every read.
+        target["presets"] = list(target.get("presets") or []) + missing
+    return out
+
+
 def all_presets() -> list[dict]:
     return [p for cat in _CATEGORIES for p in cat["presets"]]
 
 
 def known_tokens() -> list[str]:
     """Flat, de-duplicated English prompt tokens (for the validator's
-    'did you mean' suggestions)."""
+    'did you mean' suggestions and its typo repair).
+
+    Read from the LIVE catalogue, the cached server one when there is one and
+    the shipped fallback otherwise, for the same reason
+    ``token_by_localized_label`` does: these tokens are the whole pool the typo
+    corrector may repair a word into, so an object added on the server was
+    invisible to it until the next plugin release. A user typing a near miss of
+    a brand new object got no repair and no suggestion.
+    """
+    cats: list[dict] = []
+    try:
+        # Lazy import: the client module imports this one for its fallbacks.
+        from .segmentation_presets_client import cached_or_offline_catalog
+
+        cats, _top = cached_or_offline_catalog()
+    except Exception:  # noqa: BLE001 -- offline fallback below
+        cats = []
     seen: dict[str, None] = {}
-    for p in all_presets():
-        seen.setdefault(p["prompt"], None)
+    for cat in merged_categories(cats):
+        for preset in cat.get("presets", []) or []:
+            if not isinstance(preset, dict):
+                continue
+            token = str(preset.get("prompt") or "").strip()
+            if token:
+                seen.setdefault(token, None)
     return list(seen.keys())
 
 
+# Letters no normal form decomposes into a base plus an accent, spelled out by
+# hand so a Polish or Nordic label still answers a query typed without them.
+_LETTERS_THAT_DO_NOT_DECOMPOSE = str.maketrans(
+    {"ł": "l", "Ł": "L", "ø": "o", "Ø": "O", "đ": "d", "Đ": "D",
+     "ß": "ss", "æ": "ae", "Æ": "AE", "œ": "oe", "Œ": "OE"}
+)
+
+
 def fold_search_text(text) -> str:
-    """Accent-fold a label or a query to lowercase ASCII ('Bâtiment' ->
-    'batiment'), so a user who skips the accents still finds the object."""
+    """Fold a label or a query to lowercase without accents ('Bâtiment' ->
+    'batiment'), so a user who skips the accents still finds the object.
+
+    Only the accents go. Everything else is kept, Japanese and Chinese
+    included: dropping to ASCII emptied both the label and the query in those
+    scripts, which made every search there match nothing."""
     import unicodedata
 
-    return unicodedata.normalize("NFKD", str(text or "")).encode("ascii", "ignore").decode("ascii").lower().strip()
+    folded = str(text or "").translate(_LETTERS_THAT_DO_NOT_DECOMPOSE)
+    decomposed = unicodedata.normalize("NFKD", folded)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).lower().strip()
 
 
 def search_terms_of(preset) -> list[str]:
@@ -638,8 +710,10 @@ def token_by_localized_label() -> dict[str, str]:
     except Exception:  # noqa: BLE001 -- offline fallback below
         cats = []
     index: dict[str, str] = {}
-    for cat in cats or _CATEGORIES:
-        for p in cat.get("presets", []):
+    for cat in merged_categories(cats):
+        for p in cat.get("presets", []) or []:
+            if not isinstance(p, dict):
+                continue
             token = (p.get("prompt") or "").strip()
             if not token:
                 continue

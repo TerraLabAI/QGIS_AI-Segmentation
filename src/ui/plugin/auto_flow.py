@@ -38,6 +38,9 @@ class AutoFlowMixin:
 
     def _on_mode_changed(self, mode) -> None:
         from ..ai_segmentation_dockwidget import Mode
+        # Whatever the switch leads to, the shape under the cursor belongs to
+        # the mode being left.
+        self._stop_hover_preview("mode changed")
         # Before anything else, including the handoff return below: arriving on
         # Semi-Auto with the cloud engine picked is a click coming, and the ping
         # has to overlap the user rather than the click. Debounced and silent.
@@ -79,6 +82,10 @@ class AutoFlowMixin:
             self._refresh_auto_credits()
         if mode == Mode.INTERACTIVE and self.dock_widget:
             self._ensure_interactive_setup()
+            # After the resets above, or one of them would park it again on
+            # this same switch: a session parked on the way to Automatic is
+            # armed here, on the raster and the shapes it still holds.
+            self._resume_parked_manual_session()
         try:
             from ...core import telemetry_session_events
             telemetry_session_events.track_mode_switched(
@@ -126,6 +133,10 @@ class AutoFlowMixin:
         has_unsaved = has_unsaved or getattr(self, "_unfrozen_display_polygon", None) is not None
         has_unsaved = has_unsaved or getattr(self, "saved_polygons", None)
         if has_unsaved:
+            # The work stays, the tool does not: left armed it kept answering
+            # clicks from under the Automatic page, on a session the page does
+            # not show. Coming back to Semi-Auto arms the same session again.
+            self._park_manual_session()
             return
         try:
             canvas = self.iface.mapCanvas()
@@ -181,7 +192,9 @@ class AutoFlowMixin:
         fetched_at = _time.monotonic()
         task = GenericRequestTask(
             tr("Refreshing your cloud detections"),
-            lambda: client.get_usage(auth=auth),
+            # One bundled read: the usage payload (wallet gauge, old servers)
+            # plus the account rows that carry the two-envelope fields.
+            lambda: client.get_usage_with_account(auth=auth),
             hidden=True,
         )
         self._usage_fetch_task = task
@@ -239,9 +252,46 @@ class AutoFlowMixin:
 
         ``fetched_at`` is the monotonic time this read went out (see
         _refresh_auto_credits); ``task`` is the read itself, so the in-flight
-        reference is released by its owner only."""
+        reference is released by its owner only.
+
+        Accepts both payload shapes: the bundled {"usage", "account"} answer
+        of get_usage_with_account, and a bare usage dict from any older
+        caller."""
         self._settle_usage_fetch(task)
+        account = None
+        if isinstance(usage, dict) and isinstance(usage.get("usage"), dict):
+            account = usage.get("account")
+            usage = usage["usage"]
         self._apply_usage_payload(usage, fetched_at=fetched_at)
+        self._apply_account_envelopes(account, fetched_at=fetched_at)
+
+    def _apply_account_envelopes(self, account, fetched_at: float | None = None) -> None:
+        """Hand the /account two-envelope fields to the dock, when they came.
+
+        None (the account half failed or was never fetched) keeps the last
+        known envelopes: a transient error must not blank a gauge. A row
+        WITHOUT the envelope keys (an older server) clears them, so the dock
+        falls back to the wallet display it shows today. Stamped like the
+        usage payload, so an older read can never overwrite a newer one.
+        """
+        if account is None or not self.dock_widget:
+            return
+        import time as _time
+        stamp = _time.monotonic() if fetched_at is None else float(fetched_at)
+        applied_at = getattr(self, "_envelopes_applied_at", None)
+        if applied_at is not None and stamp < applied_at:
+            return
+        self._envelopes_applied_at = stamp
+        try:
+            from ...core.quota_envelopes import (
+                pick_segmentation_account_row,
+                quota_envelopes_from_account_row,
+            )
+            row = pick_segmentation_account_row(account)
+            snapshot = quota_envelopes_from_account_row(row) if row else None
+            self.dock_widget.set_auto_envelopes(snapshot)
+        except (RuntimeError, AttributeError):
+            pass
 
     def _apply_usage_payload(self, usage: dict, fetched_at: float | None = None) -> None:
         """Reflect a usage payload in the dock, whoever fetched it.
@@ -331,17 +381,24 @@ class AutoFlowMixin:
         return credit_snapshot(self._last_usage or {})
 
     def _auto_zone_area_km2(self) -> float:
-        """Geodesic area (km2) of the active run's clip polygon; 0.0 if unknown."""
+        """Geodesic area (km2) of the run's billable zone; 0.0 if unknown.
+
+        The clip polygon when a polygon was drawn, the zone rectangle
+        otherwise, so the MCP and headless paths report a surface too
+        (_auto_billable_zone_geometry owns that choice)."""
         try:
-            from qgis.core import QgsCoordinateReferenceSystem
-            poly = getattr(self, "_auto_clip_polygon", None)
-            if poly is None or poly.isEmpty():
+            geom, crs = self._auto_billable_zone_geometry()
+            if geom is None or crs is None:
                 return 0.0
             from ...core.layer_conventions import make_area_measurer
-            crs = (QgsCoordinateReferenceSystem(self._auto_crs_authid)
-                   if self._auto_crs_authid else None)
+            from ...core.zone_crs_check import zone_fits_declared_crs
+            # A zone whose coordinates cannot be in the CRS the run declared
+            # measures metres as degrees. Unknown beats wrong here: the caller
+            # treats 0.0 as "no surface" and sends nothing.
+            if not zone_fits_declared_crs(geom, crs):
+                return 0.0
             da = make_area_measurer(crs)
-            return max(0.0, da.measureArea(poly) / 1_000_000.0)
+            return max(0.0, da.measureArea(geom) / 1_000_000.0)
         except Exception:
             return 0.0
 
@@ -402,8 +459,8 @@ class AutoFlowMixin:
             pass  # nosec B110
 
     # Minimum gap between cold-start pings: one warmup keeps the backend hot
-    # well past this, so re-firing on every step/zone event is wasteful.
-    _WARMUP_MIN_INTERVAL_S = 30.0
+    # well past this, so re-firing on every step/zone/arm event is wasteful.
+    _WARMUP_MIN_INTERVAL_S = 300.0
 
     def _maybe_warmup_auto(self) -> None:
         """Best-effort cloud cold-start ping, off the GUI thread.
@@ -419,8 +476,9 @@ class AutoFlowMixin:
         backend, same host, so one warm instance answers both, and without it
         the session's first click is the one that waits for a machine to start.
 
-        Debounced to at most once per ~30s and gated on cloud access (an
-        activated key); every failure is silent. Never blocks the main thread.
+        Debounced to at most once per _WARMUP_MIN_INTERVAL_S and gated on cloud
+        access (an activated key); every failure is silent. Never blocks the
+        main thread.
         """
         import time
 
@@ -486,10 +544,13 @@ class AutoFlowMixin:
         except Exception:  # noqa: BLE001 -- a warm must never disrupt the flow  # nosec B110
             pass
 
-    def _on_warmup_finished(self, _ok: object = None) -> None:
-        """Main thread: release the finished warmup task. Result is ignored
-        (warmup is best-effort; the real detection reports its own outcome)."""
+    def _on_warmup_finished(self, ok: object = None) -> None:
+        """Main thread: release the finished warmup task. A failed ping rewinds
+        the debounce stamp, so the next rising-intent event may retry at once
+        instead of leaving the whole interval cold."""
         self._warmup_task = None
+        if ok is False:
+            self._last_warmup_monotonic = 0.0
 
     @slot_guard(stage="segment", user_message=tr(
         "Something went wrong starting the detection. Please try again."))
@@ -874,9 +935,8 @@ class AutoFlowMixin:
         mupp = longer_side / target_px
         # Both clamps allow up to NATIVE_OVERSAMPLE_MAX past the source's
         # native resolution: upsampling adds no pixels, but a finer grid
-        # enlarges small objects in the cloud model's fixed processing window,
-        # so trees/cars on a coarse source gain real recall. Past 2x it is pure
-        # interpolation, so the clamp holds there.
+        # enlarges small objects inside the model's fixed processing window.
+        # Past the clamp it is pure interpolation, so the clamp holds there.
         # Both clamps read the source, which reports in layer units, while mupp
         # counts run units. The two are the same unit unless the run moved, so
         # a run that did not move keeps exactly the arithmetic it always had.
@@ -1184,6 +1244,17 @@ class AutoFlowMixin:
         so a localized prompt behaves like its English equivalent."""
         return self._resolve_object_token(self._current_auto_object_class())
 
+    def _seed_auto_detail_value(self, detail: int) -> None:
+        """Push a plugin-picked detail level to the slider and remember it.
+
+        Every automatic seed goes through here, so the run-started event can
+        tell a level the plugin recommended from one the user picked. What is
+        remembered is the value the slider ends up holding, not the value asked
+        for: the setter clamps to the slider's own travel.
+        """
+        self.dock_widget.set_auto_detail_value(detail)
+        self._auto_detail_seeded = self._get_auto_detail_level()
+
     def _apply_default_detail(self, zone_rect) -> None:
         """Seed the detail slider with a good default for a freshly drawn zone.
 
@@ -1196,6 +1267,9 @@ class AutoFlowMixin:
         # New zone = fresh default: let the auto picker own the slider again.
         self._auto_detail_user_locked = False
         self._auto_detail_lock_prompt = ""
+        # The old zone's seed says nothing about this one; it stands again only
+        # once a picker below actually lands a value.
+        self._auto_detail_seeded = None
         if not self.dock_widget:
             return
         layer = self._get_active_raster_layer()
@@ -1209,7 +1283,7 @@ class AutoFlowMixin:
                     layer, zone_in_layer, object_class)
             else:
                 detail = self._default_detail_for_zone(layer, zone_in_layer)
-            self.dock_widget.set_auto_detail_value(detail)
+            self._seed_auto_detail_value(detail)
         except (RuntimeError, AttributeError):
             pass
 
@@ -1238,7 +1312,7 @@ class AutoFlowMixin:
         # slider triggers miss a user who lands on the prompt step with a zone
         # already set and runs without touching the slider). Warm here so the
         # backend is spinning up while they read the estimate and reach Detect.
-        # Self-limited: debounced ~30s, no-op mid-run and when already warm.
+        # Self-limited: debounced, no-op mid-run and when already warm.
         self._maybe_warmup_auto()
         # A committed prompt may re-match (or stop matching) the last run's
         # signature, so re-evaluate the identical-re-run note here.
@@ -1275,7 +1349,7 @@ class AutoFlowMixin:
         try:
             zone_in_layer = self._reproject_zone_to_run_crs(self._auto_zone, layer)
             detail = self._auto_detail_for_object(layer, zone_in_layer, object_class)
-            self.dock_widget.set_auto_detail_value(detail)
+            self._seed_auto_detail_value(detail)
             self._update_credit_estimate()
         except (RuntimeError, AttributeError):
             pass
@@ -1582,7 +1656,7 @@ class AutoFlowMixin:
             detail = self._auto_detail_for_target(
                 layer, zone_in_layer, obj_m, float(target_mupp),
                 self._detail_window_profile(prompt)[1])
-            self.dock_widget.set_auto_detail_value(detail)
+            self._seed_auto_detail_value(detail)
             self._update_credit_estimate()
         except (RuntimeError, AttributeError):
             pass

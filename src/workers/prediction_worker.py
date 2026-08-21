@@ -80,8 +80,8 @@ except OSError as e:
             "message": f"PyTorch DLL error (Windows): {err_str}. "
                        "Try: 1) Install Visual C++ Redistributables from "
                        "https://aka.ms/vs/17/release/vc_redist.x64.exe "
-                       "2) If already installed, reinstall the plugin dependencies "
-                       "(Settings > Reinstall dependencies)."
+                       "2) If already installed, open the AI Segmentation "
+                       "panel and click Install."
         }
     else:
         error_msg = {
@@ -97,8 +97,8 @@ try:
     _USE_SAM2 = True
     _SAM2_IMPORT_ERROR = None
 except ImportError as e:
-    # Keep the reason. Discarding it sent three users (2026-08-02, 2026-08-04,
-    # v2.3.0) into the SAM1 branch below, where the only thing they were told
+    # Keep the reason. Discarding it sends the user into the SAM1 branch
+    # below, where the only thing they are told
     # was that segment_anything is missing, a package their install never had
     # to lay down. Whatever stopped sam2 from importing is the real report.
     _USE_SAM2 = False

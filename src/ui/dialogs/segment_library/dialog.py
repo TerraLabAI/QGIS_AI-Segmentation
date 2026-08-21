@@ -74,6 +74,7 @@ from .common import (
     _RAIL_POPULAR_TARGET,
     _SEARCH_QSS,
     _fmt_count,
+    _project_layer_reading,
     _run_key,
 )
 from .detail import (
@@ -1104,7 +1105,10 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
         worker.start()
 
     def _on_rerun_zone_fetched(self, run: dict, tiles: list) -> None:
-        from ...plugin.run_restore import zone_extent_from_tiles
+        from ...plugin.run_restore import (
+            zone_extent_from_tiles,
+            zone_geometry_from_run,
+        )
         self._end_run_fetch()
         zone = zone_extent_from_tiles(tiles)
         if zone is None:
@@ -1123,12 +1127,20 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
             except RuntimeError:
                 pass
         self.reject()  # close first; the plugin work is deferred a tick
-        dock.history_rerun_requested.emit({
+        payload = {
             "prompt": run.get("prompt") or "",
             "extent": list(extent),
             "crs": authid,
             "tiles": int(run.get("tiles") or len(tiles)),
-        })
+        }
+        # The shape the user drew, when the run kept it: the tile union is its
+        # bounding box, and re-running a box around an L-shaped zone bills for
+        # ground the first run never looked at. Carried in the same CRS as the
+        # extent beside it; absent on every older run, which keeps the box.
+        outline = zone_geometry_from_run(run, authid)
+        if outline is not None:
+            payload["zone_wkt"] = outline.asWkt()
+        dock.history_rerun_requested.emit(payload)
 
     def _request_export(self, run: dict, _detail_dlg=None) -> None:
         if self._plugin is None or self._view_only:
@@ -1220,7 +1232,18 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
                 if not count else
                 tr("The export failed. Check the file path and try again."))
             return
-        QgsProject.instance().addMapLayer(layer)
+        # Exporting the same run twice used to stack a second layer on the
+        # first: same file, same name, two entries the user has to tell apart.
+        # Refresh the one already reading that file instead.
+        existing = _project_layer_reading(layer.source())
+        if existing is None:
+            QgsProject.instance().addMapLayer(layer)
+        else:
+            try:
+                existing.dataProvider().reloadData()
+                existing.triggerRepaint()
+            except (RuntimeError, AttributeError):
+                pass
         try:
             from ....core import telemetry_session_events
             telemetry_session_events.track_history_exported(driver, count, run_id=_run_key(run))

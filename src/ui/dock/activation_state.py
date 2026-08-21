@@ -44,6 +44,16 @@ class DockActivationMixin:
             self._auto_credits_total = None
             self._auto_free_left = None
             self._auto_is_subscriber = False
+            # The two-envelope snapshot is account state too: a later sign-in
+            # must not gate or draw on the previous account's envelopes.
+            self._quota_envelopes = None
+            # The card the envelope raised goes with it. Clearing the snapshot
+            # alone left the flag armed and the offer card on screen, so Detect
+            # stayed dead against a surface wall the account no longer has.
+            try:
+                self.set_auto_km2_block(None)
+            except (RuntimeError, AttributeError):
+                self._auto_km2_exceeded = False
             for _w in (getattr(self, "_credit_ring", None),
                        getattr(self, "_footer_credits_label", None),
                        getattr(self, "_subscribe_pill", None)):

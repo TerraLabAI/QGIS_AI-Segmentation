@@ -6,6 +6,7 @@ plain mixin members: state lives on the plugin instance (self).
 """
 from __future__ import annotations
 
+import contextlib
 import os
 
 from qgis.core import (
@@ -78,10 +79,15 @@ class AutoLifecycleMixin:
             if exported and exported[0] and exported[1] > 0 and self.dock_widget:
                 name, count = exported
                 try:
+                    # This path saves the FULL found set, not the visible one,
+                    # so say so: a user who left with a cutoff hiding half the
+                    # run has no other way to learn the rest came too.
+                    template = (
+                        tr("Saved the 1 object found to {name}.") if count == 1
+                        else tr("Saved all {n} objects found to {name}, "
+                                "including any the Confidence slider hid."))
                     self.dock_widget.set_auto_status(
-                        "info",
-                        tr("Saved {n} polygon(s) to {name}").format(
-                            n=count, name=name or ""))
+                        "info", template.format(n=count, name=name or ""))
                 except (RuntimeError, AttributeError):
                     pass
         except Exception:  # nosec B110 -- teardown safety: never propagate
@@ -288,6 +294,12 @@ class AutoLifecycleMixin:
         salvaged_tiles = getattr(self._auto_worker, "tiles_succeeded", 0)
         if is_auth:
             banner = tr("Session expired. Sign in again to continue.")
+        elif error_class == "DEVICE_LIMIT":
+            # Outranks the salvage line: the run stopped for a reason the user
+            # can clear in a minute, and that has to be the thing they read.
+            banner = tr("Your plan is already running on its maximum number of "
+                        "computers. Close AI Segmentation on one of them, then "
+                        "run Detect again.")
         elif salvaged_tiles > 0 and not self._auto_headless_run:
             banner = tr("Detection stopped early after {done} cloud "
                         "detection(s). Everything found is kept below and "
@@ -412,6 +424,11 @@ class AutoLifecycleMixin:
                 pass
             from qgis.PyQt.QtCore import QTimer
             QTimer.singleShot(0, self._on_settings_clicked)
+        # A run with no human ends here, and this path never reaches the
+        # finalize that normally drops the flag. Its blocking caller may
+        # already have returned on its own timeout, so leaving it set would
+        # send the next interactive run down the headless route.
+        self._auto_headless_run = False
 
     def _auto_tiles_done_shown(self, tiles_succeeded: int) -> int:
         """The worker's succeeded count, held to the grid the user was quoted.
@@ -427,6 +444,51 @@ class AutoLifecycleMixin:
         except (TypeError, ValueError):
             pass
         return int(tiles_succeeded)
+
+    @staticmethod
+    def _auto_quota_refusal(worker) -> dict:
+        """What the server said when it refused this run on quota, or {}."""
+        try:
+            return worker.quota_refusal_detail() if worker is not None else {}
+        except (RuntimeError, AttributeError):
+            return {}
+
+    @staticmethod
+    def _quota_refusal_is_zone_size(refusal: dict) -> bool:
+        """Whether the refusal was about THIS zone rather than the month.
+
+        The server answers both with one code, and tells them apart by its own
+        numbers: a month that still has surface left (used below limit) refused
+        the run because the zone asked for more than the remainder.
+        """
+        try:
+            used = float(refusal.get("used"))
+            limit = float(refusal.get("limit"))
+        except (TypeError, ValueError):
+            return False
+        return limit > 0 and used < limit
+
+    def _quota_stop_banner(
+        self, zone_too_large: bool, tiles_succeeded: int, tiles_total
+    ) -> str:
+        """The line a quota-stopped run shows, matched to what happened.
+
+        Three states, because one sentence for all of them lied twice: it told a
+        user with surface left that their month was over, and it read "0/40" at
+        a run that never processed a tile.
+        """
+        if zone_too_large:
+            return tr("This zone is larger than the surface you have left "
+                      "this month. Draw a smaller zone, or subscribe for a "
+                      "larger monthly surface.")
+        if tiles_succeeded <= 0:
+            return tr("Your monthly allowance ran out, so this run did not "
+                      "start.")
+        return tr("Your monthly allowance ran out at {done}/{total}. "
+                  "Everything found so far is kept below and stays "
+                  "yours.").format(
+                      done=self._auto_tiles_done_shown(tiles_succeeded),
+                      total=tiles_total)
 
     def _on_auto_credits_exhausted(self, remaining: int) -> None:
         QgsMessageLog.logMessage(
@@ -449,20 +511,40 @@ class AutoLifecycleMixin:
         tiles_succeeded = getattr(worker, "tiles_succeeded", 0)
         tiles_total = (self._auto_run_ctx or {}).get("total", tiles_succeeded)
         _, is_free_tier = self._auto_credit_snapshot()
+        refusal = self._auto_quota_refusal(worker)
+        zone_too_large = self._quota_refusal_is_zone_size(refusal)
+        banner = self._quota_stop_banner(
+            zone_too_large, tiles_succeeded, tiles_total)
+        # The exact sentence the server sent, in the log only: support reads it
+        # to tell a spent month from a zone that did not fit.
+        if refusal.get("message"):
+            QgsMessageLog.logMessage(
+                f"Auto detection: quota refusal - {refusal['message']}",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning,
+            )
+        # A run that billed nothing lands back on the setup step, where
+        # _on_auto_zero_detections would post its own "no matches" line over
+        # this one. Park it there so the real reason survives.
+        self._auto_quota_stop_banner = banner if tiles_succeeded <= 0 else None
         if self.dock_widget:
             try:
                 self.dock_widget.set_auto_run_active(False)
                 # Tiles-only message: the review header carries the kept count.
-                self.dock_widget.set_auto_status(
-                    "info",
-                    tr("Out of cloud detections at {done}/{total}. "
-                       "Everything found so far is kept below and stays "
-                       "yours.").format(
-                        done=self._auto_tiles_done_shown(tiles_succeeded),
-                        total=tiles_total),
-                )
-                # Free users get a one-click path to finish the zone.
-                self.dock_widget.set_auto_exhausted_subscribe_visible(is_free_tier)
+                self.dock_widget.set_auto_status("info", banner)
+                # Free users get a one-click path to finish the zone. Not when
+                # the zone was simply too big for what is left: the way forward
+                # there is a smaller zone, and the pill hides it.
+                self.dock_widget.set_auto_exhausted_subscribe_visible(
+                    is_free_tier and not zone_too_large)
+            except (RuntimeError, AttributeError):
+                pass
+        # Opening the review swaps the dock status line to idle, which wipes
+        # the banner above. When billed partials are on their way into that
+        # review, put the reason on the message bar too: without it the run
+        # reads as a normal finish and the user walks into the same wall again.
+        if tiles_succeeded > 0 and not self._auto_headless_run:
+            try:
+                self.iface.messageBar().pushWarning("AI Segmentation", banner)
             except (RuntimeError, AttributeError):
                 pass
         try:
@@ -487,14 +569,21 @@ class AutoLifecycleMixin:
         self._last_auto_result = {"status": "credits_exhausted", "credits_remaining": remaining}
         self._finalize_auto_results(tiles_succeeded)
 
-    def _on_auto_cancelled(self, reason: str = "user") -> None:
+    def _on_auto_cancelled(self, reason: str = "user", worker=None) -> None:
         """Wind down a stopped run and salvage its billed partials into the
         review. ``reason`` "user" is a real cancel (the worker's cancelled
         signal); "stalled" is the stall watchdog forcing a terminal on a wedged
         worker, which records a TIMEOUT failure instead of a cancel so the hang
         is visible in analytics, and tells the user the run stopped responding
-        rather than that they cancelled it."""
+        rather than that they cancelled it.
+
+        ``worker`` is the run the signal belongs to, bound at connect time. The
+        hard stop leaves 'cancelled' wired and never nulls the worker, so a
+        queued one from run N can arrive after run N+1 has started; without
+        this check it would tear the live run down."""
         stalled = reason == "stalled"
+        if worker is not None and worker is not self._auto_worker:
+            return
         worker = self._auto_worker
         if worker is None or self._auto_merger is None:
             # Hard stop (_stop_auto_detection): the run state was already torn
@@ -585,15 +674,17 @@ class AutoLifecycleMixin:
             # Zero tiles is the case that most needs a line: the run ends on an
             # empty review, which reads as "the plugin found nothing here" when
             # what happened is that it never got an answer.
-            msg = (
-                tr("The detection stopped responding. Keeping the {n} cloud "
-                   "detection(s) already paid for.").format(
-                       n=self._auto_tiles_done_shown(tiles_succeeded))
-                if tiles_succeeded > 0 else
-                tr("The detection stopped responding before anything came "
-                   "back. Check your connection, then run Detect again "
-                   "(nothing was charged).")
-            )
+            done_shown = self._auto_tiles_done_shown(tiles_succeeded)
+            if tiles_succeeded <= 0:
+                msg = tr("The detection stopped responding before anything came "
+                         "back. Check your connection, then run Detect again "
+                         "(nothing was charged).")
+            elif done_shown == 1:
+                msg = tr("The detection stopped responding. Keeping the 1 cloud "
+                         "detection already paid for.")
+            else:
+                msg = tr("The detection stopped responding. Keeping the {n} "
+                         "cloud detections already paid for.").format(n=done_shown)
             try:
                 self.iface.messageBar().pushWarning("AI Segmentation", msg)
             except (RuntimeError, AttributeError):
@@ -637,6 +728,10 @@ class AutoLifecycleMixin:
             return
         if not ids:
             return
+        # The hover ghost floats over whatever leaves; a stale one would sit
+        # on the canvas until the next mouse move.
+        with contextlib.suppress(Exception):  # teardown never blocks teardown
+            self._stop_hover_preview("layer gone")
         dock = self.dock_widget
         # ---- Automatic flow (T15 / T16) ----
         run_layer_id = (self._auto_run_ctx or {}).get("layer_id")
@@ -703,6 +798,7 @@ class AutoLifecycleMixin:
         source_layer_name: str,
         prompt_label: str,
         scores: list | None = None,
+        confidence_applied: float | None = None,
     ) -> str | None:
         """Write deduplicated geometries into the project GeoPackage as a new
         table and add it to the AI Segmentation group.
@@ -716,8 +812,14 @@ class AutoLifecycleMixin:
         repeated per row. ``scores`` is parallel to ``deduped_geoms`` (None,
         or None entries, when unknown, e.g. after a Manual-refine dissolve).
 
+        ``confidence_applied`` is the cutoff that really filtered this set,
+        which the rescue save drops when it falls back to the full found set.
+        None keeps the run's current value, so every other caller is unchanged.
+
         Returns the (friendly) layer name of the created layer, or None on
-        failure.
+        failure. The written feature count and the reason for a failure are
+        left on ``_auto_export_feature_count`` and ``_auto_export_failure``,
+        because the caller reports both and the return carries neither.
         """
         from datetime import datetime
 
@@ -735,7 +837,14 @@ class AutoLifecycleMixin:
         # Cleared up front so a failed write can never leave the Start page
         # linking to the PREVIOUS run's layer.
         self._auto_export_layer_id = ""
+        self._auto_export_feature_count = 0
+        self._auto_export_failure = ""
+        # Ground surface of everything written, accumulated in the measuring
+        # loop below. The run upload reads it there instead of measuring the
+        # same set a second time on the click the user is waiting on.
+        self._auto_exported_area_m2 = 0.0
         if not deduped_geoms:
+            self._auto_export_failure = "nothing_visible"
             return None
 
         # Example-only runs have no text prompt: fall back to a stable name so the
@@ -745,6 +854,7 @@ class AutoLifecycleMixin:
         # Build a temporary memory layer.
         temp_layer = QgsVectorLayer("MultiPolygon", "auto_export", "memory")
         if not temp_layer.isValid():
+            self._auto_export_failure = "no_working_layer"
             return None
         temp_layer.setCrs(crs)
 
@@ -775,18 +885,22 @@ class AutoLifecycleMixin:
             score = scores[index] if scores is not None else None
             feat = QgsFeature(temp_layer.fields())
             feat.setGeometry(geom)
+            area_m2 = float(measurer.measureArea(geom))
+            if area_m2 > 0:
+                self._auto_exported_area_m2 += area_m2
             feat.setAttributes([
                 # label stays empty (the user's own annotation column, the
                 # Deepness/SCP norm); the machine fact lives in `class`.
                 "",
                 object_class,
                 round(float(score), 3) if score is not None else None,
-                round_measure(measurer.measureArea(geom)),
+                round_measure(area_m2),
                 round_measure(measurer.measurePerimeter(geom)),
             ])
             features_to_add.append(feat)
 
         if not features_to_add:
+            self._auto_export_failure = "no_shapes"
             return None
 
         if not _add_features_fast(pr, features_to_add):
@@ -796,16 +910,21 @@ class AutoLifecycleMixin:
             QgsMessageLog.logMessage(
                 "Export refused: the layer provider took no features",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            self._auto_export_failure = "no_shapes"
             return None
         temp_layer.updateExtents()
 
         # The run's raster only steers the fallback output directory; the run
         # may outlive the layer (T15), so a missing layer is fine.
         source_layer = None
-        run_layer_id = (self._auto_run_ctx or {}).get("layer_id")
+        run_ctx = self._auto_run_ctx or {}
+        run_layer_id = run_ctx.get("layer_id")
         if run_layer_id:
             source_layer = QgsProject.instance().mapLayer(run_layer_id)
-        if source_layer is None:
+        # A restored run read no raster at all: it was rebuilt from stored
+        # masks. Falling back to whatever raster happens to be selected now
+        # stamps the archive with a layer that had nothing to do with it.
+        if source_layer is None and not run_ctx.get("restored"):
             source_layer = self._get_active_raster_layer()
 
         result = output_store.write_run_table(
@@ -815,6 +934,7 @@ class AutoLifecycleMixin:
             fallback_stem=prompt_label or "detection",
         )
         if result is None:
+            self._auto_export_failure = "file_refused"
             return None
         result_layer = result.layer
         layer_name = result_layer.name()
@@ -849,7 +969,8 @@ class AutoLifecycleMixin:
             result_layer, source_layer_name,
             prompt=prompt_label,
             detail=(self._auto_run_ctx or {}).get("detail"),
-            confidence=self._auto_confidence,
+            confidence=(confidence_applied if confidence_applied is not None
+                        else self._auto_confidence),
             created_iso=datetime.now().astimezone().isoformat(timespec="seconds"),
             plugin_version=plugin_version,
         )
@@ -867,14 +988,31 @@ class AutoLifecycleMixin:
         # redraw reuses the render cache for every layer that did not change.
         # The mapCanvas().refresh() that used to follow threw the cache away and
         # redrew everything from scratch, on a set that can hold a hundred
-        # thousand polygons: measured on 40 000, 1.8 s of CPU against 0.35 s for
-        # the redraw the add schedules on its own. Same reason the review push
-        # dropped its refresh (see _push_review_geoms).
+        # thousand polygons, several times the cost of the redraw the add
+        # schedules on its own. Same reason the review push dropped its
+        # refresh (see _push_review_geoms).
         output_store.add_committed_layer(result_layer, source_name=source_layer_name)
+        # A run reviewed with one colour per object must not save to one flat
+        # colour: objects that touch then read as a single blob, which is the
+        # opposite of what the review just showed. Cosmetic and best-effort,
+        # and only under the ceiling the palette stays readable at.
+        if getattr(self, "_auto_display_mode", "") == "random":
+            try:
+                from ...core.instance_symbology import (
+                    instance_color_ceiling,
+                    paint_instances_apart,
+                )
+                if len(features_to_add) <= instance_color_ceiling():
+                    paint_instances_apart(result_layer)
+            except Exception:  # noqa: BLE001 -- colour never fails an export  # nosec B110
+                pass
         # The id, not the layer: the Start page's two recap lines link to the
         # result, and the user may remove it before clicking, so the link is
         # resolved against the project at click time.
         self._auto_export_layer_id = result_layer.id()
+        # What really reached the file. The caller announces a number, and the
+        # set it handed over can hold shapes this loop could not write.
+        self._auto_export_feature_count = len(features_to_add)
 
         # Local run history for the library's Recent tab: prompt + zone extent
         # + layer name + thumbnail, so a recent card can bring the user back.
@@ -954,6 +1092,8 @@ class AutoLifecycleMixin:
                         extent=extent,
                         crs_authid=crs.authid() if crs is not None else "",
                         thumb=thumb,
+                        zone_wkt=(clip.asWkt() if clip is not None
+                                  and not clip.isEmpty() else None),
                     )
                 except Exception as e:  # noqa: BLE001 -- never break Finish
                     QgsMessageLog.logMessage(

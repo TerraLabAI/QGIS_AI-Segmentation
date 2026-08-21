@@ -397,6 +397,10 @@ export AI_SEGMENTATION_CACHE_DIR=/jouw/pad</translation>
         <translation>E-mailadres kopiëren</translation>
     </message>
     <message>
+        <source>buildings</source>
+        <translation>gebouwen</translation>
+    </message>
+    <message>
         <source>or</source>
         <translation>of</translation>
     </message>
@@ -459,6 +463,10 @@ export AI_SEGMENTATION_CACHE_DIR=/jouw/pad</translation>
     <message>
         <source>Click is outside the '{layer}' raster. To segment another raster, stop the current segmentation first.</source>
         <translation>De klik ligt buiten het raster '{layer}'. Stop eerst de huidige segmentatie om een ander raster te kunnen segmenteren.</translation>
+    </message>
+    <message>
+        <source>trees</source>
+        <translation>bomen</translation>
     </message>
     <message>
         <source>{ext} format is not directly supported. GDAL is not available.
@@ -1455,10 +1463,6 @@ Start QGIS na de installatie opnieuw en probeer het nogmaals.</translation>
     <message>
         <source>0 shown - lower the Min size filter to reveal them</source>
         <translation>0 getoond - verlaag het filter Min. grootte om ze te tonen</translation>
-    </message>
-    <message>
-        <source>5,000 cloud detections every month, zones of any size. Cancel anytime.</source>
-        <translation>5.000 clouddetecties elke maand, zones van elke grootte. Op elk moment opzegbaar.</translation>
     </message>
     <message>
         <source>A Component Failed to Load</source>
@@ -2778,10 +2782,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     </message>
     
     <message>
-        <source>Pro: 5,000 cloud detections a month, zones of any size, up to 800 cloud detections in one run. Same AI, same free clicks and corrections, every machine you work on.</source>
-        <translation>Pro: 5.000 clouddetecties per maand, zones van elke grootte, tot 800 clouddetecties in één run. Dezelfde AI, dezelfde gratis klikken en correcties, op elke machine waarop je werkt.</translation>
-    </message>
-    <message>
         <source>A free run covers up to {cap} cloud detections. This one needs more. Pro covers up to 800 in one run.</source>
         <translation>Een gratis run omvat tot {cap} clouddetecties. Deze heeft meer nodig. Pro omvat tot 800 in één run.</translation>
     </message>
@@ -2912,10 +2912,6 @@ Open het in QGIS om te controleren of het wordt weergegeven, of converteer het n
     <message>
         <source>No image over this zone at this precision, so nothing was analyzed (not charged). Lower Precision, or pick a layer that covers this area.</source>
         <translation>Geen beeld over deze zone bij deze precisie, dus er is niets geanalyseerd (niet in rekening gebracht). Verlaag Precisie, of kies een laag die dit gebied dekt.</translation>
-    </message>
-    <message>
-        <source>This run needs {n} cloud detections and you have {left} left. Lower the precision or shrink the zone. Pro gives you 5,000 cloud detections a month.</source>
-        <translation>Deze run heeft {n} clouddetecties nodig en je hebt nog {left} over. Verlaag de precisie of verklein de zone. Pro geeft je 5.000 clouddetecties per maand.</translation>
     </message>
     <message>
         <source>Opens your terra-lab.ai dashboard: your plan, your cloud detections and your payment details.</source>
@@ -3082,10 +3078,6 @@ Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het 
     <message>
         <source>Type a word for the object, or draw an example.</source>
         <translation>Typ een woord voor het object, of teken een voorbeeld.</translation>
-    </message>
-    <message>
-        <source>Finish this zone with Pro: 5,000 cloud detections a month.</source>
-        <translation>Voltooi deze zone met Pro: 5.000 clouddetecties per maand.</translation>
     </message>
     <message>
         <source>Wait for the on-device AI to finish installing.</source>
@@ -3602,14 +3594,6 @@ Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het 
         <translation>Of werk gratis met een kleinere AI op deze computer.</translation>
     </message>
     <message>
-        <source>Pro: 5,000 cloud detections a month</source>
-        <translation>Pro: 5.000 clouddetecties per maand</translation>
-    </message>
-    <message>
-        <source>Pro: 5,000 detections a month, on zones of any size</source>
-        <translation>Pro: 5.000 detecties per maand, op zones van elke grootte</translation>
-    </message>
-    <message>
         <source>QGIS cannot read this raster format here. Convert it to GeoTIFF, then start again.</source>
         <translation>QGIS kan deze rasterindeling hier niet lezen. Zet het om naar GeoTIFF en start opnieuw.</translation>
     </message>
@@ -3712,6 +3696,1074 @@ Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het 
     <message>
         <source>Your free cloud detections are used up</source>
         <translation>Je gratis clouddetecties zijn opgebruikt</translation>
+    </message>
+    <message>
+        <source>You used your Automatic allowance for this month. Semi-Auto runs on your computer, free, with no counter.</source>
+        <translation>Je hebt je Automatic-tegoed voor deze maand gebruikt. Semi-Auto draait op je computer, gratis, zonder teller.</translation>
+    </message>
+    <message>
+        <source>{n} km² left</source>
+        <translation>{n} km² resterend</translation>
+    </message>
+    <message>
+        <source>{n} km² of Automatic left this month</source>
+        <translation>{n} km² Automatic resterend deze maand</translation>
+    </message>
+    <message>
+        <source>{used} of {total} km² of Automatic used this month</source>
+        <translation>{used} van {total} km² Automatic gebruikt deze maand</translation>
+    </message>
+    <message>
+        <source>{n} cloud objects left this month</source>
+        <translation>{n} cloudobjecten resterend deze maand</translation>
+    </message>
+    <message>
+        <source>{used} of {total} cloud objects saved this month</source>
+        <translation>{used} van {total} cloudobjecten opgeslagen deze maand</translation>
+    </message>
+    <message>
+        <source>It comes back on {date}. Semi-Auto on this computer keeps working.</source>
+        <translation>Het komt terug op {date}. Semi-Auto op deze computer blijft werken.</translation>
+    </message>
+    <message>
+        <source>You covered your {n} km² of Automatic this month</source>
+        <translation>Je hebt je {n} km² Automatic voor deze maand opgebruikt</translation>
+    </message>
+    <message>
+        <source>This run needs {n} cloud detections and you have {left} left this month. Lower the precision or shrink the zone. Pro covers 300 km² of Automatic a month, on zones of any size.</source>
+        <translation>Deze run vereist {n} clouddetecties en je hebt er deze maand nog {left}. Verlaag de precisie of verklein de zone. Pro dekt 300 km² Automatic per maand, voor zones van elke grootte.</translation>
+    </message>
+    <message>
+        <source>One detection covers 0.04 to 0.25 km², depending on the precision you ask for.</source>
+        <translation>Eén detectie dekt 0.04 tot 0.25 km², afhankelijk van de gevraagde precisie.</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} km² of Automatic used, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bijna op: {used} van {total} km² Automatic gebruikt, terug op {date}. &lt;a href="{url}"&gt;Upgraden naar Pro&lt;/a&gt; om door te gaan.</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} km² of Automatic used. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bijna op: {used} van {total} km² Automatic gebruikt. &lt;a href="{url}"&gt;Upgraden naar Pro&lt;/a&gt; om door te gaan.</translation>
+    </message>
+    <message>
+        <source>You saved your {n} cloud objects this month</source>
+        <translation>Je hebt je {n} cloudobjecten deze maand opgeslagen</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} cloud objects saved this month, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bijna op: {used} van {total} cloudobjecten opgeslagen deze maand, terug op {date}. &lt;a href="{url}"&gt;Upgraden naar Pro&lt;/a&gt; om door te gaan.</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} cloud objects saved this month. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Bijna op: {used} van {total} cloudobjecten opgeslagen deze maand. &lt;a href="{url}"&gt;Upgraden naar Pro&lt;/a&gt; om door te gaan.</translation>
+    </message>
+    <message>
+        <source>300 km² of Automatic every month, on zones of any size</source>
+        <translation>300 km² Automatic per maand, voor zones van elke grootte</translation>
+    </message>
+    <message>
+        <source>Finish this zone with Pro: 300 km² of Automatic a month.</source>
+        <translation>Rond deze zone af met Pro: 300 km² Automatic per maand.</translation>
+    </message>
+    <message>
+        <source>Zone too large. Reduce the area to {max} detections or fewer.</source>
+        <translation>Zone te groot. Verklein het gebied tot {max} detecties of minder.</translation>
+    </message>
+    <message>
+        <source>You saved your cloud objects for this month. Switch to your own computer to keep working free, or upgrade from the panel.</source>
+        <translation>Je hebt je cloudobjecten voor deze maand opgeslagen. Schakel over naar je eigen computer om gratis verder te werken, of upgrade via het paneel.</translation>
+    </message>
+    <message>
+        <source>Your cloud allowance for this month is used, so the AI fix cannot answer. Switched to editing by hand, which is free.</source>
+        <translation>Je maandelijkse cloudtegoed is gebruikt, dus de AI-correctie kan geen antwoord geven. Overgeschakeld naar handmatig bewerken, dat gratis is.</translation>
+    </message>
+    <message>
+        <source>Your monthly allowance ran out at {done}/{total}. Everything found so far is kept below and stays yours.</source>
+        <translation>Je maandelijkse tegoed raakte op bij {done}/{total}. Alles wat tot nu toe is gevonden, is hieronder bewaard en blijft van jou.</translation>
+    </message>
+    <message>
+        <source>Pro: 2,000 objects a month in Semi-Auto with Cloud AI</source>
+        <translation>Pro: 2.000 objecten per maand in Semi-Auto met Cloud AI</translation>
+    </message>
+    <message>
+        <source>Pro: 2,000 objects a month in Semi-Auto with Cloud AI, and 300 km² of Automatic. Same AI, same free clicks and corrections, every machine you work on.</source>
+        <translation>Pro: 2.000 objecten per maand in Semi-Auto met Cloud AI, en 300 km² in Automatic. Dezelfde AI, dezelfde gratis klikken en correcties, op elke machine waarop je werkt.</translation>
+    </message>
+    <message>
+        <source>2,000 objects a month in Semi-Auto, 300 km² in Automatic. Cancel anytime.</source>
+        <translation>2.000 objecten per maand in Semi-Auto, 300 km² in Automatic. Op elk moment opzegbaar.</translation>
+    </message>
+    <message>
+        <source>300 km² of Automatic a month, on zones of any size.</source>
+        <translation>300 km² Automatic per maand, voor zones van elke grootte.</translation>
+    </message>
+    <message>
+        <source>The same AI on every machine you work on.</source>
+        <translation>Dezelfde AI op elke computer waarop je werkt.</translation>
+    </message>
+    <message>
+        <source>39 EUR a month, cancel anytime.</source>
+        <translation>39 EUR per maand, op elk moment opzegbaar.</translation>
+    </message>
+    <message>
+        <source>2,000 cloud objects every month in Semi-Auto</source>
+        <translation>2.000 cloudobjecten per maand in Semi-Auto</translation>
+    </message>
+    <message>
+        <source>{n} of {total} cloud objects left in Semi-Auto this month</source>
+        <translation>{n} van {total} cloudobjecten over in Semi-Auto deze maand</translation>
+    </message>
+    <message>
+        <source>{n} of {total} km² left in Automatic this month</source>
+        <translation>{n} van {total} km² over in Automatic deze maand</translation>
+    </message>
+    <message>
+        <source>Draw a whole city and let it run, at the finest precision.</source>
+        <translation>Teken een hele stad en laat het uitvoeren met de hoogste precisie.</translation>
+    </message>
+    <message>
+        <source>Or click objects one by one in Semi-Auto.</source>
+        <translation>Of klik objecten één voor één aan in Semi-Auto.</translation>
+    </message>
+    <message>
+        <source>(optional)</source>
+        <translation>(optioneel)</translation>
+    </message>
+    <message>
+        <source>More precision sweeps your zone in a finer grid, so it catches smaller objects.</source>
+        <translation>Meer precisie scant je zone in een fijner raster, zodat ook kleinere objecten worden gedetecteerd.</translation>
+    </message>
+    <message>
+        <source>Your Automatic allowance ran out mid-zone.</source>
+        <translation>Je Automatic-tegoed raakte halverwege de zone op.</translation>
+    </message>
+    <message>
+        <source>Pro picks it up where it stopped and finishes the zone.</source>
+        <translation>Pro gaat verder waar het stopte en voltooit de zone.</translation>
+    </message>
+    <message>
+        <source>Finish with Pro</source>
+        <translation>Voltooien met Pro</translation>
+    </message>
+    <message>
+        <source>This zone at this precision is more than one run covers. Draw a smaller zone, or lower the precision.</source>
+        <translation>Deze zone met deze precisie is groter dan één uitvoering aankan. Teken een kleinere zone of verlaag de precisie.</translation>
+    </message>
+    <message>
+        <source>This zone at this precision is more than one run covers. Draw a smaller zone, or lower the precision. Free runs stop well below that ceiling, so Pro keeps more precision on a zone this size.</source>
+        <translation>Deze zone met deze precisie is groter dan één uitvoering aankan. Teken een kleinere zone of verlaag de precisie. Gratis uitvoeringen stoppen ruim onder die limiet, dus Pro behoudt meer precisie voor een zone van deze grootte.</translation>
+    </message>
+    <message>
+        <source>{n} km²</source>
+        <translation>{n} km²</translation>
+    </message>
+    <message>
+        <source>Automatic is counted by surface. Precision changes how finely the zone is scanned, never the price. A run never costs more than the zone you drew.</source>
+        <translation>Automatic wordt berekend op basis van oppervlak. Precisie bepaalt hoe fijn de zone wordt gescand, nooit de prijs. Een uitvoering kost nooit meer dan de zone die je hebt getekend.</translation>
+    </message>
+    <message>
+        <source>Pro raises the month to 300 km² of Automatic.</source>
+        <translation>Pro verhoogt je maandtegoed naar 300 km² Automatic.</translation>
+    </message>
+    <message>
+        <source>This zone is {zone} km². You have {left} km² left in Automatic this month.</source>
+        <translation>Deze zone is {zone} km². Je hebt deze maand nog {left} km² over in Automatic.</translation>
+    </message>
+    <message>
+        <source>Or draw a smaller zone.</source>
+        <translation>Of teken een kleinere zone.</translation>
+    </message>
+    <message>
+        <source>This zone is {area} km². Free runs stop at {max} km².</source>
+        <translation>Deze zone is {area} km². Gratis uitvoeringen stoppen bij {max} km².</translation>
+    </message>
+    <message>
+        <source>Pro has no size limit and runs the zone as you drew it.</source>
+        <translation>Pro heeft geen limiet voor de grootte en voert de zone uit zoals je die hebt getekend.</translation>
+    </message>
+    <message>
+        <source>Or make the zone smaller and run it free.</source>
+        <translation>Of maak de zone kleiner en voer deze gratis uit.</translation>
+    </message>
+    <message>
+        <source>{n} km² of Automatic left, back on {date}.</source>
+        <translation>Nog {n} km² Automatic over, opnieuw beschikbaar op {date}.</translation>
+    </message>
+    <message>
+        <source>{n} km² of Automatic left this month.</source>
+        <translation>Deze maand nog {n} km² Automatic over.</translation>
+    </message>
+    <message>
+        <source>{n} free detections left, back on {date}.</source>
+        <translation>Nog {n} gratis detecties over, opnieuw beschikbaar op {date}.</translation>
+    </message>
+    <message>
+        <source>{n} free detections left.</source>
+        <translation>Nog {n} gratis detecties over.</translation>
+    </message>
+    <message>
+        <source>Pro gives you 300 km² of Automatic a month, so you keep working.</source>
+        <translation>Pro geeft je 300 km² Automatic per maand, zodat je kunt blijven werken.</translation>
+    </message>
+    <message>
+        <source>Advanced settings</source>
+        <translation>Geavanceerde instellingen</translation>
+    </message>
+    <message>
+        <source>Zoom in for a finer outline. The AI reads the image at your current zoom.</source>
+        <translation>Zoom in voor een nauwkeuriger omtrek. De AI leest de afbeelding op je huidige zoomniveau.</translation>
+    </message>
+    <message>
+        <source>Keep clicking with the same cloud AI, nothing to install.</source>
+        <translation>Blijf klikken met dezelfde Cloud AI, zonder iets te installeren.</translation>
+    </message>
+    <message>
+        <source>You saved your {n} cloud objects in Semi-Auto this month</source>
+        <translation>Je hebt deze maand je {n} cloudobjecten in Semi-Auto opgeslagen</translation>
+    </message>
+    <message>
+        <source>Or keep clicking for free with a smaller AI on this computer.</source>
+        <translation>Of blijf gratis klikken met een kleinere AI op deze computer.</translation>
+    </message>
+    <message>
+        <source>{n} of {total} cloud objects left in Semi-Auto, back on {date}.</source>
+        <translation>{n} van {total} cloudobjecten over in Semi-Auto, opnieuw beschikbaar op {date}.</translation>
+    </message>
+    <message>
+        <source>{n} of {total} cloud objects left in Semi-Auto this month.</source>
+        <translation>{n} van {total} cloudobjecten over in Semi-Auto deze maand.</translation>
+    </message>
+    <message>
+        <source>{n} cloud detections left, back on {date}.</source>
+        <translation>Nog {n} clouddetecties over, opnieuw beschikbaar op {date}.</translation>
+    </message>
+    <message>
+        <source>{n} cloud detections left.</source>
+        <translation>Nog {n} clouddetecties over.</translation>
+    </message>
+    <message>
+        <source>Pro gives you 2,000 cloud objects a month in Semi-Auto.</source>
+        <translation>Pro geeft je 2.000 cloudobjecten per maand in Semi-Auto.</translation>
+    </message>
+    <message>
+        <source>More settings</source>
+        <translation>Meer instellingen</translation>
+    </message>
+    <message>
+        <source>{left} / {cap} km²</source>
+        <translation>{left} / {cap} km²</translation>
+    </message>
+    <message>
+        <source>{left} of {cap} km² left in Automatic this month</source>
+        <translation>{left} van {cap} km² over in Automatic deze maand</translation>
+    </message>
+    <message>
+        <source>{left} of {cap} cloud objects left in Semi-Auto this month</source>
+        <translation>{left} van {cap} cloudobjecten over in Semi-Auto deze maand</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the surface you have left this month. Draw a smaller zone.</source>
+        <translation>Deze zone is groter dan het oppervlak dat je deze maand nog hebt. Teken een kleinere zone.</translation>
+    </message>
+    <message>
+        <source>It comes back on {date}.</source>
+        <translation>Op {date} is het weer beschikbaar.</translation>
+    </message>
+    <message>
+        <source>A zone detection is already running. Wait for it to finish, or stop it, before starting another.</source>
+        <translation>Er wordt al een zone gedetecteerd. Wacht tot deze klaar is of stop de uitvoering voordat je een nieuwe start.</translation>
+    </message>
+    <message>
+        <source>Type what to find first. An example is optional.</source>
+        <translation>Typ eerst wat je wilt detecteren. Een voorbeeld is optioneel.</translation>
+    </message>
+    <message>
+        <source>Your plan is already running on its maximum number of computers. Close AI Segmentation on one of them, then run Detect again.</source>
+        <translation>Je abonnement draait al op het maximale aantal computers. Sluit AI Segmentation op een van deze computers en voer Detect daarna opnieuw uit.</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the area you have left this month. Draw a smaller zone, or subscribe for a larger monthly area.</source>
+        <translation>Deze zone is groter dan het gebied dat je deze maand nog over hebt. Teken een kleinere zone of neem een abonnement met een groter maandgebied.</translation>
+    </message>
+    <message>
+        <source>Your monthly allowance ran out, so this run did not start.</source>
+        <translation>Je maandelijkse tegoed is op, dus deze uitvoering is niet gestart.</translation>
+    </message>
+    <message>
+        <source>"{word}" is hard to spot from above - "{term}" detects better. Your word still runs.</source>
+        <translation>"{word}" is van bovenaf moeilijk te herkennen, "{term}" detecteert beter. Je woord blijft werken.</translation>
+    </message>
+    <message>
+        <source>"{word}" cannot be seen from above. Pick an object on the ground - the Library has ready-to-use ones.</source>
+        <translation>"{word}" is van bovenaf niet zichtbaar. Kies een object op de grond, de Bibliotheek bevat direct bruikbare objecten.</translation>
+    </message>
+    <message>
+        <source>"{obj}" is not an object the AI knows well. The run may come back empty - a more common word finds more.</source>
+        <translation>"{obj}" is geen object dat de AI goed kent. Het resultaat kan leeg zijn, met een gangbaarder woord vind je meer.</translation>
+    </message>
+    <message>
+        <source>(~{n} min left)</source>
+        <translation>(~{n} min resterend)</translation>
+    </message>
+    <message>
+        <source>(~{n} sec left)</source>
+        <translation>(~{n} sec resterend)</translation>
+    </message>
+    <message>
+        <source>1 detection</source>
+        <translation>1 detectie</translation>
+    </message>
+    <message>
+        <source>1 free cloud detection remaining</source>
+        <translation>Nog 1 gratis clouddetectie beschikbaar</translation>
+    </message>
+    <message>
+        <source>1 shape edited this session</source>
+        <translation>1 vorm bewerkt in deze sessie</translation>
+    </message>
+    <message>
+        <source>AI not available</source>
+        <translation>AI niet beschikbaar</translation>
+    </message>
+    <message>
+        <source>Automatic is temporarily unavailable. Try again later.</source>
+        <translation>Automatisch is tijdelijk niet beschikbaar. Probeer het later opnieuw.</translation>
+    </message>
+    <message>
+        <source>Could not read the pixel grid of this raster. Check the layer opens and shows in QGIS, then try again.</source>
+        <translation>Kan het pixelraster van deze rasterlaag niet lezen. Controleer of de laag in QGIS wordt geopend en weergegeven en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Detection stopped before any result came back. Run Detect again when you are ready.</source>
+        <translation>De detectie is gestopt voordat er resultaten waren. Voer Detecteren opnieuw uit wanneer u klaar bent.</translation>
+    </message>
+    <message>
+        <source>Export now?</source>
+        <translation>Nu exporteren?</translation>
+    </message>
+    <message>
+        <source>Export what you saved and end this session?</source>
+        <translation>Wat u hebt opgeslagen exporteren en deze sessie beëindigen?</translation>
+    </message>
+    <message>
+        <source>Finish or close the review first.</source>
+        <translation>Voltooi of sluit eerst de controle.</translation>
+    </message>
+    <message>
+        <source>No Automatic surface left this month. Semi-Auto still works until it comes back.</source>
+        <translation>Er is deze maand geen oppervlakte meer beschikbaar voor Automatisch. Semi-Auto blijft werken totdat Automatisch terugkomt.</translation>
+    </message>
+    <message>
+        <source>No Automatic surface left this month. Semi-Auto still works, and Automatic comes back on {date}.</source>
+        <translation>Er is deze maand geen oppervlakte meer beschikbaar voor Automatisch. Semi-Auto blijft werken en Automatisch komt terug op {date}.</translation>
+    </message>
+    <message>
+        <source>None of the objects came out as a shape the file could take. Turn the cleanup settings down and try Finish again.</source>
+        <translation>Geen van de objecten kon worden omgezet in een vorm die het bestand kan opslaan. Verlaag de opschoningsinstellingen en probeer opnieuw te voltooien.</translation>
+    </message>
+    <message>
+        <source>Nothing is visible to save. Lower Confidence, or widen the size range, then try Finish again.</source>
+        <translation>Er is niets zichtbaar om op te slaan. Verlaag de Betrouwbaarheid of vergroot het groottebereik en probeer opnieuw te voltooien.</translation>
+    </message>
+    <message>
+        <source>Off until a selection is on screen. Click the object first, then Save polygon keeps it in your session; Export writes all kept polygons to a layer.</source>
+        <translation>Uitgeschakeld totdat er een selectie op het scherm staat. Klik eerst op het object. Met Polygoon opslaan blijft het in uw sessie; Exporteren schrijft alle bewaarde polygonen naar een laag.</translation>
+    </message>
+    <message>
+        <source>Removes the last point you placed on the object.</source>
+        <translation>Verwijdert het laatste punt dat u op het object hebt geplaatst.</translation>
+    </message>
+    <message>
+        <source>Saved all {n} objects found to {name}, including any the Confidence slider hid.</source>
+        <translation>Alle {n} gevonden objecten zijn opgeslagen in {name}, ook de objecten die door de schuifregelaar Betrouwbaarheid waren verborgen.</translation>
+    </message>
+    <message>
+        <source>Saved the 1 object found to {name}.</source>
+        <translation>Het gevonden object is opgeslagen in {name}.</translation>
+    </message>
+    <message>
+        <source>Sign in to run Automatic.</source>
+        <translation>Meld u aan om Automatisch uit te voeren.</translation>
+    </message>
+    <message>
+        <source>Team or organization? Write to us: {email}</source>
+        <translation>Team of organisatie? Schrijf ons: {email}</translation>
+    </message>
+    <message>
+        <source>The AI Segmentation panel is closed, so there is nothing to detect from. Open it and try again.</source>
+        <translation>Het paneel AI Segmentation is gesloten, dus er is niets om uit te detecteren. Open het paneel en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>The AI did not load, so this click was not answered. Use the Install button in the panel to set it up again.</source>
+        <translation>De AI is niet geladen, dus deze klik werd niet verwerkt. Gebruik de knop Installeren in het paneel om de AI opnieuw in te stellen.</translation>
+    </message>
+    <message>
+        <source>The AI is still loading, so this click was not answered. Try again in a few seconds.</source>
+        <translation>De AI wordt nog geladen, dus deze klik werd niet verwerkt. Probeer het over enkele seconden opnieuw.</translation>
+    </message>
+    <message>
+        <source>The click tool stays on while this session is open. Stop the session to use another map tool.</source>
+        <translation>Het klikgereedschap blijft actief zolang deze sessie geopend is. Stop de sessie om een ander kaartgereedschap te gebruiken.</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding. Keeping the 1 cloud detection already paid for.</source>
+        <translation>De detectie reageert niet meer. De al betaalde clouddetectie blijft behouden.</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding. Keeping the {n} cloud detections already paid for.</source>
+        <translation>De detectie reageert niet meer. De {n} al betaalde clouddetecties blijven behouden.</translation>
+    </message>
+    <message>
+        <source>The object you are working on is not saved yet, so it will not be in the layer.</source>
+        <translation>Het object waaraan u werkt is nog niet opgeslagen en komt daarom niet in de laag.</translation>
+    </message>
+    <message>
+        <source>The offline AI did not load, so this session cannot start. Use the Install button in the panel to set it up again.</source>
+        <translation>De offline-AI is niet geladen, dus deze sessie kan niet starten. Gebruik de knop Installeren in het paneel om de AI opnieuw in te stellen.</translation>
+    </message>
+    <message>
+        <source>This computer is no longer signed in. Sign out, then sign in again to reconnect it.</source>
+        <translation>Deze computer is niet meer aangemeld. Meld u af en daarna opnieuw aan om de verbinding te herstellen.</translation>
+    </message>
+    <message>
+        <source>This sign-in code has expired. Click Cancel, then Sign in to get a new one.</source>
+        <translation>Deze aanmeldcode is verlopen. Klik op Annuleren en daarna op Aanmelden om een nieuwe code te krijgen.</translation>
+    </message>
+    <message>
+        <source>This will discard 1 polygon.</source>
+        <translation>Hierdoor wordt 1 polygoon verwijderd.</translation>
+    </message>
+    <message>
+        <source>This will discard {count} polygons.</source>
+        <translation>Hierdoor worden {count} polygonen verwijderd.</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the surface you have left this month. Draw a smaller zone, or subscribe for a larger monthly surface.</source>
+        <translation>Deze zone is groter dan de resterende oppervlakte voor deze maand. Teken een kleinere zone of neem een abonnement voor een grotere maandelijkse oppervlakte.</translation>
+    </message>
+    <message>
+        <source>You can also open this address by hand:
+{}</source>
+        <translation>U kunt dit adres ook handmatig openen:
+{}</translation>
+    </message>
+    <message>
+        <source>You have 1 unsaved polygon.</source>
+        <translation>U hebt 1 niet-opgeslagen polygoon.</translation>
+    </message>
+    <message>
+        <source>You have been signed out. Sign in again to keep using the cloud features.</source>
+        <translation>U bent afgemeld. Meld u opnieuw aan om de cloudfuncties te blijven gebruiken.</translation>
+    </message>
+    <message>
+        <source>You have {count} unsaved polygons.</source>
+        <translation>U hebt {count} niet-opgeslagen polygonen.</translation>
+    </message>
+    <message>
+        <source>You used your Automatic allowance for this month. Semi-Auto on your computer keeps working, free, with no counter.</source>
+        <translation>U hebt uw maandelijkse limiet voor Automatisch gebruikt. Semi-Auto op uw computer blijft gratis werken, zonder teller.</translation>
+    </message>
+    <message>
+        <source>Your plan is already running on its maximum number of computers. Close AI Segmentation on one of them, then try again.</source>
+        <translation>Uw abonnement wordt al op het maximale aantal computers gebruikt. Sluit AI Segmentation op een van deze computers en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>polygon</source>
+        <translation>polygoon</translation>
+    </message>
+    <message>
+        <source>{left} / {cap}</source>
+        <translation>{left} / {cap}</translation>
+    </message>
+    <message>
+        <source>{n} detections</source>
+        <translation>{n} detecties</translation>
+    </message>
+    <message>
+        <source>{n} free cloud detections remaining</source>
+        <translation>Nog {n} gratis clouddetecties beschikbaar</translation>
+    </message>
+    <message>
+        <source>{n} shapes edited this session</source>
+        <translation>{n} vormen bewerkt in deze sessie</translation>
+    </message>
+    <message>
+        <source>     {step} to build the AI engine again</source>
+        <translation>     {step} om de AI-engine opnieuw op te bouwen</translation>
+    </message>
+    <message>
+        <source>  - Antivirus software (Windows Defender, etc.) blocking pip</source>
+        <translation>  - Antivirussoftware (Windows Defender enz.) blokkeert pip</translation>
+    </message>
+    <message>
+        <source>  - Corrupted virtual environment</source>
+        <translation>  - Beschadigde virtuele omgeving</translation>
+    </message>
+    <message>
+        <source>  - exclude these hosts from inspection:</source>
+        <translation>  - sluit deze hosts uit van inspectie:</translation>
+    </message>
+    <message>
+        <source>  - install the network&apos;s root certificate on this machine, or</source>
+        <translation>  - installeer het hoofdcertificaat van het netwerk op deze computer, of</translation>
+    </message>
+    <message>
+        <source>  1. Add an antivirus exclusion for the folder:</source>
+        <translation>  1. Voeg een antivirusuitsluiting toe voor de map:</translation>
+    </message>
+    <message>
+        <source>  1. Close all QGIS windows (File &gt; Exit)</source>
+        <translation>  1. Sluit alle QGIS-vensters (Bestand &gt; Afsluiten)</translation>
+    </message>
+    <message>
+        <source>  1. Delete the folder: {folder}</source>
+        <translation>  1. Verwijder de map: {folder}</translation>
+    </message>
+    <message>
+        <source>  1. Free up disk space (empty the trash, remove large unused files)</source>
+        <translation>  1. Maak schijfruimte vrij (leeg de prullenbak en verwijder grote ongebruikte bestanden)</translation>
+    </message>
+    <message>
+        <source>  1. If that folder is inside OneDrive or another sync tool, pause
+     syncing (or mark the folder &apos;Always keep on this device&apos;)</source>
+        <translation>  1. Als die map zich in OneDrive of een andere synchronisatietool bevindt, pauzeer dan de
+     synchronisatie (of markeer de map als &apos;Altijd op dit apparaat bewaren&apos;)</translation>
+    </message>
+    <message>
+        <source>  1. Install the latest VC++ Redistributable (x64):
+     {url}</source>
+        <translation>  1. Installeer de nieuwste VC++ Redistributable (x64):
+     {url}</translation>
+    </message>
+    <message>
+        <source>  1. Temporarily disable real-time antivirus scanning</source>
+        <translation>  1. Schakel realtime-antivirusscanning tijdelijk uit</translation>
+    </message>
+    <message>
+        <source>  1. Upgrade your distribution to a version released after 2019</source>
+        <translation>  1. Upgrade uw distributie naar een versie die na 2019 is uitgebracht</translation>
+    </message>
+    <message>
+        <source>  1. Use a QGIS build bundling Python 3.12 or older, or</source>
+        <translation>  1. Gebruik een QGIS-build met Python 3.12 of ouder, of</translation>
+    </message>
+    <message>
+        <source>  1. {step} to build again with fresh data</source>
+        <translation>  1. {step} om opnieuw op te bouwen met nieuwe gegevens</translation>
+    </message>
+    <message>
+        <source>  2. Add an exclusion for the plugin folder:</source>
+        <translation>  2. Voeg een uitsluiting toe voor de pluginmap:</translation>
+    </message>
+    <message>
+        <source>  2. If it persists, update QGIS to the latest LTR release
+     (newer QGIS ships a newer Python) and try again</source>
+        <translation>  2. Als het probleem blijft bestaan, werk QGIS dan bij naar de nieuwste LTR-release
+     (nieuwere QGIS-versies bevatten een nieuwere Python-versie) en probeer het opnieuw</translation>
+    </message>
+    <message>
+        <source>  2. If you cannot upgrade, this plugin&apos;s AI engine is unfortunately
+     not supported on this machine</source>
+        <translation>  2. Als u niet kunt upgraden, wordt de AI-engine van deze plugin helaas
+     niet ondersteund op deze computer</translation>
+    </message>
+    <message>
+        <source>  2. On Apple Silicon, run the native (arm64) QGIS rather than the
+     Intel build under Rosetta</source>
+        <translation>  2. Gebruik op Apple Silicon de native (arm64) QGIS-versie in plaats van de
+     Intel-build onder Rosetta</translation>
+    </message>
+    <message>
+        <source>  2. Or set the AI_SEGMENTATION_CACHE_DIR environment variable to a
+     short local folder outside any synced area (e.g. C:\qgis_ai),
+     then restart QGIS</source>
+        <translation>  2. Stel anders de omgevingsvariabele AI_SEGMENTATION_CACHE_DIR in op een
+     korte lokale map buiten gesynchroniseerde gebieden (bijv. C:\qgis_ai),
+     en start QGIS vervolgens opnieuw</translation>
+    </message>
+    <message>
+        <source>  2. Reopen QGIS</source>
+        <translation>  2. Open QGIS opnieuw</translation>
+    </message>
+    <message>
+        <source>  2. Restart QGIS and try again</source>
+        <translation>  2. Start QGIS opnieuw en probeer het nogmaals</translation>
+    </message>
+    <message>
+        <source>  2. Restart your computer after installing</source>
+        <translation>  2. Start uw computer opnieuw op na de installatie</translation>
+    </message>
+    <message>
+        <source>  2. The environment is installed under: {location}</source>
+        <translation>  2. De omgeving is geïnstalleerd in: {location}</translation>
+    </message>
+    <message>
+        <source>  2. {step} to build everything again</source>
+        <translation>  2. {step} om alles opnieuw op te bouwen</translation>
+    </message>
+    <message>
+        <source>  3. Check folder permissions: {command}</source>
+        <translation>  3. Controleer de mapmachtigingen: {command}</translation>
+    </message>
+    <message>
+        <source>  3. If the error is still there after the reboot:</source>
+        <translation>  3. Als de fout na het opnieuw opstarten nog steeds optreedt:</translation>
+    </message>
+    <message>
+        <source>  3. If the issue persists, reinstall QGIS</source>
+        <translation>  3. Als het probleem blijft bestaan, installeer QGIS dan opnieuw</translation>
+    </message>
+    <message>
+        <source>  3. Open the AI Segmentation panel - installation will resume</source>
+        <translation>  3. Open het AI Segmentation-paneel - de installatie wordt hervat</translation>
+    </message>
+    <message>
+        <source>  3. Run QGIS as administrator (right-click &gt; Run as administrator)</source>
+        <translation>  3. Voer QGIS uit als beheerder (rechtermuisknop &gt; Als administrator uitvoeren)</translation>
+    </message>
+    <message>
+        <source>  3. To install on another drive, set the AI_SEGMENTATION_CACHE_DIR
+     environment variable to a folder on a disk with more space,
+     then restart QGIS and try again</source>
+        <translation>  3. Stel voor installatie op een andere schijf de omgevingsvariabele
+     AI_SEGMENTATION_CACHE_DIR in op een map op een schijf met meer ruimte,
+     start QGIS opnieuw op en probeer het nogmaals</translation>
+    </message>
+    <message>
+        <source>  3. {step} again</source>
+        <translation>  3. {step} opnieuw</translation>
+    </message>
+    <message>
+        <source>  3. {step} to build it again</source>
+        <translation>  3. {step} om het opnieuw op te bouwen</translation>
+    </message>
+    <message>
+        <source>  4. Check that no other Python (Anaconda, Miniconda, standalone Python)
+     puts conflicting torch DLLs on your system PATH.
+     Open a terminal and run: where python
+     If you see multiple results, remove the extra ones from PATH</source>
+        <translation>  4. Controleer of geen andere Python-versie (Anaconda, Miniconda, zelfstandige Python)
+     conflicterende torch-DLL&apos;s aan uw systeempad PATH toevoegt.
+     Open een terminal en voer uit: where python
+     Als u meerdere resultaten ziet, verwijder dan de extra vermeldingen uit PATH</translation>
+    </message>
+    <message>
+        <source>  4. If the issue persists, run QGIS as administrator</source>
+        <translation>  4. Als het probleem blijft bestaan, voer QGIS dan uit als beheerder</translation>
+    </message>
+    <message>
+        <source>  4. Try the installation again</source>
+        <translation>  4. Probeer de installatie opnieuw</translation>
+    </message>
+    <message>
+        <source>  4. Uninstall the plugin (Plugins &gt; Manage and Install Plugins &gt; Installed &gt; AI Segmentation)</source>
+        <translation>  4. Verwijder de plugin (Plugins &gt; Plugins beheren en installeren &gt; Geïnstalleerd &gt; AI Segmentation)</translation>
+    </message>
+    <message>
+        <source>  5. Restart QGIS</source>
+        <translation>  5. Start QGIS opnieuw op</translation>
+    </message>
+    <message>
+        <source>  6. Reinstall the plugin</source>
+        <translation>  6. Installeer de plugin opnieuw</translation>
+    </message>
+    <message>
+        <source>A required DLL failed to initialize.</source>
+        <translation>Een vereiste DLL kon niet worden geïnitialiseerd.</translation>
+    </message>
+    <message>
+        <source>Ask your IT department to add a path-based allow rule for this folder:</source>
+        <translation>Vraag uw IT-afdeling om een padgebaseerde toestemmingsregel toe te voegen voor deze map:</translation>
+    </message>
+    <message>
+        <source>Ask your IT department to either:</source>
+        <translation>Vraag uw IT-afdeling om een van de volgende acties uit te voeren:</translation>
+    </message>
+    <message>
+        <source>Cache error, retrying {package}... ({done}/{total})</source>
+        <translation>Cachefout, nieuwe poging voor {package}... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Creating virtual environment...</source>
+        <translation>Virtuele omgeving maken...</translation>
+    </message>
+    <message>
+        <source>Disabling antivirus or running QGIS as administrator will not help.</source>
+        <translation>Het uitschakelen van antivirus of uitvoeren van QGIS als beheerder helpt niet.</translation>
+    </message>
+    <message>
+        <source>Downloaded {mb} MB, saving...</source>
+        <translation>{mb} MB gedownload, opslaan...</translation>
+    </message>
+    <message>
+        <source>Downloading PyTorch (~180 MB)... {elapsed}</source>
+        <translation>PyTorch downloaden (~180 MB)... {elapsed}</translation>
+    </message>
+    <message>
+        <source>Downloading Python: {done} MB</source>
+        <translation>Python downloaden: {done} MB</translation>
+    </message>
+    <message>
+        <source>Downloading Python: {done} MB of {total} MB</source>
+        <translation>Python downloaden: {done} MB van {total} MB</translation>
+    </message>
+    <message>
+        <source>Downloading uv package installer...</source>
+        <translation>uv-pakketinstaller downloaden...</translation>
+    </message>
+    <message>
+        <source>Failed to create venv: this Python is missing its venv support.
+
+</source>
+        <translation>Kan venv niet maken: deze Python-installatie ondersteunt venv niet.
+
+</translation>
+    </message>
+    <message>
+        <source>How to fix this:</source>
+        <translation>Zo lost u dit op:</translation>
+    </message>
+    <message>
+        <source>If it still fails after restarting QGIS:</source>
+        <translation>Als het na het opnieuw starten van QGIS nog steeds mislukt:</translation>
+    </message>
+    <message>
+        <source>Install it, then retry:
+</source>
+        <translation>Installeer dit en probeer het daarna opnieuw:
+</translation>
+    </message>
+    <message>
+        <source>Install the venv module for your Python with your system&apos;s package manager, then retry.</source>
+        <translation>Installeer de venv-module voor uw Python met de pakketbeheerder van uw systeem en probeer het daarna opnieuw.</translation>
+    </message>
+    <message>
+        <source>Installation failed due to network restrictions.</source>
+        <translation>Installatie mislukt door netwerkbeperkingen.</translation>
+    </message>
+    <message>
+        <source>Installation failed: Python&apos;s SSL module is not available.</source>
+        <translation>Installatie mislukt: de SSL-module van Python is niet beschikbaar.</translation>
+    </message>
+    <message>
+        <source>Installation failed: no compatible AI engine build exists for this
+combination of Intel Mac and Python version.</source>
+        <translation>Installatie mislukt: er bestaat geen compatibele AI-engine-build voor deze
+combinatie van Intel Mac en Python-versie.</translation>
+    </message>
+    <message>
+        <source>Installation failed: the download server presented a certificate this computer does not trust.</source>
+        <translation>Installatie mislukt: de downloadserver presenteerde een certificaat dat deze computer niet vertrouwt.</translation>
+    </message>
+    <message>
+        <source>Installation failed: your Linux distribution is too old for the
+current AI engine. PyTorch wheels now require a recent system
+library (glibc 2.28+, i.e. Ubuntu 20.04 / Debian 10 / CentOS 8 or
+newer).</source>
+        <translation>Installatie mislukt: uw Linux-distributie is te oud voor de
+huidige AI-engine. PyTorch-wheels vereisen nu een recente systeem-
+bibliotheek (glibc 2.28+, dus Ubuntu 20.04 / Debian 10 / CentOS 8 of
+nieuwer).</translation>
+    </message>
+    <message>
+        <source>Installation failed: your disk ran out of space.</source>
+        <translation>Installatie mislukt: uw schijf heeft onvoldoende vrije ruimte.</translation>
+    </message>
+    <message>
+        <source>Installation was blocked, likely by antivirus software or security policy.</source>
+        <translation>Installatie geblokkeerd, waarschijnlijk door antivirussoftware of beveiligingsbeleid.</translation>
+    </message>
+    <message>
+        <source>Installing {package} (~180 MB)... ({done}/{total})</source>
+        <translation>{package} installeren (~180 MB)... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Installing {package}... ({done}/{total})</source>
+        <translation>{package} installeren... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Installing {package}... {elapsed}</source>
+        <translation>{package} installeren... {elapsed}</translation>
+    </message>
+    <message>
+        <source>Intel (x86_64) Macs are supported only up to PyTorch 2.2.2, which
+ships for Python 3.8 to 3.12. Your Python is newer than that.</source>
+        <translation>Intel-Macs (x86_64) worden alleen ondersteund tot en met PyTorch 2.2.2, dat
+beschikbaar is voor Python 3.8 tot 3.12. Uw Python-versie is nieuwer.</translation>
+    </message>
+    <message>
+        <source>Network error, retry {attempt}/{total} in {wait}s...</source>
+        <translation>Netwerkfout, nieuwe poging {attempt}/{total} over {wait}s...</translation>
+    </message>
+    <message>
+        <source>Network error, retrying in {seconds}s...</source>
+        <translation>Netwerkfout, nieuwe poging over {seconds}s...</translation>
+    </message>
+    <message>
+        <source>Not enough free disk space to install dependencies: {free_gb:.1f} GB available at {cache_dir}, at least {min_free_gb:.1f} GB is required.
+
+Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR environment variable to a directory on a larger drive, then restart QGIS.</source>
+        <translation>Onvoldoende vrije schijfruimte om afhankelijkheden te installeren: {free_gb:.1f} GB beschikbaar in {cache_dir}, minimaal {min_free_gb:.1f} GB vereist.
+
+Maak schijfruimte vrij of stel de omgevingsvariabele AI_SEGMENTATION_CACHE_DIR in op een map op een grotere schijf en start QGIS opnieuw op.</translation>
+    </message>
+    <message>
+        <source>Once the rule is in place, restart QGIS and try again.</source>
+        <translation>Start QGIS opnieuw op zodra de regel is ingesteld en probeer het opnieuw.</translation>
+    </message>
+    <message>
+        <source>Open the AI Segmentation panel and click Install</source>
+        <translation>Open het AI Segmentation-paneel en klik op Installeren</translation>
+    </message>
+    <message>
+        <source>Please contact your IT department to allow access to:</source>
+        <translation>Neem contact op met uw IT-afdeling om toegang toe te staan tot:</translation>
+    </message>
+    <message>
+        <source>Please try:</source>
+        <translation>Probeer het volgende:</translation>
+    </message>
+    <message>
+        <source>Python standalone ready</source>
+        <translation>Zelfstandige Python gereed</translation>
+    </message>
+    <message>
+        <source>Retrying {package}... ({done}/{total})</source>
+        <translation>Nieuwe poging voor {package}... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>SSL bypass retry for {package}... ({done}/{total})</source>
+        <translation>Nieuwe poging zonder SSL-controle voor {package}... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>SSL error, retrying {package} (system certs)... ({done}/{total})</source>
+        <translation>SSL-fout, nieuwe poging voor {package} (systeemcertificaten)... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>The AI engine needs roughly 4 GB free during installation.</source>
+        <translation>De AI-engine heeft tijdens de installatie ongeveer 4 GB vrije ruimte nodig.</translation>
+    </message>
+    <message>
+        <source>The environment installs under: {location}</source>
+        <translation>De omgeving wordt geïnstalleerd in: {location}</translation>
+    </message>
+    <message>
+        <source>The install has not reported anything for a while. QGIS is yours again: leave this running, or stop it and use Cloud AI.</source>
+        <translation>De installatie heeft al enige tijd niets gemeld. QGIS is weer beschikbaar: laat dit draaien of stop het en gebruik Cloud AI.</translation>
+    </message>
+    <message>
+        <source>The installer process crashed unexpectedly (access violation).</source>
+        <translation>Het installatieproces is onverwacht vastgelopen (toegangsfout).</translation>
+    </message>
+    <message>
+        <source>The next installation will rebuild it from scratch automatically.</source>
+        <translation>Bij de volgende installatie wordt dit automatisch volledig opnieuw opgebouwd.</translation>
+    </message>
+    <message>
+        <source>The package resolver could not find a compatible set of versions.
+This usually comes from stale cached package data or a Python
+version the AI packages no longer support.</source>
+        <translation>De pakketoplosser kon geen compatibele set versies vinden.
+Dit komt meestal door verouderde gegevens in de cache of een Python-
+versie die niet meer door de AI-pakketten wordt ondersteund.</translation>
+    </message>
+    <message>
+        <source>The plugin always uses this folder, so one rule keeps working across updates.
+It contains a standalone Python runtime, the uv installer and Python packages,
+all downloaded from their official open-source sources.</source>
+        <translation>De plugin gebruikt altijd deze map, zodat één regel blijft werken na updates.
+De map bevat een zelfstandige Python-runtime, het uv-installatieprogramma en Python-pakketten,
+allemaal gedownload van hun officiële opensourcebronnen.</translation>
+    </message>
+    <message>
+        <source>The plugin&apos;s Python environment is damaged (files are missing inside it).</source>
+        <translation>De Python-omgeving van de plugin is beschadigd (er ontbreken bestanden).</translation>
+    </message>
+    <message>
+        <source>The plugin&apos;s local Python runtime is damaged and cannot start.
+This is usually caused by antivirus quarantine or an interrupted
+first installation.</source>
+        <translation>De lokale Python-runtime van de plugin is beschadigd en kan niet starten.
+Dit wordt meestal veroorzaakt door quarantaine door antivirussoftware of een onderbroken
+eerste installatie.</translation>
+    </message>
+    <message>
+        <source>This is usually caused by:</source>
+        <translation>Dit wordt meestal veroorzaakt door:</translation>
+    </message>
+    <message>
+        <source>This usually means the Python installation is incomplete or corrupted.</source>
+        <translation>Dit betekent meestal dat de Python-installatie onvolledig of beschadigd is.</translation>
+    </message>
+    <message>
+        <source>This usually means the install folder is cloud-synced (OneDrive/Dropbox), contains unusual characters, or the path grew past the Windows length limit.</source>
+        <translation>Dit betekent meestal dat de installatiemap met de cloud wordt gesynchroniseerd (OneDrive/Dropbox), ongebruikelijke tekens bevat of langer is dan de Windows-limiet.</translation>
+    </message>
+    <message>
+        <source>Try these steps in order:</source>
+        <translation>Voer deze stappen in volgorde uit:</translation>
+    </message>
+    <message>
+        <source>Upgrading pip...</source>
+        <translation>pip upgraden...</translation>
+    </message>
+    <message>
+        <source>Using system Python (NixOS)...</source>
+        <translation>Systeem-Python gebruiken (NixOS)...</translation>
+    </message>
+    <message>
+        <source>Using system Python (fallback)...</source>
+        <translation>Systeem-Python gebruiken (alternatief)...</translation>
+    </message>
+    <message>
+        <source>Using uv package installer...</source>
+        <translation>uv-pakketinstaller gebruiken...</translation>
+    </message>
+    <message>
+        <source>Verification complete</source>
+        <translation>Verificatie voltooid</translation>
+    </message>
+    <message>
+        <source>Verifying {package}... ({done}/{total})</source>
+        <translation>{package} verifiëren... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Virtual environment created</source>
+        <translation>Virtuele omgeving gemaakt</translation>
+    </message>
+    <message>
+        <source>Virtual environment created (uv)</source>
+        <translation>Virtuele omgeving gemaakt (uv)</translation>
+    </message>
+    <message>
+        <source>Virtual environment ready</source>
+        <translation>Virtuele omgeving gereed</translation>
+    </message>
+    <message>
+        <source>Windows refused a file path during installation.</source>
+        <translation>Windows weigerde een bestandspad tijdens de installatie.</translation>
+    </message>
+    <message>
+        <source>You can also try checking your proxy settings in QGIS (Settings &gt; Options &gt; Network).</source>
+        <translation>U kunt ook uw proxy-instellingen in QGIS controleren (Instellingen &gt; Opties &gt; Netwerk).</translation>
+    </message>
+    <message>
+        <source>Your network inspects secure connections and re-signs them with its own certificate, and that certificate is not in the computer&apos;s certificate store.</source>
+        <translation>Uw netwerk inspecteert beveiligde verbindingen en ondertekent ze opnieuw met een eigen certificaat. Dat certificaat staat niet in het certificaatarchief van de computer.</translation>
+    </message>
+    <message>
+        <source>Your organization&apos;s security policy (application control, e.g. AppLocker or WDAC)
+is blocking the plugin&apos;s local AI environment.</source>
+        <translation>Het beveiligingsbeleid van uw organisatie (toepassingsbeheer, bijv. AppLocker of WDAC)
+blokkeert de lokale AI-omgeving van de plugin.</translation>
+    </message>
+    <message>
+        <source>uv package installer ready</source>
+        <translation>uv-pakketinstaller gereed</translation>
+    </message>
+    <message>
+        <source>uv: ready</source>
+        <translation>uv: gereed</translation>
+    </message>
+    <message>
+        <source>uv: unavailable, using pip</source>
+        <translation>uv: niet beschikbaar, pip wordt gebruikt</translation>
+    </message>
+    <message>
+        <source>{free_gb:.1f} GB free at {cache_dir}, under the {min_free_gb:.0f} GB the local model needs. Installing the Automatic packages only. Free up space and install again to turn Semi-Auto mode on.</source>
+        <translation>{free_gb:.1f} GB vrij in {cache_dir}, minder dan de {min_free_gb:.0f} GB die het lokale model nodig heeft. Alleen de pakketten voor de modus Automatisch worden geïnstalleerd. Maak ruimte vrij en installeer opnieuw om de modus Semi-Auto in te schakelen.</translation>
+    </message>
+    <message>
+        <source>{package} unavailable</source>
+        <translation>{package} niet beschikbaar</translation>
+    </message>
+    <message>
+        <source>{step}. The plugin builds it again from scratch.</source>
+        <translation>{step}. De plugin bouwt dit volledig opnieuw op.</translation>
+    </message>
+    <message>
+        <source>✓ All dependencies installed</source>
+        <translation>✓ Alle afhankelijkheden geïnstalleerd</translation>
+    </message>
+    <message>
+        <source>✓ Automatic mode ready</source>
+        <translation>✓ Modus Automatisch gereed</translation>
+    </message>
+    <message>
+        <source>✓ {package} installed</source>
+        <translation>✓ {package} geïnstalleerd</translation>
+    </message>
+    <message>
+        <source>An old version is installed. Click Install to replace it.</source>
+        <translation>Er is een oude versie geïnstalleerd. Klik op Installeren om deze te vervangen.</translation>
+    </message>
+    <message>
+        <source>Some AI components are missing. Click Install to complete them.</source>
+        <translation>Sommige AI-componenten ontbreken. Klik op Installeren om ze te voltooien.</translation>
+    </message>
+    <message>
+        <source>The AI components are not installed. Click Install to add them.</source>
+        <translation>De AI-componenten zijn niet geïnstalleerd. Klik op Installeren om ze toe te voegen.</translation>
+    </message>
+    <message>
+        <source>The AI components are not ready. Click Install to set them up.</source>
+        <translation>De AI-componenten zijn niet gereed. Klik op Installeren om ze in te stellen.</translation>
+    </message>
+    <message>
+        <source>The AI components did not load. Click Install to repair them.</source>
+        <translation>De AI-componenten zijn niet geladen. Klik op Installeren om ze te herstellen.</translation>
+    </message>
+    <message>
+        <source>The AI components did not pass the check. Click Install to repair them.</source>
+        <translation>De AI-componenten zijn niet door de controle gekomen. Klik op Installeren om ze te herstellen.</translation>
+    </message>
+    <message>
+        <source>The AI components need an update. The update starts now.</source>
+        <translation>De AI-componenten moeten worden bijgewerkt. De update start nu.</translation>
+    </message>
+    <message>
+        <source>The AI runtime is damaged. Click Install to repair it.</source>
+        <translation>De AI-runtime is beschadigd. Klik op Installeren om deze te herstellen.</translation>
+    </message>
+    <message>
+        <source>The AI workspace is missing. Click Install to build it.</source>
+        <translation>De AI-werkruimte ontbreekt. Klik op Installeren om deze aan te maken.</translation>
+    </message>
+    <message>
+        <source>The last install did not finish. Click Install to start again.</source>
+        <translation>De vorige installatie is niet voltooid. Klik op Installeren om opnieuw te beginnen.</translation>
+    </message>
+    <message>
+        <source>The on-device AI is not installed. Click Install to add it.</source>
+        <translation>De AI op het apparaat is niet geïnstalleerd. Klik op Installeren om deze toe te voegen.</translation>
+    </message>
+    <message>
+        <source>Cannot close download file: {error}</source>
+        <translation>Kan downloadbestand niet sluiten: {error}</translation>
+    </message>
+    <message>
+        <source>Cannot open download file: {error}</source>
+        <translation>Kan downloadbestand niet openen: {error}</translation>
+    </message>
+    <message>
+        <source>Cannot save download: {error}</source>
+        <translation>Kan download niet opslaan: {error}</translation>
+    </message>
+    <message>
+        <source>Cannot write download file: {error}</source>
+        <translation>Kan niet naar downloadbestand schrijven: {error}</translation>
+    </message>
+    <message>
+        <source>Download failed</source>
+        <translation>Download mislukt</translation>
+    </message>
+    <message>
+        <source>the download did not finish in time</source>
+        <translation>de download is niet op tijd voltooid</translation>
+    </message>
+    <message>
+        <source>the download stalled, no data was received</source>
+        <translation>de download is vastgelopen, er zijn geen gegevens ontvangen</translation>
     </message>
 </context>
 </TS>

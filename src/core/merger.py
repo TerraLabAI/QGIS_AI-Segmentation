@@ -3,6 +3,7 @@ from __future__ import annotations
 from qgis.core import (
     QgsFeature,
     QgsGeometry,
+    QgsPointXY,
     QgsSpatialIndex,
 )
 
@@ -200,6 +201,13 @@ class IncrementalMerger:
         # bbox. A keeper's geometry never changes in place (a merge retires the
         # fid and inserts the union), so the cached value stays exact.
         self._areas: dict[int, float] = {}
+        # Centroid per keeper, same key and same lifetime as _areas but filled
+        # on demand: only the non-seam duplicate test in add() ever reads one,
+        # so computing a centroid per insert would cost more than it saves.
+        # QgsGeometry.centroid() is another O(vertices) GEOS walk with no
+        # internal cache, and a keeper that many fragments land on otherwise
+        # repeats it once per fragment.
+        self._centroids: dict[int, QgsPointXY] = {}
         self._next_id = 0
         # Ids of the non-retired keepers, kept in lockstep with _keepers/_scores
         # (add on _insert, drop on retirement). result()/result_scored() walk this
@@ -264,6 +272,7 @@ class IncrementalMerger:
         self._keepers[fid] = None
         self._live_ids.pop(fid, None)
         self._areas.pop(fid, None)
+        self._centroids.pop(fid, None)
         self._dirty.pop(fid, None)
         self._gone[fid] = None
 
@@ -380,7 +389,10 @@ class IncrementalMerger:
                     if cand_centroid is None:
                         cand_centroid = geom.centroid().asPoint()
                     cc = cand_centroid
-                    kc = keeper.centroid().asPoint()
+                    kc = self._centroids.get(fid)
+                    if kc is None:
+                        kc = keeper.centroid().asPoint()
+                        self._centroids[fid] = kc
                     dist = ((cc.x() - kc.x()) ** 2 + (cc.y() - kc.y()) ** 2) ** 0.5
                     if dist < self._dup_centroid_frac * smax:
                         matches.append(fid)
@@ -414,14 +426,22 @@ class IncrementalMerger:
             # colour and the refine cache in the repaint loop). All matched
             # keepers are retired; the primary's fid is reused for the union.
             primary_fid = min(matches)
-            members = [(geom, float(score))]
+            # (geometry, score, area) per member. The area drives the sort, the
+            # largest-area reference and the score floor below, so carry the
+            # cached value: _retire_keeper drops the _areas entry, and reading
+            # it afterwards would walk every member's vertices two or three
+            # more times for a number already measured at insert.
+            members = [(geom, float(score), cand_area)]
             for fid in matches:
                 keeper = self._keepers[fid]
                 if keeper is not None:
-                    members.append((keeper, self._scores.get(fid, 0.0)))
+                    keeper_area = self._areas.get(fid)
+                    if keeper_area is None:
+                        keeper_area = keeper.area()
+                    members.append((keeper, self._scores.get(fid, 0.0), keeper_area))
                 self._retire_keeper(fid)
-            members.sort(key=lambda t: t[0].area(), reverse=True)
-            largest_area = members[0][0].area()
+            members.sort(key=lambda t: t[2], reverse=True)
+            largest_area = members[0][2]
             current = members[0][0]
             contributing = {0}
             for i in range(1, len(members)):
@@ -450,8 +470,8 @@ class IncrementalMerger:
             # stitching is the "confidence cuts buildings" bug).
             floor_area = self._score_floor_frac * largest_area
             best_score = max(
-                s for i, (g, s) in enumerate(members)
-                if i in contributing or g.area() >= floor_area
+                s for i, (_g, s, a) in enumerate(members)
+                if i in contributing or a >= floor_area
             )
             if self._absorbed is not None:
                 # Carry each matched keeper's own history onto the survivor, so
@@ -461,7 +481,9 @@ class IncrementalMerger:
                 pool = []
                 for fid in matches:
                     pool.extend(self._absorbed.pop(fid, ()))
-                pool.extend(g_s for i, g_s in enumerate(members)
+                # Back to (geometry, score): the pool joins the pairs carried
+                # over from the matched keepers and _partition_of reads pairs.
+                pool.extend((g, s) for i, (g, s, _a) in enumerate(members)
                             if i and i not in contributing)
                 if pool:
                     self._absorbed[primary_fid] = pool
@@ -514,6 +536,11 @@ class IncrementalMerger:
         # ``area`` lets a caller that already measured this geometry skip the
         # recompute; it must be geom.area() exactly, never an approximation.
         self._areas[use_id] = geom.area() if area is None else float(area)
+        # This fid now carries a different geometry, so any centroid cached
+        # under it belongs to the retired one. Every explicit-fid caller
+        # retires first (which already drops it), so this is the belt that
+        # keeps the cache exact if a future one does not.
+        self._centroids.pop(use_id, None)
         self._live_ids[use_id] = None
         # Change log: this fid now carries a geometry the consumer has not seen.
         # A merge that reuses a just-retired primary fid lands here too, so the
@@ -550,6 +577,11 @@ class IncrementalMerger:
         self._keepers = {fid: self._keepers[fid] for fid in self._live_ids}
         self._scores = {fid: self._scores[fid] for fid in self._live_ids}
         self._areas = {fid: self._areas[fid] for fid in self._live_ids}
+        # Filtered rather than indexed by live id: _centroids is filled on
+        # demand, so a live keeper no dup test has touched has no entry.
+        self._centroids = {
+            fid: c for fid, c in self._centroids.items() if fid in self._live_ids
+        }
         # Rebuild the spatial index from the survivors too: retired fids are
         # skipped by add() anyway (keepers.get() is None), but their bboxes
         # otherwise pile up and add()'s intersects() scan grows with every

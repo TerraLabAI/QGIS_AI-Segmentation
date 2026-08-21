@@ -294,8 +294,11 @@ def decode_rle_to_mask(rle: str | dict, height: int, width: int,
 
     Args:
         rle:    RLE string from the backend ("offset count offset count ...").
-                A dict argument is not supported by this implementation; if a dict
-                is received the function logs a warning and returns an empty mask.
+                An empty or whitespace-only string is the encoder's legal form
+                for an all-background mask and decodes to the all-zero grid in
+                both modes. A dict argument is not supported by this
+                implementation; if a dict is received the function logs a
+                warning and returns an empty mask.
         height: Tile height in pixels (the actual tile, not padded).
         width:  Tile width in pixels.
         strict: Raise ValueError instead of answering with a mask the encoding
@@ -326,9 +329,14 @@ def decode_rle_to_mask(rle: str | dict, height: int, width: int,
         )
         return flat.reshape((height, width))
 
-    if not isinstance(rle, str) or not rle.strip():
+    if not isinstance(rle, str):
         if strict:
-            raise ValueError("mask encoding is empty or not readable")
+            raise ValueError("mask encoding is not readable")
+        return flat.reshape((height, width))
+
+    if not rle.strip():
+        # The server's own encoder emits an empty string for an all-background
+        # mask, so this is a described all-zero grid, valid in both modes.
         return flat.reshape((height, width))
 
     tokens = rle.split()
@@ -541,8 +549,13 @@ def _set_quality_render_flags(settings) -> None:
     from qgis.core import Qgis, QgsMapSettings
 
     for name in ("Antialiasing", "HighQualityImageTransforms"):
-        flag = getattr(QgsMapSettings, name, None) or getattr(
-            getattr(Qgis, "MapSettingsFlag", None), name, None)
+        # Tested with `is None`, never chained with `or`: a scoped enum member
+        # whose value is 0 is falsy, and an `or` chain would drop it and reach
+        # for the other spelling that does not exist on that QGIS.
+        flag = getattr(QgsMapSettings, name, None)
+        if flag is None:
+            scoped = getattr(Qgis, "MapSettingsFlag", None)
+            flag = None if scoped is None else getattr(scoped, name, None)
         if flag is None:
             continue
         try:
@@ -561,8 +574,12 @@ def _set_blocking_remote_fetch(settings) -> None:
     across QGIS versions, and a missing flag must never break the render."""
     from qgis.core import Qgis, QgsMapSettings
 
-    flag = getattr(QgsMapSettings, "RenderBlocking", None) or getattr(
-        getattr(Qgis, "MapSettingsFlag", None), "RenderBlocking", None)
+    # `is None` rather than an `or` chain, for the reason given in
+    # _set_quality_render_flags: a 0-valued enum member is falsy.
+    flag = getattr(QgsMapSettings, "RenderBlocking", None)
+    if flag is None:
+        scoped = getattr(Qgis, "MapSettingsFlag", None)
+        flag = None if scoped is None else getattr(scoped, "RenderBlocking", None)
     if flag is None:
         return
     try:

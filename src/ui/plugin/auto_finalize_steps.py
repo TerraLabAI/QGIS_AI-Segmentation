@@ -19,6 +19,13 @@ from ...workers.live_stitch_thread import STITCH_JOIN_TIMEOUT_MS
 from .auto_results import _STITCH_DRAIN_BUDGET_S, _STITCH_WAIT_SLICE_MS
 from .shared import _AUTO_PUMP_BUDGET_S
 
+# What the run-wide footprint alignment may cost the wait between the last
+# tile and the review. One object can take tens of milliseconds, so a dense run
+# would otherwise hold the finish screen for as long as it takes. The pass
+# improves shapes and never gates them: past this the rows it has not reached
+# keep their traced outline and the run goes on.
+_ALIGN_PHASE_BUDGET_S = 10.0
+
 
 class AutoFinalizeStepsMixin:
     """Time-sliced finalize and reslice, yielding to the event loop between slices."""
@@ -283,14 +290,67 @@ class AutoFinalizeStepsMixin:
                 self._auto_finalize_state = None
                 self._record_auto_zero_result(state["tiles_succeeded"])
                 return
-            # Sweep done: seed the build phase and continue.
-            state["phase"] = "build"
-            state["build_pending"] = list(merged_ided)
-            state["total_build"] = len(merged_ided)
-            state["objects"] = []
-            state["object_fids"] = []
             state.pop("sweep", None)
-            QTimer.singleShot(0, self._step_auto_finalize_refine)
+            # Sweep done: run-wide footprint alignment when the server opted
+            # this run's prompt family in (None = pass off, straight to build).
+            # It needs the WHOLE deduplicated set at once (the neighbour
+            # consensus), which is why it lives here and not in the per-object
+            # refine.
+            align = self._auto_footprint_align_sweep(merged_ided)
+            if align is not None:
+                state["phase"] = "align"
+                state["align"] = align
+                state["align_rows"] = merged_ided
+                QTimer.singleShot(0, self._step_auto_finalize_refine)
+                return
+            self._seed_finalize_build_phase(state, merged_ided)
+            return
+
+        # Phase 0b (finalize only): the run-wide footprint alignment,
+        # time-sliced like the sweep. A systemic failure falls back to the
+        # unaligned rows: the pass improves shapes, it never gates them.
+        if state.get("phase") == "align":
+            align = state["align"]
+            align_until = state.get("align_until")
+            if align_until is None:
+                align_until = _t.monotonic() + _ALIGN_PHASE_BUDGET_S
+                state["align_until"] = align_until
+            done = False
+            try:
+                # One object per slice: a single alignment can cost tens of
+                # milliseconds and the deadline is only read between slices, so
+                # a bigger step overshoots the budget the whole pump shares.
+                while not done and _t.monotonic() < deadline:
+                    done = align.step(1)
+            except Exception as exc:  # noqa: BLE001 -- keep the raw shapes
+                self._log_finalize_drop(state, "align", "?", exc)
+                self._seed_finalize_build_phase(state, state.pop("align_rows"))
+                state.pop("align", None)
+                return
+            if not done and _t.monotonic() >= align_until:
+                # Out of time. The rows the pass reached keep their aligned
+                # shape, the rest keep the one they came in with: a review that
+                # opens late is worse than a few unsquared corners.
+                QgsMessageLog.logMessage(
+                    "Auto detection: footprint alignment ran out of its "
+                    f"{int(_ALIGN_PHASE_BUDGET_S)}s budget; keeping the shapes "
+                    "it had not reached as they are",
+                    "AI Segmentation", level=Qgis.MessageLevel.Info)
+                rows = align.result()
+                state.pop("align", None)
+                state.pop("align_rows", None)
+                state.pop("align_until", None)
+                self._seed_finalize_build_phase(state, rows)
+                return
+            if not done:
+                QTimer.singleShot(0, self._step_auto_finalize_refine)
+                return
+            self._log_footprint_alignment(align)
+            rows = align.result()
+            state.pop("align", None)
+            state.pop("align_rows", None)
+            state.pop("align_until", None)
+            self._seed_finalize_build_phase(state, rows)
             return
 
         # Phase 1 (finalize only): build the canonical (geom, score, area) set.
@@ -420,6 +480,16 @@ class AutoFinalizeStepsMixin:
         params = state["params"]
         pixel_size = state["pixel_size"]
         removed = self._review_removed_fids()
+        # The size gate reads the shape that SHIPS. Cleanup moves an object
+        # across the Min/Max line, and the saved file records the refined area,
+        # so gating the merged base wrote rows whose own figure the filter says
+        # is out of range. Measured only when a size filter is actually set, so
+        # a run without one pays nothing for it.
+        size_gate_on = bool(params.get("min_a", 0.0) > 0 or params.get("max_a", 0.0) > 0)
+        measurer = state.get("measurer")
+        if size_gate_on and measurer is None:
+            measurer = self._make_auto_area_measurer()
+            state["measurer"] = measurer
         while filter_pending:
             det_idx, (base, score, area) = filter_pending.pop()
             try:
@@ -427,12 +497,22 @@ class AutoFinalizeStepsMixin:
                 # Hand-drawn / split objects skip the confidence + size gates
                 # so a slider set for the detections never hides the user's own
                 # geometry.
-                passes = (self._object_is_manual(det_idx) or self._passes_review_filters(score, area, params))
+                manual = self._object_is_manual(det_idx)
+                passes = (manual or self._passes_review_filters(score, area, params))
                 if det_idx not in removed and base_ok and passes:
                     # Cached per object + shape key: a filter-only reslice
                     # (Confidence / Min / Max size) is pure dict lookups here.
                     g = self._review_refined_geom(det_idx, base, params, pixel_size)
-                    if g is not None:
+                    if g is None:
+                        # An object that passed every filter and came back with
+                        # no shape leaves the map and the export. Count it: a
+                        # total that quietly disagrees with the map is the one
+                        # thing the review cannot explain.
+                        state["refine_dropped"] = int(
+                            state.get("refine_dropped", 0) or 0) + 1
+                    elif (manual or not size_gate_on
+                            or self._passes_size_filters(
+                                self._object_area_m2(g, measurer), params)):
                         visible.append(g)
                         visible_scores.append(score)
                         visible_ids.append(self._object_fid_for(det_idx))
@@ -490,6 +570,12 @@ class AutoFinalizeStepsMixin:
                 f"Auto detection: {dropped} object(s) dropped by the "
                 f"finalize guards this pass",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning)
+        refine_dropped = int(state.get("refine_dropped", 0) or 0)
+        if refine_dropped:
+            QgsMessageLog.logMessage(
+                f"Auto detection: {refine_dropped} object(s) left no shape "
+                f"under the current cleanup settings and are not on the map",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
         self._auto_finalize_state = None
         if state.get("mode") == "reslice":
             self._apply_auto_reslice_result(visible, vis_scores, vis_ids)
@@ -514,6 +600,17 @@ class AutoFinalizeStepsMixin:
             # interleaved with the filter slices: it delayed the review it is
             # for, and the phase log charged its whole cost to "filter".
             self._start_build_preview_cache(state["pixel_size"])
+
+    def _seed_finalize_build_phase(self, state: dict, merged_ided: list) -> None:
+        """Seed the cooperative build phase from a deduplicated (and possibly
+        alignment-swept) merged set, and schedule the next slice."""
+        from qgis.PyQt.QtCore import QTimer
+        state["phase"] = "build"
+        state["build_pending"] = list(merged_ided)
+        state["total_build"] = len(merged_ided)
+        state["objects"] = []
+        state["object_fids"] = []
+        QTimer.singleShot(0, self._step_auto_finalize_refine)
 
     def _apply_auto_reslice_result(self, geoms: list,
                                    scores: list | None = None,

@@ -451,6 +451,18 @@ class AutoShapeEditMixin:
                     or getattr(self, "_qgis_bridge_active", False)):
                 self._end_correct_focus()
 
+    def _merge_seam_tolerance(self) -> float:
+        """Ground distance a seam may span, in the run CRS. 0 when unknown.
+
+        The offer and the commit both read it here, so Merge cannot be offered
+        on a gap the commit then refuses.
+        """
+        try:
+            px = float((self._auto_review or {}).get("pixel_size", 0.0) or 0.0)
+        except (TypeError, ValueError, AttributeError):
+            return 0.0
+        return max(0.0, px) * _MERGE_SEAM_TOLERANCE_PX
+
     def _selected_has_mergeable_neighbor(self, det_idx) -> bool:
         """True when another VISIBLE detection overlaps or touches the object at
         ``det_idx`` (so Merge has something to join). Uses the gesture hit index
@@ -471,12 +483,7 @@ class AutoShapeEditMixin:
         # other. Two image pixels covers a seam half parted by a hairline and
         # nothing else. No pixel size (an older or restored review) means no
         # tolerance, so only a real intersection counts.
-        tol = 0.0
-        try:
-            px = float((self._auto_review or {}).get("pixel_size", 0.0) or 0.0)
-            tol = max(0.0, px) * _MERGE_SEAM_TOLERANCE_PX
-        except (TypeError, ValueError, AttributeError):
-            tol = 0.0
+        tol = self._merge_seam_tolerance()
         bbox = sel.boundingBox()
         rect = QgsRectangle(bbox.xMinimum() - tol, bbox.yMinimum() - tol,
                             bbox.xMaximum() + tol, bbox.yMaximum() + tol)
@@ -777,14 +784,31 @@ class AutoShapeEditMixin:
                 "Pick at least two shapes to merge them."))
             return
         from ...core.geometry_ops import merge_geometries
-        geoms = [self._shape_hit_geoms.get(idx, self._auto_objects[idx][0])
+        # The CANONICAL bases, never the drawn shapes. The drawn ones carry the
+        # Shapes refine, so joining them writes a refined outline back as the
+        # new base and the refine runs on it a second time. Same rule as the
+        # headless merge.
+        geoms = [self._auto_objects[idx][0]
                  for idx in (plan.target, *plan.absorbed)
-                 if self._shape_hit_geoms.get(idx, self._auto_objects[idx][0]) is not None]
+                 if self._auto_objects[idx][0] is not None]
         merged = merge_geometries(geoms)
         if merged is None or merged.isEmpty():
             self._set_correct_status("warning", tr(
                 "Those shapes could not be joined. Nothing was changed."))
             return
+        # A join stitches ONE object back together. Pieces that do not touch
+        # come back as several parts, which would make two distinct objects one
+        # row and quietly lose one of them from the count. A tile seam is the
+        # one gap Merge exists to close, so bridge that one, on the same
+        # tolerance the offer measured, and refuse everything wider.
+        from ...core.geometry_ops import bridge_seam_gap, polygon_part_count
+        if polygon_part_count(merged) > 1:
+            bridged = bridge_seam_gap(merged, self._merge_seam_tolerance())
+            if bridged is None:
+                self._set_correct_status("warning", tr(
+                    "Those shapes could not be joined. Nothing was changed."))
+                return
+            merged = bridged
         joined = len(plan.absorbed) + 1
         edit = apply_merge(self._auto_objects, plan,
                            self._object_row(merged, plan.score))
@@ -869,6 +893,15 @@ class AutoShapeEditMixin:
         snap = self._fold_manual_removed_undo.pop(id(entry), None)
         if snap is not None:
             self._auto_manual_removed = set(snap)
+        # The undo popped the appended tail, so any per-shape settings stored
+        # against those indices now point past the end of the list. Drop them:
+        # the next appended object would take the index, and with it dials the
+        # user set on somebody else's shape.
+        overrides = getattr(self, "_auto_shape_overrides", None)
+        if overrides:
+            ceiling = len(self._auto_objects)
+            for stale in [key for key in overrides if key >= ceiling]:
+                overrides.pop(stale, None)
         # An undo restores the overwritten rows (and drops any appended tail);
         # only the restored rows changed shape. The unremoved (merge-absorbed)
         # rows kept their original geometry, so their cache is still valid.

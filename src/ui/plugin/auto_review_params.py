@@ -61,7 +61,12 @@ class AutoReviewParamsMixin:
         angles/Fill holes/Round corners per object kind) + the resolution-aware
         Min size floor. Recomputed per call from the run context, so every NEW
         run starts from ITS optimum (no cross-run memory by design); the user
-        can still override any control in the review."""
+        can still override any control in the review.
+
+        ``_auto_review_preset_overrides`` is the one seam a programmatic caller
+        writes: the API sets it for the length of one headless run and clears it
+        after, so a caller-supplied shape reaches the finalize without anything
+        replacing this method at runtime."""
         from ...core.review_presets import review_preset_for
         prompt = str((self._auto_run_ctx or {}).get("prompt") or "")
         # Meters per RETURNED-mask pixel: the run's meter GSD scaled by the
@@ -74,11 +79,28 @@ class AutoReviewParamsMixin:
         # Prefer the server run plan's review block when it was fetched for this
         # run's prompt; else the blob/generic prompt-shaped preset.
         plan = self._active_run_plan(prompt)
+        preset = None
         if plan is not None:
             preset = self._review_preset_from_plan(plan.get("review"), gsd_m)
-            if preset is not None:
-                return preset
-        return review_preset_for(prompt, gsd_m)
+        if preset is None:
+            preset = review_preset_for(prompt, gsd_m)
+        return self._with_review_preset_overrides(preset)
+
+    def _with_review_preset_overrides(self, preset: dict) -> dict:
+        """Merge the caller's per-run shape overrides onto a preset dict.
+
+        Only keys the preset already carries, plus points_pct, are taken. An
+        unknown or misspelled one is ignored rather than reaching the refine
+        pipeline as a stray parameter."""
+        overrides = getattr(self, "_auto_review_preset_overrides", None)
+        if not isinstance(overrides, dict) or not overrides:
+            return preset
+        merged = dict(preset)
+        allowed = set(merged) | {"points_pct"}
+        for key, value in overrides.items():
+            if key in allowed and value is not None:
+                merged[key] = value
+        return merged
 
     def _review_preset_from_plan(self, review: object, gsd_m: float) -> dict | None:
         """Build the review preset dict from a run plan's ``review`` block, or
@@ -177,8 +199,10 @@ class AutoReviewParamsMixin:
             # every reslice snapshot carries it, like Min size does.
             "vertex_spacing_m": float(preset.get("vertex_spacing_m", 0.0) or 0.0),
             # The user's share-of-points dial opens at "keep them all", so a
-            # fresh run is the class density alone.
-            "points_pct": _AUTO_REVIEW_POINTS_PCT_DEFAULT,
+            # fresh run is the class density alone. A programmatic run may put
+            # its own share in the preset, which is why this reads it back.
+            "points_pct": int(preset.get(
+                "points_pct", _AUTO_REVIEW_POINTS_PCT_DEFAULT)),
         }
 
     def _widget_review_params(self) -> dict:

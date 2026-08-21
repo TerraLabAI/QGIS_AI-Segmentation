@@ -187,7 +187,7 @@ def min_size_noise_floor_m2(mask_gsd_m: float, *, no_prompt: bool = False) -> fl
 
 
 # ---------------------------------------------------------------------------
-# Manual refine-panel defaults ("Refine selection" in base Manual, "Shape
+# Manual refine-panel defaults ("Outline settings" in base Manual, "Shape
 # settings" in a Refine-in-Manual handoff). Used to be hardcoded independently
 # at 5 call sites (plugin __init__, session reset, saved-polygon-restore
 # fallback, and the dock's widget setup + slider reset); a drift between them
@@ -212,13 +212,13 @@ REFINE_SIMPLIFY_DEFAULT = 2.0
 # A distance is the wrong unit for a small object: two crop pixels is nothing on
 # a 25 m roof and a tenth of a car, and at low zoom one crop pixel is metres. The
 # point budget already bounds its own cap this way (vertex_budget.
-# deviation_cap_for); this is the same guard one step earlier. 0.08 costs four
-# vertices across the whole corpus and keeps the smallest objects off the floor.
+# deviation_cap_for); this is the same guard one step earlier. 0.08 costs a
+# handful of vertices and keeps the smallest objects off the floor.
 REFINE_SIMPLIFY_MAX_NARROW_FRACTION = 0.08
 
 # How far the point budget may move a Manual outline, in ground metres. The
-# served cap is shared with Automatic and is the value a run's classes were
-# calibrated against; at that value the budget may cut a real building step off
+# served cap is shared with Automatic and is tuned for a run's classes; at
+# that value the budget may cut a real building step off
 # as if it were mask noise, which is what leaves a chamfered corner where the
 # model drew a square one. Manual has no class and one object on screen, so it
 # holds a tighter cap of its own. The panel's Simplify pays for it: on its own a
@@ -261,6 +261,11 @@ REFINE_FILL_HOLES_DEFAULT = True
 # any size and a clicked courtyard came out solid. At the ceiling, Manual now
 # does what the cloud path does on every tile: fill the pits, keep the structure.
 REFINE_FILL_HOLES_MAX_M2_DEFAULT = HOLE_NOISE_CEILING_M2
+# Right angles opens OFF, and it lasts one session. Unlike the other refine
+# controls it is NOT remembered between QGIS runs (refine_persistence): a tick
+# belongs to the run of buildings that earned it, and carrying it into the next
+# session squared trees nobody asked to square. Every Semi-Auto session
+# therefore opens unticked, whatever the last one ended on.
 REFINE_ORTHO_DEFAULT = False
 REFINE_MIN_SIZE_M2_DEFAULT = 0.0
 REFINE_MAX_SIZE_M2_DEFAULT = 0.0

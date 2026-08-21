@@ -21,11 +21,15 @@ from .auth_helper import (
 
 PRODUCT_ID = "ai-segmentation"
 
-_KEY_RE = re.compile(r"^tl_[0-9a-f]{32}$")
+# Shape of an activation key. Public: the pairing worker checks a key the
+# server just handed back before anything persists it.
+ACTIVATION_KEY_RE = re.compile(r"^tl_[0-9a-f]{32}$")
+_KEY_RE = ACTIVATION_KEY_RE  # old private name, kept for existing callers
 
 TERRALAB_PREFIX = "TerraLab/"
 
 TUTORIAL_URL_FALLBACK = "https://youtu.be/lbADk75l-mk?si=q6WnwyV2NcmQYuhI"
+CONTACT_CALL_URL_FALLBACK = "https://calendly.com/barbot-yvann/30min"
 TERMS_URL = (
     "https://terra-lab.ai/terms-of-sale"
     "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
@@ -174,10 +178,17 @@ def set_cached_config(config: dict) -> None:
     Also mirrors it to disk so the next cold start is not empty. The write is
     best-effort and holds only values the server serves to any caller, so a
     failure costs nothing and nothing secret lands on disk.
+
+    The disk copy carries no kill switch on purpose, so what the server turned
+    OFF is remembered separately (kill_switch_memory) and consulted only until
+    the next fetch lands. Without it a feature withdrawn because it is broken
+    came back on at every restart.
     """
     from .config_cache import set_config
+    from .kill_switch_memory import remember_from_live_config
 
     set_config(config)
+    remember_from_live_config(config)
 
 
 def is_feature_enabled(name: str) -> bool:
@@ -228,6 +239,17 @@ def get_tutorial_url() -> str:
     return dial_url("tutorial_url", TUTORIAL_URL_FALLBACK)
 
 
+def get_contact_call_url() -> str:
+    """The book-a-call address behind Contact us, served like the tutorial one.
+
+    Same guard: the caller hands it to the desktop URL handler, so anything
+    that is not a plain https web address with a host yields the shipped
+    constant."""
+    from .server_dials import dial_url
+
+    return dial_url("contact_call_url", CONTACT_CALL_URL_FALLBACK)
+
+
 def get_terms_url() -> str:
     return TERMS_URL
 
@@ -240,13 +262,29 @@ def get_dashboard_url() -> str:
     return DASHBOARD_URL
 
 
-def get_upgrade_url() -> str:
-    """URL for the Pro upgrade checkout/dashboard page with UTM attribution."""
-    base = get_dashboard_url().split("?")[0]
+# Every paid CTA lands on the dashboard checkout for AI Segmentation Pro.
+# cta_source names the plugin surface the click came from, so the website can
+# tell the km2 wall from the objects wall without a plugin release.
+PRO_CHECKOUT_URL_BASE = (
+    "https://terra-lab.ai/dashboard"
+    "?action=checkout&product=ai-segmentation-pro"
+)
+
+
+def get_pro_checkout_url(cta_source: str) -> str:
+    """The Pro checkout URL, tagged with the surface that sent the click."""
+    source = "".join(
+        ch for ch in str(cta_source or "") if ch.isalnum() or ch == "_"
+    ) or "plugin"
     return (
-        f"{base}?utm_source=qgis&utm_medium=plugin"
-        "&utm_campaign=ai-segmentation-pro&utm_content=upgrade_cta"
+        f"{PRO_CHECKOUT_URL_BASE}&cta_source={source}"
+        "&utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation-pro"
     )
+
+
+def get_upgrade_url() -> str:
+    """The account dialog's Upgrade CTA destination."""
+    return get_pro_checkout_url("plugin_account_dialog")
 
 
 # -- activation key validation ---------------------------------------------

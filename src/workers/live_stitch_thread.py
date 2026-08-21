@@ -139,7 +139,28 @@ class LiveStitchThread(QThread):
         self._shown: dict[int, float] = {}
         # fid -> how many drain cycles it has been waiting for its shape. An
         # object still being merged is drawn raw and shaped once it settles.
+        # Only an object that is ON the map and not yet carrying the run's shape
+        # is queued here: the settle pass reads the same geometry and the same
+        # score the raw pass just read, so for anything else it can only reach
+        # the same answer twice.
         self._pending_shape: dict[int, int] = {}
+        # fid -> the merger keeper geometry the object's drawn shape was built
+        # from. A tile that only re-reads an object it already has reports it as
+        # changed and hands back the reading already on the map, and rebuilding
+        # that is the largest avoidable cost in a dense fold. The refine is a
+        # pure function of the geometry and the run's dials, and the dials move
+        # only on a rescale, which clears this, so the same geometry means the
+        # same shape.
+        #
+        # Compared with ``is``, never by value: it is an identity test, not a
+        # geometry test. Holding the reference is what makes that sound, because
+        # a geometry the merger has retired could otherwise be freed and a new
+        # one land on its address.
+        self._drawn_from: dict[int, object] = {}
+        # fid -> (keeper geometry, its ground area). One cycle gates the same
+        # object twice, once for the raw draw and once for the shaped one, and
+        # the geodesic measure walks every vertex.
+        self._area_of: dict[int, tuple] = {}
         self._refiner = None
         # Built HERE, on the GUI thread, because make_area_measurer reads the
         # project's transform context and ellipsoid. The result is a value
@@ -313,8 +334,11 @@ class LiveStitchThread(QThread):
         self._rescaled = True
         self.rescales += 1
         # Everything shaped at the old scale is about to be rebuilt, and until
-        # it is there is nothing here worth handing on.
+        # it is there is nothing here worth handing on. _drawn_from goes with
+        # it: the new refiner answers differently on the same geometry, so a
+        # match against it would hold the old scale on the map.
         self.shaped_geoms.clear()
+        self._drawn_from.clear()
         self._refiner = LiveRefiner(
             self._params, self._pixel_size, self._metres_per_unit,
             self._unit_aspect)
@@ -388,11 +412,18 @@ class LiveStitchThread(QThread):
         that keep growing are shaped anyway after _SHAPE_MAX_WAIT cycles, so a
         long road never waits for the end of the run. ``settle_all`` shapes
         everything still pending, for the last drain before the join.
+
+        Only an object with something left to draw is queued for pass 2, and
+        pass 1 says nothing about one whose reading has not moved since it was
+        drawn (see _wants_shape and _already_drawn). Most of what the merger
+        reports as changed on a dense run is a later tile re-reading an object
+        that is already right on the map, and rebuilding those is work whose
+        result the user cannot tell from what is already there.
         """
         changed, removed = self._merger.drain_changes()
         out: list = []
         for fid in removed:
-            self._pending_shape.pop(fid, None)
+            self._forget(fid)
             if self._shown.pop(fid, None) is not None:
                 out.append((DELTA_REMOVE, fid, None, 0.0))
         hot = set(changed)
@@ -402,12 +433,37 @@ class LiveStitchThread(QThread):
                 self._pending_shape.pop(fid, None)
                 out.append(self._object_delta(fid, shaped=True))
             else:
-                self._pending_shape[fid] = waited
                 out.append(self._object_delta(fid, shaped=False))
+                if self._wants_shape(fid):
+                    self._pending_shape[fid] = waited
+                else:
+                    self._pending_shape.pop(fid, None)
         for fid in [f for f in self._pending_shape if settle_all or f not in hot]:
             self._pending_shape.pop(fid, None)
             out.append(self._object_delta(fid, shaped=True))
         return [d for d in out if d is not None]
+
+    def _wants_shape(self, fid: int) -> bool:
+        """Whether a later cycle still has a shape to build for this object.
+
+        The settle pass runs only on an object the merger has NOT touched since,
+        so it reads back the same geometry and the same score the raw pass just
+        read. An object off the map fails the same gate again, and one already
+        carrying the run's shape has nothing left to build; queueing either only
+        buys the same answer twice.
+        """
+        return fid in self._shown and fid not in self.shaped_geoms
+
+    def _forget(self, fid: int) -> None:
+        """Drop everything this thread remembers about one object.
+
+        Every retirement and every drop goes through here, so a fid the merger
+        has given up on stops holding its geometry alive.
+        """
+        self._pending_shape.pop(fid, None)
+        self._drawn_from.pop(fid, None)
+        self._area_of.pop(fid, None)
+        self.shaped_geoms.pop(fid, None)
 
     def _object_delta(self, fid: int, shaped: bool):
         """One object's delta, or None when it has nothing to say.
@@ -435,8 +491,10 @@ class LiveStitchThread(QThread):
         geom, score = self._merger.keeper(fid)
         if geom is None or geom.isEmpty():
             return self._drop(fid)
-        if not self._passes_filters(score, self._object_area(geom)):
+        if not self._passes_filters(score, self._object_area(fid, geom)):
             return self._drop(fid)
+        if self._already_drawn(fid, geom, shaped):
+            return self._rescore_delta(fid, geom, score)
         shape = None
         if shaped:
             try:
@@ -461,29 +519,87 @@ class LiveStitchThread(QThread):
             return self._drop(fid)
         kind = DELTA_UPDATE if fid in self._shown else DELTA_ADD
         self._shown[fid] = float(score)
+        self._drawn_from[fid] = geom
         if refined:
+            # The held copy is this thread's alone and the GUI gets a detached
+            # one, because a later cycle may draw this shape again for a score
+            # that moved. Handing out the held instance twice would put the map
+            # render thread and this thread on one lazily cached bounding box,
+            # the same trap the raw draw detaches to avoid.
             self.shaped_geoms[fid] = shape
+            shape = _detached(shape)
         return (kind, fid, shape, float(score))
 
+    def _already_drawn(self, fid: int, geom, shaped: bool) -> bool:
+        """Whether the map already carries what this delta would build.
+
+        True when the merger handed back the very geometry the drawn shape came
+        from AND that shape is the one being asked for. A shaped pass over an
+        object drawn raw is not covered: that object still owes its shape.
+        """
+        if fid not in self._shown or self._drawn_from.get(fid) is not geom:
+            return False
+        return (not shaped) or fid in self.shaped_geoms
+
+    def _rescore_delta(self, fid: int, geom, score: float):
+        """Report an object whose shape is already right, or nothing.
+
+        Only the score can have moved: the merger takes the max over what an
+        object absorbs, so a re-reading can raise it without touching the
+        outline. The redraw then carries a copy of the shape already built,
+        never a second build of it.
+        """
+        from ..core.layer_conventions import to_multipolygon
+
+        if self._shown.get(fid) == float(score):
+            return None
+        held = self.shaped_geoms.get(fid)
+        # Detached for the same reason as every other draw: what crosses to the
+        # GUI must share nothing with what this thread keeps.
+        shape = to_multipolygon(_detached(held if held is not None else geom))
+        if shape is None or shape.isEmpty():
+            return self._drop(fid)
+        self._shown[fid] = float(score)
+        return (DELTA_UPDATE, fid, shape, float(score))
+
     def _drop(self, fid: int):
-        """Take one object off the map, or nothing when it was never on it."""
+        """Take one object off the map, or nothing when it was never on it.
+
+        The area memo is deliberately kept: the object is still in the merger,
+        under the same geometry, and a gate it fails on its score alone can be
+        asked again on the next tile.
+        """
+        self._pending_shape.pop(fid, None)
+        self._drawn_from.pop(fid, None)
         self.shaped_geoms.pop(fid, None)
         if self._shown.pop(fid, None) is None:
             return None
         return (DELTA_REMOVE, fid, None, 0.0)
 
-    def _object_area(self, geom) -> float:
+    def _object_area(self, fid: int, geom) -> float:
         """Geodesic ground area (m2), the same number the export writes, so the
-        live size gate agrees with the saved layer."""
+        live size gate agrees with the saved layer.
+
+        Memoized against the geometry it was measured on, because one cycle
+        gates the same object twice. The memo holds that geometry, which is also
+        what keeps the identity test in _already_drawn sound.
+        """
+        held = self._area_of.get(fid)
+        if held is not None and held[0] is geom:
+            return held[1]
+        area = 0.0
         try:
             if self._measurer is not None:
-                return float(self._measurer.measureArea(geom))
-            return float(geom.area())
+                area = float(self._measurer.measureArea(geom))
+            else:
+                area = float(geom.area())
         except (RuntimeError, AttributeError):
             try:
-                return float(geom.area())
+                area = float(geom.area())
             except (RuntimeError, AttributeError):
                 return 0.0
+        self._area_of[fid] = (geom, area)
+        return area
 
     def _passes_filters(self, score: float, area: float) -> bool:
         """The whole-object confidence plus min/max size gate, shared with the

@@ -407,6 +407,7 @@ class AutoDetectionWorker(QThread):
         client_meta: dict | None = None,
         tile_renderer=None,
         source_is_online: bool = False,
+        transform_context=None,
         parent=None,
     ):
         """Initialise the worker.
@@ -457,6 +458,11 @@ class AutoDetectionWorker(QThread):
             auth:            Auth headers dict from get_auth_header().
             run_id:          UUID4 string; generated client-side if None.
             max_concurrent:  Maximum in-flight submissions at once.
+            transform_context: The project's datum-transform table, read once on
+                             the MAIN thread by _start_auto_detection and handed
+                             in here, because QgsProject is not thread-safe and
+                             this thread must never reach for it. None leaves the
+                             run on a bare context.
             score_threshold: Discard masks with score below this value.
             detection_threshold: Detection-confidence cutoff sent to the server
                              (0..1). Lower = more objects/recall, higher =
@@ -531,9 +537,24 @@ class AutoDetectionWorker(QThread):
         self._tiles = tiles  # list of (x, y, w, h)
         self._geo_transform = geo_transform
         self._crs_authid = crs_authid
+        # The project's datum-transform table, read once on the main thread by
+        # _start_auto_detection. QgsProject is not thread-safe, so this thread
+        # never asks it for one (see _run_transform_context).
+        self._transform_context = transform_context
+        # The server's own words for a quota refusal, kept for the terminal
+        # handler (see quota_refusal_detail). None until one arrives.
+        self._quota_refusal: dict | None = None
         # Lazily built QgsDistanceArea for the per-tile ground-resolution
         # report (see _tile_pixel_size_m); one instance serves the whole run.
         self._distance_area = None
+        # Ground metres per CRS unit on each axis, measured once per run in
+        # _resolve_ground_unit_scale. (1.0, 1.0) on a CRS that already measures
+        # in metres, which is also the fail-open answer when the measure does
+        # not come back. Every served floor is ground metres while the run gsd,
+        # the tile bboxes and geom.area() are CRS units, so the two only meet
+        # through this pair.
+        self._ground_kx = 1.0
+        self._ground_ky = 1.0
         self._prompt = prompt
         self._auth = auth
         self._run_id = run_id or str(uuid.uuid4())
@@ -596,6 +617,17 @@ class AutoDetectionWorker(QThread):
         # read once per submission; only populated when client_meta is set.
         self._client_meta = client_meta if isinstance(client_meta, dict) else None
         self._tile_clean_image: dict[int, str] = {}
+        # The run-wide fields (zone shape, surface, ground resolution) ride ONE
+        # request. Tile 0 used to carry them and tile 0 is skippable (blank,
+        # render failure, prefiltered) or replaced by a packed scan block, so
+        # the run could reach the server with no zone at all. This holds the
+        # tile index that carried them, and None means the next submission
+        # takes them. An errored request never reached the server, so its
+        # index is released and the fields ride again.
+        self._run_fields_tile_index: int | None = None
+        # EPSG:4326 transform for tile_bbox_wgs84, built once per run.
+        self._wgs84_transform = None
+        self._wgs84_transform_failed = False
         # The run's private network manager, held for as long as replies must
         # stay readable (see _run_detection), and the tiles already re-posted
         # once because their reply was destroyed under them (see _read_reply).
@@ -1139,6 +1171,10 @@ class AutoDetectionWorker(QThread):
         # detection is clipped to this in _detections_to_geoms, exactly as the
         # GUI used to do via _auto_clip_polygon / _auto_clip_engine.
         self._build_clip_engine()
+
+        # Ground metres per CRS unit, measured once here so every converter
+        # thread reads the same pair without a lock.
+        self._resolve_ground_unit_scale()
 
         logger.debug(
             "AutoDetectionWorker: run_id=%s tiles=%d prompt=%r exemplars=%d",
@@ -1936,6 +1972,18 @@ class AutoDetectionWorker(QThread):
             self._emit_stop(terminal_stop)
         self._emit_terminal()
 
+    def _run_transform_context(self):
+        """The datum-transform table this run builds its transforms with.
+
+        The plugin reads the project's once on the main thread and hands it in.
+        A bare context answers when it did not (a direct construction, a test),
+        which is the same table PROJ would pick with no project override."""
+        ctx = self._transform_context
+        if ctx is not None:
+            return ctx
+        from qgis.core import QgsCoordinateTransformContext
+        return QgsCoordinateTransformContext()
+
     def _bbox_ground_width_m(self, bbox_native) -> float | None:
         """Geodesic ground width (meters) of one tile bbox at its
         mid-latitude, or None. Fail-open: any failure reports unknown."""
@@ -1945,12 +1993,11 @@ class AutoDetectionWorker(QThread):
                 from qgis.core import (
                     QgsCoordinateReferenceSystem,
                     QgsDistanceArea,
-                    QgsProject,
                 )
                 da = QgsDistanceArea()
                 da.setSourceCrs(
                     QgsCoordinateReferenceSystem(self._crs_authid),
-                    QgsProject.instance().transformContext(),
+                    self._run_transform_context(),
                 )
                 da.setEllipsoid("WGS84")
                 self._distance_area = da
@@ -1975,6 +2022,80 @@ class AutoDetectionWorker(QThread):
             return width_m
         except Exception:  # nosec B110 -- best-effort measure
             return None
+
+    def _resolve_ground_unit_scale(self) -> None:
+        """Measure ground metres per CRS unit on both axes, once per run.
+
+        Called on the worker thread before any converter starts, so the
+        converters read the pair without a lock. Fail-open: a CRS the measure
+        cannot handle keeps (1.0, 1.0), which is the behaviour on a metric CRS
+        and the behaviour that shipped everywhere else.
+
+        On a CRS in degrees the east-west scale narrows as the run moves away
+        from the equator, so the two ends of a zone do not share one figure.
+        Measured on both ends and averaged, which puts the run's own middle in
+        the pair instead of one of its corners."""
+        try:
+            if not self._measure_ground_unit_scale(self._tiles[0]):
+                return
+            if len(self._tiles) > 1:
+                near_kx, near_ky = self._ground_kx, self._ground_ky
+                if self._measure_ground_unit_scale(self._tiles[-1]):
+                    self._ground_kx = (self._ground_kx + near_kx) / 2.0
+                    self._ground_ky = (self._ground_ky + near_ky) / 2.0
+                else:
+                    self._ground_kx, self._ground_ky = near_kx, near_ky
+        except Exception:  # nosec B110 -- best-effort measure, fail open
+            self._ground_kx = 1.0
+            self._ground_ky = 1.0
+
+    def _measure_ground_unit_scale(self, tile) -> bool:
+        """Set the ground scale pair from ONE tile, and say whether it worked.
+
+        Leaves the pair as it found it when the tile cannot be measured, so a
+        second reading that fails never costs the first one.
+        """
+        try:
+            tx, ty, tw, th = tile
+            transform = self._make_tile_transform(tx, ty, tw, th)
+            xmin, ymin, xmax, ymax = transform["bbox_native"]
+            span_x = float(xmax - xmin)
+            span_y = float(ymax - ymin)
+            if span_x <= 0 or span_y <= 0:
+                return False
+            width_m = self._bbox_ground_width_m((xmin, ymin, xmax, ymax))
+            if width_m is None:
+                return False
+            from qgis.core import QgsPointXY
+
+            from ..core.qt_compat import DistanceMeters
+
+            da = self._distance_area
+            if da is None:
+                return False
+            xmid = (xmin + xmax) / 2.0
+            height = da.measureLine(
+                QgsPointXY(xmid, ymin), QgsPointXY(xmid, ymax))
+            height_m = da.convertLengthMeasurement(height, DistanceMeters)
+            if not math.isfinite(height_m) or height_m <= 0:
+                return False
+            self._ground_kx = width_m / span_x
+            self._ground_ky = height_m / span_y
+            return True
+        except Exception:  # nosec B110 -- best-effort measure, fail open
+            return False
+
+    def _ground_area_scale(self) -> float:
+        """Ground m2 per CRS unit2 for this run (1.0 on a metric CRS)."""
+        scale = self._ground_kx * self._ground_ky
+        return scale if math.isfinite(scale) and scale > 0 else 1.0
+
+    def _ground_length_scale(self) -> float:
+        """Ground metres per CRS unit for this run (1.0 on a metric CRS).
+
+        The geometric mean of the two axes, so a square in CRS units keeps its
+        ground area through the conversion."""
+        return math.sqrt(self._ground_area_scale())
 
     def _tile_pixel_size_m(self, bbox_native, png_bytes) -> float | None:
         """True ground meters per SENT pixel for one encoded tile, or None.
@@ -2006,8 +2127,9 @@ class AutoDetectionWorker(QThread):
 
         - plugin_version / policy_rev / prompt_mode ride every submission (which
           client and policy produced the run).
-        - zone_geojson is the same polygon for the whole run, so it rides tile 0
-          only.
+        - zone_geojson, zone_wkt, zone_km2 and native_mupp are the same for
+          the whole run, so they ride the FIRST request the run submits,
+          whatever its tile index (a packed scan block counts).
         - clean_image is the pre-stamp tile image, present only for a tile a
           reference stamp was composited into (captured in _encode_tile).
         """
@@ -2019,13 +2141,56 @@ class AutoDetectionWorker(QThread):
             val = meta.get(key)
             if val is not None:
                 submission[key] = val
-        if tile_idx == 0:
-            zone = meta.get("zone_geojson")
-            if zone is not None:
-                submission["zone_geojson"] = zone
+        if self._run_fields_tile_index is None:
+            for key in ("zone_geojson", "zone_wkt", "zone_km2", "native_mupp"):
+                val = meta.get(key)
+                if val is not None:
+                    submission[key] = val
+            self._run_fields_tile_index = tile_idx
         clean = self._tile_clean_image.get(tile_idx)
         if clean is not None:
             submission["clean_image"] = clean
+
+    def _release_run_fields(self, tile_idx: int) -> None:
+        """Let the run-wide fields ride again when the request that carried
+        them came back an error: it never produced a billed tile, so the server
+        may never have read them."""
+        if self._run_fields_tile_index == tile_idx:
+            self._run_fields_tile_index = None
+
+    def _tile_bbox_wgs84(self, bbox_native) -> dict | None:
+        """One tile's bbox as WGS84 lon/lat, or None when it cannot be
+        computed. The transform is built once per run: the run CRS is fixed,
+        and building one per tile costs a PROJ lookup on every submission."""
+        if bbox_native is None or self._wgs84_transform_failed:
+            return None
+        try:
+            if self._wgs84_transform is None:
+                from qgis.core import (
+                    QgsCoordinateReferenceSystem,
+                    QgsCoordinateTransform,
+                )
+                src = QgsCoordinateReferenceSystem(self._crs_authid)
+                dst = QgsCoordinateReferenceSystem("EPSG:4326")
+                if not src.isValid() or not dst.isValid():
+                    self._wgs84_transform_failed = True
+                    return None
+                self._wgs84_transform = QgsCoordinateTransform(
+                    src, dst, self._run_transform_context())
+            from qgis.core import QgsRectangle
+
+            rect = QgsRectangle(
+                float(bbox_native[0]), float(bbox_native[1]),
+                float(bbox_native[2]), float(bbox_native[3]))
+            out = self._wgs84_transform.transformBoundingBox(rect)
+            if out is None or out.isEmpty():
+                return None
+            return {
+                "xmin": out.xMinimum(), "ymin": out.yMinimum(),
+                "xmax": out.xMaximum(), "ymax": out.yMaximum(),
+            }
+        except Exception:  # noqa: BLE001 -- additive field; never block a tile
+            return None
 
     def _release_tile_clean_image(self, tile_idx: int) -> None:
         """Drop one tile's pre-stamp image once that tile can no longer be
@@ -2049,7 +2214,7 @@ class AutoDetectionWorker(QThread):
             "image_b64": tile_png_to_base64(png_bytes),
             "tile_index": tile_idx,
             "crs_authid": self._crs_authid,
-            "tile_bbox_wgs84": None,
+            "tile_bbox_wgs84": self._tile_bbox_wgs84(bbox_native),
             "tile_bbox_native": {
                 "xmin": bbox_native[0], "ymin": bbox_native[1],
                 "xmax": bbox_native[2], "ymax": bbox_native[3],
@@ -2836,7 +3001,7 @@ class AutoDetectionWorker(QThread):
             # real tile's audit/idempotency identity in the same run.
             "tile_index": -(block_i + 1),
             "crs_authid": self._crs_authid,
-            "tile_bbox_wgs84": None,
+            "tile_bbox_wgs84": self._tile_bbox_wgs84(bbox_union),
             "tile_bbox_native": None if bbox_union is None else {
                 "xmin": bbox_union[0], "ymin": bbox_union[1],
                 "xmax": bbox_union[2], "ymax": bbox_union[3],
@@ -2853,8 +3018,9 @@ class AutoDetectionWorker(QThread):
             # Servers without the decoupled-charge flag ignore the field.
             "charge_tiles": len(scanned),
         }
-        # Provenance fields ride the scan too (same run). The negative scan
-        # tile_index carries no zone_geojson / clean_image by construction.
+        # Provenance fields ride the scan too (same run), and the scan phase
+        # runs first, so the run-wide zone fields usually leave on a scan
+        # block. The negative tile_index carries no clean_image by construction.
         self._apply_client_meta(submission)
         return submission, scanned
 
@@ -3446,7 +3612,7 @@ class AutoDetectionWorker(QThread):
                 "image_b64": tile_png_to_base64(png_bytes),
                 "tile_index": tile_idx,
                 "crs_authid": self._crs_authid,
-                "tile_bbox_wgs84": None,
+                "tile_bbox_wgs84": self._tile_bbox_wgs84(bbox_native),
                 "tile_bbox_native": {
                     "xmin": bbox_native[0],
                     "ymin": bbox_native[1],
@@ -3488,12 +3654,42 @@ class AutoDetectionWorker(QThread):
             )
         return outcomes
 
+    def _note_quota_refusal(self, response: dict) -> None:
+        """Keep what the server said when it refused the run on quota.
+
+        One code covers several answers: the month is spent, or this one zone is
+        larger than what is left of it. Only the server knows which, and only
+        its used/limit pair tells them apart, so both travel to the terminal
+        handler instead of being flattened into "you ran out"."""
+        try:
+            self._quota_refusal = {
+                "code": str(response.get("code") or ""),
+                "message": str(response.get("error") or ""),
+                "envelope": str(response.get("envelope") or ""),
+                "used": response.get("used"),
+                "limit": response.get("limit"),
+            }
+        except (TypeError, ValueError, AttributeError):
+            self._quota_refusal = None
+
+    def quota_refusal_detail(self) -> dict:
+        """What the server said when it refused this run on quota, or {}."""
+        return dict(self._quota_refusal or {})
+
     def _classify_submit_response(self, tile_idx: int, response: dict, tile_transform: dict):
         """Map one /predict submit response to an outcome tuple (see _submit_batch).
         Pure: no network, no sleeping."""
         code = response.get("code", "")
         if "error" in response:
+            # This request produced no billed tile, so the run-wide fields it
+            # carried may never have been read: let the next one carry them.
+            # A rate limit is the one refusal the server answers after reading
+            # the body, and the retry re-posts this same tile, so releasing
+            # there would declare the zone twice for one run.
+            if code != "RATE_LIMITED":
+                self._release_run_fields(tile_idx)
             if code in EXHAUSTED_CODES:
+                self._note_quota_refusal(response)
                 return ("exhausted", _as_int(response.get("credits_remaining"), 0))
             if code == "RATE_LIMITED":
                 try:
@@ -4153,8 +4349,15 @@ class AutoDetectionWorker(QThread):
         # gsd 0.4 m/px the floor is (1.5*0.4)^2 = 0.36 m2, which drops 0.1 m2
         # slivers while keeping a 2x2 m tree/car. gsd<=0 (no metric scale) =>
         # floor 0, no drop.
+        # The floor is compared against geom.area(), which is CRS units2, so
+        # the served ground floor is divided back into CRS units2 first. On a
+        # geographic CRS the two differ by ten orders of magnitude, and a
+        # ground floor read as a degree floor drops every object in the run.
+        area_scale = self._ground_area_scale()
+        length_scale = self._ground_length_scale()
         min_keep_area = (
-            max((self._min_keep_px * self._gsd) ** 2, self._min_keep_floor_m2)
+            max((self._min_keep_px * self._gsd) ** 2,
+                self._min_keep_floor_m2 / area_scale)
             if self._gsd > 0 else 0.0
         )
         # Tile ground size, for the observed mask-resolution bookkeeping below.
@@ -4211,11 +4414,20 @@ class AutoDetectionWorker(QThread):
             cell = mask_cell_size(ground_w, ground_h, full_w, full_h)
             if cell > observed_cell:
                 observed_cell = cell
-            ys, xs = np.nonzero(mask)
-            if ys.size == 0:
+            # Bounding box by row/column projection, not by index arrays.
+            # np.nonzero allocates two arrays as long as the object just to
+            # read four bounds from them; any() collapses each axis to one
+            # boolean vector and argmax from each end reads the same bounds off
+            # it. Same four integers, same set-pixel count.
+            set_pixels = int(np.count_nonzero(mask))
+            if set_pixels == 0:
                 continue
-            row0, col0 = int(ys.min()), int(xs.min())
-            row1, col1 = int(ys.max()), int(xs.max())
+            rows = mask.any(axis=1)
+            cols = mask.any(axis=0)
+            row0 = int(rows.argmax())
+            row1 = full_h - 1 - int(rows[::-1].argmax())
+            col0 = int(cols.argmax())
+            col1 = full_w - 1 - int(cols[::-1].argmax())
             # whole-tile "everything" masks (near-whole-tile blobs on uniform texture)
             # must not reach the merger in SEPARATE/count mode. But coverage
             # alone cannot tell a texture blob from a REAL large building that
@@ -4224,7 +4436,7 @@ class AutoDetectionWorker(QThread):
             # an irregular whole-tile blob is dropped. Above the hard cap the
             # mask is a fill-everything failure regardless of shape. Skipped in
             # MAP mode so a real whole-tile lake/field always survives.
-            coverage = ys.size / float(full_h * full_w)
+            coverage = set_pixels / float(full_h * full_w)
             blob_check = False
             # Raw-collect mode keeps every fragment (gates OFF): the client
             # applies them later if it re-merges as SEPARATE.
@@ -4287,8 +4499,15 @@ class AutoDetectionWorker(QThread):
             # MASK's own grid (see pinhole_fill_limit_px) so a coarser
             # returned grid keeps the same ground meaning instead of silently
             # doubling it.
+            # The ceiling is ground metres across, so the grid it is divided by
+            # has to be ground metres per pixel too: both the run gsd and the
+            # mask cell are carried into metres by the run's own scale. The
+            # pair is (1, 1) on a metric CRS, where this is a no-op.
             sub = fill_small_holes(
-                sub, pinhole_fill_limit_px(self._gsd, cell, self._pinhole_m))
+                sub,
+                pinhole_fill_limit_px(
+                    self._gsd * length_scale, cell * length_scale,
+                    self._pinhole_m))
             # Queue instead of polygonizing now. The key is everything the
             # polygonizer needs to be identical for two masks to share a call:
             # the grid they were returned on and the staircase tolerance of that
@@ -4315,6 +4534,7 @@ class AutoDetectionWorker(QThread):
                     # rectangular and overflows the shape. A prepared-engine
                     # contains() skips the clip for the interior majority; only
                     # boundary-crossing detections pay for intersection().
+                    unclipped = False
                     if clip_geom is not None:
                         inside = False
                         if clip_engine is not None:
@@ -4326,10 +4546,19 @@ class AutoDetectionWorker(QThread):
                             geom = geom.intersection(clip_geom)
                         if geom is None or geom.isEmpty() or geom.area() <= 0:
                             continue
+                        unclipped = inside
                     # Coerce to a polygon-only MultiPolygon at the SOURCE: the
                     # clip intersection can yield a GeometryCollection that a
-                    # MultiPolygon layer would later reject.
-                    geom = to_multipolygon(repair_polygon(geom) or geom)
+                    # MultiPolygon layer would later reject. repair_polygon
+                    # exists for what intersection() returns, and it costs a
+                    # full GEOS validity walk, so a geometry the prepared engine
+                    # passed whole skips it: the polygonizer returns GEOS-valid
+                    # geometry on every path, and on valid input repair_polygon
+                    # yields either its own argument or the same polygon parts
+                    # to_multipolygon extracts.
+                    if not unclipped:
+                        geom = repair_polygon(geom) or geom
+                    geom = to_multipolygon(geom)
                     if geom is None or geom.isEmpty():
                         continue
                     # Drop sub-pixel noise slivers (computed once above). Placed

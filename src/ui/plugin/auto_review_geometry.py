@@ -19,8 +19,21 @@ from ...core.live_refine import LiveRefiner, points_dial_fraction
 
 # How many run refiners the review keeps alive at once. One covers a whole
 # reslice; the spare room absorbs the Correct step's per-shape overrides, which
-# hand this mixin a different params dict for one object inside a pass.
+# hand this mixin a different params dict for one object inside a pass, and the
+# ground-scale bands below, which give a tall zone one refiner per band. Over
+# the bound the least recently built goes, so a run degrades to re-measuring
+# rather than to a memo that grows with the zone.
 _LIVE_REFINER_MEMO_MAX = 8
+
+# How far a run may move along y before its ground dials are re-measured, in
+# the two CRS families where one unit is not one ground metre everywhere: half
+# a degree of latitude in a geographic CRS, and the northing that spans about
+# as much in a Mercator one. Inside a band the metres-per-unit factor moves by
+# well under a percent, which is smaller than the dead band the aspect
+# correction already ignores. A CRS that measures in ground metres gets no
+# band at all: one refiner serves the whole run, as before.
+_GROUND_SCALE_BAND_DEG = 0.5
+_GROUND_SCALE_BAND_M = 50000.0
 
 # How many SUPERSEDED shape keys keep their refined geometry, and how many
 # geometries all of them together may hold. Moving a Shape control and moving
@@ -41,14 +54,25 @@ _RESLICE_PARKED_GEOMS_MAX = 40000
 _RESCUE_REFINE_BUDGET_S = 3.0
 
 
-def _geom_centre_xy(geom) -> tuple[float, float]:
+def _geom_centre_xy(geom) -> tuple[float, float] | None:
     """Where a per-CRS ground measure is taken for ONE object: the centre of
-    its bounding box, or the CRS origin when it cannot be read."""
+    its bounding box, or None when there is no box to read.
+
+    None rather than the CRS origin. An empty geometry answers a null box, and
+    the centre of a null box is (0, 0), which on a geographic CRS is a point in
+    the Atlantic: the factor measured there converts a whole run's ground dials
+    at the wrong latitude, and nothing says so.
+    """
     try:
-        centre = geom.boundingBox().center()
+        if geom is None or geom.isEmpty():
+            return None
+        bbox = geom.boundingBox()
+        if bbox.isNull():
+            return None
+        centre = bbox.center()
         return float(centre.x()), float(centre.y())
     except (AttributeError, RuntimeError, TypeError):
-        return 0.0, 0.0
+        return None
 
 
 def _geoms_centre(geoms: list) -> tuple[float, float] | None:
@@ -145,6 +169,43 @@ class AutoReviewGeometryMixin:
         self._auto_crs_aspect = (key, aspect)
         return aspect
 
+    def _auto_ground_scale_band(self) -> float:
+        """How far along y the RUN CRS may move before its ground dials have to
+        be measured again, in CRS units. 0.0 means never.
+
+        0.0 wherever a coordinate difference is already a ground metre, which is
+        every national grid and every UTM zone: the factor is 1.0 from one end
+        of the run to the other. A geographic CRS and any Mercator answer a real
+        band, because their unit follows latitude. Memoized per CRS: the answer
+        cannot change inside a run."""
+        authid = getattr(self, "_auto_crs_authid", None) or "EPSG:4326"
+        cached = getattr(self, "_auto_crs_scale_band", None)
+        if cached is not None and cached[0] == authid:
+            return cached[1]
+        band = _GROUND_SCALE_BAND_M
+        try:
+            from ...core.layer_conventions import crs_measures_in_ground_metres
+            crs = QgsCoordinateReferenceSystem(authid)
+            if crs_measures_in_ground_metres(crs):
+                band = 0.0
+            elif crs.isGeographic():
+                band = _GROUND_SCALE_BAND_DEG
+        except Exception:  # noqa: BLE001 -- an unreadable CRS keeps the band
+            band = _GROUND_SCALE_BAND_M
+        self._auto_crs_scale_band = (authid, band)
+        return band
+
+    def _auto_ground_scale_bucket(self, ref_y: float) -> int:
+        """Which band of ground scale a northing falls in. Always 0 in a CRS
+        that measures in ground metres, so those runs keep one refiner."""
+        band = self._auto_ground_scale_band()
+        if band <= 0.0:
+            return 0
+        try:
+            return int(float(ref_y) // band)
+        except (TypeError, ValueError, OverflowError):
+            return 0
+
     def _refine_geom_for_review(self, base, params: dict, pixel_size: float):
         """Apply the review shape-refine controls to a base object geometry.
         simplify/expand are px in the UI, converted to ground units by the run's
@@ -157,12 +218,28 @@ class AutoReviewGeometryMixin:
         refiner carries no plugin state, so the same work can also run off the
         GUI thread.
         """
+        # The object's own position decides which refiner it gets: a refiner
+        # holds ground dials already converted, at the factor measured where it
+        # was built, so a zone tall enough to cross a band must not be served
+        # the band it started in. One band, one refiner; a CRS that measures in
+        # ground metres has a single band and keeps a single refiner.
+        ref = _geom_centre_xy(base)
+        if ref is None:
+            # Nothing to measure at, and the CRS origin is not a stand-in.
+            # Fall back to the last object that did carry a position, which is
+            # at worst one band away; with none, there is no shape to refine.
+            ref = getattr(self, "_review_ground_ref_xy", None)
+            if ref is None:
+                return None
+        else:
+            self._review_ground_ref_xy = ref
         # _review_shape_key covers exactly the params the refiner reads
         # (confidence and the size filters change no shape), so it doubles as
-        # the refiner's identity; the run CRS joins it because the ground
-        # measure below depends on it. Read off the class, not off self: the
-        # tests bind this method onto bare stubs.
+        # the refiner's identity; the run CRS and the band join it because the
+        # ground measure below depends on both. Read off the class, not off
+        # self: the tests bind this method onto bare stubs.
         key = (getattr(self, "_auto_crs_authid", None),
+               self._auto_ground_scale_bucket(ref[1]),
                AutoReviewGeometryMixin._review_shape_key(params, pixel_size))
         refiners = getattr(self, "_review_live_refiners", None)
         if not isinstance(refiners, dict):
@@ -170,17 +247,13 @@ class AutoReviewGeometryMixin:
             self._review_live_refiners = refiners
         refiner = refiners.get(key)
         if refiner is None:
-            if len(refiners) >= _LIVE_REFINER_MEMO_MAX:
-                refiners.clear()
-            # The ground measure is taken at the FIRST object the refiner sees
-            # and then reused for the run: _auto_crs_metres_per_unit is itself
-            # memoized per coarse position, and one drawn zone sits inside one
-            # bucket, so the factor was already the same for every object.
-            ref_x, ref_y = _geom_centre_xy(base)
+            # Dicts keep insertion order, so the first key is the oldest.
+            while len(refiners) >= _LIVE_REFINER_MEMO_MAX:
+                refiners.pop(next(iter(refiners)))
             refiner = LiveRefiner(
                 params, pixel_size,
-                self._auto_crs_metres_per_unit(ref_x, ref_y),
-                self._auto_crs_unit_aspect(ref_x, ref_y))
+                self._auto_crs_metres_per_unit(ref[0], ref[1]),
+                self._auto_crs_unit_aspect(ref[0], ref[1]))
             refiners[key] = refiner
         return refiner.refine(base)
 
@@ -204,6 +277,11 @@ class AutoReviewGeometryMixin:
             round(float(params.get("fill_max_m2", 0) or 0.0), 4) if fill_holes
             else 0.0,
             round(float(params.get("open_px", 0) or 0.0), 4),
+            # Notch closing is a ground distance and a shape op like the rest.
+            # Without it the reslice cache serves outlines closed at the
+            # previous distance, so a class whose preset moves it reads as a
+            # control that does nothing.
+            round(float(params.get("close_notches_m", 0) or 0.0), 4),
             bool(params.get("ortho", False)),
             round(float(pixel_size or 0.0), 6),
             # The point budget changes every cached outline, so a run whose
@@ -323,6 +401,9 @@ class AutoReviewGeometryMixin:
         self._auto_reslice_cache = {"key": None, "geoms": {}, "parked": {}}
         self._review_fid_map = {}
         self._review_live_refiners = {}
+        # The position the ground measure falls back to when an object carries
+        # none. It belongs to the run the refiners belonged to.
+        self._review_ground_ref_xy = None
 
     def _invalidate_review_refine(self, indices) -> None:
         """Drop only ``indices`` from the reslice refine cache, keeping every
@@ -496,24 +577,45 @@ class AutoReviewGeometryMixin:
         """
         if getattr(self, "_auto_stitch_shapes_stale", True):
             return False
+        if not objects:
+            # Nothing to compare the thread's factor against, so nothing can be
+            # said about it. An empty set also has no ends to index.
+            return False
         stitch_px = float(getattr(self, "_auto_stitch_shape_px", 0.0) or 0.0)
         if abs(stitch_px - float(pixel_size or 0.0)) > 1e-9:
             return False
         factor = float(getattr(self, "_auto_stitch_shape_mpu", 0.0) or 0.0)
         if factor <= 0.0:
             return False
-        # The review resolves its own factor from ONE object's position and
-        # reuses it for the run, memoized per coarse position. Check the two
-        # ends of the set: a zone that straddles a memo bucket is the case where
-        # the review's single factor would not be the thread's.
-        for geom, _score, _area in (objects[0], objects[-1]):
-            try:
-                centre = geom.centroid().asPoint()
-                here = self._auto_crs_metres_per_unit(centre.x(), centre.y())
-            except (RuntimeError, AttributeError, TypeError, ValueError):
-                return False
-            if abs(float(here) - factor) > factor * 1e-6:
-                return False
+        # The thread resolved ONE factor and shaped the whole set with it. The
+        # review works per ground-scale band, giving each band its own refiner
+        # (see _refine_geom_for_review), so the thread's single factor is only
+        # the right one when the whole set sits in ONE band. EVERY object is
+        # checked, not the two ends: the set is not ordered by position, so an
+        # object in another band can sit between two that share one, and it
+        # would come back shaped at a ground scale the review never used. A
+        # band is arithmetic on the centre, so the walk costs one bounding box
+        # per object; only the two ends are measured.
+        band = None
+        try:
+            for row in objects:
+                ref = _geom_centre_xy(row[0])
+                if ref is None:
+                    return False
+                here = self._auto_ground_scale_bucket(ref[1])
+                if band is None:
+                    band = here
+                elif here != band:
+                    return False
+            for row in (objects[0], objects[-1]):
+                ref = _geom_centre_xy(row[0])
+                if ref is None:
+                    return False
+                here = self._auto_crs_metres_per_unit(ref[0], ref[1])
+                if abs(float(here) - factor) > factor * 1e-6:
+                    return False
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            return False
         return True
 
     def _seed_review_refine_cache(self, params: dict, pixel_size: float,

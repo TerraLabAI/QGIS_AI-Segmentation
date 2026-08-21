@@ -86,10 +86,21 @@ class ManualObjectBillingMixin:
     def _manual_credit_balance(self):
         """Credits this account has left, or ``None`` when it is not known.
 
-        Read from the usage payload the plugin already holds, never from the
-        network: this answers inside a Save handler, and a Save may not wait on
-        a request.
+        Read from what the plugin already holds, never from the network: this
+        answers inside a Save handler, and a Save may not wait on a request.
+
+        The objects envelope answers first, exactly as the gate card and the
+        engine card do. A save spends objects, and the wallet figure below can
+        be the km2 gauge counted in tiles, which would refuse a save while
+        objects remain.
         """
+        try:
+            dock = self.dock_widget
+            envelopes = dock.quota_envelopes() if dock is not None else None
+            if envelopes is not None and envelopes.objects_remaining is not None:
+                return envelopes.objects_remaining
+        except (RuntimeError, AttributeError):
+            pass
         try:
             from ...core.credit_gate import credit_snapshot
 
@@ -190,9 +201,9 @@ class ManualObjectBillingMixin:
         try:
             self.iface.messageBar().pushMessage(
                 "AI Segmentation",
-                tr("No detections left. Each object you save with Cloud AI "
-                   "costs one. Switch to your own computer to keep working "
-                   "for free, or upgrade from the panel."),
+                tr("You saved your cloud objects for this month. Switch "
+                   "to your own computer to keep working free, or upgrade "
+                   "from the panel."),
                 level=Qgis.MessageLevel.Warning,
                 duration=8,
             )
@@ -201,13 +212,116 @@ class ManualObjectBillingMixin:
 
     # -- the charge ---------------------------------------------------------
 
-    def _charge_manual_saved_object(self, det_id) -> None:
+    # A saved outline above this many WKT characters stays out of the charge
+    # body; the area still travels. Keeps the request small.
+    _CHARGE_WKT_MAX_CHARS = 50_000
+
+    def _manual_charge_extras(self, det_id, geom=None, crs_authid=None) -> dict:
+        """Optional ground-surface facts for one charged object: its geodesic
+        area in m2 and its outline as EPSG:4326 WKT.
+
+        Informational only, and strictly best-effort: any failure answers {}
+        and the charge goes out exactly as before. A caller that holds the
+        saved shape passes it; otherwise the saved list is searched. GUI
+        thread only (the area measurer reads the project)."""
+        try:
+            import math
+
+            # A pixel-grid session sits on no ellipsoid, so neither figure
+            # means anything there.
+            if getattr(self, "_is_non_georeferenced_mode", False):
+                return {}
+            if geom is None:
+                geom, entry_crs = self._saved_polygon_for_charge(det_id)
+                if not crs_authid:
+                    crs_authid = entry_crs
+            if geom is None or geom.isEmpty():
+                return {}
+            if not crs_authid:
+                crs_authid = self._manual_charge_crs_authid()
+            from qgis.core import QgsCoordinateReferenceSystem
+
+            crs = (QgsCoordinateReferenceSystem(str(crs_authid))
+                   if crs_authid else None)
+            if crs is None or not crs.isValid():
+                return {}
+            from ...core.layer_conventions import make_area_measurer
+
+            extras: dict = {}
+            area = float(make_area_measurer(crs).measureArea(geom))
+            if math.isfinite(area) and area > 0:
+                extras["area_m2"] = round(area, 1)
+            wkt = self._polygon_wgs84_wkt(geom, crs)
+            if wkt and len(wkt) <= self._CHARGE_WKT_MAX_CHARS:
+                extras["polygon_wkt"] = wkt
+            return extras
+        except Exception:  # noqa: BLE001 -- extras never touch the charge
+            return {}
+
+    def _saved_polygon_for_charge(self, det_id):
+        """(geometry, crs_authid) of the newest saved entry carrying this id,
+        or (None, None). Reads the same list the Save wrote to."""
+        from qgis.core import QgsGeometry
+
+        for entry in reversed(getattr(self, "saved_polygons", None) or []):
+            if entry.get("det_id") != det_id:
+                continue
+            geom = entry.get("geom_obj")
+            if geom is None:
+                wkt = entry.get("geometry_wkt")
+                geom = QgsGeometry.fromWkt(wkt) if wkt else None
+            transform_info = entry.get("transform_info") or {}
+            return geom, transform_info.get("crs")
+        return None, None
+
+    def _manual_charge_crs_authid(self):
+        """The session's raster CRS authid, or None. Same lookup order the
+        Manual export uses: the live transform info, then the layer itself."""
+        transform_info = getattr(self, "current_transform_info", None) or {}
+        value = transform_info.get("crs")
+        if isinstance(value, str) and value.strip():
+            return value
+        try:
+            layer = getattr(self, "_current_layer", None)
+            if layer is not None and layer.crs().isValid():
+                return layer.crs().authid() or None
+        except RuntimeError:
+            return None
+        return None
+
+    @staticmethod
+    def _polygon_wgs84_wkt(geom, crs) -> str | None:
+        """The polygon as EPSG:4326 WKT, or None when it cannot be brought
+        there. Works on a copy: the saved geometry is never moved."""
+        from qgis.core import (
+            QgsCoordinateReferenceSystem,
+            QgsCoordinateTransform,
+            QgsGeometry,
+            QgsProject,
+        )
+
+        wgs84 = QgsCoordinateReferenceSystem("EPSG:4326")
+        out = QgsGeometry(geom)
+        if crs.authid() != wgs84.authid():
+            transform = QgsCoordinateTransform(
+                crs, wgs84, QgsProject.instance().transformContext())
+            if int(out.transform(transform)) != 0:
+                return None
+        # 7 decimals of a degree resolve to about a centimetre.
+        return out.asWkt(7) or None
+
+    def _charge_manual_saved_object(self, det_id, geom=None,
+                                    crs_authid=None) -> None:
         """Send the credit for an object that has just been saved.
 
         Fire and forget by design: the polygon is already on the canvas, and a
         user waiting on a request to see their own shape is the thing this mode
         exists to avoid. A charge that never lands leaves the object billable,
         so the next Save of it tries again.
+
+        ``geom`` and ``crs_authid`` are optional: a caller whose object never
+        reached the saved list passes the shape so the charge can carry its
+        ground surface. They change nothing about what is charged or deduped.
         """
         ledger = getattr(self, "_manual_credit_ledger", None)
         if ledger is None or not self._manual_save_is_billable(det_id):
@@ -231,9 +345,16 @@ class ManualObjectBillingMixin:
             client = TerraLabClient()
             session_id = ledger.session_id
             index = ledger.wire_index(det_id)
+            # Computed here on the GUI thread; {} on any failure, and the
+            # charge below is the same request either way.
+            extras = self._manual_charge_extras(
+                det_id, geom=geom, crs_authid=crs_authid)
             task = GenericRequestTask(
                 tr("Saving object"),
-                lambda: client.charge_saved_object(auth, session_id, index),
+                lambda: client.charge_saved_object(
+                    auth, session_id, index,
+                    area_m2=extras.get("area_m2"),
+                    polygon_wkt=extras.get("polygon_wkt")),
                 hidden=True,
             )
             task.succeeded.connect(
@@ -269,6 +390,17 @@ class ManualObjectBillingMixin:
                 getattr(self, "_manual_cloud_objects_charged", 0)) + 1
             self._tell_dock_manual_spend(self._manual_cloud_objects_charged)
         self._track_manual_charge("charged")
+        try:
+            # The save response only carries the wallet gauge; move the
+            # objects envelope locally so the count the user watches moves
+            # with the save. The next account read corrects it. The stamp
+            # makes this move count as now, so an account read already in
+            # flight cannot land later and put the spent object back.
+            self.dock_widget.note_cloud_object_charged()
+            import time as _time
+            self._envelopes_applied_at = _time.monotonic()
+        except (RuntimeError, AttributeError):
+            pass
         usage = (payload or {}).get("usage") if isinstance(payload, dict) else None
         if isinstance(usage, dict) and usage:
             try:
@@ -281,7 +413,7 @@ class ManualObjectBillingMixin:
 
         A network or server failure is left alone: the object stays billable and
         the user keeps their polygon. An account that is out of credits is the
-        one case worth acting on, because every click after it would be GPU
+        one case worth acting on, because every click after it would be work
         nobody is paying for. The session's clicks go back to the machine, and
         the user is told in one line.
         """
@@ -296,6 +428,12 @@ class ManualObjectBillingMixin:
                                   error_code=code or "unknown")
         if not exhausted:
             return
+        try:
+            self.dock_widget.note_cloud_objects_exhausted()
+            import time as _time
+            self._envelopes_applied_at = _time.monotonic()
+        except (RuntimeError, AttributeError):
+            pass
         # A Correct fix hands its step to the Manual lane. Semi-Auto has no such
         # lane, so it ends the cloud session and puts the clicks back on the
         # machine. Same ending, two different ways there.

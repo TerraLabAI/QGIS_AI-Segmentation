@@ -1281,6 +1281,28 @@ class TileRequestErrorWatch:
             self.reply_error = error
 
 
+def run_direct_tile_fetch(request, cancel_check=None):
+    """Download one crop's tiles. Returns (image, error_code, elapsed_ms).
+
+    Holds no QGIS object and reads no layer, so a worker thread may run it.
+    That is the point: the download is the long part of an online crop, and
+    the thread that draws the window must not be the one waiting on it. What
+    the outcome means for the crop does need the QGIS objects, and that half
+    lives in accept_direct_tiles.
+
+    ``cancel_check`` is polled between tiles, so a crop nobody waits on any
+    more stops instead of running its whole range down.
+    """
+    started = time.monotonic()
+    try:
+        from .xyz_tile_fetch import fetch_xyz_crop
+
+        image, error_code = fetch_xyz_crop(request, cancel_check=cancel_check)
+    except Exception as err:  # noqa: BLE001 -- any failure reads the layer
+        image, error_code = None, str(err)
+    return image, error_code, int((time.monotonic() - started) * 1000)
+
+
 class OnlineCropFetcher:
     """Step-driven online-tile crop fetch.
 
@@ -1347,6 +1369,10 @@ class OnlineCropFetcher:
         # The read that passed the checks, kept so finish() builds the crop
         # from the picture that was checked and not from a fresh one.
         self._settled_block = None
+        # Set below, once the extent is known. Declared here so a fetcher that
+        # gives up before that still answers every method it owns.
+        self._direct_request = None
+        self._direct_image = None
 
         provider = layer.dataProvider()
         self._provider = provider
@@ -1376,11 +1402,54 @@ class OnlineCropFetcher:
             "AI Segmentation", level=Qgis.MessageLevel.Info
         )
 
+        # Tiles asked for by their own numbers, when the layer is one that can
+        # be addressed that way. Nothing on that path reads the layer or waits
+        # for it to repaint, so it needs neither the resampling switch begin()
+        # makes nor the retry ladder below. None sends the crop down the
+        # provider read exactly as before.
+        self._direct_request = self._build_direct_request()
+
+    def _build_direct_request(self):
+        """The tile request covering this crop, or None to read the layer.
+
+        Built in __init__ because that runs where the QGIS objects live. Past
+        this point the request is plain strings and numbers, so the fetch it
+        drives is safe anywhere.
+        """
+        try:
+            from .xyz_tile_fetch import (
+                direct_tile_fetch_available,
+                xyz_crop_request,
+            )
+
+            if not direct_tile_fetch_available(self._layer):
+                return None
+            return xyz_crop_request(self._layer, self._extent, self._crop_size)
+        except Exception:  # noqa: BLE001 -- no request reads the layer  # nosec B110
+            return None
+
+    def direct_tile_request(self):
+        """The tile request this crop would download next, or None when it
+        reads the layer instead. A driver that wants to run the download
+        somewhere other than its own thread looks here first."""
+        return self._direct_request
+
+    def take_direct_tile_request(self):
+        """Hand the tile request out and forget it, so the fetcher no longer
+        drives the download. The taker owes accept_direct_tiles the outcome,
+        which is the only thing that can keep the picture or fall back to the
+        layer read."""
+        request = self._direct_request
+        self._direct_request = None
+        return request
+
     def begin(self):
         """Snapshot the live provider's resampling state, then force bilinear
         for the fetch. Safe to call once; restore() reverts whatever was
         captured, even if a setter below raises partway through."""
-        if self._provider is None:
+        if self._provider is None or self._direct_request is not None:
+            # A crop that fetches its own tiles never reads the provider, so
+            # the user's layer keeps the resampling it had.
             return
         provider = self._provider
         try:
@@ -1519,7 +1588,13 @@ class OnlineCropFetcher:
         - ("exhausted", 0.0): retry budget or read budget spent, or the host
           refused the tiles and no read has ever carried a pixel; go to
           finish() with whatever the provider returned.
+
+        A crop whose tiles can be fetched by number takes none of that: the
+        first step downloads the whole picture or hands the crop back to the
+        provider read.
         """
+        if self._direct_request is not None:
+            return self._fetch_tiles_directly()
         provider = self._provider
         if self.read_budget_spent():
             # The reads have held the calling thread long enough. Stop the
@@ -1538,7 +1613,10 @@ class OnlineCropFetcher:
             # area has no coverage). A slow network would otherwise trip the
             # equality check and abandon the retry budget after ~1s, shipping a
             # blank crop, so an empty read gets its own narrower test below.
-            if cur_data.strip(b"\x00"):
+            # Counted rather than stripped: stripping builds a second copy of
+            # a block that can be megabytes, on every read of every retry, and
+            # the answer wanted is only whether any byte is set.
+            if cur_data.count(0) != len(cur_data):
                 # Pixels arrived, so no earlier emptiness stands any more. Kept,
                 # it would pair with a later blank read across this one and
                 # settle a crop the layer does have coverage for.
@@ -1587,6 +1665,57 @@ class OnlineCropFetcher:
             self._attempt = attempt + 1
             return ("retry", delay)
         return ("exhausted", 0.0)
+
+    def _fetch_tiles_directly(self):
+        """Download this crop's tiles on the calling thread, then decide.
+
+        The driver that can afford to block takes this route. The interactive
+        one hands the same request to a worker and calls accept_direct_tiles
+        with what comes back, so both end up in the same place.
+        """
+        request = self.take_direct_tile_request()
+        return self.accept_direct_tiles(request, *run_direct_tile_fetch(request))
+
+    def accept_direct_tiles(self, request, image, error_code, elapsed_ms):
+        """Keep the downloaded picture, or hand the crop to the provider read.
+
+        One attempt: the fetch retries each tile itself, and it either has the
+        whole crop or it has nothing, so a ladder here would ask the same
+        question again. On the way to the fallback it puts the provider into
+        the state begin() would have left, because the read below expects it.
+
+        Reads the layer and writes the log, so it runs where the QGIS objects
+        live, whichever thread the download itself ran on.
+        """
+        from .xyz_tile_fetch import (
+            note_direct_tile_fetch_failed,
+            note_direct_tile_fetch_succeeded,
+        )
+
+        # Belt and braces for the driver that peeked instead of taking: the
+        # fallback below re-enters step(), and a request still standing there
+        # would download the same tiles again.
+        self._direct_request = None
+        if image is not None:
+            note_direct_tile_fetch_succeeded(request.source_key)
+            QgsMessageLog.logMessage(
+                f"Fetched {request.tile_count()} tiles at zoom "
+                f"{request.zoom} in {elapsed_ms} ms",
+                "AI Segmentation", level=Qgis.MessageLevel.Info
+            )
+            self._direct_image = image
+            return ("stabilized", 0.0)
+        if error_code != "crop_error_online_blank_tiles":
+            # Blank is about this ground, not about the layer, so it never
+            # counts against the source.
+            note_direct_tile_fetch_failed(request.source_key)
+        QgsMessageLog.logMessage(
+            f"Direct tile fetch brought nothing after {elapsed_ms} ms "
+            f"({error_code}), reading the layer instead",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning
+        )
+        self.begin()
+        return self.step()
 
     def _accept(self, block):
         """Keep the read that passed, so finish() encodes THAT picture.
@@ -1655,6 +1784,15 @@ class OnlineCropFetcher:
         """Read the band data for the stabilized extent and build the crop.
         Returns the extract_crop_from_raster-style 4-tuple (image_np,
         crop_info, error, error_code)."""
+        if self._direct_image is not None:
+            # The tiles came down as one picture covering exactly the extent
+            # asked for, so there is nothing to read and nothing to check.
+            image_np = self._direct_image
+            return image_np, {
+                "bounds": (self._extent.xMinimum(), self._extent.yMinimum(),
+                           self._extent.xMaximum(), self._extent.yMaximum()),
+                "img_shape": (image_np.shape[0], image_np.shape[1]),
+            }, None, None
         provider = self._provider
         settled = self._settled_block
         if settled is None and self._tile_request_failed and self._prev_data is None:

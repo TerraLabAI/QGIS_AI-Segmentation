@@ -82,8 +82,10 @@ def track_plugin_error(
 
     stage: install | download | activate | segment | export | other
     error_code: short machine-friendly id (e.g. "PIP_TIMEOUT", "RUNTIME_ERROR")
-    message: first line of the error, truncated to 500 chars, scrubbed of
-        coords and of everything above a file name
+    message: first line of the error, scrubbed of coords and of everything
+        above a file name, then cut to 500 chars. Scrub first: a cut that
+        lands inside a path or an address hands the scrubber a fragment its
+        patterns no longer match, and the fragment travels
     include_log_tail: OFF by default. When True, the last 20 anonymized log lines
         are capped to ~4KB and coordinate-scrubbed before being sent.
     traceback_hash: optional short sha of the normalized traceback (groups
@@ -97,7 +99,7 @@ def track_plugin_error(
     props = {
         "stage": stage,
         "error_code": error_code,
-        "message": keep_path_basenames(scrub_payload_value((message or "")[:500])),
+        "message": keep_path_basenames(scrub_payload_value(message or ""))[:500],
     }
     if traceback_hash:
         props["traceback_hash"] = traceback_hash

@@ -421,6 +421,10 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>复制邮箱地址</translation>
     </message>
     <message>
+        <source>buildings</source>
+        <translation>建筑</translation>
+    </message>
+    <message>
         <source>or</source>
         <translation>或</translation>
     </message>
@@ -495,6 +499,10 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     
 
     
+    <message>
+        <source>trees</source>
+        <translation>树木</translation>
+    </message>
     <message>
         <source>{ext} format is not directly supported. GDAL is not available.
 Please convert your raster to GeoTIFF (.tif) before using AI Segmentation.</source>
@@ -1690,10 +1698,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>0 shown - lower the Min size filter to reveal them</source>
         <translation>显示 0 个，降低最小尺寸筛选即可显示它们</translation>
-    </message>
-    <message>
-        <source>5,000 cloud detections every month, zones of any size. Cancel anytime.</source>
-        <translation>每月 5,000 个云端检测，任意大小的区域。随时可取消。</translation>
     </message>
     <message>
         <source>A Component Failed to Load</source>
@@ -3013,10 +3017,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     </message>
     
     <message>
-        <source>Pro: 5,000 cloud detections a month, zones of any size, up to 800 cloud detections in one run. Same AI, same free clicks and corrections, every machine you work on.</source>
-        <translation>Pro：每月 5,000 个云端检测、任意大小的区域、一次运行最多 800 个云端检测。相同的 AI、相同的免费点击和修正功能、您工作的每台机器。</translation>
-    </message>
-    <message>
         <source>A free run covers up to {cap} cloud detections. This one needs more. Pro covers up to 800 in one run.</source>
         <translation>一次免费运行最多可覆盖 {cap} 个云端检测。本次需要更多。Pro 版本一次运行最多可覆盖 800 个。</translation>
     </message>
@@ -3147,10 +3147,6 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>No image over this zone at this precision, so nothing was analyzed (not charged). Lower Precision, or pick a layer that covers this area.</source>
         <translation>在当前精度下，该区域没有影像覆盖，因此未进行分析（不计费）。请降低精度，或选择一个覆盖此区域的图层。</translation>
-    </message>
-    <message>
-        <source>This run needs {n} cloud detections and you have {left} left. Lower the precision or shrink the zone. Pro gives you 5,000 cloud detections a month.</source>
-        <translation>本次运行需要 {n} 个云端检测，您还剩 {left} 个。请降低精度或缩小区域。Pro 版本每月提供 5,000 个云端检测。</translation>
     </message>
     <message>
         <source>Opens your terra-lab.ai dashboard: your plan, your cloud detections and your payment details.</source>
@@ -3317,10 +3313,6 @@ It may have been moved or renamed, or the drive or network share it is on may be
     <message>
         <source>Type a word for the object, or draw an example.</source>
         <translation>为对象输入一个词，或绘制一个示例。</translation>
-    </message>
-    <message>
-        <source>Finish this zone with Pro: 5,000 cloud detections a month.</source>
-        <translation>使用 Pro 完成此区域：每月 5,000 个云端检测。</translation>
     </message>
     <message>
         <source>Wait for the on-device AI to finish installing.</source>
@@ -3838,14 +3830,6 @@ It may have been moved or renamed, or the drive or network share it is on may be
         <translation>或在本机上使用较小的 AI，免费处理。</translation>
     </message>
     <message>
-        <source>Pro: 5,000 cloud detections a month</source>
-        <translation>Pro：每月 5,000 个云端检测</translation>
-    </message>
-    <message>
-        <source>Pro: 5,000 detections a month, on zones of any size</source>
-        <translation>Pro：每月 5,000 个检测，适用于任意大小的区域</translation>
-    </message>
-    <message>
         <source>QGIS cannot read this raster format here. Convert it to GeoTIFF, then start again.</source>
         <translation>QGIS 无法读取此栅格格式。请先转换为 GeoTIFF，然后重新开始。</translation>
     </message>
@@ -3948,6 +3932,1069 @@ It may have been moved or renamed, or the drive or network share it is on may be
     <message>
         <source>Your free cloud detections are used up</source>
         <translation>您的免费云端检测已用完</translation>
+    </message>
+    <message>
+        <source>You used your Automatic allowance for this month. Semi-Auto runs on your computer, free, with no counter.</source>
+        <translation>您已用完本月的 Automatic 配额。Semi-Auto 在您的计算机上运行，免费使用，不计入配额。</translation>
+    </message>
+    <message>
+        <source>{n} km² left</source>
+        <translation>剩余 {n} km²</translation>
+    </message>
+    <message>
+        <source>{n} km² of Automatic left this month</source>
+        <translation>本月还剩 {n} km² 的 Automatic 配额</translation>
+    </message>
+    <message>
+        <source>{used} of {total} km² of Automatic used this month</source>
+        <translation>本月已使用 {used}/{total} km² 的 Automatic 配额</translation>
+    </message>
+    <message>
+        <source>{n} cloud objects left this month</source>
+        <translation>本月还剩 {n} 个云端对象</translation>
+    </message>
+    <message>
+        <source>{used} of {total} cloud objects saved this month</source>
+        <translation>本月已保存 {used}/{total} 个云端对象</translation>
+    </message>
+    <message>
+        <source>It comes back on {date}. Semi-Auto on this computer keeps working.</source>
+        <translation>将于 {date} 恢复。在这台计算机上，Semi-Auto 将继续运行。</translation>
+    </message>
+    <message>
+        <source>You covered your {n} km² of Automatic this month</source>
+        <translation>您已用完本月的 {n} km² Automatic 配额</translation>
+    </message>
+    <message>
+        <source>This run needs {n} cloud detections and you have {left} left this month. Lower the precision or shrink the zone. Pro covers 300 km² of Automatic a month, on zones of any size.</source>
+        <translation>本次运行需要 {n} 个云端检测，您本月还剩 {left} 个。请降低精度或缩小区域。Pro 每月提供 300 km² 的 Automatic，适用于任意大小的区域。</translation>
+    </message>
+    <message>
+        <source>One detection covers 0.04 to 0.25 km², depending on the precision you ask for.</source>
+        <translation>一次检测覆盖 0.04 至 0.25 km²，具体取决于您要求的精度。</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} km² of Automatic used, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>剩余不多：已使用 {used}/{total} km² 的 Automatic 配额，将于 {date} 恢复。&lt;a href="{url}"&gt;升级到 Pro&lt;/a&gt; 以继续使用。</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} km² of Automatic used. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>剩余不多：已使用 {used}/{total} km² 的 Automatic 配额。&lt;a href="{url}"&gt;升级到 Pro&lt;/a&gt; 以继续使用。</translation>
+    </message>
+    <message>
+        <source>You saved your {n} cloud objects this month</source>
+        <translation>您已用完本月的 {n} 个云端对象配额</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} cloud objects saved this month, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>剩余不多：本月已保存 {used}/{total} 个云端对象，将于 {date} 恢复。&lt;a href="{url}"&gt;升级到 Pro&lt;/a&gt; 以继续使用。</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} cloud objects saved this month. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>剩余不多：本月已保存 {used}/{total} 个云端对象。&lt;a href="{url}"&gt;升级到 Pro&lt;/a&gt; 以继续使用。</translation>
+    </message>
+    <message>
+        <source>300 km² of Automatic every month, on zones of any size</source>
+        <translation>每月 300 km² 的 Automatic，适用于任意大小的区域</translation>
+    </message>
+    <message>
+        <source>Finish this zone with Pro: 300 km² of Automatic a month.</source>
+        <translation>使用 Pro 完成此区域：每月 300 km² 的 Automatic。</translation>
+    </message>
+    <message>
+        <source>Zone too large. Reduce the area to {max} detections or fewer.</source>
+        <translation>区域过大。请将面积缩小到最多 {max} 个检测。</translation>
+    </message>
+    <message>
+        <source>You saved your cloud objects for this month. Switch to your own computer to keep working free, or upgrade from the panel.</source>
+        <translation>您已用完本月的云端对象配额。切换到您自己的计算机即可继续免费工作，或从控制面板升级。</translation>
+    </message>
+    <message>
+        <source>Your cloud allowance for this month is used, so the AI fix cannot answer. Switched to editing by hand, which is free.</source>
+        <translation>您已用完本月的云端配额，因此 AI 修复无法响应。已切换到手动编辑，该方式免费。</translation>
+    </message>
+    <message>
+        <source>Your monthly allowance ran out at {done}/{total}. Everything found so far is kept below and stays yours.</source>
+        <translation>您的月度配额已在 {done}/{total} 时用完。目前找到的所有内容都会保留在下方，并归您所有。</translation>
+    </message>
+    <message>
+        <source>Pro: 2,000 objects a month in Semi-Auto with Cloud AI</source>
+        <translation>Pro：在 Semi-Auto 模式下使用 Cloud AI，每月处理 2,000 个对象</translation>
+    </message>
+    <message>
+        <source>Pro: 2,000 objects a month in Semi-Auto with Cloud AI, and 300 km² of Automatic. Same AI, same free clicks and corrections, every machine you work on.</source>
+        <translation>Pro：在 Semi-Auto 模式下使用 Cloud AI，每月处理 2,000 个对象，并使用 Automatic 处理 300 km²。每台您使用的设备都可使用相同的 AI、相同的免费点击次数和修正功能。</translation>
+    </message>
+    <message>
+        <source>2,000 objects a month in Semi-Auto, 300 km² in Automatic. Cancel anytime.</source>
+        <translation>Semi-Auto 模式下每月处理 2,000 个对象，Automatic 模式下处理 300 km²。随时可取消。</translation>
+    </message>
+    <message>
+        <source>300 km² of Automatic a month, on zones of any size.</source>
+        <translation>每月 300 km² 的 Automatic 配额，区域大小不限。</translation>
+    </message>
+    <message>
+        <source>The same AI on every machine you work on.</source>
+        <translation>您使用的每台计算机上都有相同的 AI。</translation>
+    </message>
+    <message>
+        <source>39 EUR a month, cancel anytime.</source>
+        <translation>每月 39 EUR，随时取消。</translation>
+    </message>
+    <message>
+        <source>2,000 cloud objects every month in Semi-Auto</source>
+        <translation>Semi-Auto 每月 2,000 个云端对象</translation>
+    </message>
+    <message>
+        <source>{n} of {total} cloud objects left in Semi-Auto this month</source>
+        <translation>本月 Semi-Auto 剩余 {n} / {total} 个云端对象</translation>
+    </message>
+    <message>
+        <source>{n} of {total} km² left in Automatic this month</source>
+        <translation>本月 Automatic 剩余 {n} / {total} km²</translation>
+    </message>
+    <message>
+        <source>Draw a whole city and let it run, at the finest precision.</source>
+        <translation>绘制整个城市并运行检测，使用最高精度。</translation>
+    </message>
+    <message>
+        <source>Or click objects one by one in Semi-Auto.</source>
+        <translation>或者在 Semi-Auto 中逐个点击对象。</translation>
+    </message>
+    <message>
+        <source>(optional)</source>
+        <translation>（可选）</translation>
+    </message>
+    <message>
+        <source>More precision sweeps your zone in a finer grid, so it catches smaller objects.</source>
+        <translation>更高的精度会以更细的网格扫描区域，从而检测到更小的对象。</translation>
+    </message>
+    <message>
+        <source>Your Automatic allowance ran out mid-zone.</source>
+        <translation>您的 Automatic 配额在区域检测过程中用完了。</translation>
+    </message>
+    <message>
+        <source>Pro picks it up where it stopped and finishes the zone.</source>
+        <translation>Pro 会从停止的位置继续，完成该区域的检测。</translation>
+    </message>
+    <message>
+        <source>Finish with Pro</source>
+        <translation>使用 Pro 完成</translation>
+    </message>
+    <message>
+        <source>This zone at this precision is more than one run covers. Draw a smaller zone, or lower the precision.</source>
+        <translation>以当前精度检测此区域需要超过一次运行。请绘制更小的区域，或降低精度。</translation>
+    </message>
+    <message>
+        <source>This zone at this precision is more than one run covers. Draw a smaller zone, or lower the precision. Free runs stop well below that ceiling, so Pro keeps more precision on a zone this size.</source>
+        <translation>以当前精度检测此区域需要超过一次运行。请绘制更小的区域，或降低精度。免费运行的上限远低于此值，因此对于此大小的区域，Pro 可以保持更高精度。</translation>
+    </message>
+    <message>
+        <source>{n} km²</source>
+        <translation>{n} km²</translation>
+    </message>
+    <message>
+        <source>Automatic is counted by surface. Precision changes how finely the zone is scanned, never the price. A run never costs more than the zone you drew.</source>
+        <translation>Automatic 按面积计算。精度只会改变区域扫描的细致程度，不会改变价格。一次运行的费用不会超过您绘制的区域面积。</translation>
+    </message>
+    <message>
+        <source>Pro raises the month to 300 km² of Automatic.</source>
+        <translation>Pro 将每月 Automatic 配额提升至 300 km²。</translation>
+    </message>
+    <message>
+        <source>This zone is {zone} km². You have {left} km² left in Automatic this month.</source>
+        <translation>此区域为 {zone} km²。本月 Automatic 还剩 {left} km²。</translation>
+    </message>
+    <message>
+        <source>Or draw a smaller zone.</source>
+        <translation>或者绘制更小的区域。</translation>
+    </message>
+    <message>
+        <source>This zone is {area} km². Free runs stop at {max} km².</source>
+        <translation>此区域为 {area} km²。免费运行的上限为 {max} km²。</translation>
+    </message>
+    <message>
+        <source>Pro has no size limit and runs the zone as you drew it.</source>
+        <translation>Pro 没有大小限制，会按您绘制的区域运行检测。</translation>
+    </message>
+    <message>
+        <source>Or make the zone smaller and run it free.</source>
+        <translation>或者缩小区域并免费运行。</translation>
+    </message>
+    <message>
+        <source>{n} km² of Automatic left, back on {date}.</source>
+        <translation>Automatic 还剩 {n} km²，将于 {date} 恢复。</translation>
+    </message>
+    <message>
+        <source>{n} km² of Automatic left this month.</source>
+        <translation>本月 Automatic 还剩 {n} km²。</translation>
+    </message>
+    <message>
+        <source>{n} free detections left, back on {date}.</source>
+        <translation>还剩 {n} 次免费检测，将于 {date} 恢复。</translation>
+    </message>
+    <message>
+        <source>{n} free detections left.</source>
+        <translation>还剩 {n} 次免费检测。</translation>
+    </message>
+    <message>
+        <source>Pro gives you 300 km² of Automatic a month, so you keep working.</source>
+        <translation>Pro 每月提供 300 km² 的 Automatic 配额，让您可以继续工作。</translation>
+    </message>
+    <message>
+        <source>Advanced settings</source>
+        <translation>高级设置</translation>
+    </message>
+    <message>
+        <source>Zoom in for a finer outline. The AI reads the image at your current zoom.</source>
+        <translation>放大以绘制更精细的轮廓。AI 会按照当前缩放级别读取图像。</translation>
+    </message>
+    <message>
+        <source>Keep clicking with the same cloud AI, nothing to install.</source>
+        <translation>使用相同的云端 AI 继续点击，无需安装任何内容。</translation>
+    </message>
+    <message>
+        <source>You saved your {n} cloud objects in Semi-Auto this month</source>
+        <translation>您本月在 Semi-Auto 中保存了 {n} 个云端对象</translation>
+    </message>
+    <message>
+        <source>Or keep clicking for free with a smaller AI on this computer.</source>
+        <translation>或者使用此计算机上的小型 AI 免费继续点击。</translation>
+    </message>
+    <message>
+        <source>{n} of {total} cloud objects left in Semi-Auto, back on {date}.</source>
+        <translation>Semi-Auto 还剩 {n} / {total} 个云端对象，将于 {date} 恢复。</translation>
+    </message>
+    <message>
+        <source>{n} of {total} cloud objects left in Semi-Auto this month.</source>
+        <translation>本月 Semi-Auto 还剩 {n} / {total} 个云端对象。</translation>
+    </message>
+    <message>
+        <source>{n} cloud detections left, back on {date}.</source>
+        <translation>还剩 {n} 个云端检测，将于 {date} 恢复。</translation>
+    </message>
+    <message>
+        <source>{n} cloud detections left.</source>
+        <translation>还剩 {n} 个云端检测。</translation>
+    </message>
+    <message>
+        <source>Pro gives you 2,000 cloud objects a month in Semi-Auto.</source>
+        <translation>Pro 每月为 Semi-Auto 提供 2,000 个云端对象。</translation>
+    </message>
+    <message>
+        <source>More settings</source>
+        <translation>更多设置</translation>
+    </message>
+    <message>
+        <source>{left} / {cap} km²</source>
+        <translation>{left} / {cap} km²</translation>
+    </message>
+    <message>
+        <source>{left} of {cap} km² left in Automatic this month</source>
+        <translation>本月 Automatic 还剩 {left} / {cap} km²</translation>
+    </message>
+    <message>
+        <source>{left} of {cap} cloud objects left in Semi-Auto this month</source>
+        <translation>本月 Semi-Auto 还剩 {left} / {cap} 个云端对象</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the surface you have left this month. Draw a smaller zone.</source>
+        <translation>此区域大于您本月剩余的可用面积。请绘制更小的区域。</translation>
+    </message>
+    <message>
+        <source>It comes back on {date}.</source>
+        <translation>将于 {date} 恢复。</translation>
+    </message>
+    <message>
+        <source>A zone detection is already running. Wait for it to finish, or stop it, before starting another.</source>
+        <translation>区域检测已在运行。请等待其完成或停止后，再开始新的检测。</translation>
+    </message>
+    <message>
+        <source>Type what to find first. An example is optional.</source>
+        <translation>请先输入要查找的内容。示例为可选项。</translation>
+    </message>
+    <message>
+        <source>Your plan is already running on its maximum number of computers. Close AI Segmentation on one of them, then run Detect again.</source>
+        <translation>您的计划已在最大数量的计算机上运行。请在其中一台计算机上关闭 AI Segmentation，然后再次运行 Detect。</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the area you have left this month. Draw a smaller zone, or subscribe for a larger monthly area.</source>
+        <translation>此区域大于您本月剩余的可用面积。请绘制更小的区域，或订阅更大月度面积的计划。</translation>
+    </message>
+    <message>
+        <source>Your monthly allowance ran out, so this run did not start.</source>
+        <translation>您的月度配额已用完，因此此次运行未启动。</translation>
+    </message>
+    <message>
+        <source>"{word}" is hard to spot from above - "{term}" detects better. Your word still runs.</source>
+        <translation>"{word}" 从上方较难识别，"{term}" 的检测效果更好。仍会运行你的词语。</translation>
+    </message>
+    <message>
+        <source>"{word}" cannot be seen from above. Pick an object on the ground - the Library has ready-to-use ones.</source>
+        <translation>"{word}" 无法从上方看到。请选择地面上的对象，对象库中有可直接使用的对象。</translation>
+    </message>
+    <message>
+        <source>"{obj}" is not an object the AI knows well. The run may come back empty - a more common word finds more.</source>
+        <translation>"{obj}" 不是 AI 熟悉的对象。运行结果可能为空，使用更常见的词语可以找到更多对象。</translation>
+    </message>
+    <message>
+        <source>(~{n} min left)</source>
+        <translation>(还剩约 {n} 分钟)</translation>
+    </message>
+    <message>
+        <source>(~{n} sec left)</source>
+        <translation>(还剩约 {n} 秒)</translation>
+    </message>
+    <message>
+        <source>1 detection</source>
+        <translation>1 次检测</translation>
+    </message>
+    <message>
+        <source>1 free cloud detection remaining</source>
+        <translation>还剩 1 次免费云端检测</translation>
+    </message>
+    <message>
+        <source>1 shape edited this session</source>
+        <translation>本次会话已编辑 1 个形状</translation>
+    </message>
+    <message>
+        <source>AI not available</source>
+        <translation>AI 不可用</translation>
+    </message>
+    <message>
+        <source>Automatic is temporarily unavailable. Try again later.</source>
+        <translation>自动暂时不可用。请稍后重试。</translation>
+    </message>
+    <message>
+        <source>Could not read the pixel grid of this raster. Check the layer opens and shows in QGIS, then try again.</source>
+        <translation>无法读取此栅格的像素网格。请确认图层能在 QGIS 中打开并显示，然后重试。</translation>
+    </message>
+    <message>
+        <source>Detection stopped before any result came back. Run Detect again when you are ready.</source>
+        <translation>检测在返回结果前已停止。准备好后请再次运行检测。</translation>
+    </message>
+    <message>
+        <source>Export now?</source>
+        <translation>现在导出吗？</translation>
+    </message>
+    <message>
+        <source>Export what you saved and end this session?</source>
+        <translation>导出已保存的内容并结束本次会话？</translation>
+    </message>
+    <message>
+        <source>Finish or close the review first.</source>
+        <translation>请先完成或关闭审查。</translation>
+    </message>
+    <message>
+        <source>No Automatic surface left this month. Semi-Auto still works until it comes back.</source>
+        <translation>本月已没有可用的自动面积。自动恢复前，Semi-Auto 仍可使用。</translation>
+    </message>
+    <message>
+        <source>No Automatic surface left this month. Semi-Auto still works, and Automatic comes back on {date}.</source>
+        <translation>本月已没有可用的自动面积。Semi-Auto 仍可使用，自动将于 {date} 恢复。</translation>
+    </message>
+    <message>
+        <source>None of the objects came out as a shape the file could take. Turn the cleanup settings down and try Finish again.</source>
+        <translation>没有任何对象生成文件可接受的形状。请降低清理设置，然后再次点击完成。</translation>
+    </message>
+    <message>
+        <source>Nothing is visible to save. Lower Confidence, or widen the size range, then try Finish again.</source>
+        <translation>没有可保存的可见内容。请降低置信度或扩大尺寸范围，然后再次点击完成。</translation>
+    </message>
+    <message>
+        <source>Off until a selection is on screen. Click the object first, then Save polygon keeps it in your session; Export writes all kept polygons to a layer.</source>
+        <translation>屏幕上显示选择内容后才可用。请先点击对象；Save polygon 会将其保留在本次会话中，导出会将所有保留的多边形写入图层。</translation>
+    </message>
+    <message>
+        <source>Removes the last point you placed on the object.</source>
+        <translation>移除您在对象上放置的最后一个点。</translation>
+    </message>
+    <message>
+        <source>Saved all {n} objects found to {name}, including any the Confidence slider hid.</source>
+        <translation>已将找到的全部 {n} 个对象保存到 {name}，包括被置信度滑块隐藏的对象。</translation>
+    </message>
+    <message>
+        <source>Saved the 1 object found to {name}.</source>
+        <translation>已将找到的 1 个对象保存到 {name}。</translation>
+    </message>
+    <message>
+        <source>Sign in to run Automatic.</source>
+        <translation>登录后才能运行自动。</translation>
+    </message>
+    <message>
+        <source>Team or organization? Write to us: {email}</source>
+        <translation>团队或组织？请联系：{email}</translation>
+    </message>
+    <message>
+        <source>The AI Segmentation panel is closed, so there is nothing to detect from. Open it and try again.</source>
+        <translation>AI Segmentation 面板已关闭，因此没有可用于检测的内容。请打开面板后重试。</translation>
+    </message>
+    <message>
+        <source>The AI did not load, so this click was not answered. Use the Install button in the panel to set it up again.</source>
+        <translation>AI 未加载，因此未响应此次点击。请使用面板中的安装按钮重新设置。</translation>
+    </message>
+    <message>
+        <source>The AI is still loading, so this click was not answered. Try again in a few seconds.</source>
+        <translation>AI 仍在加载，因此未响应此次点击。请几秒后重试。</translation>
+    </message>
+    <message>
+        <source>The click tool stays on while this session is open. Stop the session to use another map tool.</source>
+        <translation>本次会话打开期间，点击工具会保持启用。请停止会话后再使用其他地图工具。</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding. Keeping the 1 cloud detection already paid for.</source>
+        <translation>检测已停止响应。已付费的 1 次云端检测将保留。</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding. Keeping the {n} cloud detections already paid for.</source>
+        <translation>检测已停止响应。已付费的 {n} 次云端检测将保留。</translation>
+    </message>
+    <message>
+        <source>The object you are working on is not saved yet, so it will not be in the layer.</source>
+        <translation>您正在处理的对象尚未保存，因此不会出现在图层中。</translation>
+    </message>
+    <message>
+        <source>The offline AI did not load, so this session cannot start. Use the Install button in the panel to set it up again.</source>
+        <translation>离线 AI 未加载，因此无法开始本次会话。请使用面板中的安装按钮重新设置。</translation>
+    </message>
+    <message>
+        <source>This computer is no longer signed in. Sign out, then sign in again to reconnect it.</source>
+        <translation>此计算机已退出登录。请先退出登录，然后重新登录以重新连接。</translation>
+    </message>
+    <message>
+        <source>This sign-in code has expired. Click Cancel, then Sign in to get a new one.</source>
+        <translation>此登录代码已过期。请点击取消，然后重新登录以获取新代码。</translation>
+    </message>
+    <message>
+        <source>This will discard 1 polygon.</source>
+        <translation>这将丢弃 1 个多边形。</translation>
+    </message>
+    <message>
+        <source>This will discard {count} polygons.</source>
+        <translation>这将丢弃 {count} 个多边形。</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the surface you have left this month. Draw a smaller zone, or subscribe for a larger monthly surface.</source>
+        <translation>此区域大于您本月剩余的可用面积。请绘制更小的区域，或订阅以获得更大的月度可用面积。</translation>
+    </message>
+    <message>
+        <source>You can also open this address by hand:
+{}</source>
+        <translation>您也可以手动打开此地址：
+{}</translation>
+    </message>
+    <message>
+        <source>You have 1 unsaved polygon.</source>
+        <translation>您有 1 个未保存的多边形。</translation>
+    </message>
+    <message>
+        <source>You have been signed out. Sign in again to keep using the cloud features.</source>
+        <translation>您已退出登录。请重新登录以继续使用云端功能。</translation>
+    </message>
+    <message>
+        <source>You have {count} unsaved polygons.</source>
+        <translation>您有 {count} 个未保存的多边形。</translation>
+    </message>
+    <message>
+        <source>You used your Automatic allowance for this month. Semi-Auto on your computer keeps working, free, with no counter.</source>
+        <translation>您已用完本月的自动配额。计算机上的 Semi-Auto 仍可免费使用，且不计入配额。</translation>
+    </message>
+    <message>
+        <source>Your plan is already running on its maximum number of computers. Close AI Segmentation on one of them, then try again.</source>
+        <translation>您的套餐已在最大数量的计算机上运行。请在其中一台计算机上关闭 AI Segmentation，然后重试。</translation>
+    </message>
+    <message>
+        <source>polygon</source>
+        <translation>多边形</translation>
+    </message>
+    <message>
+        <source>{left} / {cap}</source>
+        <translation>{left} / {cap}</translation>
+    </message>
+    <message>
+        <source>{n} detections</source>
+        <translation>{n} 次检测</translation>
+    </message>
+    <message>
+        <source>{n} free cloud detections remaining</source>
+        <translation>还剩 {n} 次免费云端检测</translation>
+    </message>
+    <message>
+        <source>{n} shapes edited this session</source>
+        <translation>本次会话已编辑 {n} 个形状</translation>
+    </message>
+    <message>
+        <source>     {step} to build the AI engine again</source>
+        <translation>     {step}再次构建 AI 引擎</translation>
+    </message>
+    <message>
+        <source>  - Antivirus software (Windows Defender, etc.) blocking pip</source>
+        <translation>  - 防病毒软件（Windows Defender 等）阻止了 pip</translation>
+    </message>
+    <message>
+        <source>  - Corrupted virtual environment</source>
+        <translation>  - 虚拟环境已损坏</translation>
+    </message>
+    <message>
+        <source>  - exclude these hosts from inspection:</source>
+        <translation>  - 将以下主机排除在检查之外：</translation>
+    </message>
+    <message>
+        <source>  - install the network&apos;s root certificate on this machine, or</source>
+        <translation>  - 在此计算机上安装网络根证书，或</translation>
+    </message>
+    <message>
+        <source>  1. Add an antivirus exclusion for the folder:</source>
+        <translation>  1. 为此文件夹添加防病毒排除项：</translation>
+    </message>
+    <message>
+        <source>  1. Close all QGIS windows (File &gt; Exit)</source>
+        <translation>  1. 关闭所有 QGIS 窗口（文件 &gt; 退出）</translation>
+    </message>
+    <message>
+        <source>  1. Delete the folder: {folder}</source>
+        <translation>  1. 删除文件夹：{folder}</translation>
+    </message>
+    <message>
+        <source>  1. Free up disk space (empty the trash, remove large unused files)</source>
+        <translation>  1. 释放磁盘空间（清空废纸篓，删除大型无用文件）</translation>
+    </message>
+    <message>
+        <source>  1. If that folder is inside OneDrive or another sync tool, pause
+     syncing (or mark the folder &apos;Always keep on this device&apos;)</source>
+        <translation>  1. 如果该文件夹位于 OneDrive 或其他同步工具中，请暂停
+     同步（或将该文件夹标记为“始终保留在此设备上”）</translation>
+    </message>
+    <message>
+        <source>  1. Install the latest VC++ Redistributable (x64):
+     {url}</source>
+        <translation>  1. 安装最新的 VC++ Redistributable（x64）：
+     {url}</translation>
+    </message>
+    <message>
+        <source>  1. Temporarily disable real-time antivirus scanning</source>
+        <translation>  1. 暂时禁用实时防病毒扫描</translation>
+    </message>
+    <message>
+        <source>  1. Upgrade your distribution to a version released after 2019</source>
+        <translation>  1. 将您的发行版升级到 2019 年之后发布的版本</translation>
+    </message>
+    <message>
+        <source>  1. Use a QGIS build bundling Python 3.12 or older, or</source>
+        <translation>  1. 使用捆绑 Python 3.12 或更早版本的 QGIS 构建版本，或</translation>
+    </message>
+    <message>
+        <source>  1. {step} to build again with fresh data</source>
+        <translation>  1. 使用新数据{step}再次构建</translation>
+    </message>
+    <message>
+        <source>  2. Add an exclusion for the plugin folder:</source>
+        <translation>  2. 为插件文件夹添加排除项：</translation>
+    </message>
+    <message>
+        <source>  2. If it persists, update QGIS to the latest LTR release
+     (newer QGIS ships a newer Python) and try again</source>
+        <translation>  2. 如果问题仍然存在，请将 QGIS 更新到最新的 LTR 版本
+     （较新的 QGIS 附带较新的 Python），然后重试</translation>
+    </message>
+    <message>
+        <source>  2. If you cannot upgrade, this plugin&apos;s AI engine is unfortunately
+     not supported on this machine</source>
+        <translation>  2. 如果无法升级，很遗憾，此插件的 AI 引擎不支持此计算机</translation>
+    </message>
+    <message>
+        <source>  2. On Apple Silicon, run the native (arm64) QGIS rather than the
+     Intel build under Rosetta</source>
+        <translation>  2. 在 Apple Silicon 上，请运行原生（arm64）QGIS，而不是
+     在 Rosetta 下运行的 Intel 版本</translation>
+    </message>
+    <message>
+        <source>  2. Or set the AI_SEGMENTATION_CACHE_DIR environment variable to a
+     short local folder outside any synced area (e.g. C:\qgis_ai),
+     then restart QGIS</source>
+        <translation>  2. 或将 AI_SEGMENTATION_CACHE_DIR 环境变量设置为同步区域之外的
+     本地短路径文件夹（例如 C:\qgis_ai），
+     然后重新启动 QGIS</translation>
+    </message>
+    <message>
+        <source>  2. Reopen QGIS</source>
+        <translation>  2. 重新打开 QGIS</translation>
+    </message>
+    <message>
+        <source>  2. Restart QGIS and try again</source>
+        <translation>  2. 重新启动 QGIS，然后重试</translation>
+    </message>
+    <message>
+        <source>  2. Restart your computer after installing</source>
+        <translation>  2. 安装后重新启动计算机</translation>
+    </message>
+    <message>
+        <source>  2. The environment is installed under: {location}</source>
+        <translation>  2. 环境安装于：{location}</translation>
+    </message>
+    <message>
+        <source>  2. {step} to build everything again</source>
+        <translation>  2. {step}再次构建全部内容</translation>
+    </message>
+    <message>
+        <source>  3. Check folder permissions: {command}</source>
+        <translation>  3. 检查文件夹权限：{command}</translation>
+    </message>
+    <message>
+        <source>  3. If the error is still there after the reboot:</source>
+        <translation>  3. 如果重新启动后错误仍然存在：</translation>
+    </message>
+    <message>
+        <source>  3. If the issue persists, reinstall QGIS</source>
+        <translation>  3. 如果问题仍然存在，请重新安装 QGIS</translation>
+    </message>
+    <message>
+        <source>  3. Open the AI Segmentation panel - installation will resume</source>
+        <translation>  3. 打开 AI Segmentation 面板，安装将继续</translation>
+    </message>
+    <message>
+        <source>  3. Run QGIS as administrator (right-click &gt; Run as administrator)</source>
+        <translation>  3. 以管理员身份运行 QGIS（右键单击 &gt; 以管理员身份运行）</translation>
+    </message>
+    <message>
+        <source>  3. To install on another drive, set the AI_SEGMENTATION_CACHE_DIR
+     environment variable to a folder on a disk with more space,
+     then restart QGIS and try again</source>
+        <translation>  3. 如需安装到其他驱动器，请将 AI_SEGMENTATION_CACHE_DIR
+     环境变量设置为可用空间更大的磁盘上的文件夹，
+     然后重新启动 QGIS 并重试</translation>
+    </message>
+    <message>
+        <source>  3. {step} again</source>
+        <translation>  3. 再次{step}</translation>
+    </message>
+    <message>
+        <source>  3. {step} to build it again</source>
+        <translation>  3. {step}再次构建</translation>
+    </message>
+    <message>
+        <source>  4. Check that no other Python (Anaconda, Miniconda, standalone Python)
+     puts conflicting torch DLLs on your system PATH.
+     Open a terminal and run: where python
+     If you see multiple results, remove the extra ones from PATH</source>
+        <translation>  4. 确认系统 PATH 中没有其他 Python（Anaconda、Miniconda、独立 Python）
+     添加冲突的 torch DLL。
+     打开终端并运行：where python
+     如果看到多个结果，请从 PATH 中删除多余的项</translation>
+    </message>
+    <message>
+        <source>  4. If the issue persists, run QGIS as administrator</source>
+        <translation>  4. 如果问题仍然存在，请以管理员身份运行 QGIS</translation>
+    </message>
+    <message>
+        <source>  4. Try the installation again</source>
+        <translation>  4. 再次尝试安装</translation>
+    </message>
+    <message>
+        <source>  4. Uninstall the plugin (Plugins &gt; Manage and Install Plugins &gt; Installed &gt; AI Segmentation)</source>
+        <translation>  4. 卸载插件（插件 &gt; 管理和安装插件 &gt; 已安装 &gt; AI Segmentation）</translation>
+    </message>
+    <message>
+        <source>  5. Restart QGIS</source>
+        <translation>  5. 重新启动 QGIS</translation>
+    </message>
+    <message>
+        <source>  6. Reinstall the plugin</source>
+        <translation>  6. 重新安装插件</translation>
+    </message>
+    <message>
+        <source>A required DLL failed to initialize.</source>
+        <translation>所需的 DLL 初始化失败。</translation>
+    </message>
+    <message>
+        <source>Ask your IT department to add a path-based allow rule for this folder:</source>
+        <translation>请联系 IT 部门，为此文件夹添加基于路径的允许规则：</translation>
+    </message>
+    <message>
+        <source>Ask your IT department to either:</source>
+        <translation>请联系 IT 部门执行以下任一操作：</translation>
+    </message>
+    <message>
+        <source>Cache error, retrying {package}... ({done}/{total})</source>
+        <translation>缓存错误，正在重试 {package}……（{done}/{total}）</translation>
+    </message>
+    <message>
+        <source>Creating virtual environment...</source>
+        <translation>正在创建虚拟环境……</translation>
+    </message>
+    <message>
+        <source>Disabling antivirus or running QGIS as administrator will not help.</source>
+        <translation>禁用防病毒软件或以管理员身份运行 QGIS 无法解决此问题。</translation>
+    </message>
+    <message>
+        <source>Downloaded {mb} MB, saving...</source>
+        <translation>已下载 {mb} MB，正在保存……</translation>
+    </message>
+    <message>
+        <source>Downloading PyTorch (~180 MB)... {elapsed}</source>
+        <translation>正在下载 PyTorch（约 180 MB）……{elapsed}</translation>
+    </message>
+    <message>
+        <source>Downloading Python: {done} MB</source>
+        <translation>正在下载 Python：{done} MB</translation>
+    </message>
+    <message>
+        <source>Downloading Python: {done} MB of {total} MB</source>
+        <translation>正在下载 Python：{done} MB / {total} MB</translation>
+    </message>
+    <message>
+        <source>Downloading uv package installer...</source>
+        <translation>正在下载 uv 软件包安装程序……</translation>
+    </message>
+    <message>
+        <source>Failed to create venv: this Python is missing its venv support.
+
+</source>
+        <translation>创建 venv 失败：此 Python 缺少 venv 支持。
+
+</translation>
+    </message>
+    <message>
+        <source>How to fix this:</source>
+        <translation>解决方法：</translation>
+    </message>
+    <message>
+        <source>If it still fails after restarting QGIS:</source>
+        <translation>如果重新启动 QGIS 后仍然失败：</translation>
+    </message>
+    <message>
+        <source>Install it, then retry:
+</source>
+        <translation>安装后重试：
+</translation>
+    </message>
+    <message>
+        <source>Install the venv module for your Python with your system&apos;s package manager, then retry.</source>
+        <translation>使用系统的软件包管理器为您的 Python 安装 venv 模块，然后重试。</translation>
+    </message>
+    <message>
+        <source>Installation failed due to network restrictions.</source>
+        <translation>由于网络限制，安装失败。</translation>
+    </message>
+    <message>
+        <source>Installation failed: Python&apos;s SSL module is not available.</source>
+        <translation>安装失败：Python 的 SSL 模块不可用。</translation>
+    </message>
+    <message>
+        <source>Installation failed: no compatible AI engine build exists for this
+combination of Intel Mac and Python version.</source>
+        <translation>安装失败：没有适用于此 Intel Mac 和 Python 版本组合的兼容 AI 引擎构建版本。</translation>
+    </message>
+    <message>
+        <source>Installation failed: the download server presented a certificate this computer does not trust.</source>
+        <translation>安装失败：下载服务器提供的证书不受此计算机信任。</translation>
+    </message>
+    <message>
+        <source>Installation failed: your Linux distribution is too old for the
+current AI engine. PyTorch wheels now require a recent system
+library (glibc 2.28+, i.e. Ubuntu 20.04 / Debian 10 / CentOS 8 or
+newer).</source>
+        <translation>安装失败：您的 Linux 发行版对于当前 AI 引擎而言过旧。PyTorch wheel 现在需要较新的系统
+库（glibc 2.28+，即 Ubuntu 20.04 / Debian 10 / CentOS 8
+或更高版本）。</translation>
+    </message>
+    <message>
+        <source>Installation failed: your disk ran out of space.</source>
+        <translation>安装失败：磁盘空间不足。</translation>
+    </message>
+    <message>
+        <source>Installation was blocked, likely by antivirus software or security policy.</source>
+        <translation>安装被阻止，可能是防病毒软件或安全策略所致。</translation>
+    </message>
+    <message>
+        <source>Installing {package} (~180 MB)... ({done}/{total})</source>
+        <translation>正在安装 {package}（约 180 MB）……（{done}/{total}）</translation>
+    </message>
+    <message>
+        <source>Installing {package}... ({done}/{total})</source>
+        <translation>正在安装 {package}……（{done}/{total}）</translation>
+    </message>
+    <message>
+        <source>Installing {package}... {elapsed}</source>
+        <translation>正在安装 {package}……{elapsed}</translation>
+    </message>
+    <message>
+        <source>Intel (x86_64) Macs are supported only up to PyTorch 2.2.2, which
+ships for Python 3.8 to 3.12. Your Python is newer than that.</source>
+        <translation>Intel（x86_64）Mac 仅支持 PyTorch 2.2.2 及更早版本，该版本
+适用于 Python 3.8 至 3.12。您的 Python 版本更高。</translation>
+    </message>
+    <message>
+        <source>Network error, retry {attempt}/{total} in {wait}s...</source>
+        <translation>网络错误，将在 {wait} 秒后重试 {attempt}/{total}……</translation>
+    </message>
+    <message>
+        <source>Network error, retrying in {seconds}s...</source>
+        <translation>网络错误，将在 {seconds} 秒后重试……</translation>
+    </message>
+    <message>
+        <source>Not enough free disk space to install dependencies: {free_gb:.1f} GB available at {cache_dir}, at least {min_free_gb:.1f} GB is required.
+
+Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR environment variable to a directory on a larger drive, then restart QGIS.</source>
+        <translation>没有足够的可用磁盘空间来安装依赖项：{cache_dir} 中有 {free_gb:.1f} GB 可用空间，至少需要 {min_free_gb:.1f} GB。
+
+请释放磁盘空间，或将 AI_SEGMENTATION_CACHE_DIR 环境变量设置为更大驱动器上的目录，然后重新启动 QGIS。</translation>
+    </message>
+    <message>
+        <source>Once the rule is in place, restart QGIS and try again.</source>
+        <translation>规则生效后，重新启动 QGIS 并重试。</translation>
+    </message>
+    <message>
+        <source>Open the AI Segmentation panel and click Install</source>
+        <translation>打开 AI Segmentation 面板并点击安装</translation>
+    </message>
+    <message>
+        <source>Please contact your IT department to allow access to:</source>
+        <translation>请联系 IT 部门，允许访问：</translation>
+    </message>
+    <message>
+        <source>Please try:</source>
+        <translation>请尝试：</translation>
+    </message>
+    <message>
+        <source>Python standalone ready</source>
+        <translation>独立 Python 已准备就绪</translation>
+    </message>
+    <message>
+        <source>Retrying {package}... ({done}/{total})</source>
+        <translation>正在重试 {package}……（{done}/{total}）</translation>
+    </message>
+    <message>
+        <source>SSL bypass retry for {package}... ({done}/{total})</source>
+        <translation>正在绕过 SSL 重试 {package}……（{done}/{total}）</translation>
+    </message>
+    <message>
+        <source>SSL error, retrying {package} (system certs)... ({done}/{total})</source>
+        <translation>SSL 错误，正在使用系统证书重试 {package}……（{done}/{total}）</translation>
+    </message>
+    <message>
+        <source>The AI engine needs roughly 4 GB free during installation.</source>
+        <translation>安装期间 AI 引擎需要大约 4 GB 可用空间。</translation>
+    </message>
+    <message>
+        <source>The environment installs under: {location}</source>
+        <translation>环境安装于：{location}</translation>
+    </message>
+    <message>
+        <source>The install has not reported anything for a while. QGIS is yours again: leave this running, or stop it and use Cloud AI.</source>
+        <translation>安装已有一段时间没有报告进度。QGIS 已恢复可用：您可以继续等待，或停止安装并使用云端 AI。</translation>
+    </message>
+    <message>
+        <source>The installer process crashed unexpectedly (access violation).</source>
+        <translation>安装程序进程意外崩溃（访问冲突）。</translation>
+    </message>
+    <message>
+        <source>The next installation will rebuild it from scratch automatically.</source>
+        <translation>下次安装时将自动从头重新构建。</translation>
+    </message>
+    <message>
+        <source>The package resolver could not find a compatible set of versions.
+This usually comes from stale cached package data or a Python
+version the AI packages no longer support.</source>
+        <translation>软件包解析器找不到兼容的版本组合。
+这通常是由于缓存的软件包数据过时，或 Python 版本已不再受 AI 软件包支持。</translation>
+    </message>
+    <message>
+        <source>The plugin always uses this folder, so one rule keeps working across updates.
+It contains a standalone Python runtime, the uv installer and Python packages,
+all downloaded from their official open-source sources.</source>
+        <translation>插件始终使用此文件夹，因此一条规则即可在更新后继续生效。
+其中包含独立 Python 运行时、uv 安装程序和 Python 软件包，
+全部从其官方开源来源下载。</translation>
+    </message>
+    <message>
+        <source>The plugin&apos;s Python environment is damaged (files are missing inside it).</source>
+        <translation>插件的 Python 环境已损坏（其中缺少文件）。</translation>
+    </message>
+    <message>
+        <source>The plugin&apos;s local Python runtime is damaged and cannot start.
+This is usually caused by antivirus quarantine or an interrupted
+first installation.</source>
+        <translation>插件的本地 Python 运行时已损坏，无法启动。
+这通常是由防病毒隔离或首次安装中断造成的。</translation>
+    </message>
+    <message>
+        <source>This is usually caused by:</source>
+        <translation>这通常是由以下原因造成的：</translation>
+    </message>
+    <message>
+        <source>This usually means the Python installation is incomplete or corrupted.</source>
+        <translation>这通常意味着 Python 安装不完整或已损坏。</translation>
+    </message>
+    <message>
+        <source>This usually means the install folder is cloud-synced (OneDrive/Dropbox), contains unusual characters, or the path grew past the Windows length limit.</source>
+        <translation>这通常意味着安装文件夹正在通过云端同步（OneDrive/Dropbox），包含特殊字符，或路径超过了 Windows 长度限制。</translation>
+    </message>
+    <message>
+        <source>Try these steps in order:</source>
+        <translation>请按顺序尝试以下步骤：</translation>
+    </message>
+    <message>
+        <source>Upgrading pip...</source>
+        <translation>正在升级 pip……</translation>
+    </message>
+    <message>
+        <source>Using system Python (NixOS)...</source>
+        <translation>正在使用系统 Python（NixOS）……</translation>
+    </message>
+    <message>
+        <source>Using system Python (fallback)...</source>
+        <translation>正在使用系统 Python（备用）……</translation>
+    </message>
+    <message>
+        <source>Using uv package installer...</source>
+        <translation>正在使用 uv 软件包安装程序……</translation>
+    </message>
+    <message>
+        <source>Verification complete</source>
+        <translation>验证完成</translation>
+    </message>
+    <message>
+        <source>Verifying {package}... ({done}/{total})</source>
+        <translation>正在验证 {package}……（{done}/{total}）</translation>
+    </message>
+    <message>
+        <source>Virtual environment created</source>
+        <translation>虚拟环境已创建</translation>
+    </message>
+    <message>
+        <source>Virtual environment created (uv)</source>
+        <translation>虚拟环境已创建（uv）</translation>
+    </message>
+    <message>
+        <source>Virtual environment ready</source>
+        <translation>虚拟环境已准备就绪</translation>
+    </message>
+    <message>
+        <source>Windows refused a file path during installation.</source>
+        <translation>Windows 在安装期间拒绝了文件路径。</translation>
+    </message>
+    <message>
+        <source>You can also try checking your proxy settings in QGIS (Settings &gt; Options &gt; Network).</source>
+        <translation>您也可以尝试检查 QGIS 中的代理设置（设置 &gt; 选项 &gt; 网络）。</translation>
+    </message>
+    <message>
+        <source>Your network inspects secure connections and re-signs them with its own certificate, and that certificate is not in the computer&apos;s certificate store.</source>
+        <translation>您的网络会检查安全连接，并使用自己的证书重新签名；该证书不在计算机的证书存储中。</translation>
+    </message>
+    <message>
+        <source>Your organization&apos;s security policy (application control, e.g. AppLocker or WDAC)
+is blocking the plugin&apos;s local AI environment.</source>
+        <translation>您所在组织的安全策略（应用程序控制，例如 AppLocker 或 WDAC）
+正在阻止插件的本地 AI 环境。</translation>
+    </message>
+    <message>
+        <source>uv package installer ready</source>
+        <translation>uv 软件包安装程序已准备就绪</translation>
+    </message>
+    <message>
+        <source>uv: ready</source>
+        <translation>uv：就绪</translation>
+    </message>
+    <message>
+        <source>uv: unavailable, using pip</source>
+        <translation>uv：不可用，正在使用 pip</translation>
+    </message>
+    <message>
+        <source>{free_gb:.1f} GB free at {cache_dir}, under the {min_free_gb:.0f} GB the local model needs. Installing the Automatic packages only. Free up space and install again to turn Semi-Auto mode on.</source>
+        <translation>{cache_dir} 中有 {free_gb:.1f} GB 可用空间，少于本地模型所需的 {min_free_gb:.0f} GB。仅安装自动模式所需的软件包。请释放空间并重新安装，以启用半自动模式。</translation>
+    </message>
+    <message>
+        <source>{package} unavailable</source>
+        <translation>{package} 不可用</translation>
+    </message>
+    <message>
+        <source>{step}. The plugin builds it again from scratch.</source>
+        <translation>{step}。插件将从头重新构建。</translation>
+    </message>
+    <message>
+        <source>✓ All dependencies installed</source>
+        <translation>✓ 所有依赖项已安装</translation>
+    </message>
+    <message>
+        <source>✓ Automatic mode ready</source>
+        <translation>✓ 自动模式已准备就绪</translation>
+    </message>
+    <message>
+        <source>✓ {package} installed</source>
+        <translation>✓ {package} 已安装</translation>
+    </message>
+    <message>
+        <source>An old version is installed. Click Install to replace it.</source>
+        <translation>已安装旧版本。点击“安装”进行替换。</translation>
+    </message>
+    <message>
+        <source>Some AI components are missing. Click Install to complete them.</source>
+        <translation>缺少部分 AI 组件。点击“安装”完成安装。</translation>
+    </message>
+    <message>
+        <source>The AI components are not installed. Click Install to add them.</source>
+        <translation>尚未安装 AI 组件。点击“安装”进行安装。</translation>
+    </message>
+    <message>
+        <source>The AI components are not ready. Click Install to set them up.</source>
+        <translation>AI 组件尚未准备就绪。点击“安装”进行设置。</translation>
+    </message>
+    <message>
+        <source>The AI components did not load. Click Install to repair them.</source>
+        <translation>AI 组件加载失败。点击“安装”进行修复。</translation>
+    </message>
+    <message>
+        <source>The AI components did not pass the check. Click Install to repair them.</source>
+        <translation>AI 组件未通过检查。点击“安装”进行修复。</translation>
+    </message>
+    <message>
+        <source>The AI components need an update. The update starts now.</source>
+        <translation>AI 组件需要更新。更新现在开始。</translation>
+    </message>
+    <message>
+        <source>The AI runtime is damaged. Click Install to repair it.</source>
+        <translation>AI 运行时已损坏。点击“安装”进行修复。</translation>
+    </message>
+    <message>
+        <source>The AI workspace is missing. Click Install to build it.</source>
+        <translation>缺少 AI 工作区。点击“安装”进行创建。</translation>
+    </message>
+    <message>
+        <source>The last install did not finish. Click Install to start again.</source>
+        <translation>上次安装未完成。点击“安装”重新开始。</translation>
+    </message>
+    <message>
+        <source>The on-device AI is not installed. Click Install to add it.</source>
+        <translation>尚未安装设备端 AI。点击“安装”进行安装。</translation>
+    </message>
+    <message>
+        <source>Cannot close download file: {error}</source>
+        <translation>无法关闭下载文件：{error}</translation>
+    </message>
+    <message>
+        <source>Cannot open download file: {error}</source>
+        <translation>无法打开下载文件：{error}</translation>
+    </message>
+    <message>
+        <source>Cannot save download: {error}</source>
+        <translation>无法保存下载：{error}</translation>
+    </message>
+    <message>
+        <source>Cannot write download file: {error}</source>
+        <translation>无法写入下载文件：{error}</translation>
+    </message>
+    <message>
+        <source>Download failed</source>
+        <translation>下载失败</translation>
+    </message>
+    <message>
+        <source>the download did not finish in time</source>
+        <translation>下载未能及时完成</translation>
+    </message>
+    <message>
+        <source>the download stalled, no data was received</source>
+        <translation>下载停滞，未收到数据</translation>
     </message>
 </context>
 </TS>

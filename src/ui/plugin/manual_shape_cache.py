@@ -32,24 +32,33 @@ class ManualShapeCacheMixin:
         self._mask_preview_memo = None
         self._manual_outline_memo = None
 
-    def _manual_mask_polygons(self, fill_holes, max_hole_px, simplify_tol):
-        """``(cleaned_mask, geometries)`` for the active mask.
+    def _manual_mask_polygons(self, fill_holes, max_hole_px, simplify_tol,
+                              mask=None, info=None):
+        """``(cleaned_mask, geometries)`` for one mask, the active one when
+        ``mask`` and ``info`` are left out.
 
         The heavy half of a repaint: scipy hole filling and region labelling,
         then a rasterio polygonize of the whole crop. Six of the ten refine
         controls change none of its inputs, so on those it is served from the
-        memo and costs nothing.
+        memo and costs nothing. Only the click session's own mask is memoized:
+        the hover ghost hands its answer in explicitly and must never evict
+        what the session's repaints read.
         """
         from ...core.polygon_exporter import apply_mask_refinement, mask_to_polygons
 
-        mask = self.current_mask
-        info = self.current_transform_info
+        if mask is None:
+            mask = self.current_mask
+        if info is None:
+            info = self.current_transform_info
+        is_active = (mask is self.current_mask
+                     and info is self.current_transform_info)
         key = (self._refine_expand, fill_holes, self._refine_min_area,
                max_hole_px, simplify_tol)
-        memo = getattr(self, "_mask_preview_memo", None)
-        if (memo is not None and memo[0] is mask and memo[1] is info
-                and memo[2] == key):
-            return memo[3], memo[4]
+        if is_active:
+            memo = getattr(self, "_mask_preview_memo", None)
+            if (memo is not None and memo[0] is mask and memo[1] is info
+                    and memo[2] == key):
+                return memo[3], memo[4]
 
         cleaned = mask
         if fill_holes or self._refine_expand != 0 or self._refine_min_area > 0:
@@ -61,10 +70,43 @@ class ManualShapeCacheMixin:
                 max_hole_px=max_hole_px,
             )
         geometries = mask_to_polygons(cleaned, info, simplify_tol)
-        # Holding the mask and the crop keeps the identity checks above honest:
-        # a live reference cannot have its id reused by a later object.
-        self._mask_preview_memo = (mask, info, key, cleaned, geometries)
+        if is_active:
+            # Holding the mask and the crop keeps the identity checks above
+            # honest: a live reference cannot have its id reused later.
+            self._mask_preview_memo = (mask, info, key, cleaned, geometries)
         return cleaned, geometries
+
+    def _manual_outline_for(self, mask, info):
+        """The finished outline for ONE mask over ONE crop window, or None.
+
+        The compute half of _manual_active_outline, with the mask and window
+        as arguments so the hover ghost can shape the answer it holds with the
+        exact chain a click would run: mask refinement, polygonize, the shared
+        geometry tail, then the Min/Max size window. Reads the live refine
+        settings and the served dials at call time; writes nothing back: no
+        layer, no memo, no session state, no history.
+        """
+        if mask is None or info is None:
+            return None
+        from ...core.detection_policy import manual_simplify_multiple_of_px
+
+        multiple = manual_simplify_multiple_of_px()
+        tolerance = (multiple * self._crop_pixel_size_units(info)
+                     if multiple > 0 else 0.0)
+        fill_holes, max_hole_px = self._fill_holes_arguments(info)
+        _cleaned, geometries = self._manual_mask_polygons(
+            fill_holes, max_hole_px, tolerance, mask=mask, info=info)
+        if not geometries:
+            return None
+        combined = QgsGeometry.unaryUnion(geometries)
+        if combined is None or combined.isEmpty():
+            return None
+        combined = self._shape_active_geometry(combined, info)
+        if combined is not None and not combined.isEmpty():
+            combined = self._filter_geometry_parts_by_size(combined)
+        if combined is None or combined.isEmpty():
+            return None
+        return combined
 
     def _manual_outline_key(self, mask_stage):
         """Every setting the finished outline depends on.
@@ -125,18 +167,7 @@ class ManualShapeCacheMixin:
                 and memo[2] is config and memo[3] == key):
             return QgsGeometry(memo[4]) if memo[4] is not None else None
 
-        _cleaned, geometries = self._manual_mask_polygons(
-            fill_holes, max_hole_px, tolerance)
-
-        outline = None
-        if geometries:
-            combined = QgsGeometry.unaryUnion(geometries)
-            if combined is not None and not combined.isEmpty():
-                combined = self._shape_active_geometry(combined, info)
-                if combined is not None and not combined.isEmpty():
-                    combined = self._filter_geometry_parts_by_size(combined)
-                if combined is not None and not combined.isEmpty():
-                    outline = combined
+        outline = self._manual_outline_for(mask, info)
 
         self._manual_outline_memo = (mask, info, config, key, outline)
         return QgsGeometry(outline) if outline is not None else None

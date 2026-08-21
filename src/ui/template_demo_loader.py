@@ -374,7 +374,9 @@ class TemplateDemoLoader(QObject):
                     req.setRawHeader(str(hk).encode("utf-8"), str(hv).encode("utf-8"))
                 except (UnicodeError, TypeError):
                     continue
-        req.setTransferTimeout(15_000)
+        # Absent below Qt 5.15, same guard as the download path.
+        if hasattr(req, "setTransferTimeout"):
+            req.setTransferTimeout(15_000)
         # Route through QGIS's network manager so the fetch inherits its SSL CA
         # bundle, proxy, and auth config: a bare QNetworkAccessManager fails
         # silently on some CDN hosts. Parent the reply to this loader so it dies

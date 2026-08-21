@@ -784,5 +784,5 @@ def _build_display_combo(dock):
         "them apart."))
     combo.currentIndexChanged.connect(
         lambda _i: dock.auto_display_mode_changed.emit(
-            combo.currentData() or "confidence"))
+            combo.currentData() or "random"))
     return combo

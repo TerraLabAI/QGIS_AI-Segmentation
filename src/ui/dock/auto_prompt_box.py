@@ -17,12 +17,17 @@ from .guidance import (
     HINT_PROMPT_EXEMPLAR_BOOST,
     HINT_PROMPT_ONE_OBJECT_PER_RUN,
     HINT_PROMPT_RUN_PLAN,
-    HINT_PROMPT_SILENT_SWAP,
+    HINT_PROMPT_STEER_OBJECT,
     HINT_PROMPT_TREE_OR_FOREST,
     HINT_PROMPT_UNKNOWN_OBJECT,
     NEUTRAL_TINT,
 )
-from .prompt_guard import english_token_for, is_known_object, validate_prompt
+from .prompt_guard import (
+    english_token_for,
+    is_known_object,
+    prompt_vocabulary_is_loaded,
+    validate_prompt,
+)
 from .styles import (
     BRAND_BLUE,
     _msg_label_qss,
@@ -34,6 +39,11 @@ from .styles import (
 # offers, so it moves with the list: retune both keys in the same deploy.
 COUNT_VS_MAP_WORDS = ServerDialSet(
     "prompt.count_vs_map_words", ("tree", "trees"), normalize=str.lower)
+
+# How long a word that did not commit must sit untouched before the box says
+# anything about it. Longer than the commit debounce, because the word may
+# still be half typed.
+_PROMPT_ADVICE_WAIT_MS = 900
 
 
 class DockAutoPromptBoxMixin:
@@ -47,13 +57,12 @@ class DockAutoPromptBoxMixin:
         self.auto_prompt_input.setFocus()
 
     def _on_auto_search_text_changed(self, _text: str = "") -> None:
-        # Track validity quietly while typing; the guard-rail message itself
-        # only appears when the user commits (Detect / Enter), never on the
-        # first keystrokes - see confirm_prompt_for_detect. Any edit clears a
-        # previously shown message (the user is already acting on it).
+        # No judgement on the text here: the guard-rail message only appears
+        # when the user commits (Detect / Enter), never on the first keystrokes
+        # - see confirm_prompt_for_detect - and the advisories wait for the
+        # debounce below. Any edit clears a previously shown message (the user
+        # is already acting on it).
         text = self.auto_prompt_input.text()
-        ok, _reason, _suggestion = validate_prompt(text)
-        self._auto_prompt_valid = ok
         # A commit-time lookup belongs to the word that started it. Editing the
         # box retires it (and gives Detect back) instead of leaving the button
         # greyed on an answer that no longer applies.
@@ -64,6 +73,10 @@ class DockAutoPromptBoxMixin:
         # itself up the same way.
         self.hide_auto_zero_assist()
         self._apply_prompt_hint_on_edit()
+        # Offer the catalogue objects that match what is being typed, in the
+        # user's language. Cheap enough to run per keystroke (see
+        # refresh_prompt_suggestions) and silent once the word is settled.
+        self.refresh_prompt_suggestions(text)
         self._update_auto_detect_enabled()
         # Re-seed the object-aware detail default once the typed object settles.
         self._auto_prompt_debounce_timer.start(500)
@@ -108,7 +121,9 @@ class DockAutoPromptBoxMixin:
         once per real prompt instead of once per typing pause."""
         text = self.auto_prompt_input.text().strip()
         if text and not force and not self._prompt_plausibly_complete(text):
+            self._advise_on_uncommitted_prompt(text)
             return
+        self._prompt_advice_waiting = None
         if text == getattr(self, "_last_committed_prompt", None):
             return
         self._last_committed_prompt = text
@@ -147,6 +162,11 @@ class DockAutoPromptBoxMixin:
                         tr('One object per run - Detect will run "{first}" '
                            'first.').format(first=suggestion), tip=True,
                         hint_id=HINT_PROMPT_ONE_OBJECT_PER_RUN)
+                elif ok and reason == "steer":
+                    # A weak word from above ("wall", "forest", "kitchen").
+                    # Said here, while the prompt settles, so the better word
+                    # is one edit away instead of a lesson after a run.
+                    self._show_prompt_steer_nudge(text, suggestion)
                 elif ok and reason is None:
                     # A served advisory for this prompt family goes first: it is
                     # authored per keyword, so it is the most specific thing we
@@ -177,6 +197,30 @@ class DockAutoPromptBoxMixin:
         self._prompt_from_library = False
         self.auto_prompt_committed.emit(text)
 
+    def _advise_on_uncommitted_prompt(self, text: str) -> None:
+        """Say what can be said about a word that did not commit.
+
+        A word no vocabulary knows never reaches the commit above while the box
+        has focus, so its warning used to wait for the Detect click, where the
+        name-check note takes the line straight back. It is shown on its own
+        longer wait instead: the first pause on a word arms it, the second
+        shows it, so a hesitation in the middle of a word says nothing.
+        """
+        if getattr(self, "_prompt_advice_waiting", None) != text:
+            self._prompt_advice_waiting = text
+            try:
+                self._auto_prompt_debounce_timer.start(_PROMPT_ADVICE_WAIT_MS)
+            except (RuntimeError, AttributeError):
+                pass
+            return
+        self._prompt_advice_waiting = None
+        try:
+            ok, reason, _suggestion = validate_prompt(text)
+            if ok and reason is None:
+                self._maybe_show_exemplar_boost_nudge(text)
+        except Exception:  # noqa: BLE001 -- advice never blocks the box
+            pass  # nosec B110
+
     def _set_prompt_info(self, text: str | None = None, error: bool = False,
                          info: bool = False, tip: bool = False,
                          kind: str | None = None,
@@ -194,7 +238,8 @@ class DockAutoPromptBoxMixin:
         back with the Account Settings guidance reset) instead of the plain
         line, and a tip the user already closed is not shown at all. Leave it
         None for what has to be read: the amber guard, the commit-time notes
-        that explain a click the flow withheld, and the lookup status.
+        that explain a click the flow withheld, the "will run as" note that
+        explains text the user did not type, and the lookup status.
 
         ``kind`` records which message owns the line so the async run-plan hint
         can respect precedence (see show_auto_prompt_hint): "error" (blocking
@@ -246,42 +291,130 @@ class DockAutoPromptBoxMixin:
         self.auto_prompt_info.setVisible(True)
         return True
 
-    def _maybe_show_exemplar_boost_nudge(self, token: str) -> bool:
-        """While no positive example is drawn, show ONE quiet heads-up that a
-        drawn example finds far more, for two kinds of clean prompt: a curated
-        object that text alone rarely finds (server exemplar_boost list), or an
-        object name outside the known-object library entirely (the cloud model
-        probably cannot ground the word, an example shows it what to find).
-        Returns True when it was shown. Non-blocking and yields to any other
-        message (the caller only reaches here for a clean prompt).
+    def _prompt_is_unknown_word(self, token: str) -> bool:
+        """True when nothing in reach recognizes the word: not the catalogue,
+        not the object words, not the offline lexicon of the other languages,
+        and no English name came back from the commit-time server lookup.
 
-        Both checks are exception-safe and fail open to no nudge. No-op when
-        the example feature is off, an example already exists, or a run/review
-        is in flight."""
+        The lookup answer is read from its per-session cache, so a word the
+        server already named (a language the lexicon does not cover) stops
+        being unknown for the rest of the session. A word never looked up is
+        still unknown right now, which is what the warning says.
+
+        The cached answer is put through the guard first, exactly as the commit
+        path does before running it: an answer the guard refuses is not a name
+        the run will use, so the word is still unknown and the warning stands.
+        An answer the guard ACCEPTS is a name the run will use, whatever it
+        says beside it. The guard accepts with a reason on several paths (a
+        plural collapsed to its singular, a concept mapped to a concrete
+        object, a weak word it nudges away from), and each of those was read
+        here as a refusal, so a word the server had already named still came
+        back to the user as unrecognized.
+        """
+        try:
+            # With no served vocabulary in hand, almost every real object looks
+            # unrecognized, and the warning would fire on words that work.
+            if not prompt_vocabulary_is_loaded():
+                return False
+            if is_known_object(token) or english_token_for(token) is not None:
+                return False
+            answers = self._prompt_lookup_answers()
+            answer = answers.get(self._prompt_lookup_key(token))
+            if not isinstance(answer, str) or not answer.strip():
+                return True
+            ok, _reason, _suggestion = validate_prompt(answer)
+            return not ok
+        except Exception:  # noqa: BLE001 -- vocabulary is best-effort
+            return False
+
+    def _show_prompt_steer_nudge(self, typed: str, suggestion: str | None) -> bool:
+        """Light nudge for a valid word that names the object badly from above.
+        Never blocks and never rewrites the box: the user may want exactly that
+        word. Returns True when the line now shows it.
+
+        Two messages for the two answers the guard gives. With a term, the
+        nudge names the object the model grounds and closes like its sibling
+        advisories. With no term the concept has no shape from the sky at all
+        (indoors, people, shadows), so the run would come back empty: that one
+        stays on the plain line, with no x, because it is the only warning
+        before the click."""
+        word = (typed or "").strip()
+        if not word:
+            return False
+        term = (suggestion or "").strip()
+        if term:
+            # The card renders plain text, so the typed word needs no escaping.
+            shown = self._set_prompt_info(
+                tr('"{word}" is hard to spot from above - "{term}" detects '
+                   'better. Your word still runs.').format(word=word, term=term),
+                tip=True, kind="steer", hint_id=HINT_PROMPT_STEER_OBJECT)
+        else:
+            # The plain tip line is rich text, so the typed word is escaped.
+            import html
+            shown = self._set_prompt_info(
+                tr('"{word}" cannot be seen from above. Pick an object on the '
+                   'ground - the Library has ready-to-use ones.').format(
+                       word=html.escape(word)),
+                tip=True, kind="steer")
+        if not shown:
+            return False
+        # Once per distinct word, so holding the box open does not repeat it.
+        key = word.lower()
+        if getattr(self, "_steer_nudge_tracked", None) != key:
+            self._steer_nudge_tracked = key
+            try:
+                from ...core import telemetry_run_events
+                telemetry_run_events.track_auto_prompt_steered(
+                    prompt=word, suggestion=term)
+            except Exception:
+                pass  # nosec B110
+        return True
+
+    def _maybe_show_exemplar_boost_nudge(self, token: str) -> bool:
+        """Two quiet heads-ups on a clean prompt, both non-blocking and both
+        yielding to any other message (the caller only reaches here for a clean
+        prompt). Returns True when one was shown.
+
+        The exemplar boost (a curated object that text alone rarely finds)
+        only makes sense with no example drawn and the example feature on.
+
+        The unknown-word warning has no such conditions: a word no vocabulary
+        knows and the server named nothing for ('corn', 'polygon', 'asdfgh')
+        usually comes back with nothing, and the user has to hear that before
+        the click, example drawn or not. It is a warning, never a wall: the
+        model's vocabulary is open and an unknown word can work. The wording
+        follows what the user can still do, so it only offers to draw an
+        example when there is none.
+
+        Every check is exception-safe and fails open to no nudge. No-op while
+        a run or review is in flight."""
         token = (token or "").strip()
-        if not token or not self._EXEMPLARS_ENABLED:
+        if not token:
             return False
         if self._auto_run_active or self._auto_review_active:
             return False
-        if getattr(self, "_auto_positive_exemplars", 0) > 0:
-            return False
+        can_draw_example = (
+            self._EXEMPLARS_ENABLED
+            and getattr(self, "_auto_positive_exemplars", 0) <= 0)
         try:
-            from .prompt_guard import is_exemplar_boost_prompt, is_known_object
-            if is_exemplar_boost_prompt(token):
+            from .prompt_guard import is_exemplar_boost_prompt
+            if can_draw_example and is_exemplar_boost_prompt(token):
                 kind, hint_id = "exemplar_boost", HINT_PROMPT_EXEMPLAR_BOOST
                 message = tr(
                     '"{obj}" is often missed from text alone. Draw one '
                     'example on the map to find far more.').format(obj=token)
-            elif not is_known_object(token):
-                # Unknown to the whole library (catalogue + object words +
-                # lexicon): the commit path may still translate it server-side,
-                # and until then an example is the reliable way to guide the
-                # model toward an uncommon object.
+            elif self._prompt_is_unknown_word(token):
                 kind, hint_id = "unknown_object", HINT_PROMPT_UNKNOWN_OBJECT
-                message = tr(
-                    '"{obj}" is not an object the AI knows well. Drawing one '
-                    'example on the map shows it what to find.').format(
-                        obj=token)
+                if can_draw_example:
+                    message = tr(
+                        '"{obj}" is not an object the AI knows well. Drawing '
+                        'one example on the map shows it what to find.').format(
+                            obj=token)
+                else:
+                    message = tr(
+                        '"{obj}" is not an object the AI knows well. The run '
+                        'may come back empty - a more common word finds '
+                        'more.').format(obj=token)
             else:
                 return False
         except Exception:  # noqa: BLE001 -- policy is best-effort; fail open
@@ -332,21 +465,28 @@ class DockAutoPromptBoxMixin:
         matters: setText fires textChanged FIRST, which clears the info line and
         restarts the prompt-commit debounce that re-seeds the detail for the new
         token; the note is (re)set right after, so the swap and its re-seed use
-        the one existing path."""
+        the one existing path.
+
+        The note carries NO hint id, so it cannot be closed for good. It is the
+        only thing on screen saying why the box no longer holds what the user
+        typed, and one x used to make every later rewrite silent for that
+        profile. The rewrite telemetry follows the note: it fires only when the
+        line really showed it."""
         token = (token or "").strip()
         typed = self.auto_prompt_input.text().strip()
         if not token or not typed or token.lower() == typed.lower():
             return False
         self.auto_prompt_input.setText(token)
-        self._set_prompt_info(
+        shown = self._set_prompt_info(
             tr('"{word}" will run as "{token}".').format(
-                word=typed, token=token), info=True, kind="swap",
-            hint_id=HINT_PROMPT_SILENT_SWAP)
-        try:
-            from ...core import telemetry_run_events
-            telemetry_run_events.track_auto_prompt_rewritten(kind=reason, prompt=token)
-        except Exception:  # noqa: BLE001 -- telemetry is best-effort
-            pass  # nosec B110
+                word=typed, token=token), info=True, kind="swap")
+        if shown:
+            try:
+                from ...core import telemetry_run_events
+                telemetry_run_events.track_auto_prompt_rewritten(
+                    kind=reason, prompt=token)
+            except Exception:  # noqa: BLE001 -- telemetry is best-effort
+                pass  # nosec B110
         return True
 
     def show_auto_prompt_decline(self, reason: str) -> bool:

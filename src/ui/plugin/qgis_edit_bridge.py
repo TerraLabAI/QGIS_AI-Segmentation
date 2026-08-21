@@ -419,6 +419,20 @@ class QgisEditBridgeMixin:
         # then wire the live feedback line. Both are best-effort: a failure here
         # never leaves the bridge half-open (editing is already armed above).
         self._select_and_frame_bridge_target(layer)
+        # Put the review's own selection back on the session's polygon. The
+        # entry above cleared it (every disarm does), and the per-polygon dials,
+        # Delete and the shape facts all read _correct_selected_idx, so a
+        # session opened with it empty leaves them acting on nothing. Same order
+        # the AI path uses: index first, then the panel state.
+        if has_target and self._qgis_bridge_target_idx is not None:
+            self._correct_selected_idx = self._qgis_bridge_target_idx
+            try:
+                self.dock_widget.set_correct_selection(1)
+            except (RuntimeError, AttributeError):
+                pass
+            _push = getattr(self, "_push_shape_only_state", None)
+            if _push is not None:
+                _push()
         # A fresh session has not been hand-edited yet, so the Points dial is
         # live. Reveal it only when a single target polygon resolved: a
         # whole-layer session has nothing to thin.

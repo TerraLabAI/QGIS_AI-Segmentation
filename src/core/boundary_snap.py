@@ -212,7 +212,11 @@ def boundary_snap_tolerance_units(metres_per_unit: float,
     many ground metres one of those units spans (1.0 in a metric projection,
     about 0.79 in Web Mercator at 38 degrees, tens of thousands in degrees).
     A missing or unusable factor reads the dial as units, which is what the
-    caller did before any conversion existed."""
+    caller did before any conversion existed.
+
+    One factor covers one axis. Where the two axes of the CRS differ, the pass
+    itself cuts the result back to what holds on both (_axis_safe_tolerance),
+    so a caller measuring along x is enough."""
     tol_m = boundary_snap_tolerance_m(policy)
     try:
         factor = float(metres_per_unit)
@@ -341,6 +345,64 @@ def _total_area(geoms: list[QgsGeometry]) -> float:
     return total
 
 
+def _set_centre(geoms: list[QgsGeometry]) -> tuple[float, float] | None:
+    """Centre of the whole set's bounding box, in the geometries' own units.
+
+    None when nothing measurable is in the list. This is the position every
+    ground measure below is taken at, so the answer belongs to the parcels the
+    user is looking at rather than to the run as a whole.
+    """
+    box = None
+    for geom in geoms:
+        try:
+            if geom is None or geom.isEmpty():
+                continue
+            part = geom.boundingBox()
+            if box is None:
+                box = part
+            else:
+                box.combineExtentWith(part)
+        except Exception:  # noqa: BLE001 -- a bad member is simply skipped  # nosec B112
+            continue
+    if box is None or box.isEmpty():
+        return None
+    return float(box.center().x()), float(box.center().y())
+
+
+def _axis_safe_tolerance(
+    tolerance: float, geoms: list[QgsGeometry], crs: str | None
+) -> float:
+    """``tolerance`` cut back so it is never exceeded along EITHER axis.
+
+    The caller converts a ground dial into geometry units with the metres one
+    x unit spans. Where one y unit spans more, which is every geographic CRS
+    away from the equator, that same number reaches further north-south than
+    the dial allows and the pass snaps parcels it was told to leave alone.
+    Dividing by the axis ratio keeps the reach inside the dial both ways, which
+    is the safe side for a tolerance: it snaps a little less, never too much.
+
+    The ratio is measured at the SET's own centre, so a run far from the
+    equator gets its own number rather than one taken somewhere else. A
+    projected CRS reports no difference and pays nothing.
+    """
+    try:
+        from qgis.core import QgsCoordinateReferenceSystem
+
+        ref = QgsCoordinateReferenceSystem(crs or _DEFAULT_CRS)
+        if not ref.isValid() or not ref.isGeographic():
+            return tolerance
+        centre = _set_centre(geoms)
+        if centre is None:
+            return tolerance
+        from .ground_frame import usable_aspect
+        from .layer_conventions import ground_unit_aspect
+
+        aspect = usable_aspect(ground_unit_aspect(ref, centre[0], centre[1]))
+        return tolerance / max(1.0, aspect)
+    except Exception:  # noqa: BLE001 -- an unreadable CRS means no correction
+        return tolerance
+
+
 def _run_snap(
     geoms: list[QgsGeometry], tolerance: float, crs: str | None,
     cut_to_partition: bool = True,
@@ -355,8 +417,15 @@ def _run_snap(
     if area_before <= 0.0:
         return _unchanged(geoms, "zero input area")
 
+    tolerance = _axis_safe_tolerance(tolerance, geoms, crs)
+    if tolerance <= 0.0:
+        return _unchanged(geoms, "no tolerance")
+
+    # MultiPolygon, not Polygon: a merged object often arrives multipart, and a
+    # single-part memory provider takes only the first part of it, so the rest
+    # of the shape would vanish on the way through the snap.
     layer = QgsVectorLayer(
-        f"Polygon?crs={crs or _DEFAULT_CRS}", "boundary_snap", "memory"
+        f"MultiPolygon?crs={crs or _DEFAULT_CRS}", "boundary_snap", "memory"
     )
     if not layer.isValid():
         return _unchanged(geoms, "working layer not created")

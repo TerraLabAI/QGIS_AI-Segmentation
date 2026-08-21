@@ -1,6 +1,6 @@
 """Small reusable widgets for the AI Segmentation dock: wheel guard,
 Mode enum, footer icon button, spinner, zone-gesture glyph, mode switch,
-inline keyboard-shortcut hint."""
+inline keyboard-shortcut hint, control label with its target hint."""
 from __future__ import annotations
 
 import enum
@@ -314,49 +314,56 @@ class _ZoneGestureGlyph(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
     def paintEvent(self, event):  # noqa: N802 - Qt signature
-        from qgis.PyQt.QtCore import QPointF
-        from qgis.PyQt.QtGui import QBrush, QColor, QPainter, QPen, QPolygonF
-        s = float(self.width())
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        # The placed points of a polygon being drawn.
-        pts = [(0.22, 0.34), (0.55, 0.20), (0.82, 0.46), (0.60, 0.74)]
-        scr = [QPointF(x * s, y * s) for (x, y) in pts]
-        # Solid edges between the placed points.
-        line = QPen(self._color)
-        line.setWidthF(s * 0.045)
-        line.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        line.setCapStyle(Qt.PenCapStyle.RoundCap)
-        p.setPen(line)
-        for i in range(len(scr) - 1):
-            p.drawLine(scr[i], scr[i + 1])
-        # Dashed edge from the last point to the cursor (the point being placed).
-        cursor_tip = QPointF(0.30 * s, 0.72 * s)
-        dashed = QPen(self._color)
-        dashed.setWidthF(s * 0.045)
-        dashed.setStyle(Qt.PenStyle.DashLine)
-        p.setPen(dashed)
-        p.drawLine(scr[-1], cursor_tip)
-        # A clear white-filled, blue-ringed dot at each placed point.
-        ring = QPen(self._color)
-        ring.setWidthF(s * 0.03)
-        p.setPen(ring)
-        p.setBrush(QBrush(QColor(255, 255, 255)))
-        r = s * 0.055
-        for pt in scr:
-            p.drawEllipse(pt, r, r)
-        # Mouse cursor (arrow) at the tip, blue fill with a white edge.
-        f = s * 0.020
-        shape = [(0, 0), (0, 15), (3.5, 11.5), (6, 17), (8, 16), (5.5, 10.5), (10, 10)]
-        cursor = QPolygonF([QPointF(cursor_tip.x() + x * f, cursor_tip.y() + y * f)
-                            for (x, y) in shape])
-        edge = QPen(QColor(255, 255, 255, 235))
-        edge.setWidthF(s * 0.022)
-        edge.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        p.setPen(edge)
-        p.setBrush(QBrush(self._color))
-        p.drawPolygon(cursor)
-        p.end()
+        # Guarded like every other paintEvent in the plugin: an exception
+        # raised here escapes into Qt's own paint dispatch and takes QGIS down
+        # at startup. The imports sit inside the method, so a reload that has
+        # purged sys.modules is enough to raise.
+        try:
+            from qgis.PyQt.QtCore import QPointF
+            from qgis.PyQt.QtGui import QBrush, QColor, QPainter, QPen, QPolygonF
+            s = float(self.width())
+            p = QPainter(self)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            # The placed points of a polygon being drawn.
+            pts = [(0.22, 0.34), (0.55, 0.20), (0.82, 0.46), (0.60, 0.74)]
+            scr = [QPointF(x * s, y * s) for (x, y) in pts]
+            # Solid edges between the placed points.
+            line = QPen(self._color)
+            line.setWidthF(s * 0.045)
+            line.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            line.setCapStyle(Qt.PenCapStyle.RoundCap)
+            p.setPen(line)
+            for i in range(len(scr) - 1):
+                p.drawLine(scr[i], scr[i + 1])
+            # Dashed edge from the last point to the cursor (the point being placed).
+            cursor_tip = QPointF(0.30 * s, 0.72 * s)
+            dashed = QPen(self._color)
+            dashed.setWidthF(s * 0.045)
+            dashed.setStyle(Qt.PenStyle.DashLine)
+            p.setPen(dashed)
+            p.drawLine(scr[-1], cursor_tip)
+            # A clear white-filled, blue-ringed dot at each placed point.
+            ring = QPen(self._color)
+            ring.setWidthF(s * 0.03)
+            p.setPen(ring)
+            p.setBrush(QBrush(QColor(255, 255, 255)))
+            r = s * 0.055
+            for pt in scr:
+                p.drawEllipse(pt, r, r)
+            # Mouse cursor (arrow) at the tip, blue fill with a white edge.
+            f = s * 0.020
+            shape = [(0, 0), (0, 15), (3.5, 11.5), (6, 17), (8, 16), (5.5, 10.5), (10, 10)]
+            cursor = QPolygonF([QPointF(cursor_tip.x() + x * f, cursor_tip.y() + y * f)
+                                for (x, y) in shape])
+            edge = QPen(QColor(255, 255, 255, 235))
+            edge.setWidthF(s * 0.022)
+            edge.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            p.setPen(edge)
+            p.setBrush(QBrush(self._color))
+            p.drawPolygon(cursor)
+            p.end()
+        except Exception:  # noqa: BLE001 -- a paintEvent must never raise
+            return
 
 
 # Shared key-badge convention across TerraLab plugins: monospace span on a
@@ -372,6 +379,19 @@ _KEY_BADGE_STYLE = (
     " border-radius: 3px;"
     " padding: 1px 5px;"
 )
+
+
+def label_with_target_hint(label: str, hint: str) -> str:
+    """One control label followed by the objects it is made for, in a dimmed
+    parenthesis: "Right angles (buildings)".
+
+    The toggles that shape an outline were skipped because nothing on the row
+    said what they were for; the tooltip only pays off once the user hovers.
+    Rich text, so the hint reads as secondary next to the label. Both parts
+    arrive translated.
+    """
+    return (f'{html.escape(label)} <span style="color: rgba(128, 128, 128, '
+            f'0.85);">({html.escape(hint)})</span>')
 
 
 def native_key(key) -> str:
@@ -760,6 +780,16 @@ class _EngineSwitch(QWidget):
 
     def is_cloud(self) -> bool:
         return self._cloud_btn.isChecked()
+
+    def set_cloud_gloss(self, gloss: str) -> None:
+        """Rewrite the cloud card's second line (same one-line budget).
+
+        The build-time gloss is written before any server has answered, so the
+        dock rewrites it on refresh when a served feature changes what the
+        cloud side gives (see manual_engine._manual_engine_cloud_gloss)."""
+        _name, note = self._card_text[self._cloud_btn]
+        if note.text() != gloss:
+            note.setText(gloss)
 
     def set_cloud(self, cloud: bool) -> None:
         """Set the picked card without emitting engine_selected."""

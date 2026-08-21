@@ -194,6 +194,87 @@ class AutoObjectBuildMixin:
         except Exception:  # noqa: BLE001 -- the FP filter must never break finalize
             return False
 
+    # ---- Run-wide footprint alignment (server-gated, once per run) ----------
+
+    def _auto_footprint_align_sweep(self, rows):
+        """A step-able run-wide footprint alignment over the merged rows, or
+        None when it must not run: the server has not opted this run's prompt
+        family in (core.detection_policy.auto_regularize_settings, fail-closed
+        on an absent or cold policy), the run has no prompt (exemplar-only), or
+        the run's metre frame cannot be established. Never raises: any failure
+        here means the run keeps its raw shapes."""
+        try:
+            if not rows:
+                return None
+            prompt = str((self._auto_run_ctx or {}).get("prompt") or "").strip()
+            if not prompt:
+                return None
+            from ...core.detection_policy import auto_regularize_settings
+            from ...core.review_presets import shape_class_for
+            settings = auto_regularize_settings(shape_class_for(prompt))
+            if settings is None:
+                return None
+            from ...core.footprint_alignment import (
+                FootprintAlignSweep,
+                compile_alignment_params,
+                run_frame_scale,
+            )
+            scale = run_frame_scale(
+                rows, self._make_auto_area_measurer(),
+                self._auto_crs_authid or "")
+            if scale is None:
+                return None
+            gsd_m = self._auto_refine_pixel_size() * (scale[0] * scale[1]) ** 0.5
+            params = compile_alignment_params(settings, gsd_m)
+            return FootprintAlignSweep(rows, params, scale)
+        except Exception:  # noqa: BLE001 -- alignment must never block finalize
+            return None
+
+    def _align_auto_footprints_now(self, rows, max_objects: int = 0) -> list:
+        """Synchronous run-wide footprint alignment for the headless and
+        restore paths: the rows with aligned geometries when the pass is on
+        for this run, else the rows unchanged.
+
+        ``max_objects`` above 0 skips the pass on a bigger set. It is for a
+        caller with a window to hold: this loop never yields, so a large set
+        freezes that window for as long as it takes, and the pass tidies
+        shapes rather than producing them.
+        """
+        if max_objects > 0 and len(rows) > max_objects:
+            try:
+                from qgis.core import Qgis, QgsMessageLog
+                QgsMessageLog.logMessage(
+                    f"Auto detection: footprint alignment skipped on "
+                    f"{len(rows)} objects (over the {max_objects} this caller "
+                    f"can wait for)",
+                    "AI Segmentation", level=Qgis.MessageLevel.Info)
+            except Exception:  # noqa: BLE001 -- a lost log line changes nothing  # nosec B110
+                pass
+            return rows
+        sweep = self._auto_footprint_align_sweep(rows)
+        if sweep is None:
+            return rows
+        try:
+            while not sweep.step(256):
+                pass
+            self._log_footprint_alignment(sweep)
+            return sweep.result()
+        except Exception:  # noqa: BLE001 -- alignment must never block finalize
+            return rows
+
+    def _log_footprint_alignment(self, sweep) -> None:
+        """One production-safe Info line per aligned run (counts only)."""
+        try:
+            from qgis.core import Qgis, QgsMessageLog
+            QgsMessageLog.logMessage(
+                f"Auto detection: footprint alignment kept "
+                f"{sweep.aligned_count} shape(s), reverted "
+                f"{sweep.reverted_count}, skipped {sweep.skipped_count}, "
+                f"{sweep.circle_count} circle(s)",
+                "AI Segmentation", level=Qgis.MessageLevel.Info)
+        except Exception:  # noqa: BLE001 -- a lost log line changes nothing  # nosec B110
+            pass
+
     def _build_auto_objects(self, merged_ided) -> list:
         """Synchronous (geom, score, area) build from the merger's ided result.
         Also records the parallel stable fid per object (_auto_object_fids) so the

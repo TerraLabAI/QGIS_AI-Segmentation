@@ -397,6 +397,10 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>メールアドレスをコピー</translation>
     </message>
     <message>
+        <source>buildings</source>
+        <translation>建物</translation>
+    </message>
+    <message>
         <source>or</source>
         <translation>または</translation>
     </message>
@@ -459,6 +463,10 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     <message>
         <source>Click is outside the '{layer}' raster. To segment another raster, stop the current segmentation first.</source>
         <translation>クリック位置がラスタ「{layer}」の外側です。別のラスタをセグメント化するには、まず現在のセグメンテーションを停止してください。</translation>
+    </message>
+    <message>
+        <source>trees</source>
+        <translation>樹木</translation>
     </message>
     <message>
         <source>{ext} format is not directly supported. GDAL is not available.
@@ -1455,10 +1463,6 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>0 shown - lower the Min size filter to reveal them</source>
         <translation>0件 - 表示するには最小サイズフィルタを下げてください</translation>
-    </message>
-    <message>
-        <source>5,000 cloud detections every month, zones of any size. Cancel anytime.</source>
-        <translation>月に5,000個のクラウド検出、任意サイズのゾーン。いつでもキャンセル可能。</translation>
     </message>
     <message>
         <source>A Component Failed to Load</source>
@@ -2778,10 +2782,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     
     <message>
-        <source>Pro: 5,000 cloud detections a month, zones of any size, up to 800 cloud detections in one run. Same AI, same free clicks and corrections, every machine you work on.</source>
-        <translation>Pro: 月に5,000個のクラウド検出、任意サイズのゾーン、1回の実行で最大800個のクラウド検出。同じAI、同じ無料クリックと修正、使用するすべてのマシンで利用可能。</translation>
-    </message>
-    <message>
         <source>A free run covers up to {cap} cloud detections. This one needs more. Pro covers up to 800 in one run.</source>
         <translation>1回の無料実行は最大{cap}個のクラウド検出をカバーします。この実行にはさらに多くが必要です。Proなら最大800個をカバーします。</translation>
     </message>
@@ -2912,10 +2912,6 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     <message>
         <source>No image over this zone at this precision, so nothing was analyzed (not charged). Lower Precision, or pick a layer that covers this area.</source>
         <translation>この詳細度ではこのゾーンに画像がないため、解析されませんでした(課金なし)。詳細度を下げるか、この範囲をカバーするレイヤを選んでください。</translation>
-    </message>
-    <message>
-        <source>This run needs {n} cloud detections and you have {left} left. Lower the precision or shrink the zone. Pro gives you 5,000 cloud detections a month.</source>
-        <translation>この実行は{n}個のクラウド検出が必要で、残り{left}個です。精度を下げるか、ゾーンを縮小してください。Proでは月に5,000個のクラウド検出が利用できます。</translation>
     </message>
     <message>
         <source>Opens your terra-lab.ai dashboard: your plan, your cloud detections and your payment details.</source>
@@ -3082,10 +3078,6 @@ It may have been moved or renamed, or the drive or network share it is on may be
     <message>
         <source>Type a word for the object, or draw an example.</source>
         <translation>オブジェクトの単語を入力するか、例を描いてください。</translation>
-    </message>
-    <message>
-        <source>Finish this zone with Pro: 5,000 cloud detections a month.</source>
-        <translation>Proでこのゾーンを完了: 月に5,000個のクラウド検出。</translation>
     </message>
     <message>
         <source>Wait for the on-device AI to finish installing.</source>
@@ -3603,14 +3595,6 @@ It may have been moved or renamed, or the drive or network share it is on may be
         <translation>またはこのコンピュータで、より軽量なAIを使い無料で作業します。</translation>
     </message>
     <message>
-        <source>Pro: 5,000 cloud detections a month</source>
-        <translation>Pro: 月に5,000個のクラウド検出</translation>
-    </message>
-    <message>
-        <source>Pro: 5,000 detections a month, on zones of any size</source>
-        <translation>Pro: 月に5,000個の検出、任意サイズのゾーン</translation>
-    </message>
-    <message>
         <source>QGIS cannot read this raster format here. Convert it to GeoTIFF, then start again.</source>
         <translation>QGISはこのラスタ形式を読み込めません。GeoTIFFに変換してから、再度開始してください。</translation>
     </message>
@@ -3713,6 +3697,1071 @@ It may have been moved or renamed, or the drive or network share it is on may be
     <message>
         <source>Your free cloud detections are used up</source>
         <translation>無料のクラウド検出を使い切りました</translation>
+    </message>
+    <message>
+        <source>You used your Automatic allowance for this month. Semi-Auto runs on your computer, free, with no counter.</source>
+        <translation>今月のAutomatic利用枠を使い切りました。Semi-Autoはお使いのコンピュータで無料で実行でき、カウンターはありません。</translation>
+    </message>
+    <message>
+        <source>{n} km² left</source>
+        <translation>残り{n} km²</translation>
+    </message>
+    <message>
+        <source>{n} km² of Automatic left this month</source>
+        <translation>今月のAutomaticは残り{n} km²です</translation>
+    </message>
+    <message>
+        <source>{used} of {total} km² of Automatic used this month</source>
+        <translation>今月のAutomaticを{total} km²中{used} km²使用しました</translation>
+    </message>
+    <message>
+        <source>{n} cloud objects left this month</source>
+        <translation>今月のクラウドオブジェクトは残り{n}個です</translation>
+    </message>
+    <message>
+        <source>{used} of {total} cloud objects saved this month</source>
+        <translation>今月のクラウドオブジェクトを{total}個中{used}個保存しました</translation>
+    </message>
+    <message>
+        <source>It comes back on {date}. Semi-Auto on this computer keeps working.</source>
+        <translation>{date}に更新されます。このコンピュータのSemi-Autoは引き続き使えます。</translation>
+    </message>
+    <message>
+        <source>You covered your {n} km² of Automatic this month</source>
+        <translation>今月のAutomatic {n} km²を使い切りました</translation>
+    </message>
+    <message>
+        <source>This run needs {n} cloud detections and you have {left} left this month. Lower the precision or shrink the zone. Pro covers 300 km² of Automatic a month, on zones of any size.</source>
+        <translation>この実行にはクラウド検出が{n}個必要ですが、今月は{left}個残っています。精度を下げるか、ゾーンを小さくしてください。Proなら、サイズを問わず毎月300 km²のAutomaticを利用できます。</translation>
+    </message>
+    <message>
+        <source>One detection covers 0.04 to 0.25 km², depending on the precision you ask for.</source>
+        <translation>1回の検出で、指定する精度に応じて0.04～0.25 km²をカバーします。</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} km² of Automatic used, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>残りわずかです。今月のAutomaticを{total} km²中{used} km²使用しました。{date}に更新されます。&lt;a href="{url}"&gt;Proにアップグレード&lt;/a&gt;して続けてください。</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} km² of Automatic used. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>残りわずかです。今月のAutomaticを{total} km²中{used} km²使用しました。&lt;a href="{url}"&gt;Proにアップグレード&lt;/a&gt;して続けてください。</translation>
+    </message>
+    <message>
+        <source>You saved your {n} cloud objects this month</source>
+        <translation>今月のクラウドオブジェクト{n}個を保存しました</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} cloud objects saved this month, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>残りわずかです。今月のクラウドオブジェクトを{total}個中{used}個保存しました。{date}に更新されます。&lt;a href="{url}"&gt;Proにアップグレード&lt;/a&gt;して続けてください。</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} cloud objects saved this month. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>残りわずかです。今月のクラウドオブジェクトを{total}個中{used}個保存しました。&lt;a href="{url}"&gt;Proにアップグレード&lt;/a&gt;して続けてください。</translation>
+    </message>
+    <message>
+        <source>300 km² of Automatic every month, on zones of any size</source>
+        <translation>サイズを問わず、毎月300 km²のAutomatic</translation>
+    </message>
+    <message>
+        <source>Finish this zone with Pro: 300 km² of Automatic a month.</source>
+        <translation>Proでこのゾーンを完成させましょう。毎月300 km²のAutomaticを利用できます。</translation>
+    </message>
+    <message>
+        <source>Zone too large. Reduce the area to {max} detections or fewer.</source>
+        <translation>ゾーンが大きすぎます。範囲を{max}個以下の検出に縮小してください。</translation>
+    </message>
+    <message>
+        <source>You saved your cloud objects for this month. Switch to your own computer to keep working free, or upgrade from the panel.</source>
+        <translation>今月のクラウドオブジェクトを保存できる数に達しました。無料で作業を続けるにはご自身のコンピュータに切り替えるか、パネルからアップグレードしてください。</translation>
+    </message>
+    <message>
+        <source>Your cloud allowance for this month is used, so the AI fix cannot answer. Switched to editing by hand, which is free.</source>
+        <translation>今月のクラウド利用枠を使い切ったため、AI修正を実行できません。無料で使える手動編集に切り替えました。</translation>
+    </message>
+    <message>
+        <source>Your monthly allowance ran out at {done}/{total}. Everything found so far is kept below and stays yours.</source>
+        <translation>月間利用枠を{done}/{total}で使い切りました。ここまでに見つかったものは下に保持され、引き続きあなたのものです。</translation>
+    </message>
+    <message>
+        <source>Pro: 2,000 objects a month in Semi-Auto with Cloud AI</source>
+        <translation>Pro: Cloud AIを使ったSemi-Autoで月2,000個の物体</translation>
+    </message>
+    <message>
+        <source>Pro: 2,000 objects a month in Semi-Auto with Cloud AI, and 300 km² of Automatic. Same AI, same free clicks and corrections, every machine you work on.</source>
+        <translation>Pro: Cloud AIを使ったSemi-Autoで月2,000個の物体、Automaticで300 km²。同じAI、同じ無料クリックと補正を、作業するすべてのマシンで利用できます。</translation>
+    </message>
+    <message>
+        <source>2,000 objects a month in Semi-Auto, 300 km² in Automatic. Cancel anytime.</source>
+        <translation>Semi-Autoで月2,000個の物体、Automaticで300 km²。いつでもキャンセル可能。</translation>
+    </message>
+    <message>
+        <source>300 km² of Automatic a month, on zones of any size.</source>
+        <translation>毎月300 km²のAutomatic。ゾーンのサイズは問いません。</translation>
+    </message>
+    <message>
+        <source>The same AI on every machine you work on.</source>
+        <translation>どの作業用マシンでも同じAIを使えます。</translation>
+    </message>
+    <message>
+        <source>39 EUR a month, cancel anytime.</source>
+        <translation>月額39 EUR。いつでも解約できます。</translation>
+    </message>
+    <message>
+        <source>2,000 cloud objects every month in Semi-Auto</source>
+        <translation>Semi-Autoで毎月2,000個のクラウドオブジェクト</translation>
+    </message>
+    <message>
+        <source>{n} of {total} cloud objects left in Semi-Auto this month</source>
+        <translation>今月のSemi-Autoのクラウドオブジェクト残り {n} / {total}</translation>
+    </message>
+    <message>
+        <source>{n} of {total} km² left in Automatic this month</source>
+        <translation>今月のAutomaticの残り {n} / {total} km²</translation>
+    </message>
+    <message>
+        <source>Draw a whole city and let it run, at the finest precision.</source>
+        <translation>都市全体を描いて実行できます。最高精度で処理します。</translation>
+    </message>
+    <message>
+        <source>Or click objects one by one in Semi-Auto.</source>
+        <translation>または、Semi-Autoでオブジェクトを1つずつクリックします。</translation>
+    </message>
+    <message>
+        <source>(optional)</source>
+        <translation>（任意）</translation>
+    </message>
+    <message>
+        <source>More precision sweeps your zone in a finer grid, so it catches smaller objects.</source>
+        <translation>精度を上げると、ゾーンをより細かいグリッドでスキャンするため、より小さなオブジェクトも検出できます。</translation>
+    </message>
+    <message>
+        <source>Your Automatic allowance ran out mid-zone.</source>
+        <translation>ゾーンの途中でAutomaticの利用枠を使い切りました。</translation>
+    </message>
+    <message>
+        <source>Pro picks it up where it stopped and finishes the zone.</source>
+        <translation>Proは停止した地点から再開し、ゾーンを最後まで処理します。</translation>
+    </message>
+    <message>
+        <source>Finish with Pro</source>
+        <translation>Proで完了</translation>
+    </message>
+    <message>
+        <source>This zone at this precision is more than one run covers. Draw a smaller zone, or lower the precision.</source>
+        <translation>この精度では、このゾーンは1回の実行で処理できる範囲を超えています。小さいゾーンを描くか、精度を下げてください。</translation>
+    </message>
+    <message>
+        <source>This zone at this precision is more than one run covers. Draw a smaller zone, or lower the precision. Free runs stop well below that ceiling, so Pro keeps more precision on a zone this size.</source>
+        <translation>この精度では、このゾーンは1回の実行で処理できる範囲を超えています。小さいゾーンを描くか、精度を下げてください。無料実行の上限はさらに低いため、このサイズのゾーンではProのほうが高い精度を維持できます。</translation>
+    </message>
+    <message>
+        <source>{n} km²</source>
+        <translation>{n} km²</translation>
+    </message>
+    <message>
+        <source>Automatic is counted by surface. Precision changes how finely the zone is scanned, never the price. A run never costs more than the zone you drew.</source>
+        <translation>Automaticは面積で計算します。精度によってゾーンをスキャンする細かさは変わりますが、料金は変わりません。1回の実行で、描いたゾーン以上の料金がかかることはありません。</translation>
+    </message>
+    <message>
+        <source>Pro raises the month to 300 km² of Automatic.</source>
+        <translation>Proでは、毎月のAutomaticが300 km²に増えます。</translation>
+    </message>
+    <message>
+        <source>This zone is {zone} km². You have {left} km² left in Automatic this month.</source>
+        <translation>このゾーンは {zone} km²です。今月のAutomaticは {left} km²残っています。</translation>
+    </message>
+    <message>
+        <source>Or draw a smaller zone.</source>
+        <translation>または、小さいゾーンを描いてください。</translation>
+    </message>
+    <message>
+        <source>This zone is {area} km². Free runs stop at {max} km².</source>
+        <translation>このゾーンは {area} km²です。無料実行は {max} km²までです。</translation>
+    </message>
+    <message>
+        <source>Pro has no size limit and runs the zone as you drew it.</source>
+        <translation>Proにはサイズ制限がなく、描いたままのゾーンを実行できます。</translation>
+    </message>
+    <message>
+        <source>Or make the zone smaller and run it free.</source>
+        <translation>または、ゾーンを小さくして無料で実行してください。</translation>
+    </message>
+    <message>
+        <source>{n} km² of Automatic left, back on {date}.</source>
+        <translation>Automaticが {n} km²残っています。{date}に復旧します。</translation>
+    </message>
+    <message>
+        <source>{n} km² of Automatic left this month.</source>
+        <translation>今月のAutomaticは {n} km²残っています。</translation>
+    </message>
+    <message>
+        <source>{n} free detections left, back on {date}.</source>
+        <translation>無料検出が {n}個残っています。{date}に復旧します。</translation>
+    </message>
+    <message>
+        <source>{n} free detections left.</source>
+        <translation>無料検出が {n}個残っています。</translation>
+    </message>
+    <message>
+        <source>Pro gives you 300 km² of Automatic a month, so you keep working.</source>
+        <translation>Proでは毎月300 km²のAutomaticを使えるため、作業を続けられます。</translation>
+    </message>
+    <message>
+        <source>Advanced settings</source>
+        <translation>詳細設定</translation>
+    </message>
+    <message>
+        <source>Zoom in for a finer outline. The AI reads the image at your current zoom.</source>
+        <translation>より細かい輪郭を描くにはズームインしてください。AIは現在のズームで画像を読み取ります。</translation>
+    </message>
+    <message>
+        <source>Keep clicking with the same cloud AI, nothing to install.</source>
+        <translation>インストール不要で、同じクラウドAIを使ってクリックを続けられます。</translation>
+    </message>
+    <message>
+        <source>You saved your {n} cloud objects in Semi-Auto this month</source>
+        <translation>今月はSemi-Autoでクラウドオブジェクトを {n}個保存しました</translation>
+    </message>
+    <message>
+        <source>Or keep clicking for free with a smaller AI on this computer.</source>
+        <translation>または、このコンピュータの小型AIを使って無料でクリックを続けられます。</translation>
+    </message>
+    <message>
+        <source>{n} of {total} cloud objects left in Semi-Auto, back on {date}.</source>
+        <translation>Semi-Autoのクラウドオブジェクトが {n} / {total} 残っています。{date}に復旧します。</translation>
+    </message>
+    <message>
+        <source>{n} of {total} cloud objects left in Semi-Auto this month.</source>
+        <translation>今月のSemi-Autoのクラウドオブジェクトが {n} / {total} 残っています。</translation>
+    </message>
+    <message>
+        <source>{n} cloud detections left, back on {date}.</source>
+        <translation>クラウド検出が {n}個残っています。{date}に復旧します。</translation>
+    </message>
+    <message>
+        <source>{n} cloud detections left.</source>
+        <translation>クラウド検出が {n}個残っています。</translation>
+    </message>
+    <message>
+        <source>Pro gives you 2,000 cloud objects a month in Semi-Auto.</source>
+        <translation>ProではSemi-Autoで毎月2,000個のクラウドオブジェクトを使えます。</translation>
+    </message>
+    <message>
+        <source>More settings</source>
+        <translation>その他の設定</translation>
+    </message>
+    <message>
+        <source>{left} / {cap} km²</source>
+        <translation>{left} / {cap} km²</translation>
+    </message>
+    <message>
+        <source>{left} of {cap} km² left in Automatic this month</source>
+        <translation>今月のAutomaticは {left} / {cap} km² 残っています</translation>
+    </message>
+    <message>
+        <source>{left} of {cap} cloud objects left in Semi-Auto this month</source>
+        <translation>今月のSemi-Autoのクラウドオブジェクトは {left} / {cap} 残っています</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the surface you have left this month. Draw a smaller zone.</source>
+        <translation>このゾーンは今月残っている面積を超えています。小さいゾーンを描いてください。</translation>
+    </message>
+    <message>
+        <source>It comes back on {date}.</source>
+        <translation>{date}に復旧します。</translation>
+    </message>
+    <message>
+        <source>A zone detection is already running. Wait for it to finish, or stop it, before starting another.</source>
+        <translation>ゾーン検出はすでに実行中です。完了するか停止するまで待ってから、別の検出を開始してください。</translation>
+    </message>
+    <message>
+        <source>Type what to find first. An example is optional.</source>
+        <translation>まず検出対象を入力してください。例の入力は任意です。</translation>
+    </message>
+    <message>
+        <source>Your plan is already running on its maximum number of computers. Close AI Segmentation on one of them, then run Detect again.</source>
+        <translation>お使いのプランはすでに最大台数のコンピューターで実行されています。いずれかのコンピューターでAI Segmentationを終了してから、Detectを再度実行してください。</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the area you have left this month. Draw a smaller zone, or subscribe for a larger monthly area.</source>
+        <translation>このゾーンは今月残っている面積より大きくなっています。より小さいゾーンを描画するか、月間面積の大きいプランに登録してください。</translation>
+    </message>
+    <message>
+        <source>Your monthly allowance ran out, so this run did not start.</source>
+        <translation>月間割り当てを使い切ったため、この実行は開始されませんでした。</translation>
+    </message>
+    <message>
+        <source>"{word}" is hard to spot from above - "{term}" detects better. Your word still runs.</source>
+        <translation>"{word}"は上空から見つけにくい対象です。"{term}"のほうが検出しやすくなります。入力した単語でも実行されます。</translation>
+    </message>
+    <message>
+        <source>"{word}" cannot be seen from above. Pick an object on the ground - the Library has ready-to-use ones.</source>
+        <translation>"{word}"は上空から見えません。地上のオブジェクトを選んでください。ライブラリにはすぐ使えるものがあります。</translation>
+    </message>
+    <message>
+        <source>"{obj}" is not an object the AI knows well. The run may come back empty - a more common word finds more.</source>
+        <translation>"{obj}"はAIがあまりよく認識できないオブジェクトです。実行結果が空になる場合があります。より一般的な単語を使うと、検出しやすくなります。</translation>
+    </message>
+    <message>
+        <source>(~{n} min left)</source>
+        <translation>（残り約{n}分）</translation>
+    </message>
+    <message>
+        <source>(~{n} sec left)</source>
+        <translation>（残り約{n}秒）</translation>
+    </message>
+    <message>
+        <source>1 detection</source>
+        <translation>1件の検出</translation>
+    </message>
+    <message>
+        <source>1 free cloud detection remaining</source>
+        <translation>無料クラウド検出の残りは1件です</translation>
+    </message>
+    <message>
+        <source>1 shape edited this session</source>
+        <translation>このセッションで1個の図形を編集しました</translation>
+    </message>
+    <message>
+        <source>AI not available</source>
+        <translation>AIを利用できません</translation>
+    </message>
+    <message>
+        <source>Automatic is temporarily unavailable. Try again later.</source>
+        <translation>自動は一時的に利用できません。後でもう一度お試しください。</translation>
+    </message>
+    <message>
+        <source>Could not read the pixel grid of this raster. Check the layer opens and shows in QGIS, then try again.</source>
+        <translation>このラスタのピクセルグリッドを読み取れませんでした。レイヤーがQGISで開いて表示されることを確認してから、もう一度お試しください。</translation>
+    </message>
+    <message>
+        <source>Detection stopped before any result came back. Run Detect again when you are ready.</source>
+        <translation>結果が返る前に検出が停止しました。準備ができたら、もう一度検出を実行してください。</translation>
+    </message>
+    <message>
+        <source>Export now?</source>
+        <translation>今すぐエクスポートしますか？</translation>
+    </message>
+    <message>
+        <source>Export what you saved and end this session?</source>
+        <translation>保存した内容をエクスポートして、このセッションを終了しますか？</translation>
+    </message>
+    <message>
+        <source>Finish or close the review first.</source>
+        <translation>先にレビューを完了するか閉じてください。</translation>
+    </message>
+    <message>
+        <source>No Automatic surface left this month. Semi-Auto still works until it comes back.</source>
+        <translation>今月は自動で利用できる面積が残っていません。自動が再開するまで、Semi-Autoは引き続き利用できます。</translation>
+    </message>
+    <message>
+        <source>No Automatic surface left this month. Semi-Auto still works, and Automatic comes back on {date}.</source>
+        <translation>今月は自動で利用できる面積が残っていません。Semi-Autoは引き続き利用でき、自動は{date}に再開します。</translation>
+    </message>
+    <message>
+        <source>None of the objects came out as a shape the file could take. Turn the cleanup settings down and try Finish again.</source>
+        <translation>ファイルで扱える図形として出力できるオブジェクトがありませんでした。クリーンアップ設定を弱めて、もう一度完了してください。</translation>
+    </message>
+    <message>
+        <source>Nothing is visible to save. Lower Confidence, or widen the size range, then try Finish again.</source>
+        <translation>保存できる表示中の内容がありません。信頼度を下げるかサイズ範囲を広げて、もう一度完了してください。</translation>
+    </message>
+    <message>
+        <source>Off until a selection is on screen. Click the object first, then Save polygon keeps it in your session; Export writes all kept polygons to a layer.</source>
+        <translation>選択範囲が画面に表示されるまで無効です。先にオブジェクトをクリックしてください。ポリゴンを保存でセッションに保持し、エクスポートですべての保持したポリゴンをレイヤーに書き出します。</translation>
+    </message>
+    <message>
+        <source>Removes the last point you placed on the object.</source>
+        <translation>オブジェクトに配置した最後のポイントを削除します。</translation>
+    </message>
+    <message>
+        <source>Saved all {n} objects found to {name}, including any the Confidence slider hid.</source>
+        <translation>信頼度スライダーで非表示になったものを含め、検出した{n}個のオブジェクトをすべて{name}に保存しました。</translation>
+    </message>
+    <message>
+        <source>Saved the 1 object found to {name}.</source>
+        <translation>検出した1個のオブジェクトを{name}に保存しました。</translation>
+    </message>
+    <message>
+        <source>Sign in to run Automatic.</source>
+        <translation>自動を実行するにはサインインしてください。</translation>
+    </message>
+    <message>
+        <source>Team or organization? Write to us: {email}</source>
+        <translation>チームまたは組織でご利用ですか？こちらまでご連絡ください：{email}</translation>
+    </message>
+    <message>
+        <source>The AI Segmentation panel is closed, so there is nothing to detect from. Open it and try again.</source>
+        <translation>AI Segmentationパネルが閉じているため、検出対象がありません。パネルを開いて、もう一度お試しください。</translation>
+    </message>
+    <message>
+        <source>The AI did not load, so this click was not answered. Use the Install button in the panel to set it up again.</source>
+        <translation>AIが読み込まれなかったため、このクリックを処理できませんでした。パネルのインストールボタンを使って、もう一度設定してください。</translation>
+    </message>
+    <message>
+        <source>The AI is still loading, so this click was not answered. Try again in a few seconds.</source>
+        <translation>AIはまだ読み込み中のため、このクリックを処理できませんでした。数秒後にもう一度お試しください。</translation>
+    </message>
+    <message>
+        <source>The click tool stays on while this session is open. Stop the session to use another map tool.</source>
+        <translation>このセッションを開いている間はクリックツールが有効です。別のマップツールを使うには、セッションを停止してください。</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding. Keeping the 1 cloud detection already paid for.</source>
+        <translation>検出が応答しなくなりました。支払い済みのクラウド検出1件は保持します。</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding. Keeping the {n} cloud detections already paid for.</source>
+        <translation>検出が応答しなくなりました。支払い済みのクラウド検出{n}件は保持します。</translation>
+    </message>
+    <message>
+        <source>The object you are working on is not saved yet, so it will not be in the layer.</source>
+        <translation>作業中のオブジェクトはまだ保存されていないため、レイヤーには含まれません。</translation>
+    </message>
+    <message>
+        <source>The offline AI did not load, so this session cannot start. Use the Install button in the panel to set it up again.</source>
+        <translation>オフラインAIが読み込まれなかったため、このセッションを開始できません。パネルのインストールボタンを使って、もう一度設定してください。</translation>
+    </message>
+    <message>
+        <source>This computer is no longer signed in. Sign out, then sign in again to reconnect it.</source>
+        <translation>このコンピューターはサインイン状態ではありません。サインアウトしてから、もう一度サインインして再接続してください。</translation>
+    </message>
+    <message>
+        <source>This sign-in code has expired. Click Cancel, then Sign in to get a new one.</source>
+        <translation>このサインインコードは期限切れです。キャンセルをクリックしてから、サインインして新しいコードを取得してください。</translation>
+    </message>
+    <message>
+        <source>This will discard 1 polygon.</source>
+        <translation>ポリゴン1個を破棄します。</translation>
+    </message>
+    <message>
+        <source>This will discard {count} polygons.</source>
+        <translation>ポリゴン{count}個を破棄します。</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the surface you have left this month. Draw a smaller zone, or subscribe for a larger monthly surface.</source>
+        <translation>このゾーンは今月残っている利用可能な面積を超えています。より小さいゾーンを描くか、より広い月間利用面積のプランに登録してください。</translation>
+    </message>
+    <message>
+        <source>You can also open this address by hand:
+{}</source>
+        <translation>このアドレスを手動で開くこともできます：
+{}</translation>
+    </message>
+    <message>
+        <source>You have 1 unsaved polygon.</source>
+        <translation>未保存のポリゴンが1個あります。</translation>
+    </message>
+    <message>
+        <source>You have been signed out. Sign in again to keep using the cloud features.</source>
+        <translation>サインアウトされました。クラウド機能を引き続き使うには、もう一度サインインしてください。</translation>
+    </message>
+    <message>
+        <source>You have {count} unsaved polygons.</source>
+        <translation>未保存のポリゴンが{count}個あります。</translation>
+    </message>
+    <message>
+        <source>You used your Automatic allowance for this month. Semi-Auto on your computer keeps working, free, with no counter.</source>
+        <translation>今月の自動利用枠を使い切りました。お使いのコンピューターでは、Semi-Autoを無料で引き続き利用できます。回数制限はありません。</translation>
+    </message>
+    <message>
+        <source>Your plan is already running on its maximum number of computers. Close AI Segmentation on one of them, then try again.</source>
+        <translation>ご利用のプランはすでに最大台数のコンピューターで実行されています。そのうち1台でAI Segmentationを閉じてから、もう一度お試しください。</translation>
+    </message>
+    <message>
+        <source>polygon</source>
+        <translation>ポリゴン</translation>
+    </message>
+    <message>
+        <source>{left} / {cap}</source>
+        <translation>{left} / {cap}</translation>
+    </message>
+    <message>
+        <source>{n} detections</source>
+        <translation>{n}件の検出</translation>
+    </message>
+    <message>
+        <source>{n} free cloud detections remaining</source>
+        <translation>無料クラウド検出の残りは{n}件です</translation>
+    </message>
+    <message>
+        <source>{n} shapes edited this session</source>
+        <translation>このセッションで{n}個の図形を編集しました</translation>
+    </message>
+    <message>
+        <source>     {step} to build the AI engine again</source>
+        <translation>     AIエンジンを再構築するには{step}</translation>
+    </message>
+    <message>
+        <source>  - Antivirus software (Windows Defender, etc.) blocking pip</source>
+        <translation>  - ウイルス対策ソフト（Windows Defenderなど）がpipをブロックしている</translation>
+    </message>
+    <message>
+        <source>  - Corrupted virtual environment</source>
+        <translation>  - 仮想環境が破損している</translation>
+    </message>
+    <message>
+        <source>  - exclude these hosts from inspection:</source>
+        <translation>  - 次のホストを検査対象から除外する:</translation>
+    </message>
+    <message>
+        <source>  - install the network&apos;s root certificate on this machine, or</source>
+        <translation>  - ネットワークのルート証明書をこのマシンにインストールする、または</translation>
+    </message>
+    <message>
+        <source>  1. Add an antivirus exclusion for the folder:</source>
+        <translation>  1. フォルダーをウイルス対策ソフトの除外対象に追加する:</translation>
+    </message>
+    <message>
+        <source>  1. Close all QGIS windows (File &gt; Exit)</source>
+        <translation>  1. すべてのQGISウィンドウを閉じる（ファイル &gt; 終了）</translation>
+    </message>
+    <message>
+        <source>  1. Delete the folder: {folder}</source>
+        <translation>  1. フォルダーを削除する: {folder}</translation>
+    </message>
+    <message>
+        <source>  1. Free up disk space (empty the trash, remove large unused files)</source>
+        <translation>  1. ディスク容量を空ける（ゴミ箱を空にし、大きくて不要なファイルを削除する）</translation>
+    </message>
+    <message>
+        <source>  1. If that folder is inside OneDrive or another sync tool, pause
+     syncing (or mark the folder &apos;Always keep on this device&apos;)</source>
+        <translation>  1. そのフォルダーがOneDriveなどの同期ツール内にある場合は、同期を一時停止する
+     （またはフォルダーを「このデバイス上に常に保持」に設定する）</translation>
+    </message>
+    <message>
+        <source>  1. Install the latest VC++ Redistributable (x64):
+     {url}</source>
+        <translation>  1. 最新のVC++ Redistributable（x64）をインストールする:
+     {url}</translation>
+    </message>
+    <message>
+        <source>  1. Temporarily disable real-time antivirus scanning</source>
+        <translation>  1. ウイルス対策ソフトのリアルタイムスキャンを一時的に無効にする</translation>
+    </message>
+    <message>
+        <source>  1. Upgrade your distribution to a version released after 2019</source>
+        <translation>  1. 2019年以降にリリースされたバージョンにディストリビューションをアップグレードする</translation>
+    </message>
+    <message>
+        <source>  1. Use a QGIS build bundling Python 3.12 or older, or</source>
+        <translation>  1. Python 3.12以前をバンドルしたQGISビルドを使用する、または</translation>
+    </message>
+    <message>
+        <source>  1. {step} to build again with fresh data</source>
+        <translation>  1. 新しいデータで再構築するには{step}</translation>
+    </message>
+    <message>
+        <source>  2. Add an exclusion for the plugin folder:</source>
+        <translation>  2. プラグインフォルダーを除外対象に追加する:</translation>
+    </message>
+    <message>
+        <source>  2. If it persists, update QGIS to the latest LTR release
+     (newer QGIS ships a newer Python) and try again</source>
+        <translation>  2. 解決しない場合は、QGISを最新のLTRリリースに更新する
+     （新しいQGISには新しいPythonが付属しています）その後、もう一度試す</translation>
+    </message>
+    <message>
+        <source>  2. If you cannot upgrade, this plugin&apos;s AI engine is unfortunately
+     not supported on this machine</source>
+        <translation>  2. アップグレードできない場合、このプラグインのAIエンジンは残念ながら
+     このマシンではサポートされません</translation>
+    </message>
+    <message>
+        <source>  2. On Apple Silicon, run the native (arm64) QGIS rather than the
+     Intel build under Rosetta</source>
+        <translation>  2. Apple Siliconでは、Rosetta上のIntel版ではなくネイティブ（arm64）のQGISを実行する</translation>
+    </message>
+    <message>
+        <source>  2. Or set the AI_SEGMENTATION_CACHE_DIR environment variable to a
+     short local folder outside any synced area (e.g. C:\qgis_ai),
+     then restart QGIS</source>
+        <translation>  2. またはAI_SEGMENTATION_CACHE_DIR環境変数を、同期対象外の短いローカルフォルダー
+     （例: C:\qgis_ai）に設定し、その後QGISを再起動する</translation>
+    </message>
+    <message>
+        <source>  2. Reopen QGIS</source>
+        <translation>  2. QGISを再度開く</translation>
+    </message>
+    <message>
+        <source>  2. Restart QGIS and try again</source>
+        <translation>  2. QGISを再起動して、もう一度試す</translation>
+    </message>
+    <message>
+        <source>  2. Restart your computer after installing</source>
+        <translation>  2. インストール後にコンピューターを再起動する</translation>
+    </message>
+    <message>
+        <source>  2. The environment is installed under: {location}</source>
+        <translation>  2. 環境のインストール先: {location}</translation>
+    </message>
+    <message>
+        <source>  2. {step} to build everything again</source>
+        <translation>  2. すべてを再構築するには{step}</translation>
+    </message>
+    <message>
+        <source>  3. Check folder permissions: {command}</source>
+        <translation>  3. フォルダーの権限を確認する: {command}</translation>
+    </message>
+    <message>
+        <source>  3. If the error is still there after the reboot:</source>
+        <translation>  3. 再起動後もエラーが残る場合:</translation>
+    </message>
+    <message>
+        <source>  3. If the issue persists, reinstall QGIS</source>
+        <translation>  3. 解決しない場合はQGISを再インストールする</translation>
+    </message>
+    <message>
+        <source>  3. Open the AI Segmentation panel - installation will resume</source>
+        <translation>  3. AI Segmentationパネルを開く - インストールが再開されます</translation>
+    </message>
+    <message>
+        <source>  3. Run QGIS as administrator (right-click &gt; Run as administrator)</source>
+        <translation>  3. QGISを管理者として実行する（右クリック &gt; 管理者として実行）</translation>
+    </message>
+    <message>
+        <source>  3. To install on another drive, set the AI_SEGMENTATION_CACHE_DIR
+     environment variable to a folder on a disk with more space,
+     then restart QGIS and try again</source>
+        <translation>  3. 別のドライブにインストールするには、AI_SEGMENTATION_CACHE_DIR環境変数を
+     より空き容量の多いディスク上のフォルダーに設定し、
+     QGISを再起動してもう一度試す</translation>
+    </message>
+    <message>
+        <source>  3. {step} again</source>
+        <translation>  3. もう一度{step}</translation>
+    </message>
+    <message>
+        <source>  3. {step} to build it again</source>
+        <translation>  3. 再構築するには{step}</translation>
+    </message>
+    <message>
+        <source>  4. Check that no other Python (Anaconda, Miniconda, standalone Python)
+     puts conflicting torch DLLs on your system PATH.
+     Open a terminal and run: where python
+     If you see multiple results, remove the extra ones from PATH</source>
+        <translation>  4. 他のPython（Anaconda、Miniconda、スタンドアロンPython）が競合するtorch DLLを
+     システムのPATHに追加していないことを確認する。
+     ターミナルを開いて次を実行する: where python
+     複数の結果が表示された場合は、余分なものをPATHから削除する</translation>
+    </message>
+    <message>
+        <source>  4. If the issue persists, run QGIS as administrator</source>
+        <translation>  4. 解決しない場合はQGISを管理者として実行する</translation>
+    </message>
+    <message>
+        <source>  4. Try the installation again</source>
+        <translation>  4. インストールをもう一度試す</translation>
+    </message>
+    <message>
+        <source>  4. Uninstall the plugin (Plugins &gt; Manage and Install Plugins &gt; Installed &gt; AI Segmentation)</source>
+        <translation>  4. プラグインをアンインストールする（プラグイン &gt; プラグインの管理とインストール &gt; インストール済み &gt; AI Segmentation）</translation>
+    </message>
+    <message>
+        <source>  5. Restart QGIS</source>
+        <translation>  5. QGISを再起動する</translation>
+    </message>
+    <message>
+        <source>  6. Reinstall the plugin</source>
+        <translation>  6. プラグインを再インストールする</translation>
+    </message>
+    <message>
+        <source>A required DLL failed to initialize.</source>
+        <translation>必要なDLLの初期化に失敗しました。</translation>
+    </message>
+    <message>
+        <source>Ask your IT department to add a path-based allow rule for this folder:</source>
+        <translation>IT部門に、このフォルダーのパスベースの許可ルールを追加するよう依頼してください:</translation>
+    </message>
+    <message>
+        <source>Ask your IT department to either:</source>
+        <translation>IT部門に次のいずれかを依頼してください:</translation>
+    </message>
+    <message>
+        <source>Cache error, retrying {package}... ({done}/{total})</source>
+        <translation>キャッシュエラー、{package}を再試行中...（{done}/{total}）</translation>
+    </message>
+    <message>
+        <source>Creating virtual environment...</source>
+        <translation>仮想環境を作成中...</translation>
+    </message>
+    <message>
+        <source>Disabling antivirus or running QGIS as administrator will not help.</source>
+        <translation>ウイルス対策ソフトを無効にしたり、QGISを管理者として実行したりしても解決しません。</translation>
+    </message>
+    <message>
+        <source>Downloaded {mb} MB, saving...</source>
+        <translation>{mb} MBをダウンロードしました。保存中...</translation>
+    </message>
+    <message>
+        <source>Downloading PyTorch (~180 MB)... {elapsed}</source>
+        <translation>PyTorch（約180 MB）をダウンロード中... {elapsed}</translation>
+    </message>
+    <message>
+        <source>Downloading Python: {done} MB</source>
+        <translation>Pythonをダウンロード中: {done} MB</translation>
+    </message>
+    <message>
+        <source>Downloading Python: {done} MB of {total} MB</source>
+        <translation>Pythonをダウンロード中: {done} MB / {total} MB</translation>
+    </message>
+    <message>
+        <source>Downloading uv package installer...</source>
+        <translation>uvパッケージインストーラーをダウンロード中...</translation>
+    </message>
+    <message>
+        <source>Failed to create venv: this Python is missing its venv support.
+
+</source>
+        <translation>venvの作成に失敗しました: このPythonにはvenvのサポートがありません。
+
+</translation>
+    </message>
+    <message>
+        <source>How to fix this:</source>
+        <translation>解決方法:</translation>
+    </message>
+    <message>
+        <source>If it still fails after restarting QGIS:</source>
+        <translation>QGISを再起動しても失敗する場合:</translation>
+    </message>
+    <message>
+        <source>Install it, then retry:
+</source>
+        <translation>インストールしてから再試行してください:
+</translation>
+    </message>
+    <message>
+        <source>Install the venv module for your Python with your system&apos;s package manager, then retry.</source>
+        <translation>システムのパッケージマネージャーでPython用のvenvモジュールをインストールしてから、再試行してください。</translation>
+    </message>
+    <message>
+        <source>Installation failed due to network restrictions.</source>
+        <translation>ネットワークの制限によりインストールに失敗しました。</translation>
+    </message>
+    <message>
+        <source>Installation failed: Python&apos;s SSL module is not available.</source>
+        <translation>インストールに失敗しました: PythonのSSLモジュールを利用できません。</translation>
+    </message>
+    <message>
+        <source>Installation failed: no compatible AI engine build exists for this
+combination of Intel Mac and Python version.</source>
+        <translation>インストールに失敗しました: このIntel MacとPythonバージョンの組み合わせに対応する
+AIエンジンのビルドがありません。</translation>
+    </message>
+    <message>
+        <source>Installation failed: the download server presented a certificate this computer does not trust.</source>
+        <translation>インストールに失敗しました: ダウンロードサーバーが、このコンピューターで信頼されていない証明書を提示しました。</translation>
+    </message>
+    <message>
+        <source>Installation failed: your Linux distribution is too old for the
+current AI engine. PyTorch wheels now require a recent system
+library (glibc 2.28+, i.e. Ubuntu 20.04 / Debian 10 / CentOS 8 or
+newer).</source>
+        <translation>インストールに失敗しました: お使いのLinuxディストリビューションは
+現在のAIエンジンには古すぎます。PyTorchのwheelには現在、新しいシステム
+ライブラリ（glibc 2.28以降、つまりUbuntu 20.04 / Debian 10 / CentOS 8
+以降）が必要です。</translation>
+    </message>
+    <message>
+        <source>Installation failed: your disk ran out of space.</source>
+        <translation>インストールに失敗しました: ディスク容量が不足しています。</translation>
+    </message>
+    <message>
+        <source>Installation was blocked, likely by antivirus software or security policy.</source>
+        <translation>ウイルス対策ソフトまたはセキュリティポリシーにより、インストールがブロックされた可能性があります。</translation>
+    </message>
+    <message>
+        <source>Installing {package} (~180 MB)... ({done}/{total})</source>
+        <translation>{package}をインストール中（約180 MB）...（{done}/{total}）</translation>
+    </message>
+    <message>
+        <source>Installing {package}... ({done}/{total})</source>
+        <translation>{package}をインストール中...（{done}/{total}）</translation>
+    </message>
+    <message>
+        <source>Installing {package}... {elapsed}</source>
+        <translation>{package}をインストール中... {elapsed}</translation>
+    </message>
+    <message>
+        <source>Intel (x86_64) Macs are supported only up to PyTorch 2.2.2, which
+ships for Python 3.8 to 3.12. Your Python is newer than that.</source>
+        <translation>Intel（x86_64）MacではPyTorch 2.2.2までしかサポートされません。このバージョンは
+Python 3.8から3.12向けに提供されています。お使いのPythonはそれより新しいバージョンです。</translation>
+    </message>
+    <message>
+        <source>Network error, retry {attempt}/{total} in {wait}s...</source>
+        <translation>ネットワークエラー、{wait}秒後に再試行します（{attempt}/{total}）...</translation>
+    </message>
+    <message>
+        <source>Network error, retrying in {seconds}s...</source>
+        <translation>ネットワークエラー、{seconds}秒後に再試行します...</translation>
+    </message>
+    <message>
+        <source>Not enough free disk space to install dependencies: {free_gb:.1f} GB available at {cache_dir}, at least {min_free_gb:.1f} GB is required.
+
+Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR environment variable to a directory on a larger drive, then restart QGIS.</source>
+        <translation>依存関係をインストールするための空きディスク容量が不足しています: {cache_dir}で利用可能なのは{free_gb:.1f} GB、少なくとも{min_free_gb:.1f} GB必要です。
+
+ディスク容量を空けるか、AI_SEGMENTATION_CACHE_DIR環境変数を容量の大きいドライブ上のディレクトリに設定してから、QGISを再起動してください。</translation>
+    </message>
+    <message>
+        <source>Once the rule is in place, restart QGIS and try again.</source>
+        <translation>ルールを設定したら、QGISを再起動してもう一度試してください。</translation>
+    </message>
+    <message>
+        <source>Open the AI Segmentation panel and click Install</source>
+        <translation>AI Segmentationパネルを開き、「インストール」をクリックしてください</translation>
+    </message>
+    <message>
+        <source>Please contact your IT department to allow access to:</source>
+        <translation>次へのアクセスを許可するようIT部門に依頼してください:</translation>
+    </message>
+    <message>
+        <source>Please try:</source>
+        <translation>次をお試しください:</translation>
+    </message>
+    <message>
+        <source>Python standalone ready</source>
+        <translation>スタンドアロンPythonの準備完了</translation>
+    </message>
+    <message>
+        <source>Retrying {package}... ({done}/{total})</source>
+        <translation>{package}を再試行中...（{done}/{total}）</translation>
+    </message>
+    <message>
+        <source>SSL bypass retry for {package}... ({done}/{total})</source>
+        <translation>{package}のSSLバイパス再試行中...（{done}/{total}）</translation>
+    </message>
+    <message>
+        <source>SSL error, retrying {package} (system certs)... ({done}/{total})</source>
+        <translation>SSLエラー、{package}を再試行中（システム証明書）...（{done}/{total}）</translation>
+    </message>
+    <message>
+        <source>The AI engine needs roughly 4 GB free during installation.</source>
+        <translation>AIエンジンのインストール中は約4 GBの空き容量が必要です。</translation>
+    </message>
+    <message>
+        <source>The environment installs under: {location}</source>
+        <translation>環境のインストール先: {location}</translation>
+    </message>
+    <message>
+        <source>The install has not reported anything for a while. QGIS is yours again: leave this running, or stop it and use Cloud AI.</source>
+        <translation>しばらくインストールの進捗がありません。QGISを再び操作できます。このまま実行するか、停止してCloud AIを使用してください。</translation>
+    </message>
+    <message>
+        <source>The installer process crashed unexpectedly (access violation).</source>
+        <translation>インストーラープロセスが予期せずクラッシュしました（アクセス違反）。</translation>
+    </message>
+    <message>
+        <source>The next installation will rebuild it from scratch automatically.</source>
+        <translation>次回のインストールで自動的に最初から再構築されます。</translation>
+    </message>
+    <message>
+        <source>The package resolver could not find a compatible set of versions.
+This usually comes from stale cached package data or a Python
+version the AI packages no longer support.</source>
+        <translation>パッケージリゾルバーが互換性のあるバージョンの組み合わせを見つけられませんでした。
+通常は、古いキャッシュ済みパッケージデータ、またはAIパッケージがサポートしなくなった
+Pythonバージョンが原因です。</translation>
+    </message>
+    <message>
+        <source>The plugin always uses this folder, so one rule keeps working across updates.
+It contains a standalone Python runtime, the uv installer and Python packages,
+all downloaded from their official open-source sources.</source>
+        <translation>プラグインは常にこのフォルダーを使用するため、1つのルールで更新後も機能します。
+このフォルダーには、公式のオープンソース提供元からダウンロードした
+スタンドアロンPythonランタイム、uvインストーラー、Pythonパッケージが含まれます。</translation>
+    </message>
+    <message>
+        <source>The plugin&apos;s Python environment is damaged (files are missing inside it).</source>
+        <translation>プラグインのPython環境が破損しています（内部のファイルが不足しています）。</translation>
+    </message>
+    <message>
+        <source>The plugin&apos;s local Python runtime is damaged and cannot start.
+This is usually caused by antivirus quarantine or an interrupted
+first installation.</source>
+        <translation>プラグインのローカルPythonランタイムが破損していて起動できません。
+通常は、ウイルス対策ソフトによる隔離、または初回インストールの中断が原因です。</translation>
+    </message>
+    <message>
+        <source>This is usually caused by:</source>
+        <translation>通常の原因:</translation>
+    </message>
+    <message>
+        <source>This usually means the Python installation is incomplete or corrupted.</source>
+        <translation>通常、Pythonのインストールが不完全または破損していることを意味します。</translation>
+    </message>
+    <message>
+        <source>This usually means the install folder is cloud-synced (OneDrive/Dropbox), contains unusual characters, or the path grew past the Windows length limit.</source>
+        <translation>通常、インストールフォルダーがクラウド同期対象（OneDrive/Dropbox）である、特殊文字を含む、またはパスがWindowsの長さ制限を超えたことを意味します。</translation>
+    </message>
+    <message>
+        <source>Try these steps in order:</source>
+        <translation>次の手順を順番にお試しください:</translation>
+    </message>
+    <message>
+        <source>Upgrading pip...</source>
+        <translation>pipをアップグレード中...</translation>
+    </message>
+    <message>
+        <source>Using system Python (NixOS)...</source>
+        <translation>システムPythonを使用中（NixOS）...</translation>
+    </message>
+    <message>
+        <source>Using system Python (fallback)...</source>
+        <translation>システムPythonを使用中（フォールバック）...</translation>
+    </message>
+    <message>
+        <source>Using uv package installer...</source>
+        <translation>uvパッケージインストーラーを使用中...</translation>
+    </message>
+    <message>
+        <source>Verification complete</source>
+        <translation>検証完了</translation>
+    </message>
+    <message>
+        <source>Verifying {package}... ({done}/{total})</source>
+        <translation>{package}を検証中...（{done}/{total}）</translation>
+    </message>
+    <message>
+        <source>Virtual environment created</source>
+        <translation>仮想環境を作成しました</translation>
+    </message>
+    <message>
+        <source>Virtual environment created (uv)</source>
+        <translation>仮想環境を作成しました（uv）</translation>
+    </message>
+    <message>
+        <source>Virtual environment ready</source>
+        <translation>仮想環境の準備完了</translation>
+    </message>
+    <message>
+        <source>Windows refused a file path during installation.</source>
+        <translation>インストール中にWindowsがファイルパスを拒否しました。</translation>
+    </message>
+    <message>
+        <source>You can also try checking your proxy settings in QGIS (Settings &gt; Options &gt; Network).</source>
+        <translation>QGISのプロキシ設定（設定 &gt; オプション &gt; ネットワーク）を確認することもできます。</translation>
+    </message>
+    <message>
+        <source>Your network inspects secure connections and re-signs them with its own certificate, and that certificate is not in the computer&apos;s certificate store.</source>
+        <translation>ネットワークが安全な接続を検査し、独自の証明書で再署名しています。その証明書はコンピューターの証明書ストアにありません。</translation>
+    </message>
+    <message>
+        <source>Your organization&apos;s security policy (application control, e.g. AppLocker or WDAC)
+is blocking the plugin&apos;s local AI environment.</source>
+        <translation>組織のセキュリティポリシー（AppLockerやWDACなどのアプリケーション制御）により、
+プラグインのローカルAI環境がブロックされています。</translation>
+    </message>
+    <message>
+        <source>uv package installer ready</source>
+        <translation>uvパッケージインストーラーの準備完了</translation>
+    </message>
+    <message>
+        <source>uv: ready</source>
+        <translation>uv: 準備完了</translation>
+    </message>
+    <message>
+        <source>uv: unavailable, using pip</source>
+        <translation>uv: 利用できないため、pipを使用します</translation>
+    </message>
+    <message>
+        <source>{free_gb:.1f} GB free at {cache_dir}, under the {min_free_gb:.0f} GB the local model needs. Installing the Automatic packages only. Free up space and install again to turn Semi-Auto mode on.</source>
+        <translation>{cache_dir}の空き容量は{free_gb:.1f} GBで、ローカルモデルに必要な{min_free_gb:.0f} GBを下回っています。自動モードのパッケージのみをインストールします。空き容量を増やして再インストールすると、半自動モードを有効にできます。</translation>
+    </message>
+    <message>
+        <source>{package} unavailable</source>
+        <translation>{package}は利用できません</translation>
+    </message>
+    <message>
+        <source>{step}. The plugin builds it again from scratch.</source>
+        <translation>{step}。プラグインが最初から再構築します。</translation>
+    </message>
+    <message>
+        <source>✓ All dependencies installed</source>
+        <translation>✓ すべての依存関係をインストールしました</translation>
+    </message>
+    <message>
+        <source>✓ Automatic mode ready</source>
+        <translation>✓ 自動モードの準備完了</translation>
+    </message>
+    <message>
+        <source>✓ {package} installed</source>
+        <translation>✓ {package}をインストールしました</translation>
+    </message>
+    <message>
+        <source>An old version is installed. Click Install to replace it.</source>
+        <translation>古いバージョンがインストールされています。置き換えるには「インストール」をクリックしてください。</translation>
+    </message>
+    <message>
+        <source>Some AI components are missing. Click Install to complete them.</source>
+        <translation>一部のAIコンポーネントがありません。完了するには「インストール」をクリックしてください。</translation>
+    </message>
+    <message>
+        <source>The AI components are not installed. Click Install to add them.</source>
+        <translation>AIコンポーネントがインストールされていません。追加するには「インストール」をクリックしてください。</translation>
+    </message>
+    <message>
+        <source>The AI components are not ready. Click Install to set them up.</source>
+        <translation>AIコンポーネントの準備ができていません。セットアップするには「インストール」をクリックしてください。</translation>
+    </message>
+    <message>
+        <source>The AI components did not load. Click Install to repair them.</source>
+        <translation>AIコンポーネントを読み込めませんでした。修復するには「インストール」をクリックしてください。</translation>
+    </message>
+    <message>
+        <source>The AI components did not pass the check. Click Install to repair them.</source>
+        <translation>AIコンポーネントのチェックに合格しませんでした。修復するには「インストール」をクリックしてください。</translation>
+    </message>
+    <message>
+        <source>The AI components need an update. The update starts now.</source>
+        <translation>AIコンポーネントの更新が必要です。今すぐ更新を開始します。</translation>
+    </message>
+    <message>
+        <source>The AI runtime is damaged. Click Install to repair it.</source>
+        <translation>AIランタイムが破損しています。修復するには「インストール」をクリックしてください。</translation>
+    </message>
+    <message>
+        <source>The AI workspace is missing. Click Install to build it.</source>
+        <translation>AIワークスペースがありません。構築するには「インストール」をクリックしてください。</translation>
+    </message>
+    <message>
+        <source>The last install did not finish. Click Install to start again.</source>
+        <translation>前回のインストールが完了しませんでした。もう一度開始するには「インストール」をクリックしてください。</translation>
+    </message>
+    <message>
+        <source>The on-device AI is not installed. Click Install to add it.</source>
+        <translation>デバイス上のAIがインストールされていません。追加するには「インストール」をクリックしてください。</translation>
+    </message>
+    <message>
+        <source>Cannot close download file: {error}</source>
+        <translation>ダウンロードファイルを閉じられません: {error}</translation>
+    </message>
+    <message>
+        <source>Cannot open download file: {error}</source>
+        <translation>ダウンロードファイルを開けません: {error}</translation>
+    </message>
+    <message>
+        <source>Cannot save download: {error}</source>
+        <translation>ダウンロードを保存できません: {error}</translation>
+    </message>
+    <message>
+        <source>Cannot write download file: {error}</source>
+        <translation>ダウンロードファイルに書き込めません: {error}</translation>
+    </message>
+    <message>
+        <source>Download failed</source>
+        <translation>ダウンロードに失敗しました</translation>
+    </message>
+    <message>
+        <source>the download did not finish in time</source>
+        <translation>ダウンロードが時間内に完了しませんでした</translation>
+    </message>
+    <message>
+        <source>the download stalled, no data was received</source>
+        <translation>ダウンロードが停止し、データを受信できませんでした</translation>
     </message>
 </context>
 </TS>

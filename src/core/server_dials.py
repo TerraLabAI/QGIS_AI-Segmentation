@@ -280,6 +280,30 @@ def dial_text(container_path: str, key: str, max_chars: int = _MAX_COPY_CHARS) -
     return None
 
 
+# The configuration request asks for a language, and the server can only
+# answer in the few it is authored in. Every other UI language gets a served
+# sentence in a language the reader did not choose, while the plugin ships that
+# same sentence translated. So a served sentence is only allowed to replace the
+# shipped one when the request could name the reader's language.
+_served_copy_allowed: bool | None = None
+
+
+def served_copy_allowed() -> bool:
+    """True when a served sentence may replace the shipped, translated one.
+
+    The QGIS UI language is fixed for the session, so this resolves once.
+    """
+    global _served_copy_allowed
+    if _served_copy_allowed is None:
+        try:
+            from .request_context import ui_language
+
+            _served_copy_allowed = ui_language() is not None
+        except Exception:  # noqa: BLE001 -- copy is best-effort
+            _served_copy_allowed = False
+    return _served_copy_allowed
+
+
 def dial_copy(
     string_id: str,
     fallback: str,
@@ -300,6 +324,8 @@ def dial_copy(
     never ``str.format``: a stray brace in served text would raise on a paint
     or click path.
     """
+    if not served_copy_allowed():
+        return fallback
     served = dial_text("copy", string_id, max_chars)
     if served is None:
         return fallback
@@ -375,8 +401,42 @@ def feature_enabled(name: str) -> bool:
     Fail-open: an absent map, an absent key or garbage all mean enabled. Only
     an explicit ``false`` disables, so a feature can be turned off fleet-wide
     without a release, and never turns itself off by accident.
+
+    A configuration in force always decides. When it has no opinion, which is
+    every cold start until the fetch lands, the last live answer stands
+    instead of the shipped default: a feature withdrawn because it is broken
+    used to be back on at every restart, on the machines the withdrawal was
+    written for. See ``kill_switch_memory``, which can only say no.
     """
-    return dial_bool(f"features.{name}", True)
+    return feature_switch("features." + name, True)
+
+
+def feature_switch(path: str, shipped: bool) -> bool:
+    """One kill switch, with the last live answer standing in for a cold cache.
+
+    The configuration in force decides whenever it has an opinion, exactly
+    like ``dial_bool``. When it has none, and the switch ships ON, the last
+    live answer is consulted before the shipped default: a feature withdrawn
+    because it is broken used to come back at every restart, because the disk
+    copy of the configuration deliberately carries no kill switch.
+
+    A switch that ships OFF needs no memory. It is already off, and the
+    memory, by design, can only say off.
+    """
+    served = read_value(path)
+    if served is False:
+        return False
+    if served is True:
+        return True
+    if not shipped:
+        return False
+    name = path.rsplit(".", 1)[-1]
+    try:
+        from .kill_switch_memory import is_remembered_off
+
+        return not is_remembered_off(name)
+    except Exception:  # noqa: BLE001 -- a memory is best-effort  # nosec B110
+        return True
 
 
 def correct_ai_cloud_enabled() -> bool:
@@ -394,7 +454,7 @@ def correct_ai_cloud_enabled() -> bool:
     Semi-Auto never reads this. Its own engine cards decide, and its on-device
     side stays offline by product rule.
     """
-    return dial_bool("features.correct_ai_cloud", True)
+    return feature_switch("features.correct_ai_cloud", True)
 
 
 def crop_webp_enabled() -> bool:
@@ -409,6 +469,17 @@ def crop_webp_enabled() -> bool:
     return dial_bool("features.crop_webp", False)
 
 
+def gzip_request_bodies_enabled() -> bool:
+    """Whether a large request body may travel gzipped.
+
+    Default ON: every route that takes a large body reads the encoding, so a
+    plugin that never hears from the server still gets the shorter upload, and
+    a client whose dial read fails on a slow link is exactly the one that
+    needs it. A served false is what takes it back from the whole fleet.
+    """
+    return feature_switch("features.gzip_request_bodies", True)
+
+
 def automatic_mode_enabled() -> bool:
     """Whether Automatic mode is available.
 
@@ -419,10 +490,24 @@ def automatic_mode_enabled() -> bool:
     served 0, "", [] or {} is garbage, and garbage means "use what shipped",
     the same as an absent value: nothing the server can get wrong may take
     Automatic mode away from the whole fleet.
+
+    The two keys share one entry in the memory of what was last turned off, so
+    the memory is read here rather than through ``feature_switch``: a live
+    ``automatic_mode_enabled: false`` beside a ``features.automatic_mode:
+    true`` is a no, and the copy on disk keeps only the true half of it. Read
+    through the generic switch, that true would answer for the pair at the
+    next start and hand back a mode the server had withdrawn.
     """
     if read_value("automatic_mode_enabled") is False:
         return False
-    return feature_enabled("automatic_mode")
+    if read_value("features.automatic_mode") is False:
+        return False
+    try:
+        from .kill_switch_memory import AUTOMATIC_MODE_NAME, is_remembered_off
+
+        return not is_remembered_off(AUTOMATIC_MODE_NAME)
+    except Exception:  # noqa: BLE001 -- a memory is best-effort  # nosec B110
+        return True
 
 
 # -- version comparison ----------------------------------------------------

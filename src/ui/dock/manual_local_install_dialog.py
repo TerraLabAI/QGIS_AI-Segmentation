@@ -23,7 +23,7 @@ sight: nothing about this install runs in the background.
 """
 from __future__ import annotations
 
-from qgis.PyQt.QtCore import Qt, pyqtSignal
+from qgis.PyQt.QtCore import Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtWidgets import (
     QDialog,
     QLabel,
@@ -52,6 +52,12 @@ _DIALOG_WIDTH = 400
 # A figure, not a range: "5 to 20 minutes" reads as nobody having measured it.
 # The shipped figure, and the fallback the reader below falls to.
 _INSTALL_MINUTES = 10
+
+# How long the bar may sit without a single tick before the window says so
+# and lets go of QGIS. Every stage of the install reports far more often than
+# this, so a silence this long is a stage that is not coming back on its own,
+# or a machine so slow the user needs their software back either way.
+_STALL_SECONDS = 180
 
 # What `ask()` returns when the user picked the other engine. Qt keeps 0 and 1
 # for Rejected and Accepted, so a window shut with Escape or the title bar X
@@ -208,6 +214,17 @@ class ManualLocalInstallDialog(QDialog):
         layout.addWidget(self._progress_bar)
         self._progress_lines.append(self._progress_bar)
 
+        # Only after a silence long enough to mean something. A warning on a
+        # bar that is moving is a worry the user did not have.
+        self._stall_note = QLabel(tr(
+            "The install has not reported anything for a while. QGIS is yours "
+            "again: leave this running, or stop it and use Cloud AI."))
+        self._stall_note.setWordWrap(True)
+        self._stall_note.setStyleSheet(_msg_label_qss("warning"))
+        self._stall_note.setVisible(False)
+        layout.addWidget(self._stall_note)
+        self._progress_lines.append(self._stall_note)
+
         # Says the wait out loud, and keeps the free way out of it in view.
         self._wait_note = QLabel(tr(
             "QGIS waits while this installs. To segment right away, stop "
@@ -228,6 +245,12 @@ class ManualLocalInstallDialog(QDialog):
         self._progress_lines.append(self._cancel_btn)
 
         self._installing = False
+        # Restarted by every progress tick; on expiry the window stops holding
+        # the whole application. Owned by the window so it dies with it.
+        self._stall_timer = QTimer(self)
+        self._stall_timer.setSingleShot(True)
+        self._stall_timer.setInterval(_STALL_SECONDS * 1000)
+        self._stall_timer.timeout.connect(self._on_install_stalled)
         self._show_offer()
 
     # -- copy ---------------------------------------------------------------
@@ -270,6 +293,10 @@ class ManualLocalInstallDialog(QDialog):
             widget.setVisible(False)
         for widget in self._progress_lines:
             widget.setVisible(True)
+        # Not part of the group: it earns its place by a silence, not by the
+        # state, and _show_progress runs before there is anything to be silent
+        # about.
+        self._stall_note.setVisible(False)
         self.adjustSize()
 
     # -- what the dock drives -----------------------------------------------
@@ -305,6 +332,7 @@ class ManualLocalInstallDialog(QDialog):
         self.set_progress(0, tr("Preparing the install..."))
         self.show()
         self.raise_()
+        self._stall_timer.start()
 
     def is_installing(self) -> bool:
         """Whether this window is carrying an install right now."""
@@ -318,6 +346,7 @@ class ManualLocalInstallDialog(QDialog):
         confirmation over a window the plugin itself is taking down.
         """
         self._installing = False
+        self._stall_timer.stop()
 
     # -- the ways out, all of them asked back ---------------------------------
 
@@ -369,5 +398,40 @@ class ManualLocalInstallDialog(QDialog):
             self._progress_bar.setValue(max(0, min(100, int(percent))))
             if message:
                 self._progress_note.setText(message)
+            # The install is alive, so the watchdog goes back to the start.
+            # The modality it may already have released is NOT taken back: a
+            # window that grabbed the application again mid-install would be a
+            # second interruption for the same download.
+            self._stall_note.setVisible(False)
+            self._stall_timer.start()
         except (RuntimeError, AttributeError, TypeError, ValueError):
             pass  # nosec B110 -- a closed window must not break an install
+
+    def _on_install_stalled(self) -> None:
+        """Nothing has been reported for a long time: give QGIS back.
+
+        The window stays up, the install stays running and the Stop button
+        stays where it was. What changes is that the user is no longer locked
+        out of their own application by a download that may never report
+        again. A dead worker used to leave QGIS unusable with no way out but
+        the task manager.
+        """
+        if not self._installing:
+            return
+        try:
+            self._stall_note.setVisible(True)
+            if self.windowModality() != Qt.WindowModality.NonModal:
+                # All the way to non-modal, never to window-modal: a
+                # window-modal dialog blocks its parent window, and the parent
+                # here is the QGIS main window, so the user would be locked
+                # out of exactly what this is meant to give back.
+                # Modality only changes while the window is hidden, so the
+                # window goes down and straight back up (see begin_progress).
+                self.hide()
+                self.setModal(False)
+                self.setWindowModality(Qt.WindowModality.NonModal)
+                self.show()
+                self.raise_()
+            self.adjustSize()
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110 -- a closed window has nothing to release

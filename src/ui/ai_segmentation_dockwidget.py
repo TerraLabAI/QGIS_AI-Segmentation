@@ -27,6 +27,7 @@ from .dock.auto_detail_level import DockAutoDetailLevelMixin
 from .dock.auto_flow_steps import DockAutoFlowStepsMixin
 from .dock.auto_prompt_box import DockAutoPromptBoxMixin
 from .dock.auto_prompt_gate import DockAutoPromptGateMixin
+from .dock.auto_prompt_suggest import DockAutoPromptSuggestMixin
 from .dock.auto_review_build import DockAutoReviewBuildMixin
 from .dock.auto_review_correct import DockAutoReviewCorrectMixin
 from .dock.auto_review_panel import DockAutoReviewPanelMixin
@@ -111,6 +112,7 @@ class AISegmentationDockWidget(
     DockActivationMixin,
     DockAutoPromptBoxMixin,
     DockAutoPromptGateMixin,
+    DockAutoPromptSuggestMixin,
     DockAutoDetailLevelMixin,
     DockAutoCreditsMixin,
     DockAutoFlowStepsMixin,
@@ -167,6 +169,7 @@ class AISegmentationDockWidget(
     history_reuse_prompt_requested = pyqtSignal(str)  # Recent card "Same object, new zone" (prompt token)
     zone_draw_requested = pyqtSignal()         # zone drawing should (re)start on the canvas
     auto_detail_changed = pyqtSignal(int)      # detail slider moved (value = grid side n)
+    auto_advanced_toggled = pyqtSignal(bool)   # Advanced settings fold opened (True) or shut
     auto_prompt_committed = pyqtSignal(str)    # object class settled (debounced) -> re-seed detail
     auto_step_changed = pyqtSignal(int)        # Automatic flow switched to this step (0-2)
     auto_refine_changed = pyqtSignal()         # any auto refine control changed
@@ -291,8 +294,6 @@ class AISegmentationDockWidget(
         # known balance. When it does, Detect is hard-blocked: a run may never
         # launch under-funded. None = no estimate yet.
         self._auto_est_credits: int | None = None
-        self._auto_insufficient_credits: bool = False
-        # True while a Manual session is refining the Automatic results: the
         # manual Export-to-layer / Stop buttons are hidden so "Back to review"
         # (then Finish) stays the single, unambiguous commit path.
         self._refine_handoff: bool = False

@@ -245,3 +245,49 @@ def _sorted_pieces(pieces: list[QgsGeometry]) -> list[QgsGeometry]:
             return (0.0, 0.0, 0.0)
 
     return sorted(pieces, key=key)
+
+
+def polygon_part_count(geom: QgsGeometry | None) -> int:
+    """Polygon parts in a geometry, 1 when the count cannot be read.
+
+    A union never bridges a gap, so pieces that do not touch come back as
+    several parts. Counting them is how a Merge tells "one object stitched"
+    from "two objects stacked in one row". An uncountable geometry reads as
+    one part: refusing a join we cannot explain would cost the user a
+    correction that is probably fine.
+    """
+    if geom is None:
+        return 0
+    try:
+        if not geom.isMultipart():
+            return 1
+        return len(geom.asMultiPolygon())
+    except (RuntimeError, AttributeError, TypeError, ValueError):
+        return 1
+
+
+def bridge_seam_gap(geom: QgsGeometry | None,
+                    tolerance: float) -> QgsGeometry | None:
+    """Close hairline gaps between the parts of geom, or None on failure.
+
+    The gap a merge exists to close is a tile seam: two halves of ONE object
+    that a union leaves as two parts because a sliver of nothing sits between
+    them. Growing by the tolerance joins them, and shrinking back by the same
+    amount puts the outline where it was. Returns None when the tolerance is
+    not usable, when the operation fails, or when the result is still several
+    parts, which means the pieces were never one object.
+    """
+    if geom is None or tolerance <= 0:
+        return None
+    try:
+        grown = geom.buffer(tolerance, 8)
+        if grown is None or grown.isEmpty():
+            return None
+        closed = grown.buffer(-tolerance, 8)
+    except (RuntimeError, AttributeError, TypeError, ValueError):
+        return None
+    if closed is None or closed.isEmpty():
+        return None
+    if polygon_part_count(closed) > 1:
+        return None
+    return _repaired(closed)

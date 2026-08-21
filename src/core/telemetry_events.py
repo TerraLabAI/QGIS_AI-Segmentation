@@ -7,7 +7,7 @@ REGISTRY_VERSION together.
 """
 from __future__ import annotations
 
-REGISTRY_VERSION = 22
+REGISTRY_VERSION = 27
 
 # --- Lifecycle ------------------------------------------------------------
 PLUGIN_FIRST_OPEN = "plugin_first_open"

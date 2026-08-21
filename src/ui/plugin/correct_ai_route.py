@@ -24,10 +24,19 @@ plain mixin members and state lives on the plugin instance.
 """
 from __future__ import annotations
 
+import time
+
 from qgis.core import Qgis, QgsMessageLog
 from qgis.PyQt.QtCore import QTimer
 
 from ...core.i18n import tr
+
+# How long the served switch and the account store may be answered from the
+# last look. Same name and value as the Semi-Auto hover preview's own memo
+# (manual_hover_preview.py): short enough that a sign-out or a key change
+# stops the route in the same breath, long enough that a cursor resting on a
+# polygon does not read the auth store on every mouse move.
+_ROUTE_MEMO_MS = 3000.0
 
 
 class CorrectAiRouteMixin:
@@ -37,20 +46,30 @@ class CorrectAiRouteMixin:
         """True when the review's AI lanes should answer over the network.
 
         Fails closed on anything unexpected: a missing switch, an unreadable
-        configuration or no account all land on the on-device path.
+        configuration or no account all land on the on-device path. The
+        switch and the account store are read at most once per
+        ``_ROUTE_MEMO_MS``: this is asked on every hover, not only on a
+        click.
         """
         if getattr(self, "_auto_review", None) is None:
             return False
+        now = time.monotonic() * 1000.0
+        memo = getattr(self, "_correct_route_memo", None)
+        if memo is not None and now - memo[0] < _ROUTE_MEMO_MS:
+            return memo[1]
         try:
             from ...core.server_dials import correct_ai_cloud_enabled
 
             if not correct_ai_cloud_enabled():
-                return False
-            from ...core.activation_manager import get_auth_token
+                answer = False
+            else:
+                from ...core.activation_manager import get_auth_token
 
-            return bool(get_auth_token())
+                answer = bool(get_auth_token())
         except Exception:  # noqa: BLE001 -- the on-device path is the fallback
-            return False
+            answer = False
+        self._correct_route_memo = (now, answer)
+        return answer
 
     def _cloud_correct_predictor_active(self) -> bool:
         """Whether the predictor in hand answers over the network.
@@ -146,6 +165,10 @@ class CorrectAiRouteMixin:
             return False
         if getattr(self, "_auto_review", None) is None:
             return False
+        # The route just proved unreliable, so the cached answer must not
+        # outlive it: a retry on the AI method has to read the store again
+        # rather than trust a memo taken before the refusal.
+        self._correct_route_memo = None
         QgsMessageLog.logMessage(
             f"Correct step: AI fix refused a click, handing it to Manual: {reason}",
             "AI Segmentation", level=Qgis.MessageLevel.Warning)
@@ -185,8 +208,9 @@ class CorrectAiRouteMixin:
         if kind == "CREDITS_EXHAUSTED":
             return dial_copy(
                 "correct.ai_credits_exhausted",
-                tr("You are out of credits, so the AI fix cannot answer. "
-                   "Switched to editing by hand, which is free."))
+                tr("Your cloud allowance for this month is used, so the AI "
+                   "fix cannot answer. Switched to editing by hand, which "
+                   "is free."))
         if kind == "AUTH":
             return dial_copy(
                 "correct.ai_auth",
@@ -243,3 +267,6 @@ class CorrectAiRouteMixin:
             pass
         self.predictor = getattr(self, "_local_predictor_held", None)
         self._local_predictor_held = None
+        # The route this session used is going away with the predictor: the
+        # next review or Semi-Auto session must not inherit a cached answer.
+        self._correct_route_memo = None

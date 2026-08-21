@@ -263,6 +263,19 @@ def _collect_diagnostic_info(error_message: str) -> str:
     lines.append("--- Recent Logs ---")
     lines.append(_get_recent_logs())
 
+    # The install writes to a file that outlives the session, and the buffer
+    # above does not: a user who reports a failed install the next morning
+    # sends a report with nothing about the install in it.
+    try:
+        from ..core.venv_manager import read_install_log_tail
+        install_tail = read_install_log_tail(60)
+    except Exception:  # noqa: BLE001 - the rest of the report still helps
+        install_tail = ""
+    if install_tail:
+        lines.append("")
+        lines.append("--- Install Log (last lines) ---")
+        lines.append(install_tail)
+
     lines.append("")
     lines.append("=== End of Report ===")
     # Scrub the WHOLE report: user paths (privacy) AND any backend/infra/model
@@ -454,7 +467,8 @@ def show_error_report(
     if track:
         try:
             from ..core.telemetry_errors import track_plugin_error
-            stage = _infer_stage(error_title, error_message)
+            stage = _stage_for_code(error_code) or _infer_stage(
+                error_title, error_message)
             first_line = (error_message or "").splitlines()[0] if error_message else ""
             code = error_code or _short_code(error_title)
             # Install/download logs are pip and download output (no user
@@ -473,8 +487,36 @@ def show_error_report(
     dialog.exec()
 
 
+# Markers looked for inside an error_code, in the order they are tried. An
+# error_code is a canonical English snake_case identifier, so this reads the
+# same on every UI language.
+_STAGE_CODE_MARKERS = (
+    ("install", ("install", "venv", "pip", "dependen", "uv_", "python_")),
+    ("download", ("download", "checkpoint", "weight")),
+    ("activate", ("activat", "sign_in", "signin", "license", "licence", "key_")),
+    ("export", ("export", "gpkg", "save_")),
+    ("segment", ("segment", "mask", "predict", "detect", "crop", "refine")),
+)
+
+
+def _stage_for_code(error_code: str) -> str | None:
+    """Telemetry stage read off the error_code, or None when there is none.
+
+    The title is a translated string, so matching English words in it filed
+    every non-English user's install failure under the wrong stage, or under
+    "other". The code is written by the call site and never translated.
+    """
+    code = (error_code or "").lower()
+    if not code or code == _short_code():
+        return None
+    for stage, markers in _STAGE_CODE_MARKERS:
+        if any(marker in code for marker in markers):
+            return stage
+    return "other"
+
+
 def _infer_stage(title: str, message: str) -> str:
-    """Heuristic mapping from error dialog title/message to a telemetry stage.
+    """Last-resort stage guess for a call site that passed no error_code.
 
     Stages: install | download | activate | segment | export | other.
     """

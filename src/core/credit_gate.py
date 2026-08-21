@@ -1,6 +1,9 @@
-"""Pure billing arithmetic for Automatic (Pro) mode.
+"""Pure billing arithmetic for the credit wallet.
 
-Automatic runs spend credits (1 tile = 1 credit). Every decision that could
+The credits are Semi-Auto's: one saved object at a time. Automatic stopped
+spending them per tile, and is charged for the surface of the zone it covers,
+so what it still reads here is the re-split budget and the free-run cap, never
+an affordability question about its tile count. Every decision that could
 double-charge past a user's balance or block a run that should be allowed goes
 through the functions here, so the boundary semantics live in ONE tested place
 instead of being re-derived at each call site.
@@ -75,7 +78,9 @@ def run_cost(tiles: int) -> int:
     """
     rate = credits_per_tile()
     if rate == 1.0:
-        return int(tiles)
+        # Ceil, not int: a whole tile count is unchanged by it, and a
+        # fractional cost handed in by another gate truncated to zero.
+        return math.ceil(float(tiles))
     return math.ceil(float(tiles) * rate)
 
 
@@ -180,18 +185,6 @@ def run_affordable(tiles: int, balance) -> bool:
     if balance is None:
         return True
     return run_cost(tiles) <= int(balance) + balance_slack()
-
-
-def insufficient(estimate: int, remaining) -> bool:
-    """True when a run ``estimate`` exceeds the known ``remaining`` balance and
-    Detect must be blocked as under-funded.
-
-    Exact logical inverse of ``run_affordable``: the pre-submit re-gate in
-    ``auto_run`` and the live cost-line gate in ``auto_state`` share ONE
-    boundary (block only when the count strictly exceeds the balance), so they
-    are defined against a single primitive here and can never drift apart.
-    """
-    return not run_affordable(estimate, remaining)
 
 
 def subdivide_cap(base_tiles: int) -> int:

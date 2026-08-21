@@ -12,7 +12,12 @@ from __future__ import annotations
 from qgis.PyQt.QtCore import QSettings
 
 from . import telemetry_events as ev
-from .telemetry import scrub_payload_value, track
+from .telemetry import (
+    drop_queued_events,
+    is_telemetry_enabled,
+    scrub_payload_value,
+    track,
+)
 
 _FIRST_OPEN_KEY = "AI_Segmentation/first_open_sent"
 
@@ -22,7 +27,13 @@ def track_plugin_first_open() -> None:
 
     Guarded by a persistent QSettings flag so an install -> first-open ->
     activation funnel has a clean entry marker. No consent needed (a lifecycle
-    ping with no user content); parks pre-auth like plugin_opened."""
+    ping with no user content); parks pre-auth like plugin_opened.
+
+    The marker is written only once the event can actually go out. Burning it
+    while telemetry is off spends the one-shot on nothing, and a user who opts
+    in later would never have a first open at all."""
+    if not is_telemetry_enabled():
+        return
     try:
         settings = QSettings()
         if bool(settings.value(_FIRST_OPEN_KEY, False, type=bool)):
@@ -109,7 +120,7 @@ def track_install_failed(error_class: str, duration_ms: int | None = None,
         "entry": entry,
     }
     if detail:
-        props["error_detail"] = scrub_payload_value(detail[:300])
+        props["error_detail"] = scrub_payload_value(detail)[:300]
     track(ev.INSTALL_FAILED, props)
 
 
@@ -261,7 +272,12 @@ _FIRST_SUCCESS_KEY = "AI_Segmentation/first_success_sent"
 
 def track_first_generation_milestone(mode: str) -> None:
     """One-shot per machine: the user's first successful export ever (their
-    first real value moment, in either mode). mode: "auto" | "manual"."""
+    first real value moment, in either mode). mode: "auto" | "manual".
+
+    Same rule as the first open: the marker is written only once the event can
+    leave, or the one-shot is spent on a send that never happened."""
+    if not is_telemetry_enabled():
+        return
     try:
         settings = QSettings()
         if bool(settings.value(_FIRST_SUCCESS_KEY, False, type=bool)):
@@ -335,7 +351,14 @@ def track_telemetry_opt_changed(enabled: bool) -> None:
     """The Privacy checkbox moved. MUST be called BEFORE the flag is written on
     an opt-out, because track() short-circuits on a disabled flag and the event
     would never leave. It is in FLUSH_NOW, so it ships on the spot rather than
-    waiting in a batch the opt-out will silence."""
+    waiting in a batch the opt-out will silence.
+
+    On an opt-out everything already queued is dropped first. The flush this
+    event triggers would otherwise carry the whole batch out with it, and that
+    batch was built under the consent the user is withdrawing. The record of
+    the choice still travels, alone: it is what proves the choice was made."""
+    if not enabled:
+        drop_queued_events()
     track(ev.TELEMETRY_OPT_CHANGED, {"enabled": bool(enabled)})
 
 

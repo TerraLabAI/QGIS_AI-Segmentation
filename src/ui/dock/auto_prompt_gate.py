@@ -114,7 +114,6 @@ class DockAutoPromptGateMixin:
                 return False
             if token:
                 ok, reason, suggestion = True, "translated", token
-        self._auto_prompt_valid = ok
         if ok:
             if reason in _SILENT_SWAP_REASONS and suggestion:
                 # The user typed the object in their own language (translated),
@@ -154,6 +153,15 @@ class DockAutoPromptGateMixin:
                     # a single object, so the next click validates clean and
                     # launches. Nothing the user did not read gets billed.
                     return False
+            elif reason == "steer":
+                # A real word that names the object badly from above: a part of
+                # it ("wall" -> building), a cover the model grounds one crown
+                # at a time ("forest" -> tree), or something an aerial image
+                # never shows (an indoor room, a person, a shadow: empty
+                # suggestion). The nudge names the better word and the run goes
+                # ahead on what was typed, because the user may mean exactly
+                # that word.
+                self._show_prompt_steer_nudge(text, suggestion)
             else:
                 self._set_prompt_info()
             return True

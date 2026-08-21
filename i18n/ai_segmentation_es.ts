@@ -421,6 +421,10 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <translation>Copiar dirección de email</translation>
     </message>
     <message>
+        <source>buildings</source>
+        <translation>edificios</translation>
+    </message>
+    <message>
         <source>or</source>
         <translation>o</translation>
     </message>
@@ -495,6 +499,10 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
     
 
     
+    <message>
+        <source>trees</source>
+        <translation>árboles</translation>
+    </message>
     <message>
         <source>{ext} format is not directly supported. GDAL is not available.
 Please convert your raster to GeoTIFF (.tif) before using AI Segmentation.</source>
@@ -1690,10 +1698,6 @@ Después de la instalación, reinicie QGIS e intente nuevamente.</translation>
     <message>
         <source>0 shown - lower the Min size filter to reveal them</source>
         <translation>0 mostrado - baja el filtro Tamaño mín. para revelarlos</translation>
-    </message>
-    <message>
-        <source>5,000 cloud detections every month, zones of any size. Cancel anytime.</source>
-        <translation>5,000 detecciones en la nube cada mes, zonas de cualquier tamaño. Cancela cuando quieras.</translation>
     </message>
     <message>
         <source>A Component Failed to Load</source>
@@ -3014,10 +3018,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
     </message>
     
     <message>
-        <source>Pro: 5,000 cloud detections a month, zones of any size, up to 800 cloud detections in one run. Same AI, same free clicks and corrections, every machine you work on.</source>
-        <translation>Pro: 5,000 detecciones en la nube al mes, zonas de cualquier tamaño, hasta 800 detecciones en la nube en una ejecución. La misma IA, los mismos clics gratuitos y correcciones, en cada máquina en la que trabajes.</translation>
-    </message>
-    <message>
         <source>A free run covers up to {cap} cloud detections. This one needs more. Pro covers up to 800 in one run.</source>
         <translation>Una ejecución gratuita cubre hasta {cap} detecciones en la nube. Esta necesita más. Pro cubre hasta 800 en una ejecución.</translation>
     </message>
@@ -3148,10 +3148,6 @@ Prueba a abrirlo en QGIS para confirmar que se muestra, o conviértelo a GeoTIFF
     <message>
         <source>No image over this zone at this precision, so nothing was analyzed (not charged). Lower Precision, or pick a layer that covers this area.</source>
         <translation>No hay imagen sobre esta zona con esta precisión, así que no se analizó nada (sin cargo). Baja la Precisión, o elige una capa que cubra esta área.</translation>
-    </message>
-    <message>
-        <source>This run needs {n} cloud detections and you have {left} left. Lower the precision or shrink the zone. Pro gives you 5,000 cloud detections a month.</source>
-        <translation>Esta ejecución necesita {n} detecciones en la nube y te quedan {left}. Baja la precisión o reduce la zona. Pro te da 5,000 detecciones en la nube al mes.</translation>
     </message>
     <message>
         <source>Opens your terra-lab.ai dashboard: your plan, your cloud detections and your payment details.</source>
@@ -3318,10 +3314,6 @@ Es posible que se haya movido o renombrado, o que la unidad o el recurso compart
     <message>
         <source>Type a word for the object, or draw an example.</source>
         <translation>Escribe una palabra para el objeto, o dibuja un ejemplo.</translation>
-    </message>
-    <message>
-        <source>Finish this zone with Pro: 5,000 cloud detections a month.</source>
-        <translation>Finaliza esta zona con Pro: 5,000 detecciones en la nube al mes.</translation>
     </message>
     <message>
         <source>Wait for the on-device AI to finish installing.</source>
@@ -3839,14 +3831,6 @@ Es posible que se haya movido o renombrado, o que la unidad o el recurso compart
         <translation>O trabaja gratis con una IA más pequeña en este equipo.</translation>
     </message>
     <message>
-        <source>Pro: 5,000 cloud detections a month</source>
-        <translation>Pro: 5,000 detecciones en la nube al mes</translation>
-    </message>
-    <message>
-        <source>Pro: 5,000 detections a month, on zones of any size</source>
-        <translation>Pro: 5,000 detecciones al mes, en zonas de cualquier tamaño</translation>
-    </message>
-    <message>
         <source>QGIS cannot read this raster format here. Convert it to GeoTIFF, then start again.</source>
         <translation>QGIS no puede leer este formato ráster aquí. Conviértelo a GeoTIFF y vuelve a empezar.</translation>
     </message>
@@ -3949,6 +3933,1074 @@ Es posible que se haya movido o renombrado, o que la unidad o el recurso compart
     <message>
         <source>Your free cloud detections are used up</source>
         <translation>Tus detecciones en la nube gratuitas se han agotado</translation>
+    </message>
+    <message>
+        <source>You used your Automatic allowance for this month. Semi-Auto runs on your computer, free, with no counter.</source>
+        <translation>Has agotado tu cuota de Automatic de este mes. Semi-Auto se ejecuta en tu equipo, gratis y sin contador.</translation>
+    </message>
+    <message>
+        <source>{n} km² left</source>
+        <translation>Quedan {n} km²</translation>
+    </message>
+    <message>
+        <source>{n} km² of Automatic left this month</source>
+        <translation>Quedan {n} km² de Automatic este mes</translation>
+    </message>
+    <message>
+        <source>{used} of {total} km² of Automatic used this month</source>
+        <translation>Has usado {used} de {total} km² de Automatic este mes</translation>
+    </message>
+    <message>
+        <source>{n} cloud objects left this month</source>
+        <translation>Quedan {n} objetos en la nube este mes</translation>
+    </message>
+    <message>
+        <source>{used} of {total} cloud objects saved this month</source>
+        <translation>Has guardado {used} de {total} objetos en la nube este mes</translation>
+    </message>
+    <message>
+        <source>It comes back on {date}. Semi-Auto on this computer keeps working.</source>
+        <translation>Vuelve el {date}. Semi-Auto sigue funcionando en este equipo.</translation>
+    </message>
+    <message>
+        <source>You covered your {n} km² of Automatic this month</source>
+        <translation>Has agotado tus {n} km² de Automatic este mes</translation>
+    </message>
+    <message>
+        <source>This run needs {n} cloud detections and you have {left} left this month. Lower the precision or shrink the zone. Pro covers 300 km² of Automatic a month, on zones of any size.</source>
+        <translation>Esta ejecución necesita {n} detecciones en la nube y te quedan {left} este mes. Reduce la precisión o el tamaño de la zona. Pro incluye 300 km² de Automatic al mes, en zonas de cualquier tamaño.</translation>
+    </message>
+    <message>
+        <source>One detection covers 0.04 to 0.25 km², depending on the precision you ask for.</source>
+        <translation>Una detección cubre de 0,04 a 0,25 km², según la precisión que solicites.</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} km² of Automatic used, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Te queda poco: has usado {used} de {total} km² de Automatic. Se renueva el {date}. &lt;a href="{url}"&gt;Cambia a Pro&lt;/a&gt; para continuar.</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} km² of Automatic used. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Te queda poco: has usado {used} de {total} km² de Automatic. &lt;a href="{url}"&gt;Cambia a Pro&lt;/a&gt; para continuar.</translation>
+    </message>
+    <message>
+        <source>You saved your {n} cloud objects this month</source>
+        <translation>Has guardado tus {n} objetos en la nube este mes</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} cloud objects saved this month, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Te queda poco: has guardado {used} de {total} objetos en la nube este mes. Se renueva el {date}. &lt;a href="{url}"&gt;Cambia a Pro&lt;/a&gt; para continuar.</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} cloud objects saved this month. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Te queda poco: has guardado {used} de {total} objetos en la nube este mes. &lt;a href="{url}"&gt;Cambia a Pro&lt;/a&gt; para continuar.</translation>
+    </message>
+    <message>
+        <source>300 km² of Automatic every month, on zones of any size</source>
+        <translation>300 km² de Automatic cada mes, en zonas de cualquier tamaño</translation>
+    </message>
+    <message>
+        <source>Finish this zone with Pro: 300 km² of Automatic a month.</source>
+        <translation>Termina esta zona con Pro: 300 km² de Automatic al mes.</translation>
+    </message>
+    <message>
+        <source>Zone too large. Reduce the area to {max} detections or fewer.</source>
+        <translation>La zona es demasiado grande. Reduce el área a {max} detecciones o menos.</translation>
+    </message>
+    <message>
+        <source>You saved your cloud objects for this month. Switch to your own computer to keep working free, or upgrade from the panel.</source>
+        <translation>Has agotado tus objetos en la nube de este mes. Cambia a tu propio equipo para seguir trabajando gratis o cambia de plan desde el panel.</translation>
+    </message>
+    <message>
+        <source>Your cloud allowance for this month is used, so the AI fix cannot answer. Switched to editing by hand, which is free.</source>
+        <translation>Has agotado tu cuota en la nube de este mes, por lo que la corrección de IA no puede responder. Se ha cambiado a la edición manual, que es gratuita.</translation>
+    </message>
+    <message>
+        <source>Your monthly allowance ran out at {done}/{total}. Everything found so far is kept below and stays yours.</source>
+        <translation>Tu cuota mensual se agotó en {done}/{total}. Todo lo encontrado hasta ahora se conserva abajo y sigue siendo tuyo.</translation>
+    </message>
+    <message>
+        <source>Pro: 2,000 objects a month in Semi-Auto with Cloud AI</source>
+        <translation>Pro: 2.000 objetos al mes en Semi-Auto con Cloud AI</translation>
+    </message>
+    <message>
+        <source>Pro: 2,000 objects a month in Semi-Auto with Cloud AI, and 300 km² of Automatic. Same AI, same free clicks and corrections, every machine you work on.</source>
+        <translation>Pro: 2.000 objetos al mes en Semi-Auto con Cloud AI y 300 km² en Automatic. La misma IA, los mismos clics y correcciones gratuitos, en cada equipo en el que trabajes.</translation>
+    </message>
+    <message>
+        <source>2,000 objects a month in Semi-Auto, 300 km² in Automatic. Cancel anytime.</source>
+        <translation>2.000 objetos al mes en Semi-Auto, 300 km² en Automatic. Cancela cuando quieras.</translation>
+    </message>
+    <message>
+        <source>300 km² of Automatic a month, on zones of any size.</source>
+        <translation>300 km² de Automatic al mes, en zonas de cualquier tamaño.</translation>
+    </message>
+    <message>
+        <source>The same AI on every machine you work on.</source>
+        <translation>La misma IA en todos los equipos en los que trabajas.</translation>
+    </message>
+    <message>
+        <source>39 EUR a month, cancel anytime.</source>
+        <translation>39 EUR al mes, cancela cuando quieras.</translation>
+    </message>
+    <message>
+        <source>2,000 cloud objects every month in Semi-Auto</source>
+        <translation>2.000 objetos en la nube cada mes en Semi-Auto</translation>
+    </message>
+    <message>
+        <source>{n} of {total} cloud objects left in Semi-Auto this month</source>
+        <translation>Quedan {n} de {total} objetos en la nube en Semi-Auto este mes</translation>
+    </message>
+    <message>
+        <source>{n} of {total} km² left in Automatic this month</source>
+        <translation>Quedan {n} de {total} km² en Automatic este mes</translation>
+    </message>
+    <message>
+        <source>Draw a whole city and let it run, at the finest precision.</source>
+        <translation>Dibuja una ciudad entera y deja que se ejecute, con la máxima precisión.</translation>
+    </message>
+    <message>
+        <source>Or click objects one by one in Semi-Auto.</source>
+        <translation>O haz clic en los objetos uno a uno en Semi-Auto.</translation>
+    </message>
+    <message>
+        <source>(optional)</source>
+        <translation>(opcional)</translation>
+    </message>
+    <message>
+        <source>More precision sweeps your zone in a finer grid, so it catches smaller objects.</source>
+        <translation>Una mayor precisión recorre tu zona con una cuadrícula más fina para detectar objetos más pequeños.</translation>
+    </message>
+    <message>
+        <source>Your Automatic allowance ran out mid-zone.</source>
+        <translation>Se agotó tu cuota de Automatic a mitad de la zona.</translation>
+    </message>
+    <message>
+        <source>Pro picks it up where it stopped and finishes the zone.</source>
+        <translation>Pro continúa desde donde se detuvo y termina la zona.</translation>
+    </message>
+    <message>
+        <source>Finish with Pro</source>
+        <translation>Terminar con Pro</translation>
+    </message>
+    <message>
+        <source>This zone at this precision is more than one run covers. Draw a smaller zone, or lower the precision.</source>
+        <translation>Esta zona, con esta precisión, supera lo que cubre una ejecución. Dibuja una zona más pequeña o reduce la precisión.</translation>
+    </message>
+    <message>
+        <source>This zone at this precision is more than one run covers. Draw a smaller zone, or lower the precision. Free runs stop well below that ceiling, so Pro keeps more precision on a zone this size.</source>
+        <translation>Esta zona, con esta precisión, supera lo que cubre una ejecución. Dibuja una zona más pequeña o reduce la precisión. Las ejecuciones gratuitas se detienen bastante antes de ese límite, así que Pro mantiene una mayor precisión en una zona de este tamaño.</translation>
+    </message>
+    <message>
+        <source>{n} km²</source>
+        <translation>{n} km²</translation>
+    </message>
+    <message>
+        <source>Automatic is counted by surface. Precision changes how finely the zone is scanned, never the price. A run never costs more than the zone you drew.</source>
+        <translation>Automatic se calcula por superficie. La precisión cambia el nivel de detalle con el que se escanea la zona, nunca el precio. Una ejecución nunca cuesta más que la zona que dibujaste.</translation>
+    </message>
+    <message>
+        <source>Pro raises the month to 300 km² of Automatic.</source>
+        <translation>Pro amplía el límite mensual a 300 km² de Automatic.</translation>
+    </message>
+    <message>
+        <source>This zone is {zone} km². You have {left} km² left in Automatic this month.</source>
+        <translation>Esta zona mide {zone} km². Te quedan {left} km² de Automatic este mes.</translation>
+    </message>
+    <message>
+        <source>Or draw a smaller zone.</source>
+        <translation>O dibuja una zona más pequeña.</translation>
+    </message>
+    <message>
+        <source>This zone is {area} km². Free runs stop at {max} km².</source>
+        <translation>Esta zona mide {area} km². Las ejecuciones gratuitas tienen un límite de {max} km².</translation>
+    </message>
+    <message>
+        <source>Pro has no size limit and runs the zone as you drew it.</source>
+        <translation>Pro no tiene límite de tamaño y ejecuta la zona tal como la dibujaste.</translation>
+    </message>
+    <message>
+        <source>Or make the zone smaller and run it free.</source>
+        <translation>O haz la zona más pequeña y ejecútala gratis.</translation>
+    </message>
+    <message>
+        <source>{n} km² of Automatic left, back on {date}.</source>
+        <translation>Quedan {n} km² de Automatic. Se restablecen el {date}.</translation>
+    </message>
+    <message>
+        <source>{n} km² of Automatic left this month.</source>
+        <translation>Quedan {n} km² de Automatic este mes.</translation>
+    </message>
+    <message>
+        <source>{n} free detections left, back on {date}.</source>
+        <translation>Quedan {n} detecciones gratuitas. Se restablecen el {date}.</translation>
+    </message>
+    <message>
+        <source>{n} free detections left.</source>
+        <translation>Quedan {n} detecciones gratuitas.</translation>
+    </message>
+    <message>
+        <source>Pro gives you 300 km² of Automatic a month, so you keep working.</source>
+        <translation>Pro te ofrece 300 km² de Automatic al mes para que sigas trabajando.</translation>
+    </message>
+    <message>
+        <source>Advanced settings</source>
+        <translation>Configuración avanzada</translation>
+    </message>
+    <message>
+        <source>Zoom in for a finer outline. The AI reads the image at your current zoom.</source>
+        <translation>Acércate para obtener un contorno más preciso. La IA lee la imagen con el zoom actual.</translation>
+    </message>
+    <message>
+        <source>Keep clicking with the same cloud AI, nothing to install.</source>
+        <translation>Sigue haciendo clic con la misma IA en la nube, sin instalar nada.</translation>
+    </message>
+    <message>
+        <source>You saved your {n} cloud objects in Semi-Auto this month</source>
+        <translation>Has usado tus {n} objetos en la nube en Semi-Auto este mes</translation>
+    </message>
+    <message>
+        <source>Or keep clicking for free with a smaller AI on this computer.</source>
+        <translation>O sigue haciendo clic gratis con una IA más pequeña en este equipo.</translation>
+    </message>
+    <message>
+        <source>{n} of {total} cloud objects left in Semi-Auto, back on {date}.</source>
+        <translation>Quedan {n} de {total} objetos en la nube en Semi-Auto. Se restablecen el {date}.</translation>
+    </message>
+    <message>
+        <source>{n} of {total} cloud objects left in Semi-Auto this month.</source>
+        <translation>Quedan {n} de {total} objetos en la nube en Semi-Auto este mes.</translation>
+    </message>
+    <message>
+        <source>{n} cloud detections left, back on {date}.</source>
+        <translation>Quedan {n} detecciones en la nube. Se restablecen el {date}.</translation>
+    </message>
+    <message>
+        <source>{n} cloud detections left.</source>
+        <translation>Quedan {n} detecciones en la nube.</translation>
+    </message>
+    <message>
+        <source>Pro gives you 2,000 cloud objects a month in Semi-Auto.</source>
+        <translation>Pro te ofrece 2.000 objetos en la nube al mes en Semi-Auto.</translation>
+    </message>
+    <message>
+        <source>More settings</source>
+        <translation>Más configuración</translation>
+    </message>
+    <message>
+        <source>{left} / {cap} km²</source>
+        <translation>{left} / {cap} km²</translation>
+    </message>
+    <message>
+        <source>{left} of {cap} km² left in Automatic this month</source>
+        <translation>Quedan {left} de {cap} km² en Automatic este mes</translation>
+    </message>
+    <message>
+        <source>{left} of {cap} cloud objects left in Semi-Auto this month</source>
+        <translation>Quedan {left} de {cap} objetos en la nube en Semi-Auto este mes</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the surface you have left this month. Draw a smaller zone.</source>
+        <translation>Esta zona es más grande que la superficie que te queda este mes. Dibuja una zona más pequeña.</translation>
+    </message>
+    <message>
+        <source>It comes back on {date}.</source>
+        <translation>Se restablece el {date}.</translation>
+    </message>
+    <message>
+        <source>A zone detection is already running. Wait for it to finish, or stop it, before starting another.</source>
+        <translation>Ya hay una detección de zona en ejecución. Espera a que termine o detenla antes de iniciar otra.</translation>
+    </message>
+    <message>
+        <source>Type what to find first. An example is optional.</source>
+        <translation>Escribe primero qué quieres detectar. El ejemplo es opcional.</translation>
+    </message>
+    <message>
+        <source>Your plan is already running on its maximum number of computers. Close AI Segmentation on one of them, then run Detect again.</source>
+        <translation>Tu plan ya se está ejecutando en el número máximo de ordenadores. Cierra AI Segmentation en uno de ellos y vuelve a ejecutar Detect.</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the area you have left this month. Draw a smaller zone, or subscribe for a larger monthly area.</source>
+        <translation>Esta zona es mayor que el área que te queda este mes. Dibuja una zona más pequeña o suscríbete para obtener un área mensual mayor.</translation>
+    </message>
+    <message>
+        <source>Your monthly allowance ran out, so this run did not start.</source>
+        <translation>Tu asignación mensual se agotó, por lo que esta ejecución no se inició.</translation>
+    </message>
+    <message>
+        <source>"{word}" is hard to spot from above - "{term}" detects better. Your word still runs.</source>
+        <translation>"{word}" es difícil de detectar desde arriba, "{term}" detecta mejor. Tu palabra sigue funcionando.</translation>
+    </message>
+    <message>
+        <source>"{word}" cannot be seen from above. Pick an object on the ground - the Library has ready-to-use ones.</source>
+        <translation>"{word}" no se puede ver desde arriba. Elige un objeto del terreno, la Biblioteca tiene opciones listas para usar.</translation>
+    </message>
+    <message>
+        <source>"{obj}" is not an object the AI knows well. The run may come back empty - a more common word finds more.</source>
+        <translation>"{obj}" no es un objeto que la AI conozca bien. La ejecución puede no devolver resultados, una palabra más común encuentra más.</translation>
+    </message>
+    <message>
+        <source>(~{n} min left)</source>
+        <translation>(~{n} min restantes)</translation>
+    </message>
+    <message>
+        <source>(~{n} sec left)</source>
+        <translation>(~{n} s restantes)</translation>
+    </message>
+    <message>
+        <source>1 detection</source>
+        <translation>1 detección</translation>
+    </message>
+    <message>
+        <source>1 free cloud detection remaining</source>
+        <translation>Queda 1 detección gratuita en la nube</translation>
+    </message>
+    <message>
+        <source>1 shape edited this session</source>
+        <translation>1 forma editada en esta sesión</translation>
+    </message>
+    <message>
+        <source>AI not available</source>
+        <translation>La IA no está disponible</translation>
+    </message>
+    <message>
+        <source>Automatic is temporarily unavailable. Try again later.</source>
+        <translation>Automático no está disponible temporalmente. Inténtelo de nuevo más tarde.</translation>
+    </message>
+    <message>
+        <source>Could not read the pixel grid of this raster. Check the layer opens and shows in QGIS, then try again.</source>
+        <translation>No se ha podido leer la cuadrícula de píxeles de este ráster. Compruebe que la capa se abre y se muestra en QGIS, y vuelva a intentarlo.</translation>
+    </message>
+    <message>
+        <source>Detection stopped before any result came back. Run Detect again when you are ready.</source>
+        <translation>La detección se detuvo antes de devolver resultados. Ejecute Detectar de nuevo cuando esté listo.</translation>
+    </message>
+    <message>
+        <source>Export now?</source>
+        <translation>¿Exportar ahora?</translation>
+    </message>
+    <message>
+        <source>Export what you saved and end this session?</source>
+        <translation>¿Exportar lo que ha guardado y finalizar esta sesión?</translation>
+    </message>
+    <message>
+        <source>Finish or close the review first.</source>
+        <translation>Finalice o cierre primero la revisión.</translation>
+    </message>
+    <message>
+        <source>No Automatic surface left this month. Semi-Auto still works until it comes back.</source>
+        <translation>No queda superficie de Automático este mes. Semi-Auto seguirá funcionando hasta que vuelva a estar disponible.</translation>
+    </message>
+    <message>
+        <source>No Automatic surface left this month. Semi-Auto still works, and Automatic comes back on {date}.</source>
+        <translation>No queda superficie de Automático este mes. Semi-Auto seguirá funcionando y Automático volverá el {date}.</translation>
+    </message>
+    <message>
+        <source>None of the objects came out as a shape the file could take. Turn the cleanup settings down and try Finish again.</source>
+        <translation>Ninguno de los objetos se ha convertido en una forma que el archivo pueda aceptar. Reduzca los ajustes de limpieza e inténtelo de nuevo con Finalizar.</translation>
+    </message>
+    <message>
+        <source>Nothing is visible to save. Lower Confidence, or widen the size range, then try Finish again.</source>
+        <translation>No hay nada visible que guardar. Reduzca la Confianza o amplíe el intervalo de tamaños, y vuelva a intentarlo con Finalizar.</translation>
+    </message>
+    <message>
+        <source>Off until a selection is on screen. Click the object first, then Save polygon keeps it in your session; Export writes all kept polygons to a layer.</source>
+        <translation>Desactivado hasta que haya una selección en pantalla. Haga clic primero en el objeto; Guardar polígono lo conserva en la sesión y Exportar escribe todos los polígonos conservados en una capa.</translation>
+    </message>
+    <message>
+        <source>Removes the last point you placed on the object.</source>
+        <translation>Elimina el último punto que ha colocado sobre el objeto.</translation>
+    </message>
+    <message>
+        <source>Saved all {n} objects found to {name}, including any the Confidence slider hid.</source>
+        <translation>Se han guardado los {n} objetos encontrados en {name}, incluidos los que ocultó el control de Confianza.</translation>
+    </message>
+    <message>
+        <source>Saved the 1 object found to {name}.</source>
+        <translation>Se ha guardado el objeto encontrado en {name}.</translation>
+    </message>
+    <message>
+        <source>Sign in to run Automatic.</source>
+        <translation>Inicie sesión para ejecutar Automático.</translation>
+    </message>
+    <message>
+        <source>Team or organization? Write to us: {email}</source>
+        <translation>¿Es un equipo u organización? Escríbanos a: {email}</translation>
+    </message>
+    <message>
+        <source>The AI Segmentation panel is closed, so there is nothing to detect from. Open it and try again.</source>
+        <translation>El panel de AI Segmentation está cerrado, por lo que no hay nada desde lo que detectar. Ábralo y vuelva a intentarlo.</translation>
+    </message>
+    <message>
+        <source>The AI did not load, so this click was not answered. Use the Install button in the panel to set it up again.</source>
+        <translation>La IA no se ha cargado, por lo que no se ha procesado este clic. Use el botón Instalar del panel para configurarla de nuevo.</translation>
+    </message>
+    <message>
+        <source>The AI is still loading, so this click was not answered. Try again in a few seconds.</source>
+        <translation>La IA todavía se está cargando, por lo que no se ha procesado este clic. Vuelva a intentarlo en unos segundos.</translation>
+    </message>
+    <message>
+        <source>The click tool stays on while this session is open. Stop the session to use another map tool.</source>
+        <translation>La herramienta de clic permanece activa mientras esta sesión está abierta. Detenga la sesión para usar otra herramienta del mapa.</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding. Keeping the 1 cloud detection already paid for.</source>
+        <translation>La detección ha dejado de responder. Se conserva la 1 detección en la nube ya pagada.</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding. Keeping the {n} cloud detections already paid for.</source>
+        <translation>La detección ha dejado de responder. Se conservan las {n} detecciones en la nube ya pagadas.</translation>
+    </message>
+    <message>
+        <source>The object you are working on is not saved yet, so it will not be in the layer.</source>
+        <translation>El objeto en el que está trabajando aún no se ha guardado, por lo que no estará en la capa.</translation>
+    </message>
+    <message>
+        <source>The offline AI did not load, so this session cannot start. Use the Install button in the panel to set it up again.</source>
+        <translation>La IA sin conexión no se ha cargado, por lo que esta sesión no puede iniciarse. Use el botón Instalar del panel para configurarla de nuevo.</translation>
+    </message>
+    <message>
+        <source>This computer is no longer signed in. Sign out, then sign in again to reconnect it.</source>
+        <translation>Este equipo ya no tiene una sesión iniciada. Cierre sesión y vuelva a iniciarla para conectarlo de nuevo.</translation>
+    </message>
+    <message>
+        <source>This sign-in code has expired. Click Cancel, then Sign in to get a new one.</source>
+        <translation>Este código de inicio de sesión ha caducado. Haga clic en Cancelar y después en Iniciar sesión para obtener uno nuevo.</translation>
+    </message>
+    <message>
+        <source>This will discard 1 polygon.</source>
+        <translation>Esto descartará 1 polígono.</translation>
+    </message>
+    <message>
+        <source>This will discard {count} polygons.</source>
+        <translation>Esto descartará {count} polígonos.</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the surface you have left this month. Draw a smaller zone, or subscribe for a larger monthly surface.</source>
+        <translation>Esta zona es mayor que la superficie que le queda este mes. Dibuje una zona más pequeña o suscríbase para obtener una superficie mensual mayor.</translation>
+    </message>
+    <message>
+        <source>You can also open this address by hand:
+{}</source>
+        <translation>También puede abrir esta dirección manualmente:
+{}</translation>
+    </message>
+    <message>
+        <source>You have 1 unsaved polygon.</source>
+        <translation>Tiene 1 polígono sin guardar.</translation>
+    </message>
+    <message>
+        <source>You have been signed out. Sign in again to keep using the cloud features.</source>
+        <translation>Se ha cerrado su sesión. Vuelva a iniciarla para seguir usando las funciones en la nube.</translation>
+    </message>
+    <message>
+        <source>You have {count} unsaved polygons.</source>
+        <translation>Tiene {count} polígonos sin guardar.</translation>
+    </message>
+    <message>
+        <source>You used your Automatic allowance for this month. Semi-Auto on your computer keeps working, free, with no counter.</source>
+        <translation>Ha utilizado su cuota de Automático de este mes. Semi-Auto sigue funcionando gratis en su equipo, sin contador.</translation>
+    </message>
+    <message>
+        <source>Your plan is already running on its maximum number of computers. Close AI Segmentation on one of them, then try again.</source>
+        <translation>Su plan ya está activo en el número máximo de equipos. Cierre AI Segmentation en uno de ellos y vuelva a intentarlo.</translation>
+    </message>
+    <message>
+        <source>polygon</source>
+        <translation>polígono</translation>
+    </message>
+    <message>
+        <source>{left} / {cap}</source>
+        <translation>{left} / {cap}</translation>
+    </message>
+    <message>
+        <source>{n} detections</source>
+        <translation>{n} detecciones</translation>
+    </message>
+    <message>
+        <source>{n} free cloud detections remaining</source>
+        <translation>Quedan {n} detecciones gratuitas en la nube</translation>
+    </message>
+    <message>
+        <source>{n} shapes edited this session</source>
+        <translation>{n} formas editadas en esta sesión</translation>
+    </message>
+    <message>
+        <source>     {step} to build the AI engine again</source>
+        <translation>     {step} para volver a crear el motor de IA</translation>
+    </message>
+    <message>
+        <source>  - Antivirus software (Windows Defender, etc.) blocking pip</source>
+        <translation>  - El antivirus (Windows Defender, etc.) bloquea pip</translation>
+    </message>
+    <message>
+        <source>  - Corrupted virtual environment</source>
+        <translation>  - Entorno virtual dañado</translation>
+    </message>
+    <message>
+        <source>  - exclude these hosts from inspection:</source>
+        <translation>  - excluir estos hosts de la inspección:</translation>
+    </message>
+    <message>
+        <source>  - install the network&apos;s root certificate on this machine, or</source>
+        <translation>  - instalar el certificado raíz de la red en este equipo, o</translation>
+    </message>
+    <message>
+        <source>  1. Add an antivirus exclusion for the folder:</source>
+        <translation>  1. Añada una exclusión del antivirus para la carpeta:</translation>
+    </message>
+    <message>
+        <source>  1. Close all QGIS windows (File &gt; Exit)</source>
+        <translation>  1. Cierre todas las ventanas de QGIS (Archivo &gt; Salir)</translation>
+    </message>
+    <message>
+        <source>  1. Delete the folder: {folder}</source>
+        <translation>  1. Elimine la carpeta: {folder}</translation>
+    </message>
+    <message>
+        <source>  1. Free up disk space (empty the trash, remove large unused files)</source>
+        <translation>  1. Libere espacio en disco (vacíe la papelera y elimine archivos grandes que no use)</translation>
+    </message>
+    <message>
+        <source>  1. If that folder is inside OneDrive or another sync tool, pause
+     syncing (or mark the folder &apos;Always keep on this device&apos;)</source>
+        <translation>  1. Si esa carpeta está dentro de OneDrive u otra herramienta de sincronización, pause
+     la sincronización (o marque la carpeta como «Mantener siempre en este dispositivo»)</translation>
+    </message>
+    <message>
+        <source>  1. Install the latest VC++ Redistributable (x64):
+     {url}</source>
+        <translation>  1. Instale la versión más reciente de VC++ Redistributable (x64):
+     {url}</translation>
+    </message>
+    <message>
+        <source>  1. Temporarily disable real-time antivirus scanning</source>
+        <translation>  1. Desactive temporalmente el análisis antivirus en tiempo real</translation>
+    </message>
+    <message>
+        <source>  1. Upgrade your distribution to a version released after 2019</source>
+        <translation>  1. Actualice su distribución a una versión publicada después de 2019</translation>
+    </message>
+    <message>
+        <source>  1. Use a QGIS build bundling Python 3.12 or older, or</source>
+        <translation>  1. Use una versión de QGIS que incluya Python 3.12 o anterior, o</translation>
+    </message>
+    <message>
+        <source>  1. {step} to build again with fresh data</source>
+        <translation>  1. {step} para volver a crear con datos nuevos</translation>
+    </message>
+    <message>
+        <source>  2. Add an exclusion for the plugin folder:</source>
+        <translation>  2. Añada una exclusión para la carpeta del complemento:</translation>
+    </message>
+    <message>
+        <source>  2. If it persists, update QGIS to the latest LTR release
+     (newer QGIS ships a newer Python) and try again</source>
+        <translation>  2. Si persiste, actualice QGIS a la versión LTR más reciente
+     (las versiones nuevas de QGIS incluyen un Python más reciente) e inténtelo de nuevo</translation>
+    </message>
+    <message>
+        <source>  2. If you cannot upgrade, this plugin&apos;s AI engine is unfortunately
+     not supported on this machine</source>
+        <translation>  2. Si no puede actualizar, lamentablemente el motor de IA de este complemento
+     no es compatible con este equipo</translation>
+    </message>
+    <message>
+        <source>  2. On Apple Silicon, run the native (arm64) QGIS rather than the
+     Intel build under Rosetta</source>
+        <translation>  2. En Apple Silicon, ejecute la versión nativa (arm64) de QGIS en lugar de la
+     versión Intel mediante Rosetta</translation>
+    </message>
+    <message>
+        <source>  2. Or set the AI_SEGMENTATION_CACHE_DIR environment variable to a
+     short local folder outside any synced area (e.g. C:\qgis_ai),
+     then restart QGIS</source>
+        <translation>  2. O establezca la variable de entorno AI_SEGMENTATION_CACHE_DIR en una
+     carpeta local corta fuera de cualquier área sincronizada (p. ej., C:\qgis_ai),
+     y reinicie QGIS</translation>
+    </message>
+    <message>
+        <source>  2. Reopen QGIS</source>
+        <translation>  2. Vuelva a abrir QGIS</translation>
+    </message>
+    <message>
+        <source>  2. Restart QGIS and try again</source>
+        <translation>  2. Reinicie QGIS e inténtelo de nuevo</translation>
+    </message>
+    <message>
+        <source>  2. Restart your computer after installing</source>
+        <translation>  2. Reinicie el equipo después de la instalación</translation>
+    </message>
+    <message>
+        <source>  2. The environment is installed under: {location}</source>
+        <translation>  2. El entorno se instala en: {location}</translation>
+    </message>
+    <message>
+        <source>  2. {step} to build everything again</source>
+        <translation>  2. {step} para volver a crear todo</translation>
+    </message>
+    <message>
+        <source>  3. Check folder permissions: {command}</source>
+        <translation>  3. Compruebe los permisos de la carpeta: {command}</translation>
+    </message>
+    <message>
+        <source>  3. If the error is still there after the reboot:</source>
+        <translation>  3. Si el error sigue después de reiniciar:</translation>
+    </message>
+    <message>
+        <source>  3. If the issue persists, reinstall QGIS</source>
+        <translation>  3. Si el problema persiste, reinstale QGIS</translation>
+    </message>
+    <message>
+        <source>  3. Open the AI Segmentation panel - installation will resume</source>
+        <translation>  3. Abra el panel de AI Segmentation; la instalación continuará</translation>
+    </message>
+    <message>
+        <source>  3. Run QGIS as administrator (right-click &gt; Run as administrator)</source>
+        <translation>  3. Ejecute QGIS como administrador (haga clic derecho &gt; Ejecutar como administrador)</translation>
+    </message>
+    <message>
+        <source>  3. To install on another drive, set the AI_SEGMENTATION_CACHE_DIR
+     environment variable to a folder on a disk with more space,
+     then restart QGIS and try again</source>
+        <translation>  3. Para instalar en otra unidad, establezca la variable de entorno AI_SEGMENTATION_CACHE_DIR
+     en una carpeta de un disco con más espacio,
+     y reinicie QGIS e inténtelo de nuevo</translation>
+    </message>
+    <message>
+        <source>  3. {step} again</source>
+        <translation>  3. {step} de nuevo</translation>
+    </message>
+    <message>
+        <source>  3. {step} to build it again</source>
+        <translation>  3. {step} para volver a crearlo</translation>
+    </message>
+    <message>
+        <source>  4. Check that no other Python (Anaconda, Miniconda, standalone Python)
+     puts conflicting torch DLLs on your system PATH.
+     Open a terminal and run: where python
+     If you see multiple results, remove the extra ones from PATH</source>
+        <translation>  4. Compruebe que ningún otro Python (Anaconda, Miniconda, Python independiente)
+     coloque DLL de torch incompatibles en el PATH del sistema.
+     Abra un terminal y ejecute: where python
+     Si aparecen varios resultados, elimine los adicionales del PATH</translation>
+    </message>
+    <message>
+        <source>  4. If the issue persists, run QGIS as administrator</source>
+        <translation>  4. Si el problema persiste, ejecute QGIS como administrador</translation>
+    </message>
+    <message>
+        <source>  4. Try the installation again</source>
+        <translation>  4. Intente la instalación de nuevo</translation>
+    </message>
+    <message>
+        <source>  4. Uninstall the plugin (Plugins &gt; Manage and Install Plugins &gt; Installed &gt; AI Segmentation)</source>
+        <translation>  4. Desinstale el complemento (Complementos &gt; Gestionar e instalar complementos &gt; Instalados &gt; AI Segmentation)</translation>
+    </message>
+    <message>
+        <source>  5. Restart QGIS</source>
+        <translation>  5. Reinicie QGIS</translation>
+    </message>
+    <message>
+        <source>  6. Reinstall the plugin</source>
+        <translation>  6. Reinstale el complemento</translation>
+    </message>
+    <message>
+        <source>A required DLL failed to initialize.</source>
+        <translation>No se pudo inicializar una DLL necesaria.</translation>
+    </message>
+    <message>
+        <source>Ask your IT department to add a path-based allow rule for this folder:</source>
+        <translation>Pida a su departamento de TI que añada una regla de permiso basada en la ruta para esta carpeta:</translation>
+    </message>
+    <message>
+        <source>Ask your IT department to either:</source>
+        <translation>Pida a su departamento de TI que haga una de estas acciones:</translation>
+    </message>
+    <message>
+        <source>Cache error, retrying {package}... ({done}/{total})</source>
+        <translation>Error de caché; reintentando {package}... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Creating virtual environment...</source>
+        <translation>Creando el entorno virtual...</translation>
+    </message>
+    <message>
+        <source>Disabling antivirus or running QGIS as administrator will not help.</source>
+        <translation>Desactivar el antivirus o ejecutar QGIS como administrador no ayudará.</translation>
+    </message>
+    <message>
+        <source>Downloaded {mb} MB, saving...</source>
+        <translation>{mb} MB descargados, guardando...</translation>
+    </message>
+    <message>
+        <source>Downloading PyTorch (~180 MB)... {elapsed}</source>
+        <translation>Descargando PyTorch (~180 MB)... {elapsed}</translation>
+    </message>
+    <message>
+        <source>Downloading Python: {done} MB</source>
+        <translation>Descargando Python: {done} MB</translation>
+    </message>
+    <message>
+        <source>Downloading Python: {done} MB of {total} MB</source>
+        <translation>Descargando Python: {done} MB de {total} MB</translation>
+    </message>
+    <message>
+        <source>Downloading uv package installer...</source>
+        <translation>Descargando el instalador de paquetes uv...</translation>
+    </message>
+    <message>
+        <source>Failed to create venv: this Python is missing its venv support.
+
+</source>
+        <translation>No se pudo crear el entorno virtual: a este Python le falta la compatibilidad con venv.
+
+</translation>
+    </message>
+    <message>
+        <source>How to fix this:</source>
+        <translation>Cómo solucionarlo:</translation>
+    </message>
+    <message>
+        <source>If it still fails after restarting QGIS:</source>
+        <translation>Si sigue fallando después de reiniciar QGIS:</translation>
+    </message>
+    <message>
+        <source>Install it, then retry:
+</source>
+        <translation>Instálelo y vuelva a intentarlo:
+</translation>
+    </message>
+    <message>
+        <source>Install the venv module for your Python with your system&apos;s package manager, then retry.</source>
+        <translation>Instale el módulo venv para su Python con el gestor de paquetes del sistema y vuelva a intentarlo.</translation>
+    </message>
+    <message>
+        <source>Installation failed due to network restrictions.</source>
+        <translation>La instalación falló debido a restricciones de red.</translation>
+    </message>
+    <message>
+        <source>Installation failed: Python&apos;s SSL module is not available.</source>
+        <translation>La instalación falló: el módulo SSL de Python no está disponible.</translation>
+    </message>
+    <message>
+        <source>Installation failed: no compatible AI engine build exists for this
+combination of Intel Mac and Python version.</source>
+        <translation>La instalación falló: no existe una compilación compatible del motor de IA para esta
+combinación de Mac Intel y versión de Python.</translation>
+    </message>
+    <message>
+        <source>Installation failed: the download server presented a certificate this computer does not trust.</source>
+        <translation>La instalación falló: el servidor de descarga presentó un certificado que este equipo no considera fiable.</translation>
+    </message>
+    <message>
+        <source>Installation failed: your Linux distribution is too old for the
+current AI engine. PyTorch wheels now require a recent system
+library (glibc 2.28+, i.e. Ubuntu 20.04 / Debian 10 / CentOS 8 or
+newer).</source>
+        <translation>La instalación falló: su distribución de Linux es demasiado antigua para el
+motor de IA actual. Los paquetes de PyTorch requieren ahora una biblioteca
+del sistema reciente (glibc 2.28+, es decir, Ubuntu 20.04 / Debian 10 / CentOS 8 o
+posterior).</translation>
+    </message>
+    <message>
+        <source>Installation failed: your disk ran out of space.</source>
+        <translation>La instalación falló: se agotó el espacio en disco.</translation>
+    </message>
+    <message>
+        <source>Installation was blocked, likely by antivirus software or security policy.</source>
+        <translation>La instalación fue bloqueada, probablemente por el antivirus o una política de seguridad.</translation>
+    </message>
+    <message>
+        <source>Installing {package} (~180 MB)... ({done}/{total})</source>
+        <translation>Instalando {package} (~180 MB)... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Installing {package}... ({done}/{total})</source>
+        <translation>Instalando {package}... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Installing {package}... {elapsed}</source>
+        <translation>Instalando {package}... {elapsed}</translation>
+    </message>
+    <message>
+        <source>Intel (x86_64) Macs are supported only up to PyTorch 2.2.2, which
+ships for Python 3.8 to 3.12. Your Python is newer than that.</source>
+        <translation>Los Mac Intel (x86_64) solo son compatibles hasta PyTorch 2.2.2, que
+se distribuye para Python 3.8 a 3.12. Su versión de Python es más reciente.</translation>
+    </message>
+    <message>
+        <source>Network error, retry {attempt}/{total} in {wait}s...</source>
+        <translation>Error de red; reintentando {attempt}/{total} en {wait}s...</translation>
+    </message>
+    <message>
+        <source>Network error, retrying in {seconds}s...</source>
+        <translation>Error de red; reintentando en {seconds}s...</translation>
+    </message>
+    <message>
+        <source>Not enough free disk space to install dependencies: {free_gb:.1f} GB available at {cache_dir}, at least {min_free_gb:.1f} GB is required.
+
+Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR environment variable to a directory on a larger drive, then restart QGIS.</source>
+        <translation>No hay suficiente espacio libre en disco para instalar las dependencias: hay {free_gb:.1f} GB disponibles en {cache_dir}, pero se necesitan al menos {min_free_gb:.1f} GB.
+
+Libere espacio en disco o establezca la variable de entorno AI_SEGMENTATION_CACHE_DIR en un directorio de una unidad más grande y reinicie QGIS.</translation>
+    </message>
+    <message>
+        <source>Once the rule is in place, restart QGIS and try again.</source>
+        <translation>Una vez aplicada la regla, reinicie QGIS e inténtelo de nuevo.</translation>
+    </message>
+    <message>
+        <source>Open the AI Segmentation panel and click Install</source>
+        <translation>Abra el panel de AI Segmentation y haga clic en Instalar</translation>
+    </message>
+    <message>
+        <source>Please contact your IT department to allow access to:</source>
+        <translation>Póngase en contacto con su departamento de TI para permitir el acceso a:</translation>
+    </message>
+    <message>
+        <source>Please try:</source>
+        <translation>Pruebe lo siguiente:</translation>
+    </message>
+    <message>
+        <source>Python standalone ready</source>
+        <translation>Python independiente listo</translation>
+    </message>
+    <message>
+        <source>Retrying {package}... ({done}/{total})</source>
+        <translation>Reintentando {package}... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>SSL bypass retry for {package}... ({done}/{total})</source>
+        <translation>Reintentando {package} sin SSL... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>SSL error, retrying {package} (system certs)... ({done}/{total})</source>
+        <translation>Error de SSL; reintentando {package} (certificados del sistema)... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>The AI engine needs roughly 4 GB free during installation.</source>
+        <translation>El motor de IA necesita aproximadamente 4 GB libres durante la instalación.</translation>
+    </message>
+    <message>
+        <source>The environment installs under: {location}</source>
+        <translation>El entorno se instala en: {location}</translation>
+    </message>
+    <message>
+        <source>The install has not reported anything for a while. QGIS is yours again: leave this running, or stop it and use Cloud AI.</source>
+        <translation>La instalación no ha informado de nada durante un tiempo. QGIS vuelve a estar disponible: déjela ejecutándose o deténgala y use Cloud AI.</translation>
+    </message>
+    <message>
+        <source>The installer process crashed unexpectedly (access violation).</source>
+        <translation>El proceso del instalador se cerró inesperadamente (violación de acceso).</translation>
+    </message>
+    <message>
+        <source>The next installation will rebuild it from scratch automatically.</source>
+        <translation>La próxima instalación lo volverá a crear automáticamente desde cero.</translation>
+    </message>
+    <message>
+        <source>The package resolver could not find a compatible set of versions.
+This usually comes from stale cached package data or a Python
+version the AI packages no longer support.</source>
+        <translation>El resolvedor de paquetes no encontró un conjunto de versiones compatible.
+Esto suele deberse a datos de paquetes obsoletos en la caché o a una versión
+de Python que los paquetes de IA ya no admiten.</translation>
+    </message>
+    <message>
+        <source>The plugin always uses this folder, so one rule keeps working across updates.
+It contains a standalone Python runtime, the uv installer and Python packages,
+all downloaded from their official open-source sources.</source>
+        <translation>El complemento siempre usa esta carpeta, por lo que una sola regla seguirá funcionando tras las actualizaciones.
+Contiene un entorno de ejecución de Python independiente, el instalador uv y paquetes de Python,
+todos descargados de sus fuentes oficiales de código abierto.</translation>
+    </message>
+    <message>
+        <source>The plugin&apos;s Python environment is damaged (files are missing inside it).</source>
+        <translation>El entorno de Python del complemento está dañado (faltan archivos).</translation>
+    </message>
+    <message>
+        <source>The plugin&apos;s local Python runtime is damaged and cannot start.
+This is usually caused by antivirus quarantine or an interrupted
+first installation.</source>
+        <translation>El entorno de ejecución local de Python del complemento está dañado y no puede iniciarse.
+Esto suele deberse a la cuarentena del antivirus o a una primera instalación
+interrumpida.</translation>
+    </message>
+    <message>
+        <source>This is usually caused by:</source>
+        <translation>Esto suele deberse a:</translation>
+    </message>
+    <message>
+        <source>This usually means the Python installation is incomplete or corrupted.</source>
+        <translation>Esto suele significar que la instalación de Python está incompleta o dañada.</translation>
+    </message>
+    <message>
+        <source>This usually means the install folder is cloud-synced (OneDrive/Dropbox), contains unusual characters, or the path grew past the Windows length limit.</source>
+        <translation>Esto suele significar que la carpeta de instalación está sincronizada con la nube (OneDrive/Dropbox), contiene caracteres inusuales o la ruta supera el límite de longitud de Windows.</translation>
+    </message>
+    <message>
+        <source>Try these steps in order:</source>
+        <translation>Pruebe estos pasos en orden:</translation>
+    </message>
+    <message>
+        <source>Upgrading pip...</source>
+        <translation>Actualizando pip...</translation>
+    </message>
+    <message>
+        <source>Using system Python (NixOS)...</source>
+        <translation>Usando el Python del sistema (NixOS)...</translation>
+    </message>
+    <message>
+        <source>Using system Python (fallback)...</source>
+        <translation>Usando el Python del sistema (alternativa)...</translation>
+    </message>
+    <message>
+        <source>Using uv package installer...</source>
+        <translation>Usando el instalador de paquetes uv...</translation>
+    </message>
+    <message>
+        <source>Verification complete</source>
+        <translation>Verificación completada</translation>
+    </message>
+    <message>
+        <source>Verifying {package}... ({done}/{total})</source>
+        <translation>Verificando {package}... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Virtual environment created</source>
+        <translation>Entorno virtual creado</translation>
+    </message>
+    <message>
+        <source>Virtual environment created (uv)</source>
+        <translation>Entorno virtual creado (uv)</translation>
+    </message>
+    <message>
+        <source>Virtual environment ready</source>
+        <translation>Entorno virtual listo</translation>
+    </message>
+    <message>
+        <source>Windows refused a file path during installation.</source>
+        <translation>Windows rechazó una ruta de archivo durante la instalación.</translation>
+    </message>
+    <message>
+        <source>You can also try checking your proxy settings in QGIS (Settings &gt; Options &gt; Network).</source>
+        <translation>También puede comprobar la configuración del proxy en QGIS (Configuración &gt; Opciones &gt; Red).</translation>
+    </message>
+    <message>
+        <source>Your network inspects secure connections and re-signs them with its own certificate, and that certificate is not in the computer&apos;s certificate store.</source>
+        <translation>Su red inspecciona las conexiones seguras y las vuelve a firmar con su propio certificado, que no está en el almacén de certificados del equipo.</translation>
+    </message>
+    <message>
+        <source>Your organization&apos;s security policy (application control, e.g. AppLocker or WDAC)
+is blocking the plugin&apos;s local AI environment.</source>
+        <translation>La política de seguridad de su organización (control de aplicaciones, p. ej., AppLocker o WDAC)
+está bloqueando el entorno de IA local del complemento.</translation>
+    </message>
+    <message>
+        <source>uv package installer ready</source>
+        <translation>Instalador de paquetes uv listo</translation>
+    </message>
+    <message>
+        <source>uv: ready</source>
+        <translation>uv: listo</translation>
+    </message>
+    <message>
+        <source>uv: unavailable, using pip</source>
+        <translation>uv: no disponible; usando pip</translation>
+    </message>
+    <message>
+        <source>{free_gb:.1f} GB free at {cache_dir}, under the {min_free_gb:.0f} GB the local model needs. Installing the Automatic packages only. Free up space and install again to turn Semi-Auto mode on.</source>
+        <translation>{free_gb:.1f} GB libres en {cache_dir}, menos de los {min_free_gb:.0f} GB que necesita el modelo local. Se instalarán solo los paquetes de Automático. Libere espacio e instale de nuevo para activar el modo Semi-Auto.</translation>
+    </message>
+    <message>
+        <source>{package} unavailable</source>
+        <translation>{package} no disponible</translation>
+    </message>
+    <message>
+        <source>{step}. The plugin builds it again from scratch.</source>
+        <translation>{step}. El complemento lo vuelve a crear desde cero.</translation>
+    </message>
+    <message>
+        <source>✓ All dependencies installed</source>
+        <translation>✓ Todas las dependencias instaladas</translation>
+    </message>
+    <message>
+        <source>✓ Automatic mode ready</source>
+        <translation>✓ Modo Automático listo</translation>
+    </message>
+    <message>
+        <source>✓ {package} installed</source>
+        <translation>✓ {package} instalado</translation>
+    </message>
+    <message>
+        <source>An old version is installed. Click Install to replace it.</source>
+        <translation>Hay una versión antigua instalada. Haga clic en Instalar para reemplazarla.</translation>
+    </message>
+    <message>
+        <source>Some AI components are missing. Click Install to complete them.</source>
+        <translation>Faltan algunos componentes de IA. Haga clic en Instalar para completarlos.</translation>
+    </message>
+    <message>
+        <source>The AI components are not installed. Click Install to add them.</source>
+        <translation>Los componentes de IA no están instalados. Haga clic en Instalar para añadirlos.</translation>
+    </message>
+    <message>
+        <source>The AI components are not ready. Click Install to set them up.</source>
+        <translation>Los componentes de IA no están listos. Haga clic en Instalar para configurarlos.</translation>
+    </message>
+    <message>
+        <source>The AI components did not load. Click Install to repair them.</source>
+        <translation>Los componentes de IA no se cargaron. Haga clic en Instalar para repararlos.</translation>
+    </message>
+    <message>
+        <source>The AI components did not pass the check. Click Install to repair them.</source>
+        <translation>Los componentes de IA no superaron la comprobación. Haga clic en Instalar para repararlos.</translation>
+    </message>
+    <message>
+        <source>The AI components need an update. The update starts now.</source>
+        <translation>Los componentes de IA necesitan una actualización. La actualización comienza ahora.</translation>
+    </message>
+    <message>
+        <source>The AI runtime is damaged. Click Install to repair it.</source>
+        <translation>El entorno de ejecución de IA está dañado. Haga clic en Instalar para repararlo.</translation>
+    </message>
+    <message>
+        <source>The AI workspace is missing. Click Install to build it.</source>
+        <translation>Falta el espacio de trabajo de IA. Haga clic en Instalar para crearlo.</translation>
+    </message>
+    <message>
+        <source>The last install did not finish. Click Install to start again.</source>
+        <translation>La última instalación no terminó. Haga clic en Instalar para empezar de nuevo.</translation>
+    </message>
+    <message>
+        <source>The on-device AI is not installed. Click Install to add it.</source>
+        <translation>La IA en el dispositivo no está instalada. Haga clic en Instalar para añadirla.</translation>
+    </message>
+    <message>
+        <source>Cannot close download file: {error}</source>
+        <translation>No se puede cerrar el archivo de descarga: {error}</translation>
+    </message>
+    <message>
+        <source>Cannot open download file: {error}</source>
+        <translation>No se puede abrir el archivo de descarga: {error}</translation>
+    </message>
+    <message>
+        <source>Cannot save download: {error}</source>
+        <translation>No se puede guardar la descarga: {error}</translation>
+    </message>
+    <message>
+        <source>Cannot write download file: {error}</source>
+        <translation>No se puede escribir en el archivo de descarga: {error}</translation>
+    </message>
+    <message>
+        <source>Download failed</source>
+        <translation>Error en la descarga</translation>
+    </message>
+    <message>
+        <source>the download did not finish in time</source>
+        <translation>la descarga no terminó a tiempo</translation>
+    </message>
+    <message>
+        <source>the download stalled, no data was received</source>
+        <translation>la descarga se detuvo, no se recibieron datos</translation>
     </message>
 </context>
 </TS>

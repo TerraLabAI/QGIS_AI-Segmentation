@@ -279,6 +279,55 @@ def _verify_uv_payload(content_bytes: bytes, asset_name: str) -> tuple[bool, str
     return True, ""
 
 
+def _apply_resolved_proxy() -> Callable[[], None] | None:
+    """Point this thread's network manager at the proxy the installer resolved.
+
+    The blocking request already honours a proxy configured inside QGIS. It
+    knows nothing about one that exists only in the environment or in the
+    machine's automatic configuration script, and that is how many company
+    networks publish theirs. This download is the first thing a first run
+    fetches, so on such a machine it is also the first thing to fail.
+
+    Only a worker thread is touched: that manager belongs to this download
+    alone, while the GUI thread's is the one the whole application uses.
+    Returns a callable that puts the previous setting back, or None when there
+    was nothing to change.
+    """
+    try:
+        from urllib.parse import urlparse
+
+        from qgis.core import QgsNetworkAccessManager
+        from qgis.PyQt.QtNetwork import QNetworkProxy
+
+        from .qt_compat import resolve_qt_enum
+        from .venv_network import _get_effective_proxy_url, _on_gui_thread
+
+        if _on_gui_thread():
+            return None
+        proxy_url = _get_effective_proxy_url()
+        if not proxy_url:
+            return None
+        parsed = urlparse(proxy_url)
+        if not parsed.hostname:
+            return None
+        nam = QgsNetworkAccessManager.instance()
+        previous = nam.proxy()
+        nam.setProxy(QNetworkProxy(
+            resolve_qt_enum(QNetworkProxy, "ProxyType", "HttpProxy"),
+            parsed.hostname,
+            parsed.port or 80,
+            parsed.username or "",
+            parsed.password or "",
+        ))
+        # Never log the URL itself: it can carry credentials.
+        _log("Routing the installer download through the configured proxy")
+        return lambda: nam.setProxy(previous)
+    except Exception as e:  # noqa: BLE001 - a direct attempt is the fallback
+        _log(f"Could not apply the resolved proxy: {type(e).__name__}",
+             Qgis.MessageLevel.Warning)
+        return None
+
+
 def download_uv(
     progress_callback: Callable[[int, str], None] | None = None,
     cancel_check: Callable[[], bool] | None = None
@@ -311,39 +360,45 @@ def download_uv(
     max_retries = 3
     err = None
     error_msg = ""
-    for attempt in range(max_retries):
-        if cancel_check and cancel_check():
-            return False, "Download cancelled"
+    restore_proxy = _apply_resolved_proxy()
+    try:
+        for attempt in range(max_retries):
+            if cancel_check and cancel_check():
+                return False, "Download cancelled"
 
-        request = QgsBlockingNetworkRequest()
-        net_req = QNetworkRequest(QUrl(url))
-        timeout_ms = resolved_download_timeout_ms()
-        if hasattr(net_req, "setTransferTimeout"):
-            net_req.setTransferTimeout(timeout_ms)
-        # The guard covers Cancel during the transfer, and the whole timeout
-        # below Qt 5.15, where setTransferTimeout does not exist.
-        with DownloadStallGuard(request, timeout_ms, cancel_check) as guard:
-            err = request.get(net_req)
-        if guard.aborted_reason == "cancelled":
-            return False, "Download cancelled"
+            request = QgsBlockingNetworkRequest()
+            net_req = QNetworkRequest(QUrl(url))
+            timeout_ms = resolved_download_timeout_ms()
+            if hasattr(net_req, "setTransferTimeout"):
+                net_req.setTransferTimeout(timeout_ms)
+            # The guard covers Cancel during the transfer, and the whole timeout
+            # below Qt 5.15, where setTransferTimeout does not exist.
+            with DownloadStallGuard(request, timeout_ms, cancel_check) as guard:
+                err = request.get(net_req)
+            if guard.aborted_reason == "cancelled":
+                return False, "Download cancelled"
 
-        if err == QgsBlockingNetworkRequest.ErrorCode.NoError:
-            break
+            if err == QgsBlockingNetworkRequest.ErrorCode.NoError:
+                break
 
-        error_msg = request.errorMessage()
-        if guard.aborted_reason == "stalled":
-            error_msg = "the download stalled, no data was received"
-        if attempt < max_retries - 1:
-            wait = 5 * (2 ** attempt)  # 5, 10s
-            _log(
-                f"uv download failed (attempt {attempt + 1}/{max_retries}): {error_msg}. "
-                f"Retrying in {wait}s...",
-                Qgis.MessageLevel.Warning
-            )
-            if progress_callback:
-                progress_callback(
-                    0, f"Network error, retrying in {wait}s...")
-            time.sleep(wait)
+            error_msg = request.errorMessage()
+            if guard.aborted_reason == "stalled":
+                error_msg = "the download stalled, no data was received"
+            if attempt < max_retries - 1:
+                wait = 5 * (2 ** attempt)  # 5, 10s
+                _log(
+                    f"uv download failed (attempt {attempt + 1}/{max_retries}): {error_msg}. "
+                    f"Retrying in {wait}s...",
+                    Qgis.MessageLevel.Warning
+                )
+                if progress_callback:
+                    progress_callback(
+                        0, f"Network error, retrying in {wait}s...")
+                time.sleep(wait)
+
+    finally:
+        if restore_proxy:
+            restore_proxy()
 
     if err != QgsBlockingNetworkRequest.ErrorCode.NoError:
         _log(f"uv download failed: {error_msg}", Qgis.MessageLevel.Warning)

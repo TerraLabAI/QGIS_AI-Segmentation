@@ -11,7 +11,9 @@ inside start/stop_log_collector, lazily.
 
 from __future__ import annotations
 
+import os
 import re
+import sys
 import threading
 from collections import deque
 from datetime import datetime
@@ -20,6 +22,48 @@ from datetime import datetime
 _log_buffer: deque[str] = deque(maxlen=100)
 _log_buffer_lock = threading.Lock()
 _log_collector_connected = False
+
+
+# Literal home patterns, built once. The /Users and /home shapes below only
+# catch a home directory that sits where the OS puts it by default. A corporate
+# profile redirected to another drive or another root carries the account name
+# just as plainly and matches none of them, so the home directory is replaced
+# by its own name first. The plugin cache root follows it, because an
+# environment variable can move that one anywhere too.
+_literal_home_res: list[re.Pattern[str]] | None = None
+
+
+def _literal_home_patterns() -> list[re.Pattern[str]]:
+    global _literal_home_res
+    if _literal_home_res is not None:
+        return _literal_home_res
+    flags = re.IGNORECASE if sys.platform == "win32" else 0
+    roots: list[str] = []
+    try:
+        roots.append(os.path.expanduser("~"))
+    except Exception:
+        pass  # nosec B110 - the shape patterns below still run
+    try:
+        from .cache_paths import PLUGIN_CACHE_DIR
+        roots.append(PLUGIN_CACHE_DIR)
+    except Exception:
+        pass  # nosec B110 - optional, the home root carries the usual case
+    patterns: list[re.Pattern[str]] = []
+    seen: set[str] = set()
+    for root in roots:
+        root = (root or "").rstrip("/\\")
+        # A one-character root would match half the text; "/" or "C:" is not a
+        # home directory worth hiding.
+        if len(root) < 4:
+            continue
+        for spelling in (root, root.replace("\\", "/")):
+            key = spelling.lower() if flags else spelling
+            if key in seen:
+                continue
+            seen.add(key)
+            patterns.append(re.compile(re.escape(spelling), flags))
+    _literal_home_res = patterns
+    return patterns
 
 
 def anonymize_paths(text: str) -> str:
@@ -35,6 +79,11 @@ def anonymize_paths(text: str) -> str:
     """
     if not text:
         return text
+
+    # The literal home and cache roots go first, so a redirected profile is
+    # covered before the shape patterns get their turn.
+    for pattern in _literal_home_patterns():
+        text = pattern.sub("<USER>", text)
 
     # The two POSIX patterns stay case-SENSITIVE. /Users and /home are fixed
     # case on disk and os.path.normcase is the identity there, so nothing

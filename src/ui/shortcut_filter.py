@@ -6,9 +6,19 @@ dock widget updates steal keyboard focus from the map canvas.
 """
 from __future__ import annotations
 
-from qgis.core import QgsPointXY
+from qgis.core import QgsPointXY, QgsVectorLayer
 from qgis.PyQt.QtCore import QEvent, QObject, Qt
-from qgis.PyQt.QtWidgets import QApplication, QDoubleSpinBox, QLineEdit, QPlainTextEdit, QSpinBox, QTextEdit
+from qgis.PyQt.QtWidgets import (
+    QApplication,
+    QDoubleSpinBox,
+    QLineEdit,
+    QMessageBox,
+    QPlainTextEdit,
+    QSpinBox,
+    QTextEdit,
+)
+
+from ..core.i18n import tr
 
 
 class ShortcutFilter(QObject):
@@ -61,7 +71,7 @@ class ShortcutFilter(QObject):
         if key == Qt.Key.Key_Delete or (key == Qt.Key.Key_Backspace and ctrl):
             return True
         if key == Qt.Key.Key_Z and ctrl:
-            return True
+            return not self._vector_edit_owns_undo()
         if key == Qt.Key.Key_Backspace and not modifiers:
             return True
         blocking = Qt.KeyboardModifier.ControlModifier
@@ -72,6 +82,50 @@ class ShortcutFilter(QObject):
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Escape):
             return not self._automatic_flow_owns_keys()
         return False
+
+    def _vector_edit_owns_undo(self) -> bool:
+        """True when QGIS's own undo has an edit of its own to give back.
+
+        This filter sits on the main window, so it takes Ctrl+Z before the
+        vector layer the user is editing ever sees it. While a segmentation
+        session is armed that is right for the clicks, and wrong for a layer
+        in edit mode: the press belongs to whoever has something to undo, and
+        an editable layer with a filled stack has.
+        """
+        try:
+            layer = self._plugin.iface.activeLayer()
+            if not isinstance(layer, QgsVectorLayer) or not layer.isEditable():
+                return False
+            stack = layer.undoStack()
+            return stack is not None and stack.canUndo()
+        except (RuntimeError, AttributeError):
+            return False
+
+    def _confirm_export_and_end(self) -> bool:
+        """Ask before Enter exports the session away, when work is still open.
+
+        Enter both exports and ends the session, and the keyboard is the one
+        way in with no button and no confirmation behind it. An object still
+        being clicked is not in the export, so a stray press used to end the
+        session and take it with it.
+        """
+        plugin = self._plugin
+        live = getattr(plugin, "current_mask", None) is not None
+        live = live or getattr(plugin, "_unfrozen_display_polygon", None) is not None
+        live = live or bool(getattr(plugin, "_frozen_sessions", None))
+        if not live:
+            return True
+        reply = QMessageBox.warning(
+            plugin.iface.mainWindow(),
+            tr("Export now?"),
+            "{}\n\n{}".format(
+                tr("The object you are working on is not saved yet, so it "
+                   "will not be in the layer."),
+                tr("Export what you saved and end this session?")),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return reply == QMessageBox.StandardButton.Yes
 
     def _end_lost_space_pan(self) -> None:
         """End a Space pan whose KeyRelease will never arrive.
@@ -163,6 +217,8 @@ class ShortcutFilter(QObject):
         modifiers = event.modifiers()
 
         if key == Qt.Key.Key_Z and modifiers & Qt.KeyboardModifier.ControlModifier:
+            if self._vector_edit_owns_undo():
+                return False
             plugin._on_undo()
             return True
         # Delete the active (open-for-editing) object: Delete, or Ctrl/Cmd+Backspace (the
@@ -226,7 +282,8 @@ class ShortcutFilter(QObject):
             if plugin._edit_selected_saved_polygon():
                 return True
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            plugin._on_export_layer()
+            if self._confirm_export_and_end():
+                plugin._on_export_layer()
             return True
         if key == Qt.Key.Key_Escape:
             # Selection-first: Esc clears the selection before it ever means

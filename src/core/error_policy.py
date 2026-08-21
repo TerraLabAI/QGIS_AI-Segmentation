@@ -36,6 +36,9 @@ TRANSIENT_CODES = ServerDialSet(
         "NO_INTERNET", "TIMEOUT", "DNS_ERROR", "PROXY_ERROR",
         "SSL_ERROR", "SERVER_ERROR", "CONNECTION_REFUSED",
         "SERVICE_WARMING",
+        # The backend could not READ the quota (envelope rollup blip), a 503
+        # that says "retry shortly". A real refusal is its own 403 code.
+        "QUOTA_CHECK_FAILED",
     },
     normalize=str.upper,
 )
@@ -63,7 +66,11 @@ BACKEND_UNAVAILABLE_CODES = ServerDialSet(
 # only its own tile.
 RUN_FATAL_CODES = ServerDialSet(
     "errors.fatal_extra",
-    {"AUTH_ERROR", "INVALID_KEY", "SUBSCRIPTION_INACTIVE"},
+    # DEVICE_LIMIT_EXCEEDED is a refusal of the whole account, not of one tile:
+    # left out, the worker read it as a tile fault and burned its retry budget
+    # against a wall five times before giving up.
+    {"AUTH_ERROR", "INVALID_KEY", "SUBSCRIPTION_INACTIVE",
+     "DEVICE_LIMIT_EXCEEDED"},
     normalize=str.upper,
 )
 
@@ -85,7 +92,8 @@ REPORTABLE_ERROR_CLASSES = ServerDialSet(
 # anything else is dropped, so the configuration can re-route a failure but can
 # never hand the UI a class it has no branch for.
 RUN_ERROR_CLASSES = frozenset({
-    "NETWORK", "AUTH", "CREDITS_EXHAUSTED", "SERVER", "CANCELLED", "TIMEOUT", "UNKNOWN",
+    "NETWORK", "AUTH", "CREDITS_EXHAUSTED", "SERVER", "CANCELLED", "TIMEOUT",
+    "DEVICE_LIMIT", "UNKNOWN",
 })
 
 # A served rule list is a handful of short markers. These caps are what stops a
@@ -181,6 +189,11 @@ def _shipped_error_class(low: str) -> str:
         or "503" in low
     ):
         return "SERVER"
+    # The license is on too many computers. Read before the auth scan, because
+    # the refusal is a 403 and the code carries no "auth" of its own: as UNKNOWN
+    # it offered a bug-report link for something the user can fix in a minute.
+    if "device_limit_exceeded" in low or "device limit" in low:
+        return "DEVICE_LIMIT"
     # A fault on our own side, marked by the worker's last-resort net. Qt
     # exception text names the class it failed on, and a reply class name
     # carries the word "network", so the connectivity scan below would tell a

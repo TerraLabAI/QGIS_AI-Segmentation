@@ -18,6 +18,7 @@ from .model_config import (
     CHECKPOINT_URL,
     USE_SAM2,
 )
+from .qt_compat import NoLessSafeRedirectPolicy, RedirectPolicyAttribute
 
 CHECKPOINTS_DIR = os.path.join(PLUGIN_CACHE_DIR, "checkpoints")
 FEATURES_DIR = os.path.join(PLUGIN_CACHE_DIR, "features")
@@ -220,6 +221,20 @@ def download_cancel_requested() -> bool:
     return _cancel_requested
 
 
+def _consume_download_cancel() -> bool:
+    """True when a cancel was pending, and clear it on the way out.
+
+    The flag has to be cleared where it is acted on. Left armed, it stops the
+    next download too: the user presses Cancel, then Install again, and the
+    second run ends before it starts with nothing on screen to explain it.
+    """
+    global _cancel_requested
+    if not _cancel_requested:
+        return False
+    _cancel_requested = False
+    return True
+
+
 def _wait_or_cancel(seconds: float) -> bool:
     """Sleep in short slices, returning False as soon as a cancel arrives.
 
@@ -319,6 +334,25 @@ def _remove_with_retry(path: str, max_attempts: int | None = None,
     return False
 
 
+def _adopt_legacy_partial(legacy_path: str, temp_path: str) -> None:
+    """Carry a partial left by an older version into the name used to resume.
+
+    The partial is named after the digest it is being fetched for. One written
+    before it carried that name would otherwise sit on disk untouched while
+    the whole file came down again. What it actually holds is settled by the
+    checksum at the end, exactly like any other resumed download.
+    """
+    if os.path.exists(temp_path) or not os.path.exists(legacy_path):
+        return
+    try:
+        os.replace(legacy_path, temp_path)
+    except OSError:
+        return  # nosec B110 -- a partial that will not move only costs time
+    QgsMessageLog.logMessage(
+        "Resuming a partial model download left by an earlier version",
+        "AI Segmentation", level=Qgis.MessageLevel.Info)
+
+
 def _discard_partial_download(temp_path: str) -> None:
     """Drop a partial download so the next attempt starts from zero.
 
@@ -359,7 +393,6 @@ def download_checkpoint(
     _cancel_requested = False
 
     checkpoint_path = get_checkpoint_path()
-    temp_path = checkpoint_path + ".tmp"
 
     if checkpoint_exists():
         QgsMessageLog.logMessage(
@@ -394,7 +427,13 @@ def download_checkpoint(
         checkpoint_max_retries,
     )
 
-    download_url, _expected_sha256, mirrors = resolved_checkpoint()
+    download_url, expected_sha256, mirrors = resolved_checkpoint()
+    # The partial download carries the digest it is being fetched for. A
+    # served change of file leaves the old partial on disk under the old
+    # name, so the resume cannot append the new file onto the old bytes and
+    # hand the user a mixture that fails its checksum for good.
+    temp_path = f"{checkpoint_path}.{expected_sha256[:12]}.tmp"
+    _adopt_legacy_partial(f"{checkpoint_path}.tmp", temp_path)
     # The primary address first, then any mirror, one per attempt. A mirror
     # serves the same file, so the digest check after the download is what
     # decides, exactly as before.
@@ -404,9 +443,19 @@ def download_checkpoint(
     hard_timeout_ms = checkpoint_hard_timeout_ms(DOWNLOAD_HARD_TIMEOUT_MS)
     last_error = ""
 
+    digest_mismatches = 0
+    # Addresses that answered "not there" or "not for you". A refusal belongs
+    # to the address that gave it, not to the file, so the others are still
+    # worth asking.
+    refused_urls: set[str] = set()
+
     for attempt in range(1, max_retries + 1):
-        if _cancel_requested:
+        if _consume_download_cancel():
             return False, DOWNLOAD_CANCELLED_MESSAGE
+
+        # The address this attempt uses, read before anything can fail: the
+        # refusal branch below has to know which one answered.
+        attempt_url = download_urls[(attempt - 1) % len(download_urls)]
 
         # Check for existing partial download to resume
         resume_offset = 0
@@ -530,8 +579,12 @@ def download_checkpoint(
 
         try:
             manager = QgsNetworkAccessManager.instance()
-            qurl = QUrl(download_urls[(attempt - 1) % len(download_urls)])
+            qurl = QUrl(attempt_url)
             request = QNetworkRequest(qurl)
+            # Follow a redirect, as long as it does not downgrade the
+            # connection. Without this the request comes back as a 30x with an
+            # empty body, which the checksum then rejects as a corrupt file.
+            request.setAttribute(RedirectPolicyAttribute, NoLessSafeRedirectPolicy)
 
             # Resume from partial download using HTTP Range header
             if resume_offset > 0:
@@ -620,7 +673,7 @@ def download_checkpoint(
             cancel_timer.stop()
             download_state["idle_timer"] = None
 
-            if _cancel_requested:
+            if _consume_download_cancel():
                 # Every step here must survive a half-torn-down QGIS: the
                 # partial file stays on disk so a later run can resume it.
                 try:
@@ -653,8 +706,9 @@ def download_checkpoint(
                     _wait_or_cancel(min(5 * (2 ** (attempt - 1)), 120))
                 continue
 
-            # Check if server returned 416 (range not satisfiable)
             status_code = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
+
+            # Server returned 416 (range not satisfiable)
             if status_code == 416:
                 if download_state["file"] is not None:
                     download_state["file"].close()
@@ -673,6 +727,7 @@ def download_checkpoint(
                             _wait_or_cancel(min(5 * (2 ** (attempt - 1)), 120))
                         continue
                     if not finalized:
+                        _consume_download_cancel()
                         return False, DOWNLOAD_CANCELLED_MESSAGE
                     if progress_callback:
                         progress_callback(100, "Checkpoint downloaded successfully!")
@@ -699,6 +754,35 @@ def download_checkpoint(
                 if download_state["file"] is not None:
                     download_state["file"].close()
                 download_state["file"] = None
+                # An answer of "not there" or "not for you" is final. Waiting
+                # and asking again gets the same answer, and the ladder of
+                # backoffs spends over a minute doing it before the user is
+                # told anything.
+                if status_code in (403, 404, 410):
+                    _discard_partial_download(temp_path)
+                    refused_urls.add(attempt_url)
+                    refusal = {
+                        403: "the server refused access to the model file",
+                        404: "the model file is not at that address",
+                        410: "the model file has been removed from that address",
+                    }[status_code]
+                    if len(refused_urls) < len(download_urls):
+                        # Another address serves the same file, and the digest
+                        # check after the download decides either way. Only
+                        # once they have all refused is the answer final.
+                        QgsMessageLog.logMessage(
+                            f"Model download: {refusal} (HTTP {status_code}); "
+                            "trying another address",
+                            "AI Segmentation", level=Qgis.MessageLevel.Warning)
+                        continue
+                    QgsMessageLog.logMessage(
+                        f"Model download stopped: {refusal} (HTTP {status_code})",
+                        "AI Segmentation", level=Qgis.MessageLevel.Critical)
+                    return False, (
+                        f"Model download failed: {refusal}. Retrying will not "
+                        "help. Update the plugin, or ask your IT administrator "
+                        "whether the download is being filtered."
+                    )
                 if attempt < max_retries:
                     wait = min(5 * (2 ** (attempt - 1)), 120)
                     if progress_callback:
@@ -737,11 +821,32 @@ def download_checkpoint(
                     "AI Segmentation", level=Qgis.MessageLevel.Warning)
                 _discard_partial_download(temp_path)
                 last_error = "Download verification failed - hash mismatch"
+                declared_total = download_state.get("bytes_total") or 0
+                base = download_state["resume_offset"]
+                if declared_total <= 0 or file_size >= base + declared_total:
+                    # A response that ran to the end and still does not match
+                    # says the bytes themselves are wrong. A host that names no
+                    # length counts the same way: the reply finished, and
+                    # nothing else here can tell it from a complete one.
+                    digest_mismatches += 1
+                else:
+                    # A short file is a cut connection, which is worth another
+                    # attempt.
+                    digest_mismatches = 0
+                if digest_mismatches >= 2:
+                    return False, (
+                        "The model file arrived complete twice and did not "
+                        "match its checksum either time. Something between "
+                        "this computer and the download is altering the file, "
+                        "usually a proxy or a security appliance. Ask your IT "
+                        "administrator to let the download through untouched."
+                    )
                 if attempt < max_retries:
                     _wait_or_cancel(min(5 * (2 ** (attempt - 1)), 120))
                 continue
 
             if not _replace_with_retry(temp_path, checkpoint_path):
+                _consume_download_cancel()
                 return False, DOWNLOAD_CANCELLED_MESSAGE
 
             # Clean up old SAM1 checkpoint if present (only on SAM2 path)

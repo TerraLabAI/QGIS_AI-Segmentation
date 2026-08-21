@@ -96,8 +96,8 @@ class DockAutoFlowStepsMixin:
         # Leaving the flow retires the free-trial zone-cap message.
         self.set_auto_zone_rejected(None)
         self.set_auto_exhausted_subscribe_visible(False)
-        # No zone left to price, so the credit-block callout goes with it.
-        self.set_auto_credit_block(None)
+        # No zone left to price, so the surface and its wall go with it.
+        self.set_auto_zone_surface(None)
         # Clear any leftover run status ("Saved N polygon(s) to ...") so it never
         # lingers on the Start / prompt page of the next run.
         self.set_auto_status("idle")
@@ -115,7 +115,6 @@ class DockAutoFlowStepsMixin:
         # it with the box.
         self._last_committed_prompt = None
         self._boost_nudge_tracked = None
-        self._auto_prompt_valid = False
         # Leaving the flow retires any in-flight commit-time prompt lookup, so
         # a late answer can never re-fire a detection on a flow that is gone.
         self._abandon_prompt_lookup()
@@ -230,9 +229,8 @@ class DockAutoFlowStepsMixin:
             # No zone = no per-zone estimate; drop the stale cost label AND the
             # cached estimate/gate so neither lingers from the previous zone.
             self._auto_est_credits = None
-            self._auto_insufficient_credits = False
+            self.set_auto_zone_surface(None)
             self.auto_credit_cost_label.setVisible(False)
-            self.set_auto_credit_block(None)
         elif state == "zone_set":
             # A drawn zone completes step 2.
             self._go_to_auto_step(2)

@@ -6,6 +6,8 @@ plain mixin members: state lives on the plugin instance (self).
 """
 from __future__ import annotations
 
+from typing import Callable
+
 from qgis.core import (
     Qgis,
     QgsCoordinateReferenceSystem,
@@ -39,8 +41,7 @@ _CANCEL_WATCHDOG_MS = 5000
 # cannot catch is the network CALL itself blocking forever (a half-open socket,
 # a reply that never signals finished): the loop is stuck INSIDE the call and
 # cannot self-check, so no terminal signal ever fires and the run shows forever
-# progress. A field report had two 100-tile runs do exactly this. This
-# main-thread timer watches the age of the last progress; if a run makes no
+# progress. This main-thread timer watches the age of the last progress; if a run makes no
 # progress for the timeout it forces a terminal, salvaging billed partials into
 # the review. The timeout is server-tunable (network.stall_timeout_s); this is
 # the generic client fallback.
@@ -51,6 +52,16 @@ _STALL_CHECK_INTERVAL_MS = 5000    # main-thread poll cadence
 # timeout on purpose: five minutes of silence is a hang to the person watching
 # it, whatever the code knows. Server-tunable (network.slow_notice_s).
 _SLOW_NOTICE_S = 20.0
+
+# How often the headless path asks its caller whether the user cancelled. The
+# caller sits inside a blocking event loop, so this timer is the only thing that
+# can hear a Cancel pressed outside the panel (a Processing dialog, a script).
+# Short enough that the click feels answered, long enough to cost nothing.
+_HEADLESS_CANCEL_POLL_MS = 250
+# After the cancel is asked for, how long the headless path waits for the run to
+# wind down and hand back what it salvaged. The soft cancel is cooperative and
+# has its own watchdog (_CANCEL_WATCHDOG_MS), so this window sits past it.
+_HEADLESS_CANCEL_GRACE_MS = _CANCEL_WATCHDOG_MS * 3
 
 
 class AutoRunMixin:
@@ -242,6 +253,49 @@ class AutoRunMixin:
         # but this call site knows the answer and should not depend on that.
         self._on_install_requested(include_local_model=False)
 
+    def _push_auto_warning(self, message: str) -> None:
+        """Message bar warning for an interactive run only.
+
+        A headless caller has nobody watching the bar and its contract is a run
+        that leaves no UI behind, so it reads the same sentence back from
+        ``_headless_error`` instead.
+        """
+        if self._auto_headless_run:
+            return
+        try:
+            self.iface.messageBar().pushWarning("AI Segmentation", message)
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _probe_imagery_behind_banner(self, layer, grid) -> str | None:
+        """The imagery probe, with its wait explained on screen.
+
+        The probe renders a window and waits on the answer, so on a slow link
+        it is several seconds where the panel says nothing and the click reads
+        as ignored. Raise the preparing banner for the wait and take it back
+        down, so no path below inherits a banner it did not put up. The verdict
+        is the probe's own, unchanged.
+        """
+        banner = None
+        if not self._auto_headless_run and self.dock_widget is not None:
+            try:
+                banner = self.dock_widget.auto_status_banner
+                banner.setText(tr("Preparing your zone..."))
+                banner.setVisible(True)
+            except (RuntimeError, AttributeError):
+                banner = None
+        if banner is not None:
+            from qgis.PyQt.QtWidgets import QApplication
+            QApplication.processEvents()
+        try:
+            return self._online_imagery_probe_message(layer, grid)
+        finally:
+            if banner is not None:
+                try:
+                    banner.setVisible(False)
+                except RuntimeError:
+                    pass
+
     def _start_auto_detection(self) -> None:
         """Start an automatic cloud detection run for the current zone + layer.
 
@@ -253,14 +307,28 @@ class AutoRunMixin:
         """
         import uuid as _uuid
 
-        # Reset MCP result so callers waiting on QEventLoop get a fresh status.
-        self._last_auto_result = None
-
         from ...core.activation_manager import get_auth_header, is_plugin_activated
         from .shared import max_tiles_per_run_cap
 
+        # The last result is NOT cleared here. Every guard below returns
+        # without starting anything, and a caller polling auto_detect_status()
+        # would then read a blank where the previous run's result still stands.
+        # _launch_auto_worker clears it, because that is the one point past
+        # which a new run really is starting.
+
         if not self.dock_widget:
+            # The panel holds the prompt, the detail and the layer, so there is
+            # nothing to run from. Name it: a headless caller reads this field
+            # and otherwise gets only a generic "did not start".
+            self._headless_error = tr(
+                "The AI Segmentation panel is closed, so there is nothing to "
+                "detect from. Open it and try again.")
             return
+
+        # The identical-re-run note belongs to the run that finished, not to
+        # the one being asked for. Dropped here so a start that a guard below
+        # refuses cannot leave the previous run's signature standing.
+        self._auto_last_run_sig = None
 
         # Automatic reads the raster and decodes masks in process, so it needs
         # the venv's numpy even though inference is remote. A missing or broken
@@ -289,7 +357,10 @@ class AutoRunMixin:
                 f"Auto detection: local packages unavailable ({err})",
                 "AI Segmentation", level=Qgis.MessageLevel.Critical,
             )
-            self._offer_automatic_setup(deps_msg)
+            # The offer is a modal window: a headless caller has nobody to
+            # answer it and would block on it until its own timeout.
+            if not self._auto_headless_run:
+                self._offer_automatic_setup(deps_msg)
             return
 
         # Guard: a worker is still alive (running, or a cancelled one winding
@@ -297,6 +368,14 @@ class AutoRunMixin:
         # silently swallowing the click.
         if self._auto_worker is not None and self._auto_worker.isRunning():
             self._tel_detect_blocked("worker_busy")
+            # A headless caller reads this field for the reason. Without it the
+            # second call used to fall through to the worker of the run already
+            # in flight, block on it, and report ITS instances, credits and
+            # layer as its own.
+            self._headless_error = tr(
+                "A zone detection is already running. Wait for it to finish, "
+                "or stop it, before starting another."
+            )
             if self.dock_widget:
                 try:
                     self.dock_widget.auto_status_banner.setText(
@@ -324,6 +403,8 @@ class AutoRunMixin:
         layer = self._get_active_raster_layer()
         if layer is None:
             self._tel_detect_blocked("no_layer")
+            self._headless_error = tr(
+                "Pick a raster layer at the top of the panel first.")
             QgsMessageLog.logMessage(
                 "Auto detection: no raster layer selected",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
@@ -342,7 +423,8 @@ class AutoRunMixin:
                 self.dock_widget.set_auto_status("error", guard_msg)
             except (RuntimeError, AttributeError):
                 pass
-            self.iface.messageBar().pushWarning("AI Segmentation", guard_msg)
+            self._headless_error = guard_msg
+            self._push_auto_warning(guard_msg)
             QgsMessageLog.logMessage(
                 "Auto detection: raster shape guard blocked the run",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
@@ -357,6 +439,7 @@ class AutoRunMixin:
         # Auth check.
         if not is_plugin_activated():
             self._tel_detect_blocked("not_activated")
+            self._headless_error = tr("Sign in to run Automatic.")
             QgsMessageLog.logMessage(
                 "Auto detection: plugin not activated",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
@@ -367,15 +450,16 @@ class AutoRunMixin:
         from ...core.activation_manager import is_automatic_mode_enabled
         if not is_automatic_mode_enabled():
             self._tel_detect_blocked("kill_switch")
-            self.iface.messageBar().pushWarning(
-                "AI Segmentation",
-                tr("Automatic detection is temporarily unavailable. Please try again later."),
-            )
+            kill_msg = tr(
+                "Automatic detection is temporarily unavailable. Please try again later.")
+            self._headless_error = kill_msg
+            self._push_auto_warning(kill_msg)
             return
 
         auth = get_auth_header()
         if not auth:
             self._tel_detect_blocked("no_auth")
+            self._headless_error = tr("Sign in to run Automatic.")
             QgsMessageLog.logMessage(
                 "Auto detection: no auth token available",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
@@ -404,12 +488,16 @@ class AutoRunMixin:
                         self.dock_widget.set_auto_status("info", msg)
                     except (RuntimeError, AttributeError):
                         pass
-                self.iface.messageBar().pushWarning("AI Segmentation", msg)
+                self._headless_error = msg
+                self._push_auto_warning(msg)
                 QgsMessageLog.logMessage(
                     "Auto detection: online layer requires a zone; aborting",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning,
                 )
             else:
+                self._headless_error = tr(
+                    "Could not read the pixel grid of this raster. Check the "
+                    "layer opens and shows in QGIS, then try again.")
                 QgsMessageLog.logMessage(
                     "Auto detection: could not compute pixel grid for layer",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning,
@@ -454,7 +542,7 @@ class AutoRunMixin:
                     self.dock_widget.set_auto_status("error", msg)
                 except (RuntimeError, AttributeError):
                     pass
-                self.iface.messageBar().pushWarning("AI Segmentation", msg)
+                self._push_auto_warning(msg)
                 QgsMessageLog.logMessage(
                     "Auto detection: zone does not intersect layer extent; aborting",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning,
@@ -466,6 +554,13 @@ class AutoRunMixin:
         # the probe just below.
         self._auto_source_is_online = self._needs_canvas_render(layer)
 
+        # The project's datum-transform table, read HERE on the main thread and
+        # handed to the worker with the rest of the run state. QgsProject is not
+        # thread-safe and the worker must never touch it, so reading it from the
+        # worker thread was a real race on a singleton the user can change from
+        # the GUI mid-run.
+        self._auto_transform_context = self._read_project_transform_context()
+
         # Imagery probe: an online source that holds no picture of this ground
         # at this detail does not fail, it answers with a grey "no image here"
         # card. Rendered, that card is real pixels, so without this the run
@@ -474,7 +569,7 @@ class AutoRunMixin:
         # it before any billable work, and warms the provider cache for the
         # first real tile. Fail OPEN: only a positively recognised card stops
         # the run.
-        probe_msg = self._online_imagery_probe_message(layer, grid)
+        probe_msg = self._probe_imagery_behind_banner(layer, grid)
         if probe_msg is not None:
             # No detect_blocked telemetry yet: its reason enum is owned by the
             # website registry, and a value has to land there before the plugin
@@ -484,7 +579,7 @@ class AutoRunMixin:
                 self.dock_widget.set_auto_status("error", probe_msg)
             except (RuntimeError, AttributeError):
                 pass
-            self.iface.messageBar().pushWarning("AI Segmentation", probe_msg)
+            self._push_auto_warning(probe_msg)
             QgsMessageLog.logMessage(
                 "Auto detection: the layer serves no imagery at this detail over "
                 "the zone; aborting before billing",
@@ -496,44 +591,51 @@ class AutoRunMixin:
         # (exemplar crops are stamped per tile by the worker, see _launch).
         tiles = self._tile_manager.compute_grid(pixel_w, pixel_h)
         if tiles is not None:
-            # Cull tiles outside the drawn polygon: empty ground is never
-            # rendered, sent, or billed (no-op for the rectangle/MCP path).
+            # Cull tiles outside the drawn polygon or off the raster's own
+            # extent: empty ground is never rendered, sent, or billed.
             before = len(tiles)
-            tiles = self._tiles_in_polygon(tiles, geo_bbox, pixel_w, pixel_h, layer)
+            tiles = self._tiles_in_polygon(
+                tiles, geo_bbox, pixel_w, pixel_h, layer, grid.get("crs"))
             if len(tiles) != before:
                 QgsMessageLog.logMessage(
-                    f"Auto detection: polygon culled {before - len(tiles)} of {before} tiles",
+                    f"Auto detection: zone cull kept {len(tiles)} of {before} tiles",
                     "AI Segmentation", level=Qgis.MessageLevel.Info,
                 )
         if tiles is None:
+            from .shared import zone_too_large_message
+            self._headless_error = zone_too_large_message(max_tiles_per_run_cap())
             QgsMessageLog.logMessage(
                 f"Auto detection: zone too large (exceeds {max_tiles_per_run_cap()} tiles)",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
             )
             return
 
-        # Hard credit re-gate: the UI's Detect gate runs on a ~130ms cost
-        # debounce, so a quick zone/detail change can leave Detect live for a
-        # grid that now over-spends. Re-check the REAL culled tile count against
-        # the same balance the UI gate uses (set_auto_credit_estimate) and abort
-        # before any billable setup, re-showing that gate's red cost line. The
-        # headless/MCP path has no dock gate and manages its own budget.
-        if not self._auto_headless_run:
-            from ...core.credit_gate import run_affordable
-
-            balance, _is_free = self._auto_credit_snapshot()
-            # credit_gate.run_affordable owns the boundary: blocked only when
-            # the culled tile count STRICTLY exceeds the balance (== is allowed).
-            if not run_affordable(len(tiles), balance):
+        # Hard surface re-gate: the UI's Detect gate runs on a ~130ms cost
+        # debounce, so a quick zone change can leave Detect live over a zone
+        # the month no longer covers. Re-measure the billable surface against
+        # the envelope the panel reads and abort before any billable setup,
+        # re-showing the panel's own wall. It gates in km2, not in tiles: the
+        # bill follows the surface and never the grid, so a tile count judged
+        # against a credit balance refused runs that fitted the month easily.
+        # The headless/MCP path has no dock gate and manages its own budget.
+        if not self._auto_headless_run and self.dock_widget is not None:
+            try:
+                left_km2 = self.dock_widget._auto_km2_left()
+            except (RuntimeError, AttributeError):
+                left_km2 = None
+            zone_km2 = self._auto_zone_area_km2()
+            # Unknown envelope fails open: the server enforces it, and a gate
+            # that fires on a figure we never received refuses a run the
+            # account could pay for.
+            if left_km2 is not None and zone_km2 > 0 and zone_km2 > left_km2:
                 self._tel_detect_blocked("cost_over_balance")
-                if self.dock_widget:
-                    try:
-                        self.dock_widget.set_auto_credit_estimate(len(tiles))
-                    except (RuntimeError, AttributeError):
-                        pass
+                try:
+                    self.dock_widget.set_auto_zone_surface(zone_km2)
+                except (RuntimeError, AttributeError):
+                    pass
                 QgsMessageLog.logMessage(
-                    f"Auto detection: {len(tiles)} tiles exceed the {int(balance)} credit balance; "
-                    "aborting before billing",
+                    f"Auto detection: zone of {zone_km2:.2f} km2 over the "
+                    f"{left_km2:.2f} km2 left this month; aborting before billing",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning,
                 )
                 return
@@ -645,7 +747,8 @@ class AutoRunMixin:
                 self.dock_widget.set_auto_status("error", msg)
             except (RuntimeError, AttributeError):
                 pass
-            self.iface.messageBar().pushWarning("AI Segmentation", msg)
+            self._headless_error = msg
+            self._push_auto_warning(msg)
             QgsMessageLog.logMessage(
                 "Auto detection: empty prompt and no exemplars; aborting before "
                 "any credit is spent",
@@ -656,23 +759,23 @@ class AutoRunMixin:
             return
 
         # Floor guard (single source of truth: detect_gate.can_detect, a
-        # NON-EMPTY query): belt-and-braces behind the empty-query guard
+        # TYPED PROMPT): belt-and-braces behind the empty-query guard
         # above, and the one gate the headless/MCP path reads (via
         # _headless_error). Blocks BEFORE any billable call.
         from ...core.detect_gate import can_detect
         positives = self._auto_exemplar_store.positives()
         if not can_detect(bool(prompt), positives):
-            msg = tr("Draw an example, or type what to find.")
+            msg = tr("Type what to find first. An example is optional.")
             try:
                 self.dock_widget.set_auto_run_active(False)
                 self.dock_widget.set_auto_status("error", msg)
             except (RuntimeError, AttributeError):
                 pass
             self._headless_error = msg
-            self.iface.messageBar().pushWarning("AI Segmentation", msg)
+            self._push_auto_warning(msg)
             QgsMessageLog.logMessage(
-                "Auto detection: empty query (no prompt, no positive "
-                "example); aborting before any credit is spent",
+                "Auto detection: no prompt; aborting before any credit "
+                "is spent",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
             )
             self._auto_gsd = 0.0
@@ -699,7 +802,8 @@ class AutoRunMixin:
                     self.dock_widget.set_auto_status("error", msg)
                 except (RuntimeError, AttributeError):
                     pass
-                self.iface.messageBar().pushWarning("AI Segmentation", msg)
+                self._headless_error = msg
+                self._push_auto_warning(msg)
                 self._auto_gsd = 0.0
                 self._auto_run_id = None
                 return
@@ -750,7 +854,8 @@ class AutoRunMixin:
                     self.dock_widget.set_auto_status("error", msg)
                 except (RuntimeError, AttributeError):
                     pass
-                self.iface.messageBar().pushWarning("AI Segmentation", msg)
+                self._headless_error = msg
+                self._push_auto_warning(msg)
                 QgsMessageLog.logMessage(
                     "Auto detection (exemplar): all example renders failed; "
                     "aborting before any credit is spent",
@@ -891,6 +996,12 @@ class AutoRunMixin:
             (TILE_SIZE * self._auto_gsd) ** 2
             if self._auto_retain_raw and self._auto_gsd > 0 else 0.0)
         self._auto_manual_removed = set()
+        # Both other per-object carry-overs go with it: a removal made in the
+        # last review, and the ids of the objects that review drew by hand.
+        # Left standing they filter THIS run's objects, whose indices mean
+        # something else entirely.
+        self._auto_correction_removed = set()
+        self._auto_manual_object_ids = set()
         # CRS/GSD are known here from the render; do not reset them (a stale
         # reset to 0.0 here used to disable GSD-relative edge refinement).
         self._auto_crs_authid = crs_authid
@@ -967,9 +1078,12 @@ class AutoRunMixin:
         # detail and example count would return the same masks and only spend
         # credits, so _refresh_rerun_guard flags it before launch. Advisory
         # only, never blocks (the iterate-until-right path is a real one).
-        self._auto_last_run_sig = (
-            prompt, self._get_auto_detail_level(),
-            self._auto_exemplar_store.count())
+        from .shared import AutoRerunSignature, auto_rerun_scope
+        self._auto_last_run_sig = AutoRerunSignature(
+            self,
+            (prompt, self._get_auto_detail_level(),
+             self._auto_exemplar_store.count()),
+            auto_rerun_scope(self))
 
         # exemplar_stamps was pre-rendered above (before run setup) so a render
         # failure aborts cleanly instead of billing a misleading text-only run;
@@ -1039,9 +1153,9 @@ class AutoRunMixin:
             # Send the low recall floor so the server returns every plausible
             # mask; the client keeps them all (scored) and filters at
             # _auto_confidence, so the review slider re-filters with no re-run.
-            # Exemplar-only runs (no text prior) use a higher floor: at 0.10
-            # they flooded the run with low-confidence context blobs. Resolved
-            # above from the policy getter / run plan.
+            # A run with no word to go on uses a higher floor, so the context
+            # around the example does not come back as objects. Resolved above
+            # from the policy getter / run plan.
             detection_threshold=detection_threshold,
             exemplar_stamps=exemplar_stamps,
             # Resolved once with the run merger above; the worker's per-tile
@@ -1093,6 +1207,7 @@ class AutoRunMixin:
                 # aggregation clean across locales.
                 object_class=prompt or "Example match",
                 detail=self._get_auto_detail_level(),
+                detail_seeded=getattr(self, "_auto_detail_seeded", None),
                 exemplar_count=self._auto_exemplar_store.count(),
                 est_credits=len(tiles),
                 credits_before=credits_before,
@@ -1204,10 +1319,13 @@ class AutoRunMixin:
     def _build_auto_client_meta(self) -> dict:
         """The run's optional per-run provenance + benchmark fields for the
         worker: which client build and policy revision produced the run, the
-        client's map-vs-count read of the prompt, and the drawn zone as a
-        GeoJSON geometry in the run CRS. Every value is best-effort; a missing
+        client's map-vs-count read of the prompt, the drawn zone as a GeoJSON
+        geometry in the run CRS, its geodesic area in km2, and the run's ground
+        resolution in meters per pixel. Every value is best-effort; a missing
         one is simply omitted, so the worker leaves the payload byte-identical
         to before."""
+        import math
+
         from ...core import detection_policy
 
         # The map-vs-count read is the same signal the review uses: map = the
@@ -1222,7 +1340,160 @@ class AutoRunMixin:
         zone = self._auto_zone_geojson()
         if zone is not None:
             meta["zone_geojson"] = zone
+        # The same zone as WGS84 WKT, the shape the account service stores.
+        zone_wkt = self._auto_zone_wkt_wgs84()
+        if zone_wkt is not None:
+            meta["zone_wkt"] = zone_wkt
+        # Same geodesic measurement the run telemetry uses; 0.0 means unknown.
+        zone_km2 = self._auto_zone_area_km2()
+        if math.isfinite(zone_km2) and zone_km2 > 0:
+            meta["zone_km2"] = round(zone_km2, 4)
+        # Same ground resolution the run-plan request reads.
+        try:
+            _zone_area_m2, native_mupp = self._auto_run_plan_inputs()
+        except Exception:  # noqa: BLE001 - best-effort provenance field
+            native_mupp = None
+        if (native_mupp is not None and math.isfinite(native_mupp)
+                and native_mupp > 0):
+            meta["native_mupp"] = round(float(native_mupp), 4)
         return meta
+
+    def _billable_zone_layer(self):
+        """The raster the billable zone is measured against: the layer of the
+        run in flight, the dock's current pick otherwise. None when neither
+        answers.
+
+        The run context is preferred only WHILE a worker is live. It outlives
+        its run, so a user who ran on raster A, exited, picked raster B and
+        drew over B was quoted a zone clipped to A's extent, and then billed
+        the larger true surface the claim rebuilt at run start.
+        """
+        try:
+            if getattr(self, "_auto_worker", None) is not None:
+                layer_id = (getattr(self, "_auto_run_ctx", None) or {}).get("layer_id")
+                if layer_id:
+                    layer = QgsProject.instance().mapLayer(layer_id)
+                    if layer is not None:
+                        return layer
+            return self._get_active_raster_layer()
+        except (RuntimeError, AttributeError):
+            return None
+
+    def _read_project_transform_context(self):
+        """The project's datum-transform table, copied on the main thread.
+
+        A copy, not the project's own object: the worker keeps it for the whole
+        run and the user can edit the project's while it runs. None when it
+        cannot be read, which leaves the worker on a bare context.
+        """
+        try:
+            from qgis.core import QgsCoordinateTransformContext, QgsProject
+            return QgsCoordinateTransformContext(
+                QgsProject.instance().transformContext())
+        except (RuntimeError, AttributeError, TypeError):
+            return None
+
+    def _zone_clipped_to_data(self, geom, crs):
+        """``geom`` confined to the raster's own extent, expressed in ``crs``.
+
+        Ground the image does not cover carries no data, so a zone drawn past
+        the edge of the raster must not be billed on its empty part. Returns
+        ``geom`` untouched when no layer answers, when the extent cannot be
+        brought into ``crs``, or when the intersection is empty or invalid:
+        this may only ever shrink the billed surface, never grow it.
+        """
+        try:
+            layer = self._billable_zone_layer()
+            authid = crs.authid() if crs is not None else ""
+            if layer is None or not authid:
+                return geom
+            extent = self._layer_extent_in_run_crs(layer, authid)
+            if extent is None or extent.isEmpty():
+                return geom
+            clipped = geom.intersection(QgsGeometry.fromRect(extent))
+            if clipped is None or clipped.isEmpty() or clipped.area() <= 0:
+                return geom
+            return clipped
+        except Exception:  # noqa: BLE001 - the unclipped zone is the safe answer
+            return geom
+
+    def _auto_billable_zone_geometry(self):
+        """The zone the run is billed on, as ``(QgsGeometry, crs)``.
+
+        Two shapes answer, in order. The clip polygon, in the run CRS, is the
+        exact ground a drawn run covers. When there is none, the zone rectangle
+        answers in the CRS it was stored in: the MCP and headless paths keep
+        only a rectangle, and a run with no surface at all is billed on the
+        server's own floor instead of on what the user asked for.
+
+        Whichever answers is confined to the raster's own extent, so the three
+        paths (drawn clip, drawn polygon, rectangle) all bill the part of the
+        zone that has imagery under it.
+
+        ``(None, None)`` when neither exists or anything fails.
+        """
+        try:
+            from qgis.core import QgsCoordinateReferenceSystem, QgsGeometry
+
+            poly = getattr(self, "_auto_clip_polygon", None)
+            authid = getattr(self, "_auto_crs_authid", None)
+            if poly is not None and not poly.isEmpty() and authid:
+                run_crs = QgsCoordinateReferenceSystem(authid)
+                return self._zone_clipped_to_data(QgsGeometry(poly), run_crs), run_crs
+            rect = getattr(self, "_auto_zone", None)
+            if rect is None or rect.isEmpty():
+                return None, None
+            crs = self._zone_source_crs(rect)
+            if crs is None or not crs.isValid():
+                crs = (QgsCoordinateReferenceSystem(authid) if authid else None)
+            if crs is None or not crs.isValid():
+                return None, None
+            # Before Detect the clip polygon does not exist yet, but the drawn
+            # polygon does, in the zone's draw CRS. The card must show the
+            # polygon's surface, not its box, or it disagrees with the bill.
+            drawn = getattr(self, "_auto_zone_polygon", None)
+            if drawn is not None and not drawn.isEmpty():
+                return self._zone_clipped_to_data(QgsGeometry(drawn), crs), crs
+            return self._zone_clipped_to_data(QgsGeometry.fromRect(rect), crs), crs
+        except Exception:  # noqa: BLE001 - best-effort provenance field
+            return None, None
+
+    def _auto_zone_wkt_wgs84(self) -> str | None:
+        """The run's billable zone as a WGS84 WKT string, or None when there is
+        no zone, its CRS is unknown, the WKT is oversized, or anything fails.
+        Same source geometry as the zone surface."""
+        geom, src = self._auto_billable_zone_geometry()
+        if geom is None or src is None:
+            return None
+        try:
+            from qgis.core import (
+                QgsCoordinateReferenceSystem,
+                QgsCoordinateTransform,
+                QgsProject,
+            )
+
+            from ...core.zone_crs_check import zone_fits_declared_crs
+
+            dst = QgsCoordinateReferenceSystem("EPSG:4326")
+            if not src.isValid() or not dst.isValid():
+                return None
+            # Same refusal as the surface: a polygon that cannot be in the
+            # declared CRS would reproject into a shape nowhere near the ground
+            # the user drew on.
+            if not zone_fits_declared_crs(geom, src):
+                return None
+            copy = geom
+            if src != dst:
+                transform = QgsCoordinateTransform(
+                    src, dst, QgsProject.instance().transformContext())
+                if copy.transform(transform) != 0:
+                    return None
+            wkt = copy.asWkt(7)
+            if not wkt or len(wkt) > 100_000:
+                return None
+            return wkt
+        except Exception:  # noqa: BLE001 - best-effort provenance field
+            return None
 
     def _auto_zone_geojson(self) -> dict | None:
         """The drawn zone polygon as a GeoJSON geometry dict in the run CRS, or
@@ -1312,6 +1583,9 @@ class AutoRunMixin:
             # load failure. Set with the rest of the run state in
             # _start_auto_detection.
             source_is_online=bool(getattr(self, "_auto_source_is_online", False)),
+            # Read on the main thread with the rest of the run state, so the
+            # worker never reaches into QgsProject for it.
+            transform_context=getattr(self, "_auto_transform_context", None),
         )
 
     def _launch_auto_worker(
@@ -1341,6 +1615,11 @@ class AutoRunMixin:
         (render hops to the main thread via tile_renderer), so neither the encode
         nor the basemap fetch freezes the GUI. client_meta rides to the worker as
         the run's optional per-run provenance + benchmark fields."""
+        # The one point past which a new run really is starting, so the one
+        # place the previous run's result may be dropped. Clearing it earlier
+        # blanks auto_detect_status() for anyone polling while a guard refuses.
+        self._last_auto_result = None
+        self._auto_quota_stop_banner = None
         self._auto_worker = self._build_auto_worker(
             tile_renderer=tile_renderer,
             tiles=tiles,
@@ -1383,10 +1662,57 @@ class AutoRunMixin:
         self._auto_worker.warning.connect(self._on_auto_warning, _queued)
         self._auto_worker.error.connect(self._on_auto_error, _queued)
         self._auto_worker.credits_exhausted.connect(self._on_auto_credits_exhausted, _queued)
-        self._auto_worker.cancelled.connect(self._on_auto_cancelled, _queued)
+        # Bound to THIS worker. _stop_auto_detection leaves 'cancelled' wired
+        # on purpose, so a queued one from run N can land after run N+1 has
+        # started, and an unbound handler would tear the live run down.
+        self._auto_cancelled_slot = (
+            lambda w=self._auto_worker: self._on_auto_cancelled(worker=w))
+        self._auto_worker.cancelled.connect(self._auto_cancelled_slot, _queued)
         self._auto_worker.queue_state.connect(self._on_auto_queue_state, _queued)
         self._auto_worker.rescan_state.connect(self._on_auto_rescan_state, _queued)
         self._auto_worker.run_phase.connect(self._on_auto_run_phase, _queued)
+
+        # The dock flips to its running state BEFORE the worker starts. The
+        # imagery probe above runs a nested event loop, so the user can close
+        # the panel during it: touching a deleted dock then raises, and a raise
+        # after start() would leave a paid run going with no Cancel button.
+        # Aborting here costs nothing, because nothing billable has begun.
+        total_display = progress_total or len(tiles)
+        # A run with no dock at all is the headless surface, which has no UI to
+        # protect and must still run.
+        if self.dock_widget is not None:
+            try:
+                self.dock_widget.set_auto_run_active(True)
+                self._set_zone_badge_enabled(False)
+                # The grid the user was quoted and is charged for. A dense run
+                # re-splits saturated tiles into free quadrants, which grow the
+                # worker's total, so the count row would otherwise read a number
+                # nobody agreed to pay.
+                self.dock_widget.set_auto_billed_tile_total(total_display)
+                self.dock_widget.set_auto_tile_progress(progress_offset, total_display)
+                # No "running" banner: the tile progress bar already says it.
+                self.dock_widget.auto_detect_btn.setText(tr("Detect objects"))
+                self.dock_widget.set_auto_status("progress")
+            except (RuntimeError, AttributeError):
+                QgsMessageLog.logMessage(
+                    "Auto detection: the panel went away before the run "
+                    "started; aborting before any tile is sent",
+                    "AI Segmentation", level=Qgis.MessageLevel.Warning,
+                )
+                # The flip is several calls: the first can land and a later one
+                # raise, which left the panel painted as a run with no worker
+                # behind it and no way back. Undo what took.
+                try:
+                    self.dock_widget.set_auto_run_active(False)
+                    self._set_zone_badge_enabled(True)
+                except (RuntimeError, AttributeError):
+                    pass
+                self._auto_worker = None
+                self._auto_cancelled_slot = None
+                self._reset_auto_live_pipeline()
+                self._drop_auto_tile_bridge()
+                return
+
         self._auto_worker.start()
         # Arm the stall watchdog for this run (see _on_auto_stall_check).
         self._start_auto_stall_watchdog()
@@ -1395,21 +1721,6 @@ class AutoRunMixin:
         # that is pure waste stacked on our own coalesced repaints. Paused for
         # the run, restored by _stop_auto_live_pump at every terminal.
         self._pause_preview_jobs()
-
-        total_display = progress_total or len(tiles)
-        self.dock_widget.set_auto_run_active(True)
-        self._set_zone_badge_enabled(False)
-        # The grid the user was quoted and is charged for. A dense run re-splits
-        # saturated tiles into free quadrants, which grow the worker's total, so
-        # the count row would otherwise read a number nobody agreed to pay.
-        self.dock_widget.set_auto_billed_tile_total(total_display)
-        self.dock_widget.set_auto_tile_progress(progress_offset, total_display)
-        # No "running" banner: the tile progress bar already says it.
-        try:
-            self.dock_widget.auto_detect_btn.setText(tr("Detect objects"))
-            self.dock_widget.set_auto_status("progress")
-        except (RuntimeError, AttributeError):
-            pass
 
     # ------------------------------------------------------------------
     # Stall watchdog (main thread): guarantee a hung run always terminates
@@ -1424,6 +1735,12 @@ class AutoRunMixin:
         import time as _t
         self._auto_last_progress_ts = _t.monotonic()
         timer = getattr(self, "_auto_stall_timer", None)
+        # A cached timer whose parent dock is gone (panel closed, plugin
+        # reloaded) is a deleted C++ object: every call on it raises. So it is
+        # rebuilt whenever its parent is not the dock in front of the user.
+        if timer is not None and not self._stall_timer_owns_dock(timer):
+            timer = None
+            self._auto_stall_timer = None
         if timer is None:
             from qgis.PyQt.QtCore import QTimer
             timer = QTimer(self.dock_widget)  # parented to the dock (never to
@@ -1431,7 +1748,20 @@ class AutoRunMixin:
             timer.setInterval(_STALL_CHECK_INTERVAL_MS)
             timer.timeout.connect(self._on_auto_stall_check)
             self._auto_stall_timer = timer
-        timer.start()
+        try:
+            timer.start()
+        except (RuntimeError, AttributeError):
+            self._auto_stall_timer = None
+
+    def _stall_timer_owns_dock(self, timer) -> bool:
+        """Whether ``timer`` is still parented to the dock in front of the user.
+
+        False also when reading the parent raises, which is what a timer whose
+        C++ half was deleted with its dock does."""
+        try:
+            return timer.parent() is self.dock_widget
+        except (RuntimeError, AttributeError):
+            return False
 
     def _stop_auto_stall_watchdog(self) -> None:
         """Disarm the stall watchdog. Called at every terminal (via
@@ -1563,6 +1893,14 @@ class AutoRunMixin:
         _stop_auto_detection stays the hard teardown path (unload, MCP cancel)
         where nothing is kept.
         """
+        if getattr(self, "_auto_finalize_state", None) is not None:
+            # Between the last tile and the review, with the "building the
+            # shapes" card up. The worker is already gone, so Cancel used to
+            # fall into the no-worker branch below, reset the live pipeline and
+            # leave a paid run with nowhere to land. Swallow it: the window is
+            # short, it is announced on screen, and Cancel is not on offer in
+            # it (Escape is swallowed there for the same reason).
+            return
         worker = self._auto_worker
         if worker is None:
             # No live worker, but the user still sees a run in progress: the
@@ -1745,6 +2083,167 @@ class AutoRunMixin:
             except (RuntimeError, AttributeError):
                 pass
 
+    def _store_auto_zone_from_geometry(self, geom, active_layer) -> QgsRectangle:
+        """Store an API-supplied zone geometry as the Automatic zone.
+
+        ``geom`` is in ``active_layer``'s CRS, or in canvas numbers when no
+        layer resolved. Mirrors the interactive draw: a polygon is kept beside
+        the rectangle, so tiles outside it are culled and the run is billed on
+        the shape the caller asked for rather than on its bounding box. A
+        non-polygon geometry leaves the rectangle alone. Returns the rectangle
+        that was stored.
+        """
+        from ...core.qt_compat import PolygonGeometry
+
+        shape = QgsGeometry(geom)
+        # None means canvas numbers, and it only stays None while the
+        # conversion below actually reaches the canvas.
+        zone_crs = None
+        if active_layer is not None:
+            try:
+                layer_crs = active_layer.crs()
+                canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+                if (layer_crs.isValid() and canvas_crs.isValid()
+                        and layer_crs != canvas_crs):
+                    xform = QgsCoordinateTransform(
+                        layer_crs, canvas_crs, QgsProject.instance())
+                    if shape.transform(xform) != 0:
+                        raise ValueError("zone transform failed")
+            except Exception:  # noqa: BLE001 -- antimeridian, invalid CRS
+                # The shape never left the layer's CRS. Calling it canvas
+                # numbers would tile, bill and clip ground nobody asked for.
+                shape = QgsGeometry(geom)
+                zone_crs = active_layer.crs()
+        rect = QgsRectangle(shape.boundingBox())
+        # Stored with the CRS its numbers are actually in, so a project CRS
+        # change before the run cannot reinterpret them.
+        self._store_auto_zone(rect, crs=zone_crs)
+        self._auto_zone_polygon = None
+        if not shape.isEmpty() and shape.type() == PolygonGeometry:
+            # Same repair as the draw: a self-intersecting outline breaks area
+            # math and tile culling. Fail-open to the raw polygon.
+            from ...core.layer_conventions import repair_polygon
+            repaired = repair_polygon(QgsGeometry(shape))
+            self._auto_zone_polygon = (
+                repaired if repaired is not None and not repaired.isEmpty()
+                else shape)
+        return rect
+
+    def _arm_headless_cancel_poll(self, loop, should_cancel, state: dict):
+        """Start the timer that lets a blocked headless run hear its caller's Cancel.
+
+        Returns the running QTimer, or None when the caller gave no
+        ``should_cancel``. The first True takes the panel's own soft-cancel
+        route, which keeps the tiles the account already paid for, and the wait
+        goes on until the run hands them back or the grace window closes.
+        ``state`` carries "asked" back out, because the caller has to tell a
+        cancel from a timeout.
+        """
+        state["asked"] = False
+        state["deadline"] = 0.0
+        if should_cancel is None:
+            return None
+
+        import time as _t
+
+        from qgis.PyQt.QtCore import QTimer
+
+        timer = QTimer(self.dock_widget)
+        timer.setInterval(_HEADLESS_CANCEL_POLL_MS)
+
+        def _tick():
+            if state["asked"]:
+                if (self._last_auto_result is not None
+                        or _t.monotonic() >= state["deadline"]):
+                    loop.quit()
+                return
+            try:
+                wants_stop = bool(should_cancel())
+            except Exception:  # noqa: BLE001 -- a caller's callback never reaches the loop
+                # Unreadable answer: read it as "not cancelled" and stop asking.
+                timer.stop()
+                return
+            if not wants_stop:
+                return
+            state["asked"] = True
+            state["deadline"] = _t.monotonic() + _HEADLESS_CANCEL_GRACE_MS / 1000.0
+            self._on_auto_cancel_clicked()
+
+        timer.timeout.connect(_tick)
+        timer.start()
+        return timer
+
+    @staticmethod
+    def _disarm_headless_cancel_poll(timer) -> None:
+        """Stop and drop the headless cancel timer, on every exit path.
+
+        A timer still ticking against a finished event loop is the crash class
+        this path has to stay clear of, so the caller stops it in a finally.
+        """
+        if timer is None:
+            return
+        try:
+            timer.stop()
+            timer.timeout.disconnect()
+        except (RuntimeError, TypeError):
+            pass
+        try:
+            timer.deleteLater()
+        except RuntimeError:
+            pass
+
+    @staticmethod
+    def _resolve_headless_raster(name_or_id: str):
+        """The raster a headless caller named, as ``(layer, ambiguous)``.
+
+        Tried as a layer id first: an id is unique, and it is what every other
+        answer of the API hands back, so a caller feeding one back used to get
+        "no such layer" while a name typed by a person still works. Two rasters
+        sharing a name have no right answer, so that case is reported rather
+        than billed against whichever the project listed first.
+        """
+        project = QgsProject.instance()
+        by_id = project.mapLayer(name_or_id)
+        if isinstance(by_id, QgsRasterLayer):
+            return by_id, False
+        matches = [
+            lyr for lyr in project.mapLayers().values()
+            if isinstance(lyr, QgsRasterLayer) and lyr.name() == name_or_id
+        ]
+        if len(matches) > 1:
+            return None, True
+        return (matches[0] if matches else None), False
+
+    def _restore_dock_after_headless(self, mode_before, shown_layer_id: str) -> None:
+        """Give back what a headless run borrowed from the panel: the mode it
+        switched to Automatic, and the layer-tree visibility it turned on to
+        reach the target raster.
+
+        The mode goes back only when nothing is left running and no review is
+        open: a run still winding down (a cancel inside its grace window) would
+        be torn down by the switch, and the tiles it already paid for with it.
+        """
+        if shown_layer_id:
+            try:
+                node = QgsProject.instance().layerTreeRoot().findLayer(shown_layer_id)
+                if node is not None:
+                    node.setItemVisibilityChecked(False)
+            except (RuntimeError, AttributeError):
+                pass
+        if mode_before is None:
+            return
+        worker = getattr(self, "_auto_worker", None)
+        if worker is not None and worker.isRunning():
+            return
+        if getattr(self, "_auto_review", None) is not None:
+            return
+        try:
+            dock = self.dock_widget
+            if dock is not None and dock._mode != mode_before:
+                dock._on_mode_selected(mode_before)
+        except (RuntimeError, AttributeError):
+            pass
+
     def _run_auto_detect_headless(
         self,
         zone_wkt: str,
@@ -1753,6 +2252,10 @@ class AutoRunMixin:
         timeout_s: int = 280,
         exemplars: list[dict] | None = None,
         detail: int | None = None,
+        confidence: float | None = None,
+        refine: dict | None = None,
+        should_cancel: Callable[[], bool] | None = None,
+        instance_colors: bool = False,
     ) -> dict:
         """Run automatic cloud detection without user interaction.
 
@@ -1771,228 +2274,312 @@ class AutoRunMixin:
             Optional raster layer name. None uses the current dock selection.
         timeout_s:
             Hard timeout in seconds. Default 280 s (well under 5 min MCP limit).
+        confidence:
+            Explicit cutoff in [0, 1] for this run. None keeps the value the
+            run plan resolves for the prompt.
+        refine:
+            Shape-cleanup overrides merged onto the run's review preset for the
+            duration of this call. Keys are those of the preset dict
+            (``simplify_px``, ``smooth``, ``expand_px``, ``fill_holes``,
+            ``fill_holes_max_m2``, ``clean_px``, ``ortho``, ``min_size_m2``,
+            ``points_pct``). Unknown keys are ignored.
+        should_cancel:
+            Asked every few hundred milliseconds while the run blocks here. The
+            first True takes the same soft-cancel route as the panel's Cancel
+            button, so the tiles the account already paid for go on into the
+            review and come back in this call's result. None (the default)
+            polls nothing and behaves exactly as before. A callable that raises
+            is read as "not cancelled" and is never asked again.
+        instance_colors:
+            Colour the saved layer one hue per object instead of one hue for
+            the whole run, so objects that touch read apart. Off by default,
+            and cosmetic: it runs once the objects are written, so it can never
+            turn a run that found them into a failure. The result then carries
+            ``instance_colors``, plus ``instance_colors_note`` saying why when
+            it is False.
+
+        A run stopped this way returns ``cancelled: True`` beside its usual
+        keys, so a caller can tell a deliberate stop from a failure.
         """
         from qgis.PyQt.QtCore import QEventLoop, QTimer
 
         from ..ai_segmentation_dockwidget import Mode
+
+        # One run at a time. Without this, a second call fell through to the
+        # worker of the run already in flight, blocked on it, and reported that
+        # run's paid instances, credits and layer as its own.
+        live = getattr(self, "_auto_worker", None)
+        if live is not None and live.isRunning():
+            return {
+                "_error": (
+                    "A zone detection is already running. Poll it with "
+                    "auto_detect_status(), or stop it with cancel_auto(), "
+                    "before starting another."
+                ),
+                "busy": True,
+            }
 
         # Ensure the dock exists and auto-mode infrastructure is ready.
         self._ensure_dock_widget()
         if self._tile_manager is None:
             self._setup_auto_mode()
 
-        # Switch dock to Automatic mode so _start_auto_detection can run.
+        # Switch dock to Automatic mode so _start_auto_detection can run. The
+        # mode and any layer visibility this borrows go back at the end: an
+        # agent call must not leave the panel on a mode the person did not pick.
+        mode_before = None
+        shown_layer_id = ""
+        # True once the hard teardown has run on this call's worker. That path
+        # leaves no terminal behind to drop the headless flag: the cancelled
+        # slot finds a run already torn down and only releases the references.
+        hard_stopped = False
+        # Setup and validation run INSIDE the try, so a refusal gives back
+        # what they borrowed. An unknown raster, an unusable zone or a zone
+        # over the free cap returned straight to the caller and left the
+        # panel switched to Automatic with a raster re-ticked in the layer
+        # tree. The restore only puts back what was changed, so a refusal
+        # that borrowed nothing costs nothing.
         try:
-            dock = self.dock_widget
-            if dock and dock._mode != Mode.AUTOMATIC:
-                dock._on_mode_selected(Mode.AUTOMATIC)
-        except (RuntimeError, AttributeError):
-            pass
-
-        # Resolve and activate the target raster layer.
-        if layer_name:
-            target_layer = None
-            for lyr in QgsProject.instance().mapLayers().values():
-                if isinstance(lyr, QgsRasterLayer) and lyr.name() == layer_name:
-                    target_layer = lyr
-                    break
-            if target_layer is None:
-                return {"_error": f"Raster layer '{layer_name}' not found"}
-            # _get_active_raster_layer reads the combo of the current mode;
-            # set both so the target sticks regardless of mode.
             try:
-                if self.dock_widget and hasattr(self.dock_widget, "layer_combo"):
-                    self.dock_widget.layer_combo.setLayer(target_layer)
-                if self.dock_widget and hasattr(self.dock_widget, "auto_layer_combo"):
-                    self.dock_widget.auto_layer_combo.setLayer(target_layer)
+                dock = self.dock_widget
+                if dock and dock._mode != Mode.AUTOMATIC:
+                    mode_before = dock._mode
+                    dock._on_mode_selected(Mode.AUTOMATIC)
             except (RuntimeError, AttributeError):
                 pass
-            # setLayer is a no-op when the combo does not list the target (it
-            # only lists layer-tree-VISIBLE rasters, and it refreshes on a
-            # debounce). A silent miss used to run detection on whatever layer
-            # the combo held, billing the wrong raster. Make the target
-            # selectable (visibility + immediate rebuild), then verify; if it
-            # still does not stick, fail loudly instead of running.
-            active = self._get_active_raster_layer()
-            if active is None or active.id() != target_layer.id():
+
+            # Resolve and activate the target raster layer.
+            if layer_name:
+                target_layer, ambiguous = self._resolve_headless_raster(layer_name)
+                if ambiguous:
+                    return {"_error": (
+                        f"More than one raster layer is called '{layer_name}'. "
+                        "Pass the layer id instead, so the run reads the one you "
+                        "mean.")}
+                if target_layer is None:
+                    # A caller reading the argument as "name the layer you want
+                    # created" passes the output name here and gets told a layer is
+                    # missing, which points at the wrong thing. Say what the
+                    # argument means, and list what it can actually take.
+                    from ...mcp_api import (
+                        LAYER_NAME_ARGUMENT_NOTE,
+                        not_found_error,
+                    )
+                    available = sorted(
+                        lyr.name()
+                        for lyr in QgsProject.instance().mapLayers().values()
+                        if isinstance(lyr, QgsRasterLayer)
+                    )
+                    return not_found_error(
+                        "raster layer", layer_name, available,
+                        note=LAYER_NAME_ARGUMENT_NOTE,
+                    )
+                # _get_active_raster_layer reads the combo of the current mode;
+                # set both so the target sticks regardless of mode.
                 try:
-                    node = QgsProject.instance().layerTreeRoot().findLayer(
-                        target_layer.id())
-                    if node is not None and not node.itemVisibilityChecked():
-                        node.setItemVisibilityChecked(True)
-                    for combo_name in ("layer_combo", "auto_layer_combo"):
-                        combo = getattr(self.dock_widget, combo_name, None)
-                        if combo is None:
-                            continue
-                        refresh = getattr(combo, "_refresh", None)
-                        if callable(refresh):
-                            refresh()  # skip the 100 ms debounce
-                        combo.setLayer(target_layer)
+                    if self.dock_widget and hasattr(self.dock_widget, "layer_combo"):
+                        self.dock_widget.layer_combo.setLayer(target_layer)
+                    if self.dock_widget and hasattr(self.dock_widget, "auto_layer_combo"):
+                        self.dock_widget.auto_layer_combo.setLayer(target_layer)
                 except (RuntimeError, AttributeError):
                     pass
+                # setLayer is a no-op when the combo does not list the target (it
+                # only lists layer-tree-VISIBLE rasters, and it refreshes on a
+                # debounce). A silent miss used to run detection on whatever layer
+                # the combo held, billing the wrong raster. Make the target
+                # selectable (visibility + immediate rebuild), then verify; if it
+                # still does not stick, fail loudly instead of running.
                 active = self._get_active_raster_layer()
                 if active is None or active.id() != target_layer.id():
-                    return {"_error": (
-                        f"Raster layer '{layer_name}' exists but could not be selected "
-                        "(hidden in the layer tree or filtered out). Make it "
-                        "visible and retry.")}
+                    try:
+                        node = QgsProject.instance().layerTreeRoot().findLayer(
+                            target_layer.id())
+                        if node is not None and not node.itemVisibilityChecked():
+                            node.setItemVisibilityChecked(True)
+                            shown_layer_id = target_layer.id()
+                        for combo_name in ("layer_combo", "auto_layer_combo"):
+                            combo = getattr(self.dock_widget, combo_name, None)
+                            if combo is None:
+                                continue
+                            refresh = getattr(combo, "_refresh", None)
+                            if callable(refresh):
+                                refresh()  # skip the 100 ms debounce
+                            combo.setLayer(target_layer)
+                    except (RuntimeError, AttributeError):
+                        pass
+                    active = self._get_active_raster_layer()
+                    if active is None or active.id() != target_layer.id():
+                        return {"_error": (
+                            f"Raster layer '{layer_name}' exists but could not be selected "
+                            "(hidden in the layer tree or filtered out). Make it "
+                            "visible and retry.")}
 
-        # Parse and transform zone WKT (layer CRS) to canvas CRS.
-        if zone_wkt and zone_wkt.strip():
-            geom = QgsGeometry.fromWkt(zone_wkt)
-            if geom is None or geom.isEmpty():
-                return {"_error": "Invalid zone WKT"}
-            bbox = geom.boundingBox()
+            # Parse and transform zone WKT (layer CRS) to canvas CRS.
+            if zone_wkt and zone_wkt.strip():
+                geom = QgsGeometry.fromWkt(zone_wkt)
+                if geom is None or geom.isEmpty():
+                    return {"_error": "Invalid zone WKT"}
 
-            # _start_auto_detection stores _auto_zone in canvas CRS and
-            # reprojects it to layer CRS internally. Convert here.
-            active_layer = self._get_active_raster_layer()
+                # _start_auto_detection stores _auto_zone in canvas CRS and
+                # reprojects it to layer CRS internally. Convert here.
+                active_layer = self._get_active_raster_layer()
 
-            # Free-trial zone cap: mirrors the interactive draw guard so the
-            # headless path can never start a run over an oversized free-tier
-            # zone. The WKT is in the layer CRS (canvas CRS when no layer).
-            zone_crs = active_layer.crs() if active_layer is not None else None
-            cap_area = self._free_zone_cap_exceeded_km2(geom, crs=zone_crs)
-            if cap_area is not None:
+                # Free-trial zone cap: mirrors the interactive draw guard so the
+                # headless path can never start a run over an oversized free-tier
+                # zone. The WKT is in the layer CRS (canvas CRS when no layer).
+                zone_crs = active_layer.crs() if active_layer is not None else None
+                cap_area = self._free_zone_cap_exceeded_km2(geom, crs=zone_crs)
+                if cap_area is not None:
+                    try:
+                        from ...core import telemetry_run_events
+                        telemetry_run_events.track_auto_zone_too_large(area_km2=cap_area)
+                    except Exception:
+                        pass  # nosec B110
+                    from .shared import zone_over_free_cap_message
+                    return {"_error": zone_over_free_cap_message(cap_area)}
+                # Keeps the polygon beside the rectangle, so the cap that measured
+                # the polygon and the run that tiles the zone agree on one shape.
+                self._store_auto_zone_from_geometry(geom, active_layer)
                 try:
-                    from ...core import telemetry_run_events
-                    telemetry_run_events.track_auto_zone_too_large(area_km2=cap_area)
-                except Exception:
-                    pass  # nosec B110
-                from .shared import zone_over_free_cap_message
-                return {"_error": zone_over_free_cap_message(cap_area)}
-            # None means canvas numbers. It only stays None while the
-            # conversion below actually reaches the canvas.
-            bbox_crs = None
-            if active_layer is not None:
-                try:
-                    layer_crs = active_layer.crs()
-                    canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
-                    if layer_crs.isValid() and canvas_crs.isValid() and layer_crs != canvas_crs:
-                        xform = QgsCoordinateTransform(layer_crs, canvas_crs, QgsProject.instance())
-                        bbox = xform.transformBoundingBox(bbox)
-                except Exception:  # nosec B110 -- antimeridian, invalid CRS
-                    # The box never left the layer's CRS. Calling it canvas
-                    # numbers would tile, bill and clip ground nobody asked for.
-                    bbox_crs = active_layer.crs()
-            # Stored with the CRS its numbers are actually in, so a project CRS
-            # change before the run cannot reinterpret them.
-            self._store_auto_zone(bbox, crs=bbox_crs)
-            try:
-                if self.dock_widget:
-                    self.dock_widget.set_auto_zone_state("zone_set")
-            except (RuntimeError, AttributeError):
-                pass
-        else:
-            self._store_auto_zone(None)
-            self._auto_zone_polygon = None
-            try:
-                if self.dock_widget:
-                    self.dock_widget.set_auto_zone_state("idle")
-            except (RuntimeError, AttributeError):
-                pass
-
-        # Set the prompt text for _start_auto_detection to pick up.
-        try:
-            if self.dock_widget:
-                self.dock_widget.set_prompt_text(object_class)
-        except (RuntimeError, AttributeError):
-            pass
-
-        # Populate visual exemplars (MCP gives bboxes in the layer CRS, same as
-        # zone_wkt). The store holds canvas-CRS rects, so transform each bbox the
-        # same way the zone bbox is transformed above. Single-image mode then
-        # picks them up automatically in _start_auto_detection.
-        self._clear_exemplars()
-        if exemplars:
-            ex_layer = self._get_active_raster_layer()
-            ex_xform = None
-            if ex_layer is not None:
-                try:
-                    l_crs = ex_layer.crs()
-                    c_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
-                    if l_crs.isValid() and c_crs.isValid() and l_crs != c_crs:
-                        ex_xform = QgsCoordinateTransform(l_crs, c_crs, QgsProject.instance())
+                    if self.dock_widget:
+                        self.dock_widget.set_auto_zone_state("zone_set")
                 except (RuntimeError, AttributeError):
-                    ex_xform = None
-            for ex in exemplars:
+                    pass
+            else:
+                self._store_auto_zone(None)
+                self._auto_zone_polygon = None
                 try:
-                    bb = ex.get("bbox") or ex.get("box")
-                    if not bb or len(bb) < 4:
-                        continue
-                    rect = QgsRectangle(float(bb[0]), float(bb[1]), float(bb[2]), float(bb[3]))
-                    if ex_xform is not None:
-                        rect = ex_xform.transformBoundingBox(rect)
-                    self._auto_exemplar_store.add(rect, int(ex.get("label", 1)))
-                except (RuntimeError, AttributeError, ValueError, TypeError):
-                    continue
-            self._refresh_exemplar_chips()
+                    if self.dock_widget:
+                        self.dock_widget.set_auto_zone_state("idle")
+                except (RuntimeError, AttributeError):
+                    pass
 
-        # Optional explicit detail (tile-grid density) override. Headless runs
-        # otherwise seed the same OBJECT-AWARE default the interactive prompt
-        # commit picks, so an API run for "tree" gets the same grid the UI
-        # would (it used to keep whatever the slider held, often 1 coarse
-        # tile). Clamp to >=1; the slider widget caps the upper bound to the
-        # useful max for the zone.
-        if detail is not None:
+            # Set the prompt text for _start_auto_detection to pick up.
             try:
                 if self.dock_widget:
-                    self.dock_widget.set_auto_detail_value(max(1, int(detail)))
-            except (RuntimeError, AttributeError, ValueError, TypeError):
-                pass
-        elif object_class and self._auto_zone is not None:
-            try:
-                # A stale interactive slider lock must not pin an API run.
-                self._auto_detail_user_locked = False
-                self._auto_detail_lock_prompt = ""
-                self._reseed_auto_detail_from_blob(object_class)
+                    self.dock_widget.set_prompt_text(object_class)
             except (RuntimeError, AttributeError):
                 pass
 
-        # Fetch the server run plan inline (bounded, best-effort, fail-open)
-        # BEFORE the run. The interactive path fires this on the debounced
-        # prompt-commit; a headless/MCP run has no such commit, so it used to
-        # skip the plan and fall back to the neutral cached-policy preset. With
-        # the plan in hand the finalize applies the SAME per-prompt review shape
-        # (right angles / fill / simplify) and tuned confidence the product
-        # uses, so an agent result is refined like the product. Any failure
-        # leaves _auto_run_plan None and keeps today's cached-policy path.
-        # Stored exactly like _on_auto_run_plan_ready, keyed on object_class
-        # (which set_prompt_text put in the box, so _auto_run_ctx["prompt"]
-        # matches it and _active_run_plan resolves during finalize).
-        self._auto_run_plan = None
-        if object_class:
-            try:
-                from ...core.activation_manager import get_auth_header
-                plan_auth = get_auth_header()
-                if plan_auth:
-                    from ...api.terralab_client import TerraLabClient
-                    zone_area_m2, native_mupp = self._auto_run_plan_inputs()
-                    plan = TerraLabClient().get_seg_run_plan(
-                        object_class, zone_area_m2, native_mupp, auth=plan_auth)
-                    if isinstance(plan, dict) and not plan.get("error"):
-                        self._auto_run_plan = {"prompt": object_class, "plan": plan}
-            except Exception:  # noqa: BLE001 -- planning is best-effort
-                pass  # nosec B110 -- fail-open to the cached-policy preset
+            # Populate visual exemplars (MCP gives bboxes in the layer CRS, same as
+            # zone_wkt). The store holds canvas-CRS rects, so transform each bbox the
+            # same way the zone bbox is transformed above. Single-image mode then
+            # picks them up automatically in _start_auto_detection.
+            self._clear_exemplars()
+            if exemplars:
+                ex_layer = self._get_active_raster_layer()
+                ex_xform = None
+                if ex_layer is not None:
+                    try:
+                        l_crs = ex_layer.crs()
+                        c_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+                        if l_crs.isValid() and c_crs.isValid() and l_crs != c_crs:
+                            ex_xform = QgsCoordinateTransform(l_crs, c_crs, QgsProject.instance())
+                    except (RuntimeError, AttributeError):
+                        ex_xform = None
+                for ex in exemplars:
+                    try:
+                        bb = ex.get("bbox") or ex.get("box")
+                        if not bb or len(bb) < 4:
+                            continue
+                        rect = QgsRectangle(float(bb[0]), float(bb[1]), float(bb[2]), float(bb[3]))
+                        if ex_xform is not None:
+                            rect = ex_xform.transformBoundingBox(rect)
+                        self._auto_exemplar_store.add(rect, int(ex.get("label", 1)))
+                    except (RuntimeError, AttributeError, ValueError, TypeError):
+                        continue
+                self._refresh_exemplar_chips()
 
-        # Mark this as a headless/MCP run so _on_auto_all_finished skips the
-        # interactive review and exports directly (preserving MCP behavior).
-        self._auto_headless_run = True
-        try:
-            # Start detection. _last_auto_result is reset inside _start_auto_detection.
+            # Optional explicit detail (tile-grid density) override. Headless runs
+            # otherwise seed the same OBJECT-AWARE default the interactive prompt
+            # commit picks, so an API run for "tree" gets the same grid the UI
+            # would (it used to keep whatever the slider held, often 1 coarse
+            # tile). Clamp to >=1; the slider widget caps the upper bound to the
+            # useful max for the zone.
+            if detail is not None:
+                try:
+                    if self.dock_widget:
+                        self.dock_widget.set_auto_detail_value(max(1, int(detail)))
+                    # The caller named the level, so no plugin seed stands for this
+                    # run: an earlier interactive seed must not be reported as one.
+                    self._auto_detail_seeded = None
+                except (RuntimeError, AttributeError, ValueError, TypeError):
+                    pass
+            elif object_class and self._auto_zone is not None:
+                try:
+                    # A stale interactive slider lock must not pin an API run.
+                    self._auto_detail_user_locked = False
+                    self._auto_detail_lock_prompt = ""
+                    self._reseed_auto_detail_from_blob(object_class)
+                except (RuntimeError, AttributeError):
+                    pass
+
+            # Fetch the server run plan inline (bounded, best-effort, fail-open)
+            # BEFORE the run. The interactive path fires this on the debounced
+            # prompt-commit; a headless/MCP run has no such commit, so it used to
+            # skip the plan and fall back to the neutral cached-policy preset. With
+            # the plan in hand the finalize applies the SAME per-prompt review shape
+            # (right angles / fill / simplify) and tuned confidence the product
+            # uses, so an agent result is refined like the product. Any failure
+            # leaves _auto_run_plan None and keeps today's cached-policy path.
+            # Stored exactly like _on_auto_run_plan_ready, keyed on object_class
+            # (which set_prompt_text put in the box, so _auto_run_ctx["prompt"]
+            # matches it and _active_run_plan resolves during finalize).
+            self._auto_run_plan = None
+            if object_class:
+                try:
+                    from ...core.activation_manager import get_auth_header
+                    plan_auth = get_auth_header()
+                    if plan_auth:
+                        from ...api.terralab_client import TerraLabClient
+                        zone_area_m2, native_mupp = self._auto_run_plan_inputs()
+                        plan = TerraLabClient().get_seg_run_plan(
+                            object_class, zone_area_m2, native_mupp, auth=plan_auth)
+                        if isinstance(plan, dict) and not plan.get("error"):
+                            self._auto_run_plan = {"prompt": object_class, "plan": plan}
+                except Exception:  # noqa: BLE001 -- planning is best-effort
+                    pass  # nosec B110 -- fail-open to the cached-policy preset
+
+            # An explicit cutoff for this run. _start_auto_detection honours a spin
+            # value that differs from the client default, so this is the same route
+            # a person's choice takes.
+            if confidence is not None:
+                try:
+                    spin = getattr(self.dock_widget, "auto_confidence_spin", None)
+                    if spin is not None:
+                        spin.setValue(max(0.05, min(0.95, float(confidence))))
+                except (RuntimeError, AttributeError, TypeError, ValueError):
+                    pass
+
+            # Shape-cleanup overrides for this run only. _auto_review_preset merges
+            # them, so the finalize refines with them without anything patching a
+            # method at runtime.
+            self._auto_review_preset_overrides = (
+                dict(refine) if isinstance(refine, dict) and refine else None)
+
+            # Mark this as a headless/MCP run so _on_auto_all_finished skips the
+            # interactive review and exports directly (preserving MCP behavior).
+            self._auto_headless_run = True
+            # Start detection. _last_auto_result is cleared in
+            # _launch_auto_worker, past every guard that could refuse.
             self._headless_error = None
+            worker_before = self._auto_worker
             self._start_auto_detection()
 
-            if self._auto_worker is None:
-                # Surface the precise abort reason when the start path recorded
-                # one; the generic catch-all is a last resort.
+            if self._auto_worker is None or self._auto_worker is worker_before:
+                # Either nothing started, or a guard refused and left the
+                # previous run's worker in the slot. Blocking on that one would
+                # report its paid results as this call's own.
                 reason = getattr(self, "_headless_error", None)
-                return {
+                refused = {
                     "_error": reason or (
                         "Detection did not start. Check the AI Segmentation log: "
                         "missing raster, not signed in, zone too large, or feature disabled."
                     )
                 }
+                if worker_before is not None and self._auto_worker is worker_before:
+                    refused["busy"] = True
+                return refused
 
             # An agent run opens at the product's cutoff with nothing to do
             # here: _start_auto_detection resolves it from the run plan fetched
@@ -2024,8 +2611,17 @@ class AutoRunMixin:
             worker.credits_exhausted.connect(_on_exhausted)
             worker.cancelled.connect(_on_cancelled)
 
-            QTimer.singleShot(timeout_s * 1000, loop.quit)
-            loop.exec()
+            # The caller is blocked inside loop.exec(), so a Cancel it owns (a
+            # Processing dialog, a script) can only be heard by a timer running
+            # in this loop. The first True asks for the soft cancel, then the
+            # wait continues so the salvaged tiles reach _last_auto_result.
+            cancel_state = {"asked": False, "deadline": 0.0}
+            poll = self._arm_headless_cancel_poll(loop, should_cancel, cancel_state)
+            try:
+                QTimer.singleShot(timeout_s * 1000, loop.quit)
+                loop.exec()
+            finally:
+                self._disarm_headless_cancel_poll(poll)
 
             # Detach the local loop slots: the worker may still be alive (timeout
             # path) and a late emission must not call quit() on this finished loop.
@@ -2041,8 +2637,15 @@ class AutoRunMixin:
                     pass
 
             if self._last_auto_result is None:
+                if cancel_state["asked"]:
+                    # The user cancelled and the run had not finished winding
+                    # down when the grace window closed. The soft path and its
+                    # own watchdog own the rest, so the hard teardown must not
+                    # run here: it would throw away the tiles already paid for.
+                    return {"_error": "Cancelled", "cancelled": True}
                 # Timeout path: worker is still running (or silently died).
                 self._stop_auto_detection()
+                hard_stopped = True
                 return {"_error": f"Detection timed out after {timeout_s}s"}
 
             result = self._last_auto_result
@@ -2064,11 +2667,15 @@ class AutoRunMixin:
                         return {"_error": "The detections could not be written "
                                           "to a layer. Check the project folder "
                                           "is writable and run Finish again."}
-                return {
+                # tiles_processed counts tiles that answered, never a charge: a
+                # run is charged for the surface of its zone whatever it finds,
+                # and the plugin never learns the final figure, so no key here
+                # may claim one.
+                return self._color_saved_objects_apart({
                     "instances": result.get("instances", 0),
-                    "credits_used": result.get("tiles_processed", 0),
+                    "tiles_processed": result.get("tiles_processed", 0),
                     "layer_name": result.get("layer_name"),
-                }
+                }, instance_colors)
             if status == "error":
                 return {"_error": result.get("message", "Unknown error")}
             if status == "credits_exhausted":
@@ -2082,20 +2689,74 @@ class AutoRunMixin:
                 if result.get("layer_name"):
                     out["layer_name"] = result.get("layer_name")
                     out["instances"] = result.get("instances", 0)
-                return out
+                    out["tiles_processed"] = result.get("tiles_processed", 0)
+                return self._color_saved_objects_apart(out, instance_colors)
             if status in ("cancelled", "stalled"):
                 out = {"_error": (
                     "Detection stopped responding" if status == "stalled"
                     else "Cancelled")}
-                # A stopped run still exports the tiles it was billed for;
+                # A deliberate stop is not a failure. The flag lets a caller
+                # report what was kept instead of raising on the error text.
+                if status == "cancelled":
+                    out["cancelled"] = True
+                # A stopped run still exports the tiles it got answers for;
                 # surface that layer so the caller neither orphans nor blindly
-                # retries work that was charged and kept.
+                # retries work that was kept. Same rule as the completed
+                # return: tiles, never a charge the plugin cannot verify.
                 if result.get("layer_name"):
                     out["layer_name"] = result.get("layer_name")
                     out["instances"] = result.get("instances", 0)
-                    out["credits_used"] = result.get("tiles_processed", 0)
-                return out
+                    out["tiles_processed"] = result.get("tiles_processed", 0)
+                return self._color_saved_objects_apart(out, instance_colors)
 
             return {"_error": f"Unexpected result status: {status}"}
         finally:
-            self._auto_headless_run = False
+            # The flag says "this run has no human", and the wait above can
+            # return while the run is still winding down (its own timeout, a
+            # cancel inside its grace window). A finalize that then reads it as
+            # False takes the interactive route: it opens a review nobody asked
+            # for and records no result for the caller. So it is dropped here
+            # only when nothing is still running; otherwise the terminal that
+            # really ends the run drops it. A hard teardown is the exception:
+            # it tore the run down here and left no terminal to drop anything,
+            # so its thread winding down in the background must not keep the
+            # next interactive run on the headless route, nor an unload waiting
+            # on a run that has already ended.
+            live = getattr(self, "_auto_worker", None)
+            if hard_stopped or live is None or not live.isRunning():
+                self._auto_headless_run = False
+            self._auto_review_preset_overrides = None
+            self._restore_dock_after_headless(mode_before, shown_layer_id)
+            # A teardown asked for while this call was blocking was made to
+            # wait: unloading under a live nested loop frees objects this very
+            # stack holds. The wait is over, so finish it, and last, because
+            # nothing above survives it.
+            if getattr(self, "_unload_deferred", False):
+                self._unload_deferred = False
+                try:
+                    self.unload()
+                except Exception:  # noqa: BLE001 -- teardown must never raise here
+                    pass  # nosec B110
+
+    # Runs last, on a result that already holds every object the run paid for.
+    # Nothing in here may raise or turn `out` into a failure: a run that found
+    # objects and could not colour them is a run that worked, with a note.
+    def _color_saved_objects_apart(self, out: dict, wanted: bool) -> dict:
+        """Give each object on the saved layer its own colour, and say so.
+
+        A caller that did not ask gets the dict back untouched, so an existing
+        caller sees exactly the keys it saw before.
+        """
+        if not wanted or not out.get("layer_name"):
+            return out
+        try:
+            from ...core.instance_symbology import report_instance_colors
+            layer_id = getattr(self, "_auto_export_layer_id", "") or ""
+            layer = QgsProject.instance().mapLayer(layer_id) if layer_id else None
+            return report_instance_colors(out, layer)
+        except Exception:  # noqa: BLE001 -- colouring never fails a run
+            out["instance_colors"] = False
+            out["instance_colors_note"] = (
+                "The objects are saved. Colouring them one by one did not work, "
+                "so the layer keeps its export style.")
+            return out

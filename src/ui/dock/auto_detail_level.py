@@ -21,7 +21,8 @@ from ...core.server_dials import dial_copy
 from ...core.tile_manager import MAX_DETAIL_LEVEL
 from .font_scale import scale_qss_font_px
 from .styles import (
-    BRAND_BLUE,
+    _SECTION_TOGGLE_OPEN_QSS,
+    _SECTION_TOGGLE_QSS,
     _msg_label_qss,
     _msg_text,
 )
@@ -46,12 +47,60 @@ def _detail_hint_copy(state: str, fallback: str, obj: str = "") -> str:
 
 
 class DockAutoDetailLevelMixin:
-    """The Automatic Detail slider: its object gate, its seeding and cap, the
-    free-plan premium gate and the hint line under it."""
+    """The Automatic Detail slider: its Advanced settings fold, its object
+    gate, its seeding and cap, the free-plan premium gate and the hint line
+    under it."""
+
+    def _refresh_auto_advanced_header(self) -> None:
+        """Chevron + title on the fold's head (text swap only).
+
+        The title lives in its own label, not the button's own text: see
+        the comment where auto_advanced_toggle_title is built.
+        """
+        try:
+            arrow = "\u25be" if self._auto_advanced_open else "\u25b8"
+            self.auto_advanced_toggle_title.setText(
+                arrow + " " + tr("Advanced settings"))
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _on_auto_advanced_toggle_clicked(self) -> None:
+        """Head clicked: flip the fold and tell the plugin.
+
+        The signal carries the new state because the tile grid follows it: the
+        canvas draws the split only while the panel that explains it is open
+        (see AutoZoneMixin._tile_grid_revealed). Pure setVisible here, so
+        flipping the fold never emits a control signal of its own.
+        """
+        self.set_auto_advanced_open(not self._auto_advanced_open)
+
+    def set_auto_advanced_open(self, open_: bool) -> None:
+        """Open or shut the Advanced settings fold, and announce the state.
+
+        The one way in, so the canvas and the panel can never disagree. Callers
+        outside the click handler: none today, and it stays public for the MCP
+        surface, which drives this dock the way a user does.
+        """
+        open_ = bool(open_)
+        if open_ == getattr(self, "_auto_advanced_open", False):
+            return
+        try:
+            self.auto_advanced_body.setVisible(open_)
+            self.auto_advanced_toggle_btn.setStyleSheet(
+                _SECTION_TOGGLE_OPEN_QSS if open_ else _SECTION_TOGGLE_QSS)
+        except (RuntimeError, AttributeError):
+            return
+        self._auto_advanced_open = open_
+        self._refresh_auto_advanced_header()
+        self.auto_advanced_toggled.emit(open_)
+
+    def is_auto_advanced_open(self) -> bool:
+        """Whether the user has opened the Advanced settings fold."""
+        return bool(getattr(self, "_auto_advanced_open", False))
 
     def _apply_auto_detail_gate(self, has_object: bool) -> None:
-        """Grey the whole Detail card until the object is defined (typed prompt
-        or drawn example). The slider's default is object-aware, so an
+        """Grey the Precision controls until the object is defined (typed
+        prompt or drawn example). The slider's default is object-aware, so an
         adjustment made BEFORE the object was named was thrown away by the
         prompt-commit re-seed: gating the control makes the order explicit.
         Disabling the container blocks every child, and the opacity dim makes
@@ -61,7 +110,11 @@ class DockAutoDetailLevelMixin:
         while disabled). The one-line hint explains the greyed state instead
         of leaving a dead control unexplained."""
         try:
-            card = self.auto_detail_row
+            # The fold's BODY, never the whole row: the head has to stay
+            # clickable (a user may open it to look at the tiles before they
+            # have named anything), and the surface, the envelope wall and the
+            # cloud disclosure under it must never be dimmed.
+            card = self.auto_advanced_body
             if card.isEnabled() == has_object:
                 return
             card.setEnabled(has_object)
@@ -85,8 +138,40 @@ class DockAutoDetailLevelMixin:
     def _on_auto_detail_changed(self, value: int) -> None:
         # The slider now shows plain Coarse/Fine ends; the only numeric feedback
         # is the credit cost, which the plugin recomputes from the real grid.
+        # The hint follows every tick of the drag; the signal that drives the
+        # recompute settles first, so dragging across many levels fires it once.
         self._refresh_auto_detail_hint()
-        self.auto_detail_changed.emit(value)
+        self._auto_detail_pending_value = value
+        timer = getattr(self, "_auto_detail_emit_timer", None)
+        if timer is None:
+            from qgis.PyQt.QtCore import QTimer
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(self._flush_auto_detail_changed)
+            self._auto_detail_emit_timer = timer
+        timer.start(150)
+
+    def _flush_auto_detail_changed(self) -> None:
+        """Emit the Precision change once the drag has settled."""
+        value = getattr(self, "_auto_detail_pending_value", None)
+        if value is not None:
+            self.auto_detail_changed.emit(value)
+
+    def _cancel_pending_auto_detail(self) -> None:
+        """Drop a tick that has not been emitted yet.
+
+        Every programmatic reseed calls this first. The debounce holds the
+        value the USER last dragged to, and a reseed means that choice is about
+        a zone or a prompt that is gone: letting it fire afterwards writes the
+        old level back over the new one and marks it as chosen by hand.
+        """
+        timer = getattr(self, "_auto_detail_emit_timer", None)
+        if timer is not None:
+            try:
+                timer.stop()
+            except (RuntimeError, AttributeError):
+                pass  # nosec B110 -- a timer already gone holds nothing
+        self._auto_detail_pending_value = None
 
     def set_auto_detail_value(self, n: int) -> None:
         """Seed the detail slider with a good default for a freshly drawn zone.
@@ -95,6 +180,7 @@ class DockAutoDetailLevelMixin:
         slider max) right after. Raises the max first if needed so the seeded
         value is not clamped by a previous zone's smaller cap.
         """
+        self._cancel_pending_auto_detail()
         s = self.auto_detail_slider
         s.blockSignals(True)
         if s.maximum() < n:
@@ -114,11 +200,7 @@ class DockAutoDetailLevelMixin:
         the soft tile budget, so this fires only when the USER dragged detail
         down (fix: raise it back) or the zone is so large even the slider max
         stays coarse (fix: a smaller zone; "raise detail" would be a dead end).
-        The neutral hint hides while the warning shows so the two never stack.
-        The premium gate outranks this: it blocks Detect, so the amber box must
-        never sit on top of the subscribe box and hide the only way forward."""
-        if self._auto_premium_gated:
-            coarse = False
+        The neutral hint hides while the warning shows so the two never stack."""
         if coarse:
             s = self.auto_detail_slider
             self.auto_detail_warning_label.setText(
@@ -149,6 +231,7 @@ class DockAutoDetailLevelMixin:
         hi = max(1, min(MAX_DETAIL_LEVEL, int(hi)))
         lo = max(1, min(hi, int(lo)))
         self._auto_detail_object_bound = bool(object_bound)
+        self._cancel_pending_auto_detail()
         slider = self.auto_detail_slider
         slider.blockSignals(True)
         # Widen, then set the ends. Qt clamps each end against the CURRENT
@@ -172,37 +255,6 @@ class DockAutoDetailLevelMixin:
             pass
         self._refresh_auto_detail_hint()
 
-    def set_auto_free_run_cap(self, cap: int | None) -> None:
-        """Per-run credit cap for the free plan (None = subscriber, uncapped).
-
-        Set by the plugin from the credit-estimate chokepoint, right before
-        the estimate itself lands. The slider keeps its full (Pro) travel; the
-        cap gates DETECT instead: set_auto_credit_estimate compares the live
-        estimate against it and flips the premium gate."""
-        self._auto_free_run_cap = int(cap) if cap is not None else None
-
-    def _set_auto_premium_gated(self, gated: bool) -> None:
-        """Flip the free-plan premium gate (estimate above the per-run cap).
-
-        Greys Detect (via _update_auto_detect_enabled, run by the caller) and
-        swaps the detail hint to the upgrade link. The upsell view is tracked
-        once per gate episode (rising edge)."""
-        gated = bool(gated)
-        if gated == self._auto_premium_gated:
-            return
-        self._auto_premium_gated = gated
-        if gated and not self._detail_cap_upsell_tracked:
-            self._detail_cap_upsell_tracked = True
-            try:
-                from ...core import telemetry_session_events
-                telemetry_session_events.track_pro_upsell_viewed(trigger="detail_cap")
-            except Exception:
-                pass  # nosec B110
-        elif not gated:
-            # Next gate episode counts as a fresh upsell view.
-            self._detail_cap_upsell_tracked = False
-        self._refresh_auto_detail_hint()
-
     def _on_detail_cap_upgrade_link(self, _href: str = "") -> None:
         """Upgrade link inside the detail hint: same dashboard URL as every
         other upsell surface, its own telemetry source."""
@@ -213,7 +265,7 @@ class DockAutoDetailLevelMixin:
             telemetry_session_events.track_pro_upsell_clicked(source="detail_cap")
         except Exception:
             pass  # nosec B110
-        QDesktopServices.openUrl(QUrl(self._build_upgrade_url()))
+        QDesktopServices.openUrl(QUrl(self._build_upgrade_url("plugin_detail_cap")))
 
     def set_auto_detail_feedback(self, state: str | None, object_word: str) -> None:
         """Live verdict for the CURRENT slider level against the named object
@@ -228,9 +280,7 @@ class DockAutoDetailLevelMixin:
         self._refresh_auto_detail_hint()
 
     def _refresh_auto_detail_hint(self) -> None:
-        """Swap the muted line under the detail slider by state. Premium-gated
-        (the run costs more credits than the free plan allows in one go, which
-        detail and zone size both drive) shows the upgrade link; then the
+        """Swap the muted line under the detail slider by state: the
         object-aware verdict when one is known, so the
         guidance moves live with the slider, the prompt and the zone; the
         handle sitting at a zone/native-capped maximum keeps the
@@ -241,41 +291,6 @@ class DockAutoDetailLevelMixin:
         capped = s.maximum() < MAX_DETAIL_LEVEL and s.value() >= s.maximum()
         feedback = getattr(self, "_auto_detail_feedback", None)
         _plain_hint = scale_qss_font_px("font-size: 10px; color: palette(text);")
-        if self._auto_premium_gated:
-            # Error taxonomy, not the premium blue: this box BLOCKS Detect, and
-            # a friendly blue card with a star read as an offer, so the user
-            # kept clicking a dead button without seeing why. Same shape as the
-            # not-enough-credits card right above Detect: red, the refusal and
-            # the free fix on the first line, the upgrade link alone on the
-            # second. The per-run credit ceiling stays in the tooltip, where the
-            # number costs no line.
-            self.auto_detail_hint.setStyleSheet(_msg_label_qss("error"))
-            _hint = _msg_text("error", tr(
-                "One free run covers fewer cloud detections than this. Lower "
-                "the precision or shrink the zone to stay free. Pro runs up to "
-                "800 cloud detections in one go, so a wide zone keeps a fine "
-                "grid."))
-            _hint += "<br/>"
-            _hint += f'<a href="upgrade" style="color: {BRAND_BLUE};'
-            _hint += ' text-decoration: underline;">'
-            _hint += tr("Upgrade to Pro")
-            _hint += "</a>"
-            self.auto_detail_hint.setText(_hint)
-            _cap = getattr(self, "_auto_free_run_cap", None)
-            # Plain replace, never format(): a translated sentence is outside
-            # data too, and one stray brace in any of the catalogues would
-            # raise here, on the path that paints the dock.
-            self.auto_detail_hint.setToolTip(
-                tr("A free run covers up to {cap} cloud detections. This one "
-                   "needs more. Pro covers up to 800 in one run.").replace(
-                       "{cap}", str(int(_cap))) if _cap else
-                tr("This run needs more cloud detections than one free run "
-                   "covers. Pro covers up to 800 in one run."))
-            # The gate blocks Detect, so its box must be the one on screen
-            # whatever the coarse-imagery guard decided on the previous pass.
-            self.auto_detail_warning.setVisible(False)
-            self.auto_detail_hint.setVisible(True)
-            return
         self.auto_detail_hint.setToolTip("")
         if getattr(self, "_auto_detail_single_level", False):
             word = feedback[1] if feedback else ""

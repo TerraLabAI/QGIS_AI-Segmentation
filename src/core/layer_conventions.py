@@ -17,6 +17,7 @@ from qgis.core import (
     QgsCategorizedSymbolRenderer,
     QgsCoordinateReferenceSystem,
     QgsDistanceArea,
+    QgsField,
     QgsFillSymbol,
     QgsGeometry,
     QgsMessageLog,
@@ -37,6 +38,7 @@ from .qt_compat import (
     PolygonGeometry,
     WkbMultiPolygon,
     WkbPolygon,
+    field_type_double,
 )
 
 # Result-polygon color semantic, shared by both modes and the MCP path so the
@@ -243,7 +245,20 @@ def crs_measures_in_ground_metres(crs) -> bool:
         return False
 
 
-def pick_output_crs(source_crs, extent, project_crs=None):
+def _project_transform_context(transform_context=None):
+    """The transform context to use, reading the project only as a fallback.
+
+    A caller on a worker thread hands the context its GUI thread captured.
+    QgsProject belongs to the GUI thread, so reaching it from anywhere else is
+    what this parameter exists to avoid.
+    """
+    if transform_context is not None:
+        return transform_context
+    return QgsProject.instance().transformContext()
+
+
+def pick_output_crs(source_crs, extent, project_crs=None,
+                    transform_context=None, ellipsoid=None):
     """The CRS a saved layer should be written in.
 
     Keeps the source CRS whenever it already measures in ground metres, so a
@@ -258,6 +273,10 @@ def pick_output_crs(source_crs, extent, project_crs=None):
     data gives an area and a length that the file's own ``$area`` contradicts.
 
     ``extent`` is a QgsRectangle in ``source_crs``; its centre picks the zone.
+
+    ``transform_context`` and ``ellipsoid`` are the project values a caller on
+    a worker thread captured on the GUI thread. Left out, they are read from
+    the project here, which is what every GUI-thread caller already did.
     """
     if crs_measures_in_ground_metres(source_crs):
         return source_crs
@@ -267,12 +286,14 @@ def pick_output_crs(source_crs, extent, project_crs=None):
         except (RuntimeError, AttributeError):
             project_crs = None
     if (crs_measures_in_ground_metres(project_crs)
-            and _crs_holds_ground_scale(project_crs, source_crs, extent)):
+            and _crs_holds_ground_scale(project_crs, source_crs, extent,
+                                        transform_context, ellipsoid)):
         return project_crs
-    return _utm_crs_for_extent(source_crs, extent) or source_crs
+    return _utm_crs_for_extent(
+        source_crs, extent, transform_context) or source_crs
 
 
-def _utm_crs_for_extent(source_crs, extent):
+def _utm_crs_for_extent(source_crs, extent, transform_context=None):
     """The WGS84 UTM zone covering ``extent``, or None.
 
     UTM is the fallback because it exists everywhere and its scale error stays
@@ -288,7 +309,7 @@ def _utm_crs_for_extent(source_crs, extent):
     ``_wgs84_bounds`` transforms every source, geographic ones included,
     because a geographic CRS need not count degrees from Greenwich.
     """
-    bounds = _wgs84_bounds(source_crs, extent)
+    bounds = _wgs84_bounds(source_crs, extent, transform_context)
     if bounds is None:
         return None
     lon_min, lat_min, lon_max, lat_max = bounds
@@ -442,7 +463,7 @@ def _square_pixel_crs(source_crs, bounds):
         return None
 
 
-def _wgs84_bounds(source_crs, extent):
+def _wgs84_bounds(source_crs, extent, transform_context=None):
     """``extent`` as (lon_min, lat_min, lon_max, lat_max), or None.
 
     None whenever the answer would be a guess: no extent, a failed transform,
@@ -463,7 +484,7 @@ def _wgs84_bounds(source_crs, extent):
         rect = extent
         if source_crs is not None and source_crs.isValid() and source_crs != wgs84:
             rect = QgsCoordinateTransform(
-                source_crs, wgs84, QgsProject.instance()
+                source_crs, wgs84, _project_transform_context(transform_context)
             ).transformBoundingBox(extent)
         lon_min, lon_max = rect.xMinimum(), rect.xMaximum()
         lat_min, lat_max = rect.yMinimum(), rect.yMaximum()
@@ -476,7 +497,8 @@ def _wgs84_bounds(source_crs, extent):
         return None
 
 
-def _crs_holds_ground_scale(candidate, source_crs, extent) -> bool:
+def _crs_holds_ground_scale(candidate, source_crs, extent,
+                            transform_context=None, ellipsoid=None) -> bool:
     """Whether one unit of ``candidate`` is one ground metre over ``extent``.
 
     Asks the candidate itself rather than trusting its declared units, which is
@@ -489,8 +511,10 @@ def _crs_holds_ground_scale(candidate, source_crs, extent) -> bool:
         centre = QgsPointXY(extent.center())
         if source_crs is not None and source_crs.isValid() and source_crs != candidate:
             centre = QgsCoordinateTransform(
-                source_crs, candidate, QgsProject.instance()).transform(centre)
-        along_x, along_y = ground_unit_metres(candidate, centre.x(), centre.y())
+                source_crs, candidate,
+                _project_transform_context(transform_context)).transform(centre)
+        along_x, along_y = ground_unit_metres(
+            candidate, centre.x(), centre.y(), transform_context, ellipsoid)
         tolerance = run_crs_scale_tolerance()
         return (abs(along_x - 1.0) <= tolerance
                 and abs(along_y - 1.0) <= tolerance)
@@ -510,6 +534,33 @@ def round_measure(value) -> float | None:
         return round(float(value), measure_decimals())
     except (TypeError, ValueError):
         return None
+
+
+# Digits a measure column reserves for the part in front of the decimal point.
+# A dBase numeric column carries its width and its decimals in the header, and
+# a value that does not fit is written rounded to what does. 17 digits is far
+# past any area a segmentation run produces, and the whole width stays inside
+# what the format accepts.
+_MEASURE_FIELD_INTEGER_DIGITS = 17
+
+
+def measure_field(name: str):
+    """A QgsField for an area or perimeter column, with its decimals declared.
+
+    GeoPackage stores a REAL and forgets any declared precision, so this
+    changes nothing there. A Shapefile does not: its dBase table writes each
+    number to the decimals the field header declares, and a field that
+    declares none arrives as whole metres. Declaring them is what keeps
+    ``perimeter_m`` a measurement in that format.
+
+    The decimal count is the same one ``round_measure`` writes with, so the
+    column never promises more digits than the value carries.
+    """
+    decimals = max(0, min(int(measure_decimals()), 9))
+    return QgsField(
+        name, field_type_double(), "double",
+        _MEASURE_FIELD_INTEGER_DIGITS + decimals + 1, decimals,
+    )
 
 
 def apply_export_field_aliases(layer) -> None:
@@ -647,30 +698,35 @@ def make_review_renderer() -> QgsSingleSymbolRenderer:
     return QgsSingleSymbolRenderer(symbol)
 
 
-def make_area_measurer(crs) -> QgsDistanceArea:
+def make_area_measurer(crs, transform_context=None,
+                       ellipsoid=None) -> QgsDistanceArea:
     """Build a QgsDistanceArea configured once for repeated measureArea() calls.
 
     setEllipsoid() loads ellipsoid parameters from the SRS database, so building
     a fresh measurer per feature (as geodesic_area_m2 does) costs seconds across
     thousands of polygons. Build this ONCE and reuse it in an export loop.
-    Main-thread only (QgsProject).
+
+    Reads QgsProject, and so the GUI thread, only for a value the caller left
+    out. A caller on a worker thread hands both in.
     """
     measurer = QgsDistanceArea()
-    project = QgsProject.instance()
     if crs is not None and crs.isValid():
-        measurer.setSourceCrs(crs, project.transformContext())
-    # project.ellipsoid() returns the truthy string "NONE" (not "") when
+        measurer.setSourceCrs(crs, _project_transform_context(transform_context))
+    if ellipsoid is None:
+        ellipsoid = QgsProject.instance().ellipsoid()
+    # The project answers with the truthy string "NONE" (not "") when
     # ellipsoidal measurement is disabled; both "NONE" and "" mean "measure
     # planar", which on a geographic CRS yields degrees^2 written as area_m2.
     # Fall back to a real ellipsoid so the geodesic areas stay truly metric.
-    ellipsoid = project.ellipsoid()
-    if not ellipsoid or ellipsoid.upper() == "NONE":
+    if not ellipsoid or str(ellipsoid).upper() == "NONE":
         ellipsoid = "EPSG:7030"
     measurer.setEllipsoid(ellipsoid)
     return measurer
 
 
-def ground_unit_metres(crs, ref_x: float, ref_y: float) -> tuple[float, float]:
+def ground_unit_metres(crs, ref_x: float, ref_y: float,
+                       transform_context=None,
+                       ellipsoid=None) -> tuple[float, float]:
     """Ground metres covered by one x unit and one y unit of ``crs``, near (x, y).
 
     (1.0, 1.0) on any failure, and on a CRS whose units are already ground
@@ -681,7 +737,7 @@ def ground_unit_metres(crs, ref_x: float, ref_y: float) -> tuple[float, float]:
         if crs is None or not crs.isValid():
             return 1.0, 1.0
         step = 0.001 if crs.isGeographic() else 1.0
-        measurer = make_area_measurer(crs)
+        measurer = make_area_measurer(crs, transform_context, ellipsoid)
         along_x = float(measurer.measureLine(
             QgsPointXY(ref_x, ref_y), QgsPointXY(ref_x + step, ref_y)))
         along_y = float(measurer.measureLine(
@@ -731,6 +787,31 @@ def write_vector_layer(layer, file_path: str, options, transform_context=None):
         layer, file_path, transform_context, options)
 
 
+# Armed the first time an area is written in layer units instead of ground
+# metres, so the log says it once and not once per polygon.
+_planar_area_fallback_logged = False
+
+
+def note_planar_area_fallback() -> None:
+    """Say once per session that an area was measured in layer units.
+
+    The fallback itself stays: a number the caller can write beats no column at
+    all. But on a CRS in degrees that number is degrees squared, so a run that
+    fell back has to leave a trace somebody can read afterwards."""
+    global _planar_area_fallback_logged
+    if _planar_area_fallback_logged:
+        return
+    _planar_area_fallback_logged = True
+    try:
+        QgsMessageLog.logMessage(
+            "Area: the ellipsoidal measure refused this CRS, areas are "
+            "written in layer units for the rest of the session",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning,
+        )
+    except Exception:  # noqa: BLE001 -- a log line never breaks a save  # nosec B110
+        pass
+
+
 def geodesic_area_m2(geom: QgsGeometry, crs) -> float:
     """True square metres whatever the layer CRS (degrees included).
 
@@ -738,10 +819,15 @@ def geodesic_area_m2(geom: QgsGeometry, crs) -> float:
     meaningless to a surveyor. Main-thread only (QgsProject). For many features
     in a loop, build one make_area_measurer(crs) and call measureArea directly
     instead of paying this per-call ellipsoid load each time.
+
+    The planar fallback is kept, and logged once (see
+    note_planar_area_fallback), because a silent unit change is how a column of
+    degrees squared reaches a user as square metres.
     """
     try:
         return float(make_area_measurer(crs).measureArea(geom))
     except Exception:
+        note_planar_area_fallback()
         return float(geom.area())
 
 

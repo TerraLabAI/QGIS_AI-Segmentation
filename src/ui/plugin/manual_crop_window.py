@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import math
 
-from qgis.core import QgsPointXY
+from qgis.core import Qgis, QgsPointXY
 
 
 class ManualCropWindowMixin:
@@ -305,6 +305,40 @@ class ManualCropWindowMixin:
             return 0.0
         return float(native) if native and native > 0 else 0.0
 
+    def _online_crop_step_ceiling(self) -> float:
+        """The coarsest step one tiled crop may be read at, in RASTER units.
+
+        A tiled source has no pixel of its own to bound the window with, so
+        without this the window followed the map scale however far out it went.
+        The ceiling is a ground width the crop may not exceed, converted into
+        whatever the raster measures in, so a layer in degrees is capped by the
+        same amount of ground as one in metres. Returns 0.0 when the units
+        cannot be told, which leaves the request alone.
+        """
+        from qgis.core import QgsUnitTypes
+
+        from ...core.crop_window import MAX_CROP_GROUND_WIDTH_M
+        from ...core.server_dials import dial
+
+        width_m = dial("manual.max_crop_ground_width_m", MAX_CROP_GROUND_WIDTH_M)
+        # The metre constant moved from QgsUnitTypes onto Qgis in 3.30, and the
+        # floor this plugin supports is older than that.
+        metres = getattr(getattr(Qgis, "DistanceUnit", None), "Meters", None)
+        if metres is None:
+            metres = getattr(QgsUnitTypes, "DistanceMeters", None)
+        if metres is None:
+            return 0.0
+        try:
+            crs = self._current_layer.crs()
+            per_metre = QgsUnitTypes.fromUnitToUnitFactor(metres, crs.mapUnits())
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return 0.0
+        if not per_metre or per_metre <= 0 or not math.isfinite(per_metre):
+            return 0.0
+        # ``crop_size=1024`` is the square every tiled crop is read into, so the
+        # width the ceiling names is spread over that many pixels.
+        return (width_m * per_metre) / 1024.0
+
     def _online_crop_mupp_now(self, mupp_override) -> tuple:
         """``(canvas mupp, crop ground per pixel)`` an online crop would use
         RIGHT NOW, stashing nothing. Split out of `_online_crop_mupp` so the
@@ -317,7 +351,10 @@ class ManualCropWindowMixin:
         otherwise buy interpolated pixels with ground the crop could have
         covered.
         """
-        from ...core.crop_window import ground_per_pixel_at_least_native
+        from ...core.crop_window import (
+            ground_per_pixel_at_least_native,
+            ground_per_pixel_within_ceiling,
+        )
 
         canvas = self.iface.mapCanvas()
         canvas_mupp = canvas.mapUnitsPerPixel()
@@ -334,8 +371,10 @@ class ManualCropWindowMixin:
                 (p2.x() - p1.x()) ** 2 + (p2.y() - p1.y()) ** 2)
         else:
             raster_mupp = canvas_mupp
-        return canvas_mupp, ground_per_pixel_at_least_native(
+        step = ground_per_pixel_at_least_native(
             mupp_override or raster_mupp, self._online_native_ground_per_pixel())
+        return canvas_mupp, ground_per_pixel_within_ceiling(
+            step, self._online_crop_step_ceiling())
 
     def _online_grid_window(self, raster_pt):
         """``(center, ground per pixel)`` an online crop at ``raster_pt`` would

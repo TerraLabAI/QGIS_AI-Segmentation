@@ -113,7 +113,10 @@ class EnvSetupMixin:
                     f"Dock shown (first_create={just_created})",
                     "AI Segmentation", level=Qgis.MessageLevel.Info)
             else:
-                self.dock_widget.hide()
+                # close(), not hide(): a hidden dock is still an open panel to
+                # QGIS, so the View > Panels entry stayed ticked and the next
+                # click on the toolbar button had nothing to reopen.
+                self.dock_widget.close()
                 QgsMessageLog.logMessage(
                     "Dock hidden", "AI Segmentation", level=Qgis.MessageLevel.Info)
 
@@ -916,6 +919,16 @@ class EnvSetupMixin:
             self._end_cloud_click_session()
             if self.dock_widget:
                 self.dock_widget.set_activated_state(False)
+            # Signed out without a word, the panel simply went back to its
+            # sign-in page mid-session and looked like a bug.
+            try:
+                self.iface.messageBar().pushWarning(
+                    "AI Segmentation",
+                    tr("You have been signed out. Sign in again to keep "
+                       "using the cloud features."),
+                )
+            except (RuntimeError, AttributeError):
+                pass
             # A forced sign-out is a churn-grade moment (device limit hit,
             # subscription lapsed, key revoked): make it visible post-hoc.
             try:
@@ -931,7 +944,28 @@ class EnvSetupMixin:
         if normalized == "SUBSCRIPTION_INACTIVE":
             self._notify_billing_problem()
             return
+        if normalized in ("DEVICE_LIMIT_EXCEEDED", "DEVICE_LIMIT"):
+            self._notify_device_limit()
+            return
         self._notify_revalidate_failure(normalized, message)
+
+    def _notify_device_limit(self) -> None:
+        """The account is on every computer its plan allows.
+
+        The same sentence the Automatic run uses for the same refusal, so the
+        user reads one wording for one problem, and one they can act on in a
+        minute. The generic "sign out and sign in again" advice below made it
+        worse: signing in again is exactly what fails.
+        """
+        try:
+            self.iface.messageBar().pushWarning(
+                "AI Segmentation",
+                tr("Your plan is already running on its maximum number of "
+                   "computers. Close AI Segmentation on one of them, then "
+                   "run Detect again."),
+            )
+        except (RuntimeError, AttributeError):
+            pass
 
     def _notify_billing_problem(self) -> None:
         """One notice per session for a subscription the server calls inactive.
@@ -1010,6 +1044,10 @@ class EnvSetupMixin:
             "&utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
             "&utm_content=connect"
         )
+        # Kept whatever the browser did: an open that "succeeded" and landed
+        # nowhere (a sandbox, a default browser that never came up) is the
+        # case the stall hint below has to be able to answer.
+        self._pairing_url = url
         if not QDesktopServices.openUrl(QUrl(url)):
             self._show_pairing_address(url)
 
@@ -1108,8 +1146,10 @@ class EnvSetupMixin:
         """Take a retired sign-in address off the dock.
 
         The line holds a single-use code. Once that code is cancelled or spent,
-        leaving it on screen offers the user an address that cannot work.
+        leaving it on screen offers the user an address that cannot work, and
+        the copy the stall hint reads from goes with it.
         """
+        self._pairing_url = ""
         if not self.dock_widget:
             return
         try:
@@ -1174,20 +1214,42 @@ class EnvSetupMixin:
             f"Pairing failed ({code})", "AI Segmentation",
             level=Qgis.MessageLevel.Warning)
 
-    def _on_pairing_stalled(self):
-        """The server has not seen the browser after a long wait.
+    def _on_pairing_stalled(self, reason: str = ""):
+        """The wait is stuck, and the poll says why.
 
         A hint, not a failure: the poll keeps running and can still succeed, so
-        this only replaces the silent waiting animation with the two things the
-        user can act on. Never switches the panel back to idle, which would
-        take away the Cancel the poll is still honouring."""
+        this only replaces the silent waiting animation with the thing the user
+        can act on. Never switches the panel back to idle, which would take
+        away the Cancel the poll is still honouring.
+
+        ``reason`` defaults to the browser hint, which is what the signal
+        carried before it grew an argument.
+        """
         if not self.dock_widget:
             return
-        self.dock_widget.set_activation_message(
-            tr("Still waiting for the sign-in page. If no browser opened, or "
-               "the page shows an error, click Cancel and try again."),
-            is_error=False,
-        )
+        from ...workers.pairing_poll_task import PairingPollTask
+
+        if reason == PairingPollTask.STALL_CODE_EXPIRED:
+            # The code has a life of its own, and it is nearly over. Waiting on
+            # from here can only end in the timeout.
+            self.dock_widget.set_activation_message(
+                tr("This sign-in code has expired. Click Cancel, then Sign in "
+                   "to get a new one."),
+                is_error=True,
+            )
+            return
+        message = tr("Still waiting for the sign-in page. If no browser "
+                     "opened, or the page shows an error, click Cancel and "
+                     "try again.")
+        # The address itself, for the browser that opened and landed nowhere.
+        # It only ever reached the user when QGIS admitted it could not open
+        # one at all, and a browser that fails silently is the commoner half.
+        url = getattr(self, "_pairing_url", "")
+        if url:
+            message = "{}\n\n{}".format(
+                message,
+                tr("You can also open this address by hand:\n{}").format(url))
+        self.dock_widget.set_activation_message(message, is_error=False)
 
     def _on_pairing_timeout(self):
         if self.dock_widget:
@@ -1540,7 +1602,19 @@ class EnvSetupMixin:
         self._end_cloud_click_session()
         # The object ledger belongs to the account that opened it.
         self._end_manual_credit_session()
+        # Everything the previous account taught the session goes with it: its
+        # balance, and the one-shot notices that were spent on it. Left
+        # standing, the next account opened on the last one's numbers and was
+        # never told about its own lapsed payment or its own low balance.
+        self._last_usage = {}
+        self._usage_applied_at = None
+        self._billing_warning_shown = False
+        self._plan_upgrade_announced = False
         if self.dock_widget:
+            try:
+                self.dock_widget._low_credit_note_seen = False
+            except (RuntimeError, AttributeError):
+                pass
             self.dock_widget.set_activated_state(False)
 
     def _on_deps_install_progress(self, percent: int, message: str):
@@ -1957,8 +2031,10 @@ class EnvSetupMixin:
                     f"Auto-download checkpoint failed: {e}",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning)
                 self.dock_widget.set_install_progress(100, "Failed")
+                # ok=False: True hides the Install button, and this is exactly
+                # the state where the user needs it to try the file again.
                 self.dock_widget.set_dependency_status(
-                    True, tr("Almost ready: the AI file did not download."))
+                    False, tr("Almost ready: the AI file did not download."))
                 self._release_local_ai_install()
         else:
             self.dock_widget.set_install_progress(100, "Failed")
@@ -2105,8 +2181,10 @@ class EnvSetupMixin:
                 f"Failed to start model download: {e}",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning)
             self.dock_widget.set_install_progress(100, "Failed")
+            # ok=False so the Install button stays on screen: the file is what
+            # is missing, and nothing else offers a way to fetch it again.
             self.dock_widget.set_dependency_status(
-                True, tr("Almost ready: the AI file did not download."))
+                False, tr("Almost ready: the AI file did not download."))
             self._release_local_ai_install()
 
     def _on_download_progress(self, percent: int, message: str):
@@ -2141,14 +2219,18 @@ class EnvSetupMixin:
             if getattr(self, "_download_cancelled", False):
                 self._download_cancelled = False
                 self.dock_widget.set_install_progress(100, tr("Cancelled"))
+                # ok=False: the user stopped the download themselves, and the
+                # Install button is how they change their mind.
                 self.dock_widget.set_dependency_status(
-                    True, tr("Almost ready: the AI file is still missing."))
+                    False, tr("Almost ready: the AI file is still missing."))
                 self._release_local_ai_install()
                 return
 
             self.dock_widget.set_install_progress(100, "Failed")
+            # ok=False so the Install button stays on screen: the file is what
+            # is missing, and nothing else offers a way to fetch it again.
             self.dock_widget.set_dependency_status(
-                True, tr("Almost ready: the AI file did not download."))
+                False, tr("Almost ready: the AI file did not download."))
             self._release_local_ai_install()
 
             show_error_report(

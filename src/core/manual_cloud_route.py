@@ -76,10 +76,9 @@ def manual_cloud_route_offered() -> bool:
 
 # Dev opt-in, same channel and same rules as TERRALAB_DETECTION_URL: a line in
 # the gitignored .env.local, absent from every user's checkout, so this reads
-# False everywhere but a working tree that asked for it. It exists because the
-# route is testable long before it is servable: the tagged revision answers
-# /refine today while production traffic still runs an image without it, and
-# an .env.local already points this checkout at that revision.
+# False everywhere but a working tree that asked for it. It exists so the
+# route can be exercised from a development checkout before it is turned on
+# for anyone.
 _MANUAL_CLOUD_ENV = "TERRALAB_MANUAL_CLOUD"
 
 

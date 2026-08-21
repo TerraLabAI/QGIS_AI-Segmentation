@@ -397,6 +397,10 @@ export AI_SEGMENTATION_CACHE_DIR=/jalur/anda</translation>
         <translation>Salin alamat email</translation>
     </message>
     <message>
+        <source>buildings</source>
+        <translation>bangunan</translation>
+    </message>
+    <message>
         <source>or</source>
         <translation>atau</translation>
     </message>
@@ -459,6 +463,10 @@ export AI_SEGMENTATION_CACHE_DIR=/jalur/anda</translation>
     <message>
         <source>Click is outside the '{layer}' raster. To segment another raster, stop the current segmentation first.</source>
         <translation>Klik berada di luar raster '{layer}'. Untuk menyegmentasi raster lain, hentikan dulu segmentasi yang sedang berjalan.</translation>
+    </message>
+    <message>
+        <source>trees</source>
+        <translation>pohon</translation>
     </message>
     <message>
         <source>{ext} format is not directly supported. GDAL is not available.
@@ -1438,9 +1446,6 @@ Setelah instalasi selesai, mulai ulang QGIS dan coba lagi.</translation>
     <message>
         <source>0 shown - lower the Min size filter to reveal them</source>
         <translation>0 ditampilkan - turunkan filter Ukuran min untuk menampilkannya</translation>
-    </message>
-    <message>
-        <source>5,000 cloud detections every month, zones of any size. Cancel anytime.</source><translation>5.000 deteksi cloud setiap bulan, zona dengan ukuran apa pun. Batalkan kapan saja.</translation>
     </message>
     <message>
         <source>A Component Failed to Load</source>
@@ -2749,9 +2754,6 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
     </message>
     
     <message>
-        <source>Pro: 5,000 cloud detections a month, zones of any size, up to 800 cloud detections in one run. Same AI, same free clicks and corrections, every machine you work on.</source><translation>Pro: 5.000 deteksi cloud setiap bulan, zona dengan ukuran apa pun, hingga 800 deteksi cloud dalam satu proses. AI yang sama, klik gratis yang sama dan koreksi, setiap mesin yang Anda gunakan.</translation>
-    </message>
-    <message>
         <source>A free run covers up to {cap} cloud detections. This one needs more. Pro covers up to 800 in one run.</source><translation>Proses gratis mencakup hingga {cap} deteksi cloud. Yang ini memerlukan lebih banyak. Pro mencakup hingga 800 dalam satu proses.</translation>
     </message>
     <message>
@@ -2877,9 +2879,6 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
     <message>
         <source>No image over this zone at this precision, so nothing was analyzed (not charged). Lower Precision, or pick a layer that covers this area.</source>
         <translation>Tidak ada gambar di atas zona ini pada presisi ini, sehingga tidak ada yang dianalisis (tidak dikenai biaya). Turunkan Presisi, atau pilih lapisan yang mencakup area ini.</translation>
-    </message>
-    <message>
-        <source>This run needs {n} cloud detections and you have {left} left. Lower the precision or shrink the zone. Pro gives you 5,000 cloud detections a month.</source><translation>Proses ini memerlukan {n} deteksi cloud dan Anda memiliki {left} tersisa. Turunkan presisi atau perkecil zona. Pro memberi Anda 5.000 deteksi cloud setiap bulan.</translation>
     </message>
     <message>
         <source>Opens your terra-lab.ai dashboard: your plan, your cloud detections and your payment details.</source><translation>Membuka dasbor terra-lab.ai Anda: paket Anda, deteksi cloud Anda dan detail pembayaran Anda.</translation>
@@ -3041,9 +3040,6 @@ Berkas ini mungkin telah dipindahkan atau diganti namanya, atau drive atau folde
     <message>
         <source>Type a word for the object, or draw an example.</source>
         <translation>Ketik kata untuk objek, atau gambar contoh.</translation>
-    </message>
-    <message>
-        <source>Finish this zone with Pro: 5,000 cloud detections a month.</source><translation>Selesaikan zona ini dengan Pro: 5.000 deteksi cloud setiap bulan.</translation>
     </message>
     <message>
         <source>Wait for the on-device AI to finish installing.</source>
@@ -3536,14 +3532,6 @@ Berkas ini mungkin telah dipindahkan atau diganti namanya, atau drive atau folde
         <translation>Atau bekerja gratis dengan AI yang lebih kecil di komputer ini.</translation>
     </message>
     <message>
-        <source>Pro: 5,000 cloud detections a month</source>
-        <translation>Pro: 5.000 deteksi cloud per bulan</translation>
-    </message>
-    <message>
-        <source>Pro: 5,000 detections a month, on zones of any size</source>
-        <translation>Pro: 5.000 deteksi per bulan, pada zona ukuran apa pun</translation>
-    </message>
-    <message>
         <source>QGIS cannot read this raster format here. Convert it to GeoTIFF, then start again.</source>
         <translation>QGIS tidak dapat membaca format raster ini. Konversikan ke GeoTIFF, lalu mulai lagi.</translation>
     </message>
@@ -3646,6 +3634,1074 @@ Berkas ini mungkin telah dipindahkan atau diganti namanya, atau drive atau folde
     <message>
         <source>Your free cloud detections are used up</source>
         <translation>Deteksi cloud gratis Anda telah habis</translation>
+    </message>
+    <message>
+        <source>You used your Automatic allowance for this month. Semi-Auto runs on your computer, free, with no counter.</source>
+        <translation>Jatah Automatic Anda untuk bulan ini telah digunakan. Semi-Auto berjalan di komputer Anda, gratis, tanpa penghitung.</translation>
+    </message>
+    <message>
+        <source>{n} km² left</source>
+        <translation>Tersisa {n} km²</translation>
+    </message>
+    <message>
+        <source>{n} km² of Automatic left this month</source>
+        <translation>Tersisa {n} km² Automatic bulan ini</translation>
+    </message>
+    <message>
+        <source>{used} of {total} km² of Automatic used this month</source>
+        <translation>{used} dari {total} km² Automatic telah digunakan bulan ini</translation>
+    </message>
+    <message>
+        <source>{n} cloud objects left this month</source>
+        <translation>Tersisa {n} objek cloud bulan ini</translation>
+    </message>
+    <message>
+        <source>{used} of {total} cloud objects saved this month</source>
+        <translation>{used} dari {total} objek cloud telah disimpan bulan ini</translation>
+    </message>
+    <message>
+        <source>It comes back on {date}. Semi-Auto on this computer keeps working.</source>
+        <translation>Kembali pada {date}. Semi-Auto di komputer ini tetap berfungsi.</translation>
+    </message>
+    <message>
+        <source>You covered your {n} km² of Automatic this month</source>
+        <translation>Anda telah menggunakan {n} km² Automatic bulan ini</translation>
+    </message>
+    <message>
+        <source>This run needs {n} cloud detections and you have {left} left this month. Lower the precision or shrink the zone. Pro covers 300 km² of Automatic a month, on zones of any size.</source>
+        <translation>Proses ini memerlukan {n} deteksi cloud dan Anda memiliki {left} tersisa bulan ini. Kurangi presisi atau perkecil zona. Pro mencakup 300 km² Automatic per bulan, pada zona dengan ukuran apa pun.</translation>
+    </message>
+    <message>
+        <source>One detection covers 0.04 to 0.25 km², depending on the precision you ask for.</source>
+        <translation>Satu deteksi mencakup 0.04 hingga 0.25 km², tergantung pada presisi yang Anda minta.</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} km² of Automatic used, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Hampir habis: {used} dari {total} km² Automatic telah digunakan, kembali pada {date}. &lt;a href="{url}"&gt;Tingkatkan ke Pro&lt;/a&gt; untuk terus menggunakan.</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} km² of Automatic used. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Hampir habis: {used} dari {total} km² Automatic telah digunakan. &lt;a href="{url}"&gt;Tingkatkan ke Pro&lt;/a&gt; untuk terus menggunakan.</translation>
+    </message>
+    <message>
+        <source>You saved your {n} cloud objects this month</source>
+        <translation>Anda telah menyimpan {n} objek cloud bulan ini</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} cloud objects saved this month, back on {date}. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Hampir habis: {used} dari {total} objek cloud telah disimpan bulan ini, kembali pada {date}. &lt;a href="{url}"&gt;Tingkatkan ke Pro&lt;/a&gt; untuk terus menggunakan.</translation>
+    </message>
+    <message>
+        <source>Running low: {used} of {total} cloud objects saved this month. &lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to keep going.</source>
+        <translation>Hampir habis: {used} dari {total} objek cloud telah disimpan bulan ini. &lt;a href="{url}"&gt;Tingkatkan ke Pro&lt;/a&gt; untuk terus menggunakan.</translation>
+    </message>
+    <message>
+        <source>300 km² of Automatic every month, on zones of any size</source>
+        <translation>300 km² Automatic setiap bulan, pada zona dengan ukuran apa pun</translation>
+    </message>
+    <message>
+        <source>Finish this zone with Pro: 300 km² of Automatic a month.</source>
+        <translation>Selesaikan zona ini dengan Pro: 300 km² Automatic per bulan.</translation>
+    </message>
+    <message>
+        <source>Zone too large. Reduce the area to {max} detections or fewer.</source>
+        <translation>Zona terlalu besar. Kurangi area menjadi {max} deteksi atau kurang.</translation>
+    </message>
+    <message>
+        <source>You saved your cloud objects for this month. Switch to your own computer to keep working free, or upgrade from the panel.</source>
+        <translation>Anda telah menyimpan objek cloud untuk bulan ini. Beralih ke komputer Anda sendiri untuk terus bekerja secara gratis, atau tingkatkan dari panel.</translation>
+    </message>
+    <message>
+        <source>Your cloud allowance for this month is used, so the AI fix cannot answer. Switched to editing by hand, which is free.</source>
+        <translation>Jatah cloud Anda untuk bulan ini telah digunakan, sehingga perbaikan AI tidak dapat memberikan hasil. Beralih ke pengeditan manual, yang gratis.</translation>
+    </message>
+    <message>
+        <source>Your monthly allowance ran out at {done}/{total}. Everything found so far is kept below and stays yours.</source>
+        <translation>Jatah bulanan Anda habis pada {done}/{total}. Semua yang ditemukan sejauh ini disimpan di bawah dan tetap menjadi milik Anda.</translation>
+    </message>
+    <message>
+        <source>Pro: 2,000 objects a month in Semi-Auto with Cloud AI</source>
+        <translation>Pro: 2.000 objek per bulan di Semi-Auto dengan Cloud AI</translation>
+    </message>
+    <message>
+        <source>Pro: 2,000 objects a month in Semi-Auto with Cloud AI, and 300 km² of Automatic. Same AI, same free clicks and corrections, every machine you work on.</source>
+        <translation>Pro: 2.000 objek per bulan di Semi-Auto dengan Cloud AI, dan 300 km² di Automatic. AI yang sama, klik dan koreksi gratis yang sama, di setiap komputer yang Anda gunakan.</translation>
+    </message>
+    <message>
+        <source>2,000 objects a month in Semi-Auto, 300 km² in Automatic. Cancel anytime.</source>
+        <translation>2.000 objek per bulan di Semi-Auto, 300 km² di Automatic. Batalkan kapan saja.</translation>
+    </message>
+    <message>
+        <source>300 km² of Automatic a month, on zones of any size.</source>
+        <translation>300 km² Automatic per bulan, untuk zona dengan ukuran apa pun.</translation>
+    </message>
+    <message>
+        <source>The same AI on every machine you work on.</source>
+        <translation>AI yang sama di setiap mesin yang Anda gunakan.</translation>
+    </message>
+    <message>
+        <source>39 EUR a month, cancel anytime.</source>
+        <translation>39 EUR per bulan, batalkan kapan saja.</translation>
+    </message>
+    <message>
+        <source>2,000 cloud objects every month in Semi-Auto</source>
+        <translation>2.000 objek cloud setiap bulan dalam Semi-Auto</translation>
+    </message>
+    <message>
+        <source>{n} of {total} cloud objects left in Semi-Auto this month</source>
+        <translation>{n} dari {total} objek cloud tersisa dalam Semi-Auto bulan ini</translation>
+    </message>
+    <message>
+        <source>{n} of {total} km² left in Automatic this month</source>
+        <translation>{n} dari {total} km² tersisa dalam Automatic bulan ini</translation>
+    </message>
+    <message>
+        <source>Draw a whole city and let it run, at the finest precision.</source>
+        <translation>Gambar seluruh kota dan jalankan dengan presisi tertinggi.</translation>
+    </message>
+    <message>
+        <source>Or click objects one by one in Semi-Auto.</source>
+        <translation>Atau klik objek satu per satu dalam Semi-Auto.</translation>
+    </message>
+    <message>
+        <source>(optional)</source>
+        <translation>(opsional)</translation>
+    </message>
+    <message>
+        <source>More precision sweeps your zone in a finer grid, so it catches smaller objects.</source>
+        <translation>Presisi yang lebih tinggi memindai zona Anda dengan grid yang lebih rapat, sehingga dapat menangkap objek yang lebih kecil.</translation>
+    </message>
+    <message>
+        <source>Your Automatic allowance ran out mid-zone.</source>
+        <translation>Kuota Automatic Anda habis di tengah zona.</translation>
+    </message>
+    <message>
+        <source>Pro picks it up where it stopped and finishes the zone.</source>
+        <translation>Pro melanjutkan dari titik berhenti dan menyelesaikan zona.</translation>
+    </message>
+    <message>
+        <source>Finish with Pro</source>
+        <translation>Selesaikan dengan Pro</translation>
+    </message>
+    <message>
+        <source>This zone at this precision is more than one run covers. Draw a smaller zone, or lower the precision.</source>
+        <translation>Zona ini pada presisi ini lebih luas daripada yang dapat dicakup satu proses. Gambar zona yang lebih kecil, atau turunkan presisinya.</translation>
+    </message>
+    <message>
+        <source>This zone at this precision is more than one run covers. Draw a smaller zone, or lower the precision. Free runs stop well below that ceiling, so Pro keeps more precision on a zone this size.</source>
+        <translation>Zona ini pada presisi ini lebih luas daripada yang dapat dicakup satu proses. Gambar zona yang lebih kecil, atau turunkan presisinya. Proses gratis berhenti jauh di bawah batas tersebut, sehingga Pro mempertahankan presisi yang lebih tinggi untuk zona sebesar ini.</translation>
+    </message>
+    <message>
+        <source>{n} km²</source>
+        <translation>{n} km²</translation>
+    </message>
+    <message>
+        <source>Automatic is counted by surface. Precision changes how finely the zone is scanned, never the price. A run never costs more than the zone you drew.</source>
+        <translation>Automatic dihitung berdasarkan luas permukaan. Presisi mengubah tingkat kerincian pemindaian zona, bukan harganya. Satu proses tidak pernah menggunakan lebih banyak dari luas zona yang Anda gambar.</translation>
+    </message>
+    <message>
+        <source>Pro raises the month to 300 km² of Automatic.</source>
+        <translation>Pro meningkatkan kuota bulanan menjadi 300 km² Automatic.</translation>
+    </message>
+    <message>
+        <source>This zone is {zone} km². You have {left} km² left in Automatic this month.</source>
+        <translation>Zona ini seluas {zone} km². Anda memiliki sisa {left} km² dalam Automatic bulan ini.</translation>
+    </message>
+    <message>
+        <source>Or draw a smaller zone.</source>
+        <translation>Atau gambar zona yang lebih kecil.</translation>
+    </message>
+    <message>
+        <source>This zone is {area} km². Free runs stop at {max} km².</source>
+        <translation>Zona ini seluas {area} km². Proses gratis dibatasi hingga {max} km².</translation>
+    </message>
+    <message>
+        <source>Pro has no size limit and runs the zone as you drew it.</source>
+        <translation>Pro tidak memiliki batas ukuran dan menjalankan zona sesuai gambar Anda.</translation>
+    </message>
+    <message>
+        <source>Or make the zone smaller and run it free.</source>
+        <translation>Atau perkecil zona dan jalankan secara gratis.</translation>
+    </message>
+    <message>
+        <source>{n} km² of Automatic left, back on {date}.</source>
+        <translation>Tersisa {n} km² Automatic, kembali pada {date}.</translation>
+    </message>
+    <message>
+        <source>{n} km² of Automatic left this month.</source>
+        <translation>Tersisa {n} km² Automatic bulan ini.</translation>
+    </message>
+    <message>
+        <source>{n} free detections left, back on {date}.</source>
+        <translation>Tersisa {n} deteksi gratis, kembali pada {date}.</translation>
+    </message>
+    <message>
+        <source>{n} free detections left.</source>
+        <translation>Tersisa {n} deteksi gratis.</translation>
+    </message>
+    <message>
+        <source>Pro gives you 300 km² of Automatic a month, so you keep working.</source>
+        <translation>Pro memberi Anda 300 km² Automatic per bulan, sehingga Anda dapat terus bekerja.</translation>
+    </message>
+    <message>
+        <source>Advanced settings</source>
+        <translation>Pengaturan lanjutan</translation>
+    </message>
+    <message>
+        <source>Zoom in for a finer outline. The AI reads the image at your current zoom.</source>
+        <translation>Perbesar untuk mendapatkan outline yang lebih rinci. AI membaca imagery pada tingkat zoom Anda saat ini.</translation>
+    </message>
+    <message>
+        <source>Keep clicking with the same cloud AI, nothing to install.</source>
+        <translation>Terus klik dengan cloud AI yang sama, tanpa perlu menginstal apa pun.</translation>
+    </message>
+    <message>
+        <source>You saved your {n} cloud objects in Semi-Auto this month</source>
+        <translation>Anda telah menyimpan {n} objek cloud dalam Semi-Auto bulan ini</translation>
+    </message>
+    <message>
+        <source>Or keep clicking for free with a smaller AI on this computer.</source>
+        <translation>Atau terus klik secara gratis dengan AI yang lebih kecil di komputer ini.</translation>
+    </message>
+    <message>
+        <source>{n} of {total} cloud objects left in Semi-Auto, back on {date}.</source>
+        <translation>Tersisa {n} dari {total} objek cloud dalam Semi-Auto, kembali pada {date}.</translation>
+    </message>
+    <message>
+        <source>{n} of {total} cloud objects left in Semi-Auto this month.</source>
+        <translation>Tersisa {n} dari {total} objek cloud dalam Semi-Auto bulan ini.</translation>
+    </message>
+    <message>
+        <source>{n} cloud detections left, back on {date}.</source>
+        <translation>Tersisa {n} deteksi cloud, kembali pada {date}.</translation>
+    </message>
+    <message>
+        <source>{n} cloud detections left.</source>
+        <translation>Tersisa {n} deteksi cloud.</translation>
+    </message>
+    <message>
+        <source>Pro gives you 2,000 cloud objects a month in Semi-Auto.</source>
+        <translation>Pro memberi Anda 2.000 objek cloud per bulan dalam Semi-Auto.</translation>
+    </message>
+    <message>
+        <source>More settings</source>
+        <translation>Pengaturan lainnya</translation>
+    </message>
+    <message>
+        <source>{left} / {cap} km²</source>
+        <translation>{left} / {cap} km²</translation>
+    </message>
+    <message>
+        <source>{left} of {cap} km² left in Automatic this month</source>
+        <translation>Tersisa {left} dari {cap} km² dalam Automatic bulan ini</translation>
+    </message>
+    <message>
+        <source>{left} of {cap} cloud objects left in Semi-Auto this month</source>
+        <translation>Tersisa {left} dari {cap} objek cloud dalam Semi-Auto bulan ini</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the surface you have left this month. Draw a smaller zone.</source>
+        <translation>Zona ini lebih luas daripada sisa permukaan yang Anda miliki bulan ini. Gambar zona yang lebih kecil.</translation>
+    </message>
+    <message>
+        <source>It comes back on {date}.</source>
+        <translation>Kembali pada {date}.</translation>
+    </message>
+    <message>
+        <source>A zone detection is already running. Wait for it to finish, or stop it, before starting another.</source>
+        <translation>Deteksi zona sedang berjalan. Tunggu hingga selesai, atau hentikan, sebelum memulai deteksi lain.</translation>
+    </message>
+    <message>
+        <source>Type what to find first. An example is optional.</source>
+        <translation>Ketik terlebih dahulu apa yang ingin ditemukan. Contoh bersifat opsional.</translation>
+    </message>
+    <message>
+        <source>Your plan is already running on its maximum number of computers. Close AI Segmentation on one of them, then run Detect again.</source>
+        <translation>Paket Anda sudah berjalan pada jumlah komputer maksimum. Tutup AI Segmentation di salah satunya, lalu jalankan Detect lagi.</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the area you have left this month. Draw a smaller zone, or subscribe for a larger monthly area.</source>
+        <translation>Zona ini lebih besar daripada area yang tersisa untuk Anda bulan ini. Gambar zona yang lebih kecil atau berlangganan untuk mendapatkan area bulanan yang lebih besar.</translation>
+    </message>
+    <message>
+        <source>Your monthly allowance ran out, so this run did not start.</source>
+        <translation>Kuota bulanan Anda telah habis, sehingga proses ini tidak dimulai.</translation>
+    </message>
+    <message>
+        <source>"{word}" is hard to spot from above - "{term}" detects better. Your word still runs.</source>
+        <translation>"{word}" sulit terlihat dari atas, "{term}" mendeteksi lebih baik. Kata Anda tetap dijalankan.</translation>
+    </message>
+    <message>
+        <source>"{word}" cannot be seen from above. Pick an object on the ground - the Library has ready-to-use ones.</source>
+        <translation>"{word}" tidak dapat terlihat dari atas. Pilih objek di permukaan tanah, Pustaka memiliki objek yang siap digunakan.</translation>
+    </message>
+    <message>
+        <source>"{obj}" is not an object the AI knows well. The run may come back empty - a more common word finds more.</source>
+        <translation>"{obj}" bukan objek yang dikenal AI dengan baik. Hasil deteksi mungkin kosong, kata yang lebih umum memberikan hasil lebih banyak.</translation>
+    </message>
+    <message>
+        <source>(~{n} min left)</source>
+        <translation>(~{n} menit tersisa)</translation>
+    </message>
+    <message>
+        <source>(~{n} sec left)</source>
+        <translation>(~{n} detik tersisa)</translation>
+    </message>
+    <message>
+        <source>1 detection</source>
+        <translation>1 deteksi</translation>
+    </message>
+    <message>
+        <source>1 free cloud detection remaining</source>
+        <translation>Tersisa 1 deteksi cloud gratis</translation>
+    </message>
+    <message>
+        <source>1 shape edited this session</source>
+        <translation>1 bentuk diedit dalam sesi ini</translation>
+    </message>
+    <message>
+        <source>AI not available</source>
+        <translation>AI tidak tersedia</translation>
+    </message>
+    <message>
+        <source>Automatic is temporarily unavailable. Try again later.</source>
+        <translation>Otomatis sedang tidak tersedia. Coba lagi nanti.</translation>
+    </message>
+    <message>
+        <source>Could not read the pixel grid of this raster. Check the layer opens and shows in QGIS, then try again.</source>
+        <translation>Tidak dapat membaca kisi piksel raster ini. Periksa apakah layer terbuka dan tampil di QGIS, lalu coba lagi.</translation>
+    </message>
+    <message>
+        <source>Detection stopped before any result came back. Run Detect again when you are ready.</source>
+        <translation>Deteksi berhenti sebelum hasil diterima. Jalankan Deteksi lagi saat Anda siap.</translation>
+    </message>
+    <message>
+        <source>Export now?</source>
+        <translation>Ekspor sekarang?</translation>
+    </message>
+    <message>
+        <source>Export what you saved and end this session?</source>
+        <translation>Ekspor yang telah Anda simpan dan akhiri sesi ini?</translation>
+    </message>
+    <message>
+        <source>Finish or close the review first.</source>
+        <translation>Selesaikan atau tutup peninjauan terlebih dahulu.</translation>
+    </message>
+    <message>
+        <source>No Automatic surface left this month. Semi-Auto still works until it comes back.</source>
+        <translation>Tidak ada luas Otomatis yang tersisa bulan ini. Semi-Auto tetap berfungsi hingga tersedia kembali.</translation>
+    </message>
+    <message>
+        <source>No Automatic surface left this month. Semi-Auto still works, and Automatic comes back on {date}.</source>
+        <translation>Tidak ada luas Otomatis yang tersisa bulan ini. Semi-Auto tetap berfungsi, dan Otomatis tersedia kembali pada {date}.</translation>
+    </message>
+    <message>
+        <source>None of the objects came out as a shape the file could take. Turn the cleanup settings down and try Finish again.</source>
+        <translation>Tidak ada objek yang menghasilkan bentuk yang dapat diterima file. Kurangi pengaturan pembersihan, lalu coba Selesai lagi.</translation>
+    </message>
+    <message>
+        <source>Nothing is visible to save. Lower Confidence, or widen the size range, then try Finish again.</source>
+        <translation>Tidak ada yang terlihat untuk disimpan. Kurangi Keyakinan atau perluas rentang ukuran, lalu coba Selesai lagi.</translation>
+    </message>
+    <message>
+        <source>Off until a selection is on screen. Click the object first, then Save polygon keeps it in your session; Export writes all kept polygons to a layer.</source>
+        <translation>Nonaktif hingga seleksi tampil di layar. Klik objek terlebih dahulu, lalu Simpan poligon untuk menyimpannya dalam sesi Anda; Ekspor menulis semua poligon yang disimpan ke layer.</translation>
+    </message>
+    <message>
+        <source>Removes the last point you placed on the object.</source>
+        <translation>Menghapus titik terakhir yang Anda tempatkan pada objek.</translation>
+    </message>
+    <message>
+        <source>Saved all {n} objects found to {name}, including any the Confidence slider hid.</source>
+        <translation>Menyimpan semua {n} objek yang ditemukan ke {name}, termasuk yang disembunyikan oleh penggeser Keyakinan.</translation>
+    </message>
+    <message>
+        <source>Saved the 1 object found to {name}.</source>
+        <translation>Menyimpan 1 objek yang ditemukan ke {name}.</translation>
+    </message>
+    <message>
+        <source>Sign in to run Automatic.</source>
+        <translation>Masuk untuk menjalankan Otomatis.</translation>
+    </message>
+    <message>
+        <source>Team or organization? Write to us: {email}</source>
+        <translation>Tim atau organisasi? Hubungi kami: {email}</translation>
+    </message>
+    <message>
+        <source>The AI Segmentation panel is closed, so there is nothing to detect from. Open it and try again.</source>
+        <translation>Panel AI Segmentation tertutup, jadi tidak ada sumber untuk dideteksi. Buka panel tersebut dan coba lagi.</translation>
+    </message>
+    <message>
+        <source>The AI did not load, so this click was not answered. Use the Install button in the panel to set it up again.</source>
+        <translation>AI tidak dimuat, jadi klik ini tidak mendapat respons. Gunakan tombol Pasang di panel untuk menyiapkannya lagi.</translation>
+    </message>
+    <message>
+        <source>The AI is still loading, so this click was not answered. Try again in a few seconds.</source>
+        <translation>AI masih dimuat, jadi klik ini tidak mendapat respons. Coba lagi dalam beberapa detik.</translation>
+    </message>
+    <message>
+        <source>The click tool stays on while this session is open. Stop the session to use another map tool.</source>
+        <translation>Alat klik tetap aktif selama sesi ini terbuka. Hentikan sesi untuk menggunakan alat peta lain.</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding. Keeping the 1 cloud detection already paid for.</source>
+        <translation>Deteksi berhenti merespons. 1 deteksi cloud yang sudah dibayar tetap disimpan.</translation>
+    </message>
+    <message>
+        <source>The detection stopped responding. Keeping the {n} cloud detections already paid for.</source>
+        <translation>Deteksi berhenti merespons. {n} deteksi cloud yang sudah dibayar tetap disimpan.</translation>
+    </message>
+    <message>
+        <source>The object you are working on is not saved yet, so it will not be in the layer.</source>
+        <translation>Objek yang sedang Anda kerjakan belum disimpan, jadi tidak akan masuk ke layer.</translation>
+    </message>
+    <message>
+        <source>The offline AI did not load, so this session cannot start. Use the Install button in the panel to set it up again.</source>
+        <translation>AI offline tidak dimuat, jadi sesi ini tidak dapat dimulai. Gunakan tombol Pasang di panel untuk menyiapkannya lagi.</translation>
+    </message>
+    <message>
+        <source>This computer is no longer signed in. Sign out, then sign in again to reconnect it.</source>
+        <translation>Komputer ini tidak lagi masuk. Keluar, lalu masuk lagi untuk menghubungkannya kembali.</translation>
+    </message>
+    <message>
+        <source>This sign-in code has expired. Click Cancel, then Sign in to get a new one.</source>
+        <translation>Kode masuk ini telah kedaluwarsa. Klik Batal, lalu Masuk untuk mendapatkan kode baru.</translation>
+    </message>
+    <message>
+        <source>This will discard 1 polygon.</source>
+        <translation>Ini akan membuang 1 poligon.</translation>
+    </message>
+    <message>
+        <source>This will discard {count} polygons.</source>
+        <translation>Ini akan membuang {count} poligon.</translation>
+    </message>
+    <message>
+        <source>This zone is larger than the surface you have left this month. Draw a smaller zone, or subscribe for a larger monthly surface.</source>
+        <translation>Zona ini lebih besar daripada luas yang tersisa untuk Anda bulan ini. Gambar zona yang lebih kecil atau berlangganan untuk mendapatkan luas bulanan yang lebih besar.</translation>
+    </message>
+    <message>
+        <source>You can also open this address by hand:
+{}</source>
+        <translation>Anda juga dapat membuka alamat ini secara manual:
+{}</translation>
+    </message>
+    <message>
+        <source>You have 1 unsaved polygon.</source>
+        <translation>Anda memiliki 1 poligon yang belum disimpan.</translation>
+    </message>
+    <message>
+        <source>You have been signed out. Sign in again to keep using the cloud features.</source>
+        <translation>Anda telah keluar. Masuk lagi untuk terus menggunakan fitur cloud.</translation>
+    </message>
+    <message>
+        <source>You have {count} unsaved polygons.</source>
+        <translation>Anda memiliki {count} poligon yang belum disimpan.</translation>
+    </message>
+    <message>
+        <source>You used your Automatic allowance for this month. Semi-Auto on your computer keeps working, free, with no counter.</source>
+        <translation>Anda telah menggunakan kuota Otomatis bulan ini. Semi-Auto di komputer Anda tetap berfungsi gratis tanpa penghitung.</translation>
+    </message>
+    <message>
+        <source>Your plan is already running on its maximum number of computers. Close AI Segmentation on one of them, then try again.</source>
+        <translation>Paket Anda sudah berjalan pada jumlah komputer maksimum. Tutup AI Segmentation di salah satunya, lalu coba lagi.</translation>
+    </message>
+    <message>
+        <source>polygon</source>
+        <translation>poligon</translation>
+    </message>
+    <message>
+        <source>{left} / {cap}</source>
+        <translation>{left} / {cap}</translation>
+    </message>
+    <message>
+        <source>{n} detections</source>
+        <translation>{n} deteksi</translation>
+    </message>
+    <message>
+        <source>{n} free cloud detections remaining</source>
+        <translation>Tersisa {n} deteksi cloud gratis</translation>
+    </message>
+    <message>
+        <source>{n} shapes edited this session</source>
+        <translation>{n} bentuk diedit dalam sesi ini</translation>
+    </message>
+    <message>
+        <source>     {step} to build the AI engine again</source>
+        <translation>     {step} untuk membangun ulang mesin AI</translation>
+    </message>
+    <message>
+        <source>  - Antivirus software (Windows Defender, etc.) blocking pip</source>
+        <translation>  - Perangkat lunak antivirus (Windows Defender, dll.) memblokir pip</translation>
+    </message>
+    <message>
+        <source>  - Corrupted virtual environment</source>
+        <translation>  - Lingkungan virtual rusak</translation>
+    </message>
+    <message>
+        <source>  - exclude these hosts from inspection:</source>
+        <translation>  - kecualikan host berikut dari pemeriksaan:</translation>
+    </message>
+    <message>
+        <source>  - install the network&apos;s root certificate on this machine, or</source>
+        <translation>  - pasang sertifikat root jaringan di komputer ini, atau</translation>
+    </message>
+    <message>
+        <source>  1. Add an antivirus exclusion for the folder:</source>
+        <translation>  1. Tambahkan pengecualian antivirus untuk folder:</translation>
+    </message>
+    <message>
+        <source>  1. Close all QGIS windows (File &gt; Exit)</source>
+        <translation>  1. Tutup semua jendela QGIS (File &gt; Exit)</translation>
+    </message>
+    <message>
+        <source>  1. Delete the folder: {folder}</source>
+        <translation>  1. Hapus folder: {folder}</translation>
+    </message>
+    <message>
+        <source>  1. Free up disk space (empty the trash, remove large unused files)</source>
+        <translation>  1. Kosongkan ruang disk (kosongkan tempat sampah, hapus file besar yang tidak digunakan)</translation>
+    </message>
+    <message>
+        <source>  1. If that folder is inside OneDrive or another sync tool, pause
+     syncing (or mark the folder &apos;Always keep on this device&apos;)</source>
+        <translation>  1. Jika folder tersebut berada di OneDrive atau alat sinkronisasi lain, jeda
+     sinkronisasi (atau tandai folder sebagai &apos;Selalu simpan di perangkat ini&apos;)</translation>
+    </message>
+    <message>
+        <source>  1. Install the latest VC++ Redistributable (x64):
+     {url}</source>
+        <translation>  1. Pasang VC++ Redistributable (x64) terbaru:
+     {url}</translation>
+    </message>
+    <message>
+        <source>  1. Temporarily disable real-time antivirus scanning</source>
+        <translation>  1. Nonaktifkan sementara pemindaian antivirus real-time</translation>
+    </message>
+    <message>
+        <source>  1. Upgrade your distribution to a version released after 2019</source>
+        <translation>  1. Tingkatkan distribusi Anda ke versi yang dirilis setelah 2019</translation>
+    </message>
+    <message>
+        <source>  1. Use a QGIS build bundling Python 3.12 or older, or</source>
+        <translation>  1. Gunakan build QGIS yang menyertakan Python 3.12 atau lebih lama, atau</translation>
+    </message>
+    <message>
+        <source>  1. {step} to build again with fresh data</source>
+        <translation>  1. {step} untuk membangun ulang dengan data baru</translation>
+    </message>
+    <message>
+        <source>  2. Add an exclusion for the plugin folder:</source>
+        <translation>  2. Tambahkan pengecualian untuk folder plugin:</translation>
+    </message>
+    <message>
+        <source>  2. If it persists, update QGIS to the latest LTR release
+     (newer QGIS ships a newer Python) and try again</source>
+        <translation>  2. Jika masalah tetap terjadi, perbarui QGIS ke rilis LTR terbaru
+     (QGIS yang lebih baru menyertakan Python yang lebih baru) dan coba lagi</translation>
+    </message>
+    <message>
+        <source>  2. If you cannot upgrade, this plugin&apos;s AI engine is unfortunately
+     not supported on this machine</source>
+        <translation>  2. Jika Anda tidak dapat melakukan peningkatan, mesin AI plugin ini sayangnya
+     tidak didukung di komputer ini</translation>
+    </message>
+    <message>
+        <source>  2. On Apple Silicon, run the native (arm64) QGIS rather than the
+     Intel build under Rosetta</source>
+        <translation>  2. Di Apple Silicon, jalankan QGIS native (arm64), bukan
+     build Intel melalui Rosetta</translation>
+    </message>
+    <message>
+        <source>  2. Or set the AI_SEGMENTATION_CACHE_DIR environment variable to a
+     short local folder outside any synced area (e.g. C:\qgis_ai),
+     then restart QGIS</source>
+        <translation>  2. Atau tetapkan variabel lingkungan AI_SEGMENTATION_CACHE_DIR ke
+     folder lokal singkat di luar area yang disinkronkan (mis. C:\qgis_ai),
+     lalu mulai ulang QGIS</translation>
+    </message>
+    <message>
+        <source>  2. Reopen QGIS</source>
+        <translation>  2. Buka kembali QGIS</translation>
+    </message>
+    <message>
+        <source>  2. Restart QGIS and try again</source>
+        <translation>  2. Mulai ulang QGIS dan coba lagi</translation>
+    </message>
+    <message>
+        <source>  2. Restart your computer after installing</source>
+        <translation>  2. Mulai ulang komputer setelah pemasangan</translation>
+    </message>
+    <message>
+        <source>  2. The environment is installed under: {location}</source>
+        <translation>  2. Lingkungan dipasang di: {location}</translation>
+    </message>
+    <message>
+        <source>  2. {step} to build everything again</source>
+        <translation>  2. {step} untuk membangun ulang semuanya</translation>
+    </message>
+    <message>
+        <source>  3. Check folder permissions: {command}</source>
+        <translation>  3. Periksa izin folder: {command}</translation>
+    </message>
+    <message>
+        <source>  3. If the error is still there after the reboot:</source>
+        <translation>  3. Jika kesalahan masih terjadi setelah mulai ulang:</translation>
+    </message>
+    <message>
+        <source>  3. If the issue persists, reinstall QGIS</source>
+        <translation>  3. Jika masalah tetap terjadi, pasang ulang QGIS</translation>
+    </message>
+    <message>
+        <source>  3. Open the AI Segmentation panel - installation will resume</source>
+        <translation>  3. Buka panel AI Segmentation - pemasangan akan dilanjutkan</translation>
+    </message>
+    <message>
+        <source>  3. Run QGIS as administrator (right-click &gt; Run as administrator)</source>
+        <translation>  3. Jalankan QGIS sebagai administrator (klik kanan &gt; Run as administrator)</translation>
+    </message>
+    <message>
+        <source>  3. To install on another drive, set the AI_SEGMENTATION_CACHE_DIR
+     environment variable to a folder on a disk with more space,
+     then restart QGIS and try again</source>
+        <translation>  3. Untuk memasang di drive lain, tetapkan variabel lingkungan AI_SEGMENTATION_CACHE_DIR
+     ke folder di disk dengan ruang lebih besar,
+     lalu mulai ulang QGIS dan coba lagi</translation>
+    </message>
+    <message>
+        <source>  3. {step} again</source>
+        <translation>  3. {step} lagi</translation>
+    </message>
+    <message>
+        <source>  3. {step} to build it again</source>
+        <translation>  3. {step} untuk membangunnya ulang</translation>
+    </message>
+    <message>
+        <source>  4. Check that no other Python (Anaconda, Miniconda, standalone Python)
+     puts conflicting torch DLLs on your system PATH.
+     Open a terminal and run: where python
+     If you see multiple results, remove the extra ones from PATH</source>
+        <translation>  4. Pastikan tidak ada Python lain (Anaconda, Miniconda, Python mandiri)
+     yang menambahkan DLL torch yang bertentangan ke PATH sistem Anda.
+     Buka terminal dan jalankan: where python
+     Jika Anda melihat beberapa hasil, hapus yang tambahan dari PATH</translation>
+    </message>
+    <message>
+        <source>  4. If the issue persists, run QGIS as administrator</source>
+        <translation>  4. Jika masalah tetap terjadi, jalankan QGIS sebagai administrator</translation>
+    </message>
+    <message>
+        <source>  4. Try the installation again</source>
+        <translation>  4. Coba pemasangan lagi</translation>
+    </message>
+    <message>
+        <source>  4. Uninstall the plugin (Plugins &gt; Manage and Install Plugins &gt; Installed &gt; AI Segmentation)</source>
+        <translation>  4. Hapus plugin (Plugins &gt; Manage and Install Plugins &gt; Installed &gt; AI Segmentation)</translation>
+    </message>
+    <message>
+        <source>  5. Restart QGIS</source>
+        <translation>  5. Mulai ulang QGIS</translation>
+    </message>
+    <message>
+        <source>  6. Reinstall the plugin</source>
+        <translation>  6. Pasang ulang plugin</translation>
+    </message>
+    <message>
+        <source>A required DLL failed to initialize.</source>
+        <translation>DLL yang diperlukan gagal diinisialisasi.</translation>
+    </message>
+    <message>
+        <source>Ask your IT department to add a path-based allow rule for this folder:</source>
+        <translation>Minta departemen TI Anda menambahkan aturan izin berbasis jalur untuk folder ini:</translation>
+    </message>
+    <message>
+        <source>Ask your IT department to either:</source>
+        <translation>Minta departemen TI Anda untuk melakukan salah satu hal berikut:</translation>
+    </message>
+    <message>
+        <source>Cache error, retrying {package}... ({done}/{total})</source>
+        <translation>Kesalahan cache, mencoba lagi {package}... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Creating virtual environment...</source>
+        <translation>Membuat lingkungan virtual...</translation>
+    </message>
+    <message>
+        <source>Disabling antivirus or running QGIS as administrator will not help.</source>
+        <translation>Menonaktifkan antivirus atau menjalankan QGIS sebagai administrator tidak akan membantu.</translation>
+    </message>
+    <message>
+        <source>Downloaded {mb} MB, saving...</source>
+        <translation>{mb} MB diunduh, menyimpan...</translation>
+    </message>
+    <message>
+        <source>Downloading PyTorch (~180 MB)... {elapsed}</source>
+        <translation>Mengunduh PyTorch (~180 MB)... {elapsed}</translation>
+    </message>
+    <message>
+        <source>Downloading Python: {done} MB</source>
+        <translation>Mengunduh Python: {done} MB</translation>
+    </message>
+    <message>
+        <source>Downloading Python: {done} MB of {total} MB</source>
+        <translation>Mengunduh Python: {done} MB dari {total} MB</translation>
+    </message>
+    <message>
+        <source>Downloading uv package installer...</source>
+        <translation>Mengunduh penginstal paket uv...</translation>
+    </message>
+    <message>
+        <source>Failed to create venv: this Python is missing its venv support.
+
+</source>
+        <translation>Gagal membuat venv: Python ini tidak memiliki dukungan venv.
+
+</translation>
+    </message>
+    <message>
+        <source>How to fix this:</source>
+        <translation>Cara memperbaikinya:</translation>
+    </message>
+    <message>
+        <source>If it still fails after restarting QGIS:</source>
+        <translation>Jika masih gagal setelah memulai ulang QGIS:</translation>
+    </message>
+    <message>
+        <source>Install it, then retry:
+</source>
+        <translation>Pasang, lalu coba lagi:
+</translation>
+    </message>
+    <message>
+        <source>Install the venv module for your Python with your system&apos;s package manager, then retry.</source>
+        <translation>Pasang modul venv untuk Python Anda menggunakan pengelola paket sistem, lalu coba lagi.</translation>
+    </message>
+    <message>
+        <source>Installation failed due to network restrictions.</source>
+        <translation>Pemasangan gagal karena pembatasan jaringan.</translation>
+    </message>
+    <message>
+        <source>Installation failed: Python&apos;s SSL module is not available.</source>
+        <translation>Pemasangan gagal: modul SSL Python tidak tersedia.</translation>
+    </message>
+    <message>
+        <source>Installation failed: no compatible AI engine build exists for this
+combination of Intel Mac and Python version.</source>
+        <translation>Pemasangan gagal: tidak ada build mesin AI yang kompatibel untuk
+kombinasi Intel Mac dan versi Python ini.</translation>
+    </message>
+    <message>
+        <source>Installation failed: the download server presented a certificate this computer does not trust.</source>
+        <translation>Pemasangan gagal: server unduhan memberikan sertifikat yang tidak dipercaya komputer ini.</translation>
+    </message>
+    <message>
+        <source>Installation failed: your Linux distribution is too old for the
+current AI engine. PyTorch wheels now require a recent system
+library (glibc 2.28+, i.e. Ubuntu 20.04 / Debian 10 / CentOS 8 or
+newer).</source>
+        <translation>Pemasangan gagal: distribusi Linux Anda terlalu lama untuk
+mesin AI saat ini. Wheel PyTorch kini memerlukan pustaka sistem
+terbaru (glibc 2.28+, yaitu Ubuntu 20.04 / Debian 10 / CentOS 8 atau
+lebih baru).</translation>
+    </message>
+    <message>
+        <source>Installation failed: your disk ran out of space.</source>
+        <translation>Pemasangan gagal: ruang disk Anda habis.</translation>
+    </message>
+    <message>
+        <source>Installation was blocked, likely by antivirus software or security policy.</source>
+        <translation>Pemasangan diblokir, kemungkinan oleh perangkat lunak antivirus atau kebijakan keamanan.</translation>
+    </message>
+    <message>
+        <source>Installing {package} (~180 MB)... ({done}/{total})</source>
+        <translation>Memasang {package} (~180 MB)... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Installing {package}... ({done}/{total})</source>
+        <translation>Memasang {package}... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Installing {package}... {elapsed}</source>
+        <translation>Memasang {package}... {elapsed}</translation>
+    </message>
+    <message>
+        <source>Intel (x86_64) Macs are supported only up to PyTorch 2.2.2, which
+ships for Python 3.8 to 3.12. Your Python is newer than that.</source>
+        <translation>Mac Intel (x86_64) hanya didukung hingga PyTorch 2.2.2, yang
+tersedia untuk Python 3.8 hingga 3.12. Python Anda lebih baru dari itu.</translation>
+    </message>
+    <message>
+        <source>Network error, retry {attempt}/{total} in {wait}s...</source>
+        <translation>Kesalahan jaringan, mencoba lagi {attempt}/{total} dalam {wait} detik...</translation>
+    </message>
+    <message>
+        <source>Network error, retrying in {seconds}s...</source>
+        <translation>Kesalahan jaringan, mencoba lagi dalam {seconds} detik...</translation>
+    </message>
+    <message>
+        <source>Not enough free disk space to install dependencies: {free_gb:.1f} GB available at {cache_dir}, at least {min_free_gb:.1f} GB is required.
+
+Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR environment variable to a directory on a larger drive, then restart QGIS.</source>
+        <translation>Ruang disk kosong tidak cukup untuk memasang dependensi: tersedia {free_gb:.1f} GB di {cache_dir}, minimal diperlukan {min_free_gb:.1f} GB.
+
+Kosongkan ruang disk, atau tetapkan variabel lingkungan AI_SEGMENTATION_CACHE_DIR ke direktori di drive yang lebih besar, lalu mulai ulang QGIS.</translation>
+    </message>
+    <message>
+        <source>Once the rule is in place, restart QGIS and try again.</source>
+        <translation>Setelah aturan diterapkan, mulai ulang QGIS dan coba lagi.</translation>
+    </message>
+    <message>
+        <source>Open the AI Segmentation panel and click Install</source>
+        <translation>Buka panel AI Segmentation dan klik Pasang</translation>
+    </message>
+    <message>
+        <source>Please contact your IT department to allow access to:</source>
+        <translation>Hubungi departemen TI Anda untuk mengizinkan akses ke:</translation>
+    </message>
+    <message>
+        <source>Please try:</source>
+        <translation>Silakan coba:</translation>
+    </message>
+    <message>
+        <source>Python standalone ready</source>
+        <translation>Python mandiri siap</translation>
+    </message>
+    <message>
+        <source>Retrying {package}... ({done}/{total})</source>
+        <translation>Mencoba lagi {package}... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>SSL bypass retry for {package}... ({done}/{total})</source>
+        <translation>Mencoba lagi {package} dengan melewati SSL... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>SSL error, retrying {package} (system certs)... ({done}/{total})</source>
+        <translation>Kesalahan SSL, mencoba lagi {package} (sertifikat sistem)... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>The AI engine needs roughly 4 GB free during installation.</source>
+        <translation>Mesin AI memerlukan sekitar 4 GB ruang kosong selama pemasangan.</translation>
+    </message>
+    <message>
+        <source>The environment installs under: {location}</source>
+        <translation>Lingkungan dipasang di: {location}</translation>
+    </message>
+    <message>
+        <source>The install has not reported anything for a while. QGIS is yours again: leave this running, or stop it and use Cloud AI.</source>
+        <translation>Pemasangan tidak memberikan laporan selama beberapa saat. QGIS kembali siap digunakan: biarkan proses ini berjalan, atau hentikan dan gunakan Cloud AI.</translation>
+    </message>
+    <message>
+        <source>The installer process crashed unexpectedly (access violation).</source>
+        <translation>Proses penginstal mengalami crash tak terduga (pelanggaran akses).</translation>
+    </message>
+    <message>
+        <source>The next installation will rebuild it from scratch automatically.</source>
+        <translation>Pemasangan berikutnya akan membangunnya ulang dari awal secara otomatis.</translation>
+    </message>
+    <message>
+        <source>The package resolver could not find a compatible set of versions.
+This usually comes from stale cached package data or a Python
+version the AI packages no longer support.</source>
+        <translation>Pemecah paket tidak dapat menemukan kumpulan versi yang kompatibel.
+Biasanya ini disebabkan oleh data paket dalam cache yang sudah usang atau versi Python
+yang tidak lagi didukung oleh paket AI.</translation>
+    </message>
+    <message>
+        <source>The plugin always uses this folder, so one rule keeps working across updates.
+It contains a standalone Python runtime, the uv installer and Python packages,
+all downloaded from their official open-source sources.</source>
+        <translation>Plugin selalu menggunakan folder ini, sehingga satu aturan tetap berlaku di seluruh pembaruan.
+Folder ini berisi runtime Python mandiri, penginstal uv, dan paket Python,
+semuanya diunduh dari sumber open-source resmi.</translation>
+    </message>
+    <message>
+        <source>The plugin&apos;s Python environment is damaged (files are missing inside it).</source>
+        <translation>Lingkungan Python plugin rusak (ada file yang hilang di dalamnya).</translation>
+    </message>
+    <message>
+        <source>The plugin&apos;s local Python runtime is damaged and cannot start.
+This is usually caused by antivirus quarantine or an interrupted
+first installation.</source>
+        <translation>Runtime Python lokal plugin rusak dan tidak dapat dimulai.
+Biasanya ini disebabkan oleh karantina antivirus atau pemasangan
+pertama yang terhenti.</translation>
+    </message>
+    <message>
+        <source>This is usually caused by:</source>
+        <translation>Biasanya ini disebabkan oleh:</translation>
+    </message>
+    <message>
+        <source>This usually means the Python installation is incomplete or corrupted.</source>
+        <translation>Ini biasanya berarti pemasangan Python tidak lengkap atau rusak.</translation>
+    </message>
+    <message>
+        <source>This usually means the install folder is cloud-synced (OneDrive/Dropbox), contains unusual characters, or the path grew past the Windows length limit.</source>
+        <translation>Ini biasanya berarti folder pemasangan disinkronkan ke cloud (OneDrive/Dropbox), berisi karakter yang tidak biasa, atau jalurnya melebihi batas panjang Windows.</translation>
+    </message>
+    <message>
+        <source>Try these steps in order:</source>
+        <translation>Coba langkah-langkah berikut secara berurutan:</translation>
+    </message>
+    <message>
+        <source>Upgrading pip...</source>
+        <translation>Meningkatkan pip...</translation>
+    </message>
+    <message>
+        <source>Using system Python (NixOS)...</source>
+        <translation>Menggunakan Python sistem (NixOS)...</translation>
+    </message>
+    <message>
+        <source>Using system Python (fallback)...</source>
+        <translation>Menggunakan Python sistem (fallback)...</translation>
+    </message>
+    <message>
+        <source>Using uv package installer...</source>
+        <translation>Menggunakan penginstal paket uv...</translation>
+    </message>
+    <message>
+        <source>Verification complete</source>
+        <translation>Verifikasi selesai</translation>
+    </message>
+    <message>
+        <source>Verifying {package}... ({done}/{total})</source>
+        <translation>Memverifikasi {package}... ({done}/{total})</translation>
+    </message>
+    <message>
+        <source>Virtual environment created</source>
+        <translation>Lingkungan virtual dibuat</translation>
+    </message>
+    <message>
+        <source>Virtual environment created (uv)</source>
+        <translation>Lingkungan virtual dibuat (uv)</translation>
+    </message>
+    <message>
+        <source>Virtual environment ready</source>
+        <translation>Lingkungan virtual siap</translation>
+    </message>
+    <message>
+        <source>Windows refused a file path during installation.</source>
+        <translation>Windows menolak jalur file selama pemasangan.</translation>
+    </message>
+    <message>
+        <source>You can also try checking your proxy settings in QGIS (Settings &gt; Options &gt; Network).</source>
+        <translation>Anda juga dapat memeriksa pengaturan proxy di QGIS (Settings &gt; Options &gt; Network).</translation>
+    </message>
+    <message>
+        <source>Your network inspects secure connections and re-signs them with its own certificate, and that certificate is not in the computer&apos;s certificate store.</source>
+        <translation>Jaringan Anda memeriksa koneksi aman dan menandatanganinya ulang dengan sertifikatnya sendiri, tetapi sertifikat tersebut tidak ada di penyimpanan sertifikat komputer.</translation>
+    </message>
+    <message>
+        <source>Your organization&apos;s security policy (application control, e.g. AppLocker or WDAC)
+is blocking the plugin&apos;s local AI environment.</source>
+        <translation>Kebijakan keamanan organisasi Anda (kontrol aplikasi, mis. AppLocker atau WDAC)
+memblokir lingkungan AI lokal plugin.</translation>
+    </message>
+    <message>
+        <source>uv package installer ready</source>
+        <translation>Penginstal paket uv siap</translation>
+    </message>
+    <message>
+        <source>uv: ready</source>
+        <translation>uv: siap</translation>
+    </message>
+    <message>
+        <source>uv: unavailable, using pip</source>
+        <translation>uv: tidak tersedia, menggunakan pip</translation>
+    </message>
+    <message>
+        <source>{free_gb:.1f} GB free at {cache_dir}, under the {min_free_gb:.0f} GB the local model needs. Installing the Automatic packages only. Free up space and install again to turn Semi-Auto mode on.</source>
+        <translation>{free_gb:.1f} GB tersedia di {cache_dir}, kurang dari {min_free_gb:.0f} GB yang diperlukan model lokal. Hanya memasang paket Automatic. Kosongkan ruang dan pasang lagi untuk mengaktifkan mode Semi-Auto.</translation>
+    </message>
+    <message>
+        <source>{package} unavailable</source>
+        <translation>{package} tidak tersedia</translation>
+    </message>
+    <message>
+        <source>{step}. The plugin builds it again from scratch.</source>
+        <translation>{step}. Plugin membangunnya ulang dari awal.</translation>
+    </message>
+    <message>
+        <source>✓ All dependencies installed</source>
+        <translation>✓ Semua dependensi terpasang</translation>
+    </message>
+    <message>
+        <source>✓ Automatic mode ready</source>
+        <translation>✓ Mode Automatic siap</translation>
+    </message>
+    <message>
+        <source>✓ {package} installed</source>
+        <translation>✓ {package} terpasang</translation>
+    </message>
+    <message>
+        <source>An old version is installed. Click Install to replace it.</source>
+        <translation>Versi lama telah terpasang. Klik Pasang untuk menggantinya.</translation>
+    </message>
+    <message>
+        <source>Some AI components are missing. Click Install to complete them.</source>
+        <translation>Beberapa komponen AI tidak ada. Klik Pasang untuk melengkapinya.</translation>
+    </message>
+    <message>
+        <source>The AI components are not installed. Click Install to add them.</source>
+        <translation>Komponen AI belum terpasang. Klik Pasang untuk menambahkannya.</translation>
+    </message>
+    <message>
+        <source>The AI components are not ready. Click Install to set them up.</source>
+        <translation>Komponen AI belum siap. Klik Pasang untuk menyiapkannya.</translation>
+    </message>
+    <message>
+        <source>The AI components did not load. Click Install to repair them.</source>
+        <translation>Komponen AI gagal dimuat. Klik Pasang untuk memperbaikinya.</translation>
+    </message>
+    <message>
+        <source>The AI components did not pass the check. Click Install to repair them.</source>
+        <translation>Komponen AI tidak lolos pemeriksaan. Klik Pasang untuk memperbaikinya.</translation>
+    </message>
+    <message>
+        <source>The AI components need an update. The update starts now.</source>
+        <translation>Komponen AI perlu diperbarui. Pembaruan dimulai sekarang.</translation>
+    </message>
+    <message>
+        <source>The AI runtime is damaged. Click Install to repair it.</source>
+        <translation>Runtime AI rusak. Klik Pasang untuk memperbaikinya.</translation>
+    </message>
+    <message>
+        <source>The AI workspace is missing. Click Install to build it.</source>
+        <translation>Ruang kerja AI tidak ada. Klik Pasang untuk membuatnya.</translation>
+    </message>
+    <message>
+        <source>The last install did not finish. Click Install to start again.</source>
+        <translation>Pemasangan terakhir tidak selesai. Klik Pasang untuk memulainya lagi.</translation>
+    </message>
+    <message>
+        <source>The on-device AI is not installed. Click Install to add it.</source>
+        <translation>AI di perangkat belum terpasang. Klik Pasang untuk menambahkannya.</translation>
+    </message>
+    <message>
+        <source>Cannot close download file: {error}</source>
+        <translation>Tidak dapat menutup file unduhan: {error}</translation>
+    </message>
+    <message>
+        <source>Cannot open download file: {error}</source>
+        <translation>Tidak dapat membuka file unduhan: {error}</translation>
+    </message>
+    <message>
+        <source>Cannot save download: {error}</source>
+        <translation>Tidak dapat menyimpan unduhan: {error}</translation>
+    </message>
+    <message>
+        <source>Cannot write download file: {error}</source>
+        <translation>Tidak dapat menulis file unduhan: {error}</translation>
+    </message>
+    <message>
+        <source>Download failed</source>
+        <translation>Pengunduhan gagal</translation>
+    </message>
+    <message>
+        <source>the download did not finish in time</source>
+        <translation>pengunduhan tidak selesai tepat waktu</translation>
+    </message>
+    <message>
+        <source>the download stalled, no data was received</source>
+        <translation>pengunduhan terhenti, tidak ada data yang diterima</translation>
     </message>
 </context>
 </TS>

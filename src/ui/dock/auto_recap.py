@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from html import escape
 
+from qgis.PyQt.QtCore import QLocale
+
 from ...core.i18n import tr
 from .manual_recap import RECAP_LAYER_LINK
 from .styles import BRAND_BLUE
@@ -33,12 +35,20 @@ def auto_export_success_html(count: int, object_word: str, layer_name: str,
                              linked: bool = True) -> str:
     """The line shown right after Finish: how many objects were saved and where.
     Rich text, so it must be set on a RichText label."""
-    obj = escape((object_word or "").strip() or tr("polygons"))
+    count = int(count)
+    word = (object_word or "").strip()
+    if not word:
+        # The generic fallback is the only word this function ever singles or
+        # plurals itself: a user-typed class name is used exactly as given,
+        # in both counts, because it cannot be conjugated by rule.
+        word = tr("polygon") if count == 1 else tr("polygons")
+    obj = escape(word)
+    n = QLocale().toString(count)
     link = layer_link_html(layer_name, linked)
     if not link:
-        return tr("{n} {object} saved").format(n=int(count), object=obj)
+        return tr("{n} {object} saved").format(n=n, object=obj)
     return tr("{n} {object} saved to {layer}").format(
-        n=int(count), object=obj, layer=link)
+        n=n, object=obj, layer=link)
 
 
 # auto_last_run_html was removed on 2026-08-11 with the card it filled. It read

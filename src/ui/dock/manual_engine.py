@@ -51,8 +51,9 @@ from .styles import (
     _SUBCARD_MARGINS,
     _SUBCARD_QSS,
     _msg_card_qss,
-    _msg_label_qss,
 )
+from .ui_refresh import format_quota_count
+from .upsell_card import UpsellCard
 from .widgets import Mode, _EngineSwitch
 
 # Splits the note into where it runs and what it costs. A middle dot rather
@@ -143,25 +144,16 @@ class DockManualEngineMixin:
         self.manual_engine_note_box = note_box
         layout.addWidget(note_box)
 
-        # The running-low warning, and its own card under the note rather than
-        # inside it. Same widget, same wording and same amber as the Automatic
-        # Start step (`_update_auto_low_credit_note`), because a user who meets
-        # this moment in both modes must not have to read two different things
-        # to learn one fact.
+        # The running-low nudge, in the shared offer card rather than an amber
+        # sentence with a link in it. Compact variant: the count and the button
+        # on one row, because the user can still work and may ignore this.
         #
         # Beside the description, never over it. The balance used to REPLACE the
         # engine copy, so the one card that says what Cloud AI does and what a
         # click costs disappeared exactly when the user was being asked to pay.
-        self.manual_engine_low_line = QLabel("")
-        self.manual_engine_low_line.setWordWrap(True)
-        self.manual_engine_low_line.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.manual_engine_low_line.setTextFormat(Qt.TextFormat.RichText)
-        self.manual_engine_low_line.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextBrowserInteraction)
-        self.manual_engine_low_line.setOpenExternalLinks(False)
-        self.manual_engine_low_line.setStyleSheet(_msg_label_qss("warning"))
-        self.manual_engine_low_line.linkActivated.connect(
-            self._on_manual_low_credit_link)
+        self.manual_engine_low_line = UpsellCard(
+            "manualEngineLowCard", "compact",
+            on_cta=self._on_manual_low_credit_cta)
         self.manual_engine_low_line.setVisible(False)
         # NOT added here. It is seated at the foot of the dock, next to the
         # credit ring, by _setup_low_credit_slot. Leaving it in this card put an
@@ -290,18 +282,41 @@ class DockManualEngineMixin:
             # Written from the stored answer, never from a user click, so the
             # write must not come back as one.
             self.manual_engine_switch.set_cloud(cloud)
+            self.manual_engine_switch.set_cloud_gloss(
+                self._manual_engine_cloud_gloss())
             self._paint_manual_engine_card()
-            self.manual_engine_note.setText(self._manual_engine_copy(cloud))
+            note = self._manual_engine_copy(cloud)
+            self.manual_engine_note.setText(note)
+            self.manual_engine_note.setVisible(bool(note))
             self.manual_engine_privacy_line.setText(cloud_notice_line_html())
             # Cloud half only, and only until a cloud run has completed. The
             # flag reaches nothing but this setVisible.
-            self.manual_engine_privacy_line.setVisible(
-                cloud and not cloud_notice_seen())
+            privacy = cloud and not cloud_notice_seen()
+            self.manual_engine_privacy_line.setVisible(privacy)
+            # An empty box is still a bordered rectangle under the cards. Both
+            # of its children can be gone now, so the box goes with them.
+            self.manual_engine_note_box.setVisible(bool(note) or privacy)
             self._write_manual_low_credit_line(low)
         except (RuntimeError, AttributeError):
             pass  # nosec B110 -- teardown
         if low:
             self._note_manual_low_credit_offer()
+
+    def _manual_engine_cloud_gloss(self) -> str:
+        """The cloud card's second line.
+
+        One line for both states. A preview-aware variant led on the ghost
+        outline, which is a real difference but not the reason to pick this
+        side: size and accuracy are, and the preview is named on the wider
+        line under the cards, where it has room to read.
+
+        Served, and capped at 40 characters so a long override is cut instead
+        of widening the card. The fallback fits the one-line budget, about 31
+        characters at the dock's minimum width.
+        """
+        return dial_copy("engine.cloud_gloss",
+                         tr("Bigger model, more accurate"),
+                         max_chars=40)
 
     def _note_manual_low_credit_offer(self) -> None:
         """One impression per session, so the top-up click has a denominator.
@@ -340,8 +355,14 @@ class DockManualEngineMixin:
 
             if getattr(self, "_auto_is_subscriber", False):
                 return False
-            left = getattr(self, "_auto_credits", None)
-            total = getattr(self, "_auto_credits_total", None)
+            env = getattr(self, "_quota_envelopes", None)
+            if env is not None and env.objects_remaining is not None:
+                # Saves spend the objects envelope; the wallet figure can be
+                # the km² gauge in tile terms and would warn at the wrong time.
+                left, total = env.objects_remaining, env.objects_cap
+            else:
+                left = getattr(self, "_auto_credits", None)
+                total = getattr(self, "_auto_credits_total", None)
             if left is None or not total or int(total) <= 0:
                 return False
             if int(left) > low_credit_ceiling():
@@ -360,9 +381,9 @@ class DockManualEngineMixin:
 
         The amber used to live here, which put it on the description of what
         the mode does and left the user reading a warning where the price used
-        to be. It has its own card under this one now
-        (`manual_engine_low_line`), the same one Automatic shows, so the
-        warning and the description stop competing for one box.
+        to be. It has its own offer card at the foot of the dock now
+        (`manual_engine_low_line`), so the balance and the description stop
+        competing for one box.
         """
         kind = ""
         if kind == self._manual_engine_card_tinted:
@@ -378,16 +399,13 @@ class DockManualEngineMixin:
             pass  # nosec B110 -- teardown
 
     def _manual_engine_copy(self, cloud: bool) -> str:
-        """The one line under the cards: where it runs, then what it costs.
+        """The line under the cards, and empty whenever the engine is ready.
 
-        Where on the left of the dot, price on the right and in bold, so the
-        cost can be read without reading the sentence. Never more than a line.
-        A headline plus a paragraph was tried here and it said the same thing
-        three times on one screen, counting the card gloss above it.
-
-        Both states open on where it runs, because that is the whole difference
-        and the thing a GIS user assumes. Most of them have never had a plugin
-        send their imagery anywhere.
+        Only the states that ask the user for something still speak here: the
+        install to run, the install running, the install that failed. A ready
+        engine says nothing, because the card above already says which one is
+        picked and what it gives, and the sentence under it repeated that in
+        different words.
 
         The balance is NOT one of the states. It used to take this line over on
         the way to empty, which deleted the only sentence saying what a click
@@ -395,36 +413,7 @@ class DockManualEngineMixin:
         own line under this box now.
         """
         if cloud:
-            # Served copy, under its own id. The old one carries a sentence
-            # written for the chooser screen this replaced.
-            #
-            # Says the one thing the card above cannot, then what it costs. It
-            # used to sell the size of the model, which is our problem and not
-            # a reason to click anything. The reason to click is that this side
-            # asks for nothing first: two of every three machines that reach
-            # this page have never started the on-device install, and they open
-            # the plugin again and again without ever getting an object out.
-            #
-            # Not where the machines are: that is disclosure, and the privacy
-            # line right under this box carries it.
-            #
-            # One claim, not two. "Nothing to install, nothing to download" said
-            # the same thing twice and spent the sentence on the word "nothing".
-            #
-            # It opens on the action, not on an absence. "No setup on this
-            # computer" described a thing that does not happen, which is the
-            # weakest way to say the strongest fact this side has: the user can
-            # segment their first object now, without the wall the other card
-            # puts in front of them.
-            #
-            # This id is SERVED, so the sentence a user reads is the site's, in
-            # their own language. Reword it there, never here: the shipped one
-            # below is the offline fallback and carries eleven translations that
-            # a new English source would drop.
-            return _fill_engine_line(dial_copy(
-                "engine.cloud_line",
-                tr("Start now, nothing to install {dot} "
-                   "<b>1 cloud detection per object you save</b>")))
+            return ""
         if not self._manual_engine_local_ready():
             if self._manual_install_running():
                 # Do not promise "runs on your computer" while it is still
@@ -443,15 +432,7 @@ class DockManualEngineMixin:
                     tr("The install did not finish {dot} <b>retry it, or "
                        "pick Cloud AI</b>")))
             return self._manual_engine_install_copy()
-        # Where it runs, then what it costs, and nothing about what does or
-        # does not leave the machine. Two versions have now made that mistake:
-        # "Nothing is sent" named a risk in order to deny it, and "Everything
-        # stays on this computer" said the same thing in the positive. Both
-        # answer a question the user had not asked, and both make the other
-        # half of the switch read as the risky one.
-        return _fill_engine_line(dial_copy(
-            "engine.local_line",
-            tr("Runs on this computer {dot} <b>save as many as you like</b>")))
+        return ""
 
     def _on_manual_low_credit_link(self, url: str) -> None:
         """The Pro link inside this mode's running-low line.
@@ -472,14 +453,27 @@ class DockManualEngineMixin:
             pass  # nosec B110
         QDesktopServices.openUrl(QUrl(url))
 
-    def _write_manual_low_credit_line(self, low: bool) -> None:
-        """The running-low warning under the engine note. Never raises.
+    def _on_manual_low_credit_cta(self) -> None:
+        """The card button, one hop to the link handler above.
 
-        Word for word the Automatic Start step's line, with "objects you save"
-        where that one says "detections", because that is what a credit buys
-        here. The link names Pro rather than offering to "get more credits":
-        what is on the other side is a paid plan, and the button that hid that
-        was the one thing users had to click to find out.
+        The offer moved from a sentence with a link inside it to a button, so
+        the destination has to be built here instead of being written into the
+        text. Same cta source and same count as before.
+        """
+        try:
+            url = self._build_upgrade_url("plugin_objects_low_note")
+        except (RuntimeError, AttributeError):
+            return
+        self._on_manual_low_credit_link(url)
+
+    def _write_manual_low_credit_line(self, low: bool) -> None:
+        """The running-low card under the engine note. Never raises.
+
+        The fact carries the numbers and nothing else: how many are left, out
+        of how many, and when they come back. The button names Pro rather than
+        offering to "get more credits", because what is on the other side is a
+        paid plan and the wording that hid it was the one thing users had to
+        click to find out.
         """
         line = getattr(self, "manual_engine_low_line", None)
         if line is None:
@@ -488,19 +482,53 @@ class DockManualEngineMixin:
             if not low:
                 line.setVisible(False)
                 return
-            left = int(getattr(self, "_auto_credits", 0) or 0)
             reset_day = getattr(self, "_auto_reset_display", "")
-            url = self._build_upgrade_url()
-            if reset_day:
-                line.setText(tr(
-                    'Running low: {n} cloud detections left, back on {date}. '
-                    '<a href="{url}">Upgrade to Pro</a> to keep going.'
-                ).format(n=left, date=reset_day, url=url))
+            cta = dial_copy("upsell.cta", tr("Upgrade to Pro"))
+            env = getattr(self, "_quota_envelopes", None)
+            if env is not None and env.has_objects_gauge():
+                # Remaining, counting down: the same sense as every other
+                # gauge in the plugin and the dashboard.
+                # Served, like the offer line under it. Placeholders are filled
+                # with str.replace, never format(), so a stray brace in a
+                # served sentence cannot raise on a refresh.
+                if reset_day:
+                    title = dial_copy(
+                        "upsell.low_title_objects_reset",
+                        tr("{n} of {total} cloud objects left in Semi-Auto, back on "
+                           "{date}."))
+                else:
+                    title = dial_copy(
+                        "upsell.low_title_objects",
+                        tr("{n} of {total} cloud objects left in Semi-Auto this month."))
+                # The gauge answers with cap-minus-used when the server sent no
+                # remainder, so the card never prints the word None, and both
+                # figures group their thousands the way the locale does.
+                objects_left = (env.objects_remaining
+                                if env.objects_remaining is not None
+                                else max(0, env.objects_cap - env.objects_used))
+                title = (title.replace("{n}", format_quota_count(objects_left))
+                              .replace("{total}", format_quota_count(env.objects_cap))
+                              .replace("{date}", reset_day))
             else:
-                line.setText(tr(
-                    'Running low: {n} cloud detections left. '
-                    '<a href="{url}">Upgrade to Pro</a> to keep going.'
-                ).format(n=left, url=url))
+                left = int(getattr(self, "_auto_credits", 0) or 0)
+                if reset_day:
+                    title = dial_copy(
+                        "upsell.low_title_detections_reset",
+                        tr("{n} cloud detections left, back on {date}."))
+                else:
+                    title = dial_copy(
+                        "upsell.low_title_detections",
+                        tr("{n} cloud detections left."))
+                title = (title.replace("{n}", str(left))
+                              .replace("{date}", reset_day))
+            # The count alone was a warning, not an offer: it said what was
+            # running out and never what the other side holds. The figure is
+            # served, because the Pro allowance is a commercial number that
+            # moves without waiting for a plugin release.
+            body = dial_copy(
+                "upsell.low_body_objects",
+                tr("Pro gives you 2,000 cloud objects a month in Semi-Auto."))
+            line.set_text(title, body, cta)
             line.setVisible(True)
         except (RuntimeError, AttributeError):
             pass  # nosec B110 -- teardown
@@ -674,6 +702,13 @@ class DockManualEngineMixin:
             self.manual_engine_changed.emit(bool(on))
         except (RuntimeError, AttributeError):
             pass  # nosec B110 -- teardown
+        # The refine panel carries two cloud-only controls, and the switch is
+        # only reachable before Start, where the full refresh does not reach
+        # the panel. Settle it here, or it describes the other engine.
+        try:
+            self._sync_refine_shape_toggles()
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110 -- panel not built yet
         self._update_full_ui()
 
     def _manual_engine_gate_start(self) -> bool:

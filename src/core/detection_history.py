@@ -42,6 +42,13 @@ _ACCOUNT_DIR_PREFIX = "account_"
 # bounded on disk. Oldest beyond it roll off.
 MAX_ENTRIES = 500
 
+# Ceiling on the stored zone outline, in WKT characters. A drawn zone is a
+# handful of points and lands well under it; a traced coastline can be tens of
+# thousands, and the store is a small JSON file read whole on every library
+# open. Past the ceiling the entry keeps its bounding box alone, which is what
+# every entry had before the outline was stored at all.
+MAX_ZONE_WKT_CHARS = 64_000
+
 
 def history_max_entries() -> int:
     """How many committed runs the local store keeps.
@@ -91,9 +98,10 @@ def _history_path() -> str:
 def get_entries() -> list[dict]:
     """Stored runs, newest first. [] on any read problem (fail-safe).
 
-    Each entry: ``{id, prompt, ts, layer_name, objects, crs, extent?, thumb?}``
-    where ``extent`` is ``[xmin, ymin, xmax, ymax]`` in the CRS named by the
-    ``crs`` authid, and ``thumb`` a PNG filename inside :func:`history_dir`.
+    Each entry: ``{id, prompt, ts, layer_name, objects, crs, extent?,
+    zone_wkt?, thumb?}`` where ``extent`` is ``[xmin, ymin, xmax, ymax]`` in
+    the CRS named by the ``crs`` authid, ``zone_wkt`` the drawn zone polygon
+    in that same CRS, and ``thumb`` a PNG filename inside :func:`history_dir`.
     """
     try:
         with open(_history_path(), encoding="utf-8") as fh:
@@ -139,11 +147,19 @@ def add_entry(
     extent: tuple[float, float, float, float] | None,
     crs_authid: str,
     thumb: str | None = None,
+    zone_wkt: str | None = None,
 ) -> None:
     """Prepend one committed run, cap the store, GC orphaned thumbnails.
 
     ``extent`` is (xmin, ymin, xmax, ymax) in the CRS named by ``crs_authid``;
     ``thumb`` a filename already saved inside :func:`history_dir` (or None).
+
+    ``zone_wkt`` is the polygon the user actually drew, in the same CRS as
+    ``extent``. Optional, because a rectangle or headless zone has none. It is
+    what "Run again here" points at: the bounding box of an L-shaped or
+    diagonal zone covers ground the run never looked at, and re-running it
+    bills for that ground. Stored only up to :data:`MAX_ZONE_WKT_CHARS`, so a
+    hand-traced outline with thousands of vertices cannot bloat the store.
     """
     entries = get_entries()
     entry: dict = {
@@ -156,6 +172,9 @@ def add_entry(
     }
     if extent is not None and len(extent) == 4:
         entry["extent"] = [float(v) for v in extent]
+    zone = (zone_wkt or "").strip()
+    if zone and len(zone) <= MAX_ZONE_WKT_CHARS:
+        entry["zone_wkt"] = zone
     if thumb:
         entry["thumb"] = os.path.basename(thumb)
     entries.insert(0, entry)

@@ -1,10 +1,11 @@
 """Pure decision logic for when an Automatic detection may run.
 
-A run needs a non-empty query and nothing more: a text prompt, one positive
-example, or both. Each of the three is something the model can ground on, and
-a reference image narrows the search as often as it sharpens it, so neither
-input is required alongside the other. The exclude (negative) example is a
-refinement offered only once the positive set is strong enough.
+A run needs a typed prompt. Examples are optional and they sharpen it; they
+never replace it. An example on its own says "find things that look like
+this", which the model grounds far more loosely than a word does, and the
+runs that came back empty or full of noise were the ones with no word in
+them. The exclude (negative) example is a refinement offered only once the
+positive set is strong enough.
 
 The two minimums below are client fallbacks for the server's exemplar block,
 read through the resolvers here so the gate and the example store always agree.
@@ -66,17 +67,19 @@ def meta_satisfied(has_text: bool, positives: int) -> bool:
 
 
 def can_detect(has_text: bool, positives: int, excludes: int = 0) -> bool:
-    """True when a detection may start: the query is NON-EMPTY.
+    """True when a detection may start: there is a TYPED PROMPT.
 
-    This is the whole gate on the green Detect button: a text prompt, or at
-    least one positive example, each form a complete query the model can run.
-    Quality steering above it is advice only (the UI nudges toward a second
-    example and toward pairing text with an example), never a block.
+    This is the whole gate on the green Detect button. Examples are optional
+    on top of the word, never instead of it: the model grounds a word far
+    tighter than a picture, and an example-only run is the one that comes back
+    empty or full of look-alikes. Quality steering above this floor is advice
+    only (the UI nudges toward a second example), never a block.
 
-    ``excludes`` never affects the decision (an exclude is a refinement, never a
-    query on its own); it is accepted for a complete, self-documenting signature.
+    ``positives`` and ``excludes`` never affect the decision; they are taken
+    for a complete, self-documenting signature and because every caller
+    already has them to hand.
     """
-    return has_text or positives >= 1
+    return has_text
 
 
 def exclude_available(positives: int) -> bool:

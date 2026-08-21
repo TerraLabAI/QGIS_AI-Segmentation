@@ -24,22 +24,95 @@ import sys
 from .install_config import classifier_markers
 
 
+def tr(text: str) -> str:
+    """Translate one user-facing message, falling back to English.
+
+    The translator is imported inside the call so this module keeps importing
+    with no QGIS around, and a failed lookup can never break an install
+    message.
+    """
+    try:
+        from .i18n import tr as translate
+
+        return translate(text)
+    except Exception:  # noqa: BLE001 -- English is a fine answer here
+        return text
+
+
 # The one control a user has to restart an install, named exactly as the panel
 # spells it. Every dead end below ends on this line, so all of them point at
 # the same button.
 def install_again_step() -> str:
-    """The 'press this' line every failed install message ends on.
+    """The 'press this' line every failed install message ends on."""
+    return tr("Open the AI Segmentation panel and click Install")
 
-    The translator is imported inside the call, so this module keeps importing
-    with no QGIS around and a lookup can never break an install message.
+
+# ---------------------------------------------------------------------------
+# The hosts a first run has to reach
+# ---------------------------------------------------------------------------
+
+def _weights_hosts() -> tuple[str, ...]:
+    """Every host the model file may come from, primary first.
+
+    Read through the same resolver the download uses, so an address the
+    product configuration moved, and any alternate beside it, reach this list
+    too. An allow-rule written from the shipped address alone would fail on
+    the very machine the configuration was changed for.
     """
-    text = "Open the AI Segmentation panel and click Install"
     try:
-        from .i18n import tr
+        from urllib.parse import urlparse
 
-        return tr(text)
-    except Exception:  # noqa: BLE001 -- English is a fine answer here
-        return text
+        from .install_config import checkpoint_source
+        from .model_config import (
+            CHECKPOINT_FILENAME,
+            CHECKPOINT_SHA256,
+            CHECKPOINT_URL,
+        )
+
+        url, _digest, mirrors = checkpoint_source(
+            CHECKPOINT_FILENAME, CHECKPOINT_URL, CHECKPOINT_SHA256)
+        hosts: list[str] = []
+        for address in (url,) + tuple(mirrors or ()):
+            host = urlparse(address or "").netloc or ""
+            if host and host not in hosts:
+                hosts.append(host)
+        return tuple(hosts)
+    except Exception:  # noqa: BLE001 -- the rest of the list is still useful
+        return ()
+
+
+def first_run_hosts() -> tuple[str, ...]:
+    """Every host a first install has to reach, in the order it touches them.
+
+    The package index and its file host, the index that serves the runtime
+    build without the graphics-card payload, the release host the two installer
+    binaries come from and the redirect target its downloads land on, then the
+    host holding the model file. One list, because the messages used to name
+    three different subsets, and an allow-rule written from the shortest one
+    fails again at the next step.
+    """
+    hosts = [
+        "pypi.org",
+        "files.pythonhosted.org",
+        "download.pytorch.org",
+        "github.com",
+        "objects.githubusercontent.com",
+    ]
+    for weights in _weights_hosts():
+        if weights not in hosts:
+            hosts.append(weights)
+    return tuple(hosts)
+
+
+def first_run_hosts_sentence() -> str:
+    """The host list as prose, for a message that runs inside a sentence."""
+    hosts = first_run_hosts()
+    return ", ".join(hosts[:-1]) + " and " + hosts[-1]
+
+
+def first_run_hosts_bullets(indent: str = "  - ") -> str:
+    """The host list as one bullet per line, for a message with room."""
+    return "\n".join(indent + host for host in first_run_hosts())
 
 
 # ---------------------------------------------------------------------------
@@ -142,33 +215,38 @@ def get_ssl_error_help(error_text: str = "", cache_dir: str = "") -> str:
     """
     if is_ssl_module_missing(error_text):
         return (
-            "Installation failed: Python's SSL module is not available.\n\n"
-            "This usually means the Python installation is incomplete or corrupted.\n"
-            "Please try:\n"
-            f"  1. Delete the folder: {cache_dir}\n"
-            "  2. Restart QGIS and try again\n"
-            "  3. If the issue persists, reinstall QGIS"
+            tr("Installation failed: Python's SSL module is not available.") + "\n\n"
+            + tr("This usually means the Python installation is incomplete or corrupted.")
+            + "\n"
+            + tr("Please try:") + "\n"
+            + tr("  1. Delete the folder: {folder}").format(folder=cache_dir) + "\n"
+            + tr("  2. Restart QGIS and try again") + "\n"
+            + tr("  3. If the issue persists, reinstall QGIS")
         )
     if is_untrusted_certificate_error(error_text):
         return (
-            "Installation failed: the download server presented a certificate "
-            "this computer does not trust.\n\n"
-            "Your network inspects secure connections and re-signs them with "
-            "its own certificate, and that certificate is not in the "
-            "computer's certificate store.\n\n"
-            "Ask your IT department to either:\n"
-            "  - install the network's root certificate on this machine, or\n"
-            "  - exclude pypi.org, files.pythonhosted.org and "
-            "download.pytorch.org from inspection."
+            tr(
+                "Installation failed: the download server presented a certificate "
+                "this computer does not trust."
+            ) + "\n\n"
+            + tr(
+                "Your network inspects secure connections and re-signs them with "
+                "its own certificate, and that certificate is not in the "
+                "computer's certificate store."
+            ) + "\n\n"
+            + tr("Ask your IT department to either:") + "\n"
+            + tr("  - install the network's root certificate on this machine, or") + "\n"
+            + tr("  - exclude these hosts from inspection:") + "\n"
+            + f"{first_run_hosts_bullets('      - ')}"
         )
     return (
-        "Installation failed due to network restrictions.\n\n"
-        "Please contact your IT department to allow access to:\n"
-        "  - pypi.org\n"
-        "  - files.pythonhosted.org\n"
-        "  - download.pytorch.org\n\n"
-        "You can also try checking your proxy settings in QGIS "
-        "(Settings > Options > Network)."
+        tr("Installation failed due to network restrictions.") + "\n\n"
+        + tr("Please contact your IT department to allow access to:") + "\n"
+        + f"{first_run_hosts_bullets()}\n\n"
+        + tr(
+            "You can also try checking your proxy settings in QGIS "
+            "(Settings > Options > Network)."
+        )
     )
 
 
@@ -311,14 +389,17 @@ def get_disk_full_help(cache_dir: str = "") -> str:
     """Actionable help for a disk-full install failure."""
     location = cache_dir or "~/.qgis_ai_segmentation"
     return (
-        "Installation failed: your disk ran out of space.\n\n"
-        "The AI engine needs roughly 4 GB free during installation.\n"
-        "Please try:\n"
-        "  1. Free up disk space (empty the trash, remove large unused files)\n"
-        f"  2. The environment is installed under: {location}\n"
-        "  3. To install on another drive, set the AI_SEGMENTATION_CACHE_DIR\n"
-        "     environment variable to a folder on a disk with more space,\n"
-        "     then restart QGIS and try again"
+        tr("Installation failed: your disk ran out of space.") + "\n\n"
+        + tr("The AI engine needs roughly 4 GB free during installation.") + "\n"
+        + tr("Please try:") + "\n"
+        + tr("  1. Free up disk space (empty the trash, remove large unused files)") + "\n"
+        + tr("  2. The environment is installed under: {location}").format(
+            location=location) + "\n"
+        + tr(
+            "  3. To install on another drive, set the AI_SEGMENTATION_CACHE_DIR\n"
+            "     environment variable to a folder on a disk with more space,\n"
+            "     then restart QGIS and try again"
+        )
     )
 
 
@@ -365,14 +446,18 @@ def is_glibc_too_old(output: str) -> bool:
 def get_glibc_too_old_help() -> str:
     """Actionable help for a glibc-too-old Linux install failure."""
     return (
-        "Installation failed: your Linux distribution is too old for the\n"
-        "current AI engine. PyTorch wheels now require a recent system\n"
-        "library (glibc 2.28+, i.e. Ubuntu 20.04 / Debian 10 / CentOS 8 or\n"
-        "newer).\n\n"
-        "Please try:\n"
-        "  1. Upgrade your distribution to a version released after 2019\n"
-        "  2. If you cannot upgrade, this plugin's AI engine is unfortunately\n"
-        "     not supported on this machine"
+        tr(
+            "Installation failed: your Linux distribution is too old for the\n"
+            "current AI engine. PyTorch wheels now require a recent system\n"
+            "library (glibc 2.28+, i.e. Ubuntu 20.04 / Debian 10 / CentOS 8 or\n"
+            "newer)."
+        ) + "\n\n"
+        + tr("Please try:") + "\n"
+        + tr("  1. Upgrade your distribution to a version released after 2019") + "\n"
+        + tr(
+            "  2. If you cannot upgrade, this plugin's AI engine is unfortunately\n"
+            "     not supported on this machine"
+        )
     )
 
 
@@ -404,14 +489,20 @@ def is_macos_intel_no_wheel(output: str) -> bool:
 def get_macos_intel_help() -> str:
     """Actionable help for the Intel-mac unsupported-Python combination."""
     return (
-        "Installation failed: no compatible AI engine build exists for this\n"
-        "combination of Intel Mac and Python version.\n\n"
-        "Intel (x86_64) Macs are supported only up to PyTorch 2.2.2, which\n"
-        "ships for Python 3.8 to 3.12. Your Python is newer than that.\n\n"
-        "Please try:\n"
-        "  1. Use a QGIS build bundling Python 3.12 or older, or\n"
-        "  2. On Apple Silicon, run the native (arm64) QGIS rather than the\n"
-        "     Intel build under Rosetta"
+        tr(
+            "Installation failed: no compatible AI engine build exists for this\n"
+            "combination of Intel Mac and Python version."
+        ) + "\n\n"
+        + tr(
+            "Intel (x86_64) Macs are supported only up to PyTorch 2.2.2, which\n"
+            "ships for Python 3.8 to 3.12. Your Python is newer than that."
+        ) + "\n\n"
+        + tr("Please try:") + "\n"
+        + tr("  1. Use a QGIS build bundling Python 3.12 or older, or") + "\n"
+        + tr(
+            "  2. On Apple Silicon, run the native (arm64) QGIS rather than the\n"
+            "     Intel build under Rosetta"
+        )
     )
 
 
@@ -450,18 +541,22 @@ def is_dll_init_error(output: str) -> bool:
 
 def get_vcpp_help() -> str:
     """Get actionable help for DLL init errors (missing VC++ Redistributables)."""
+    vc_redist_url = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
     return (
-        "A required DLL failed to initialize.\n\n"
-        "Try these steps in order:\n"
-        "  1. Install the latest VC++ Redistributable (x64):\n"
-        "     https://aka.ms/vs/17/release/vc_redist.x64.exe\n"
-        "  2. Restart your computer after installing\n"
-        "  3. If the error is still there after the reboot:\n"
-        f"     {install_again_step()} to build the AI engine again\n"
-        "  4. Check that no other Python (Anaconda, Miniconda, standalone Python)\n"
-        "     puts conflicting torch DLLs on your system PATH.\n"
-        "     Open a terminal and run: where python\n"
-        "     If you see multiple results, remove the extra ones from PATH"
+        tr("A required DLL failed to initialize.") + "\n\n"
+        + tr("Try these steps in order:") + "\n"
+        + tr("  1. Install the latest VC++ Redistributable (x64):\n     {url}").format(
+            url=vc_redist_url) + "\n"
+        + tr("  2. Restart your computer after installing") + "\n"
+        + tr("  3. If the error is still there after the reboot:") + "\n"
+        + tr("     {step} to build the AI engine again").format(
+            step=install_again_step()) + "\n"
+        + tr(
+            "  4. Check that no other Python (Anaconda, Miniconda, standalone Python)\n"
+            "     puts conflicting torch DLLs on your system PATH.\n"
+            "     Open a terminal and run: where python\n"
+            "     If you see multiple results, remove the extra ones from PATH"
+        )
     )
 
 
@@ -528,19 +623,25 @@ def get_app_control_help(install_dir: str = "") -> str:
     """
     location = install_dir or "~/.qgis_ai_segmentation"
     return (
-        "Your organization's security policy (application control, "
-        "e.g. AppLocker or WDAC)\n"
-        "is blocking the plugin's local AI environment.\n\n"
-        "Disabling antivirus or running QGIS as administrator will not help.\n\n"
-        "Ask your IT department to add a path-based allow rule "
-        "for this folder:\n"
-        f"  {location}\n\n"
-        "The plugin always uses this folder, so one rule keeps working "
-        "across updates.\n"
-        "It contains a standalone Python runtime, the uv installer and "
-        "Python packages,\n"
-        "all downloaded from their official open-source sources.\n\n"
-        "Once the rule is in place, restart QGIS and try again."
+        tr(
+            "Your organization's security policy (application control, "
+            "e.g. AppLocker or WDAC)\n"
+            "is blocking the plugin's local AI environment."
+        ) + "\n\n"
+        + tr("Disabling antivirus or running QGIS as administrator will not help.") + "\n\n"
+        + tr(
+            "Ask your IT department to add a path-based allow rule "
+            "for this folder:"
+        ) + "\n"
+        + f"  {location}\n\n"
+        + tr(
+            "The plugin always uses this folder, so one rule keeps working "
+            "across updates.\n"
+            "It contains a standalone Python runtime, the uv installer and "
+            "Python packages,\n"
+            "all downloaded from their official open-source sources."
+        ) + "\n\n"
+        + tr("Once the rule is in place, restart QGIS and try again.")
     )
 
 
@@ -645,15 +746,17 @@ def is_file_locked_error(output: str) -> bool:
 def get_file_locked_help() -> str:
     """Action-only instructions for file-lock errors (no diagnostic text)."""
     return (
-        "How to fix this:\n\n"
-        "  1. Close all QGIS windows (File > Exit)\n"
-        "  2. Reopen QGIS\n"
-        "  3. Open the AI Segmentation panel - installation will resume\n\n"
-        "If it still fails after restarting QGIS:\n"
-        "  4. Uninstall the plugin "
-        "(Plugins > Manage and Install Plugins > Installed > AI Segmentation)\n"
-        "  5. Restart QGIS\n"
-        "  6. Reinstall the plugin"
+        tr("How to fix this:") + "\n\n"
+        + tr("  1. Close all QGIS windows (File > Exit)") + "\n"
+        + tr("  2. Reopen QGIS") + "\n"
+        + tr("  3. Open the AI Segmentation panel - installation will resume") + "\n\n"
+        + tr("If it still fails after restarting QGIS:") + "\n"
+        + tr(
+            "  4. Uninstall the plugin "
+            "(Plugins > Manage and Install Plugins > Installed > AI Segmentation)"
+        ) + "\n"
+        + tr("  5. Restart QGIS") + "\n"
+        + tr("  6. Reinstall the plugin")
     )
 
 
@@ -666,24 +769,29 @@ def get_pip_antivirus_help(exclude_dir: str) -> str:
     was told to exclude a folder that could not stop the failure they had.
     """
     steps = (
-        "Installation was blocked, likely by antivirus software "
-        "or security policy.\n\n"
-        "Please try:\n"
-        "  1. Temporarily disable real-time antivirus scanning\n"
-        "  2. Add an exclusion for the plugin folder:\n"
-        f"     {exclude_dir}\n"
+        tr(
+            "Installation was blocked, likely by antivirus software "
+            "or security policy."
+        ) + "\n\n"
+        + tr("Please try:") + "\n"
+        + tr("  1. Temporarily disable real-time antivirus scanning") + "\n"
+        + tr("  2. Add an exclusion for the plugin folder:") + "\n"
+        + f"     {exclude_dir}\n"
     )
     if sys.platform == "win32":
         steps += (
-            "  3. Run QGIS as administrator "
-            "(right-click > Run as administrator)\n"
-            "  4. Try the installation again"
+            tr(
+                "  3. Run QGIS as administrator "
+                "(right-click > Run as administrator)"
+            ) + "\n"
+            + tr("  4. Try the installation again")
         )
     else:
         steps += (
-            "  3. Check folder permissions: "
-            f'chmod -R u+rwX "{exclude_dir}"\n'
-            "  4. Try the installation again"
+            tr("  3. Check folder permissions: {command}").format(
+                command=f'chmod -R u+rwX "{exclude_dir}"'
+            ) + "\n"
+            + tr("  4. Try the installation again")
         )
     return steps
 
@@ -724,16 +832,16 @@ def is_rename_or_record_error(output: str) -> bool:
 def get_crash_help(venv_dir: str) -> str:
     """Get actionable help for Windows process crash during pip install."""
     return (
-        "The installer process crashed unexpectedly (access violation).\n\n"
-        "This is usually caused by:\n"
-        "  - Antivirus software (Windows Defender, etc.) blocking pip\n"
-        "  - Corrupted virtual environment\n\n"
-        "Please try:\n"
-        "  1. Temporarily disable real-time antivirus scanning\n"
-        "  2. Add an exclusion for the plugin folder:\n"
-        f"     {venv_dir}\n"
-        f"  3. {install_again_step()} to build it again\n"
-        "  4. If the issue persists, run QGIS as administrator"
+        tr("The installer process crashed unexpectedly (access violation).") + "\n\n"
+        + tr("This is usually caused by:") + "\n"
+        + tr("  - Antivirus software (Windows Defender, etc.) blocking pip") + "\n"
+        + tr("  - Corrupted virtual environment") + "\n\n"
+        + tr("Please try:") + "\n"
+        + tr("  1. Temporarily disable real-time antivirus scanning") + "\n"
+        + tr("  2. Add an exclusion for the plugin folder:") + "\n"
+        + f"     {venv_dir}\n"
+        + tr("  3. {step} to build it again").format(step=install_again_step()) + "\n"
+        + tr("  4. If the issue persists, run QGIS as administrator")
     )
 
 
@@ -775,18 +883,24 @@ def get_invalid_path_help(cache_dir: str = "") -> str:
     """Actionable help when the install path itself is the problem."""
     location = cache_dir or "~/.qgis_ai_segmentation"
     return (
-        "Windows refused a file path during installation.\n\n"
-        "This usually means the install folder is cloud-synced "
-        "(OneDrive/Dropbox), contains unusual characters, or the path grew "
-        "past the Windows length limit.\n\n"
-        f"The environment installs under: {location}\n\n"
-        "Please try:\n"
-        "  1. If that folder is inside OneDrive or another sync tool, pause\n"
-        "     syncing (or mark the folder 'Always keep on this device')\n"
-        "  2. Or set the AI_SEGMENTATION_CACHE_DIR environment variable to a\n"
-        "     short local folder outside any synced area (e.g. C:\\qgis_ai),\n"
-        "     then restart QGIS\n"
-        f"  3. {install_again_step()} again"
+        tr("Windows refused a file path during installation.") + "\n\n"
+        + tr(
+            "This usually means the install folder is cloud-synced "
+            "(OneDrive/Dropbox), contains unusual characters, or the path grew "
+            "past the Windows length limit."
+        ) + "\n\n"
+        + tr("The environment installs under: {location}").format(location=location) + "\n\n"
+        + tr("Please try:") + "\n"
+        + tr(
+            "  1. If that folder is inside OneDrive or another sync tool, pause\n"
+            "     syncing (or mark the folder 'Always keep on this device')"
+        ) + "\n"
+        + tr(
+            "  2. Or set the AI_SEGMENTATION_CACHE_DIR environment variable to a\n"
+            "     short local folder outside any synced area (e.g. C:\\qgis_ai),\n"
+            "     then restart QGIS"
+        ) + "\n"
+        + tr("  3. {step} again").format(step=install_again_step())
     )
 
 
@@ -820,14 +934,16 @@ def get_broken_python_runtime_help(cache_dir: str = "") -> str:
     """Actionable help for a damaged local Python runtime."""
     location = cache_dir or "~/.qgis_ai_segmentation"
     return (
-        "The plugin's local Python runtime is damaged and cannot start.\n"
-        "This is usually caused by antivirus quarantine or an interrupted\n"
-        "first installation.\n\n"
-        "The next installation will rebuild it from scratch automatically.\n\n"
-        "Please try:\n"
-        "  1. Add an antivirus exclusion for the folder:\n"
-        f"     {location}\n"
-        f"  2. {install_again_step()} to build everything again"
+        tr(
+            "The plugin's local Python runtime is damaged and cannot start.\n"
+            "This is usually caused by antivirus quarantine or an interrupted\n"
+            "first installation."
+        ) + "\n\n"
+        + tr("The next installation will rebuild it from scratch automatically.") + "\n\n"
+        + tr("Please try:") + "\n"
+        + tr("  1. Add an antivirus exclusion for the folder:") + "\n"
+        + f"     {location}\n"
+        + tr("  2. {step} to build everything again").format(step=install_again_step())
     )
 
 
@@ -857,9 +973,12 @@ def is_corrupt_venv(output: str) -> bool:
 def get_corrupt_venv_help() -> str:
     """Actionable help for a corrupt virtual environment."""
     return (
-        "The plugin's Python environment is damaged (files are missing "
-        "inside it).\n\n"
-        f"{install_again_step()}. The plugin builds it again from scratch."
+        tr(
+            "The plugin's Python environment is damaged (files are missing "
+            "inside it)."
+        ) + "\n\n"
+        + tr("{step}. The plugin builds it again from scratch.").format(
+            step=install_again_step())
     )
 
 
@@ -885,11 +1004,16 @@ def is_dependency_conflict(output: str) -> bool:
 def get_dependency_conflict_help() -> str:
     """Actionable help for a dependency-resolution conflict."""
     return (
-        "The package resolver could not find a compatible set of versions.\n"
-        "This usually comes from stale cached package data or a Python\n"
-        "version the AI packages no longer support.\n\n"
-        "Please try:\n"
-        f"  1. {install_again_step()} to build again with fresh data\n"
-        "  2. If it persists, update QGIS to the latest LTR release\n"
-        "     (newer QGIS ships a newer Python) and try again"
+        tr(
+            "The package resolver could not find a compatible set of versions.\n"
+            "This usually comes from stale cached package data or a Python\n"
+            "version the AI packages no longer support."
+        ) + "\n\n"
+        + tr("Please try:") + "\n"
+        + tr("  1. {step} to build again with fresh data").format(
+            step=install_again_step()) + "\n"
+        + tr(
+            "  2. If it persists, update QGIS to the latest LTR release\n"
+            "     (newer QGIS ships a newer Python) and try again"
+        )
     )

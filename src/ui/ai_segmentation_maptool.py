@@ -70,6 +70,13 @@ class AISegmentationMapTool(QgsMapTool):
         # A tool swap mid-pan is the end of that pan too: keep the map where
         # the user moved it to rather than snapping it back.
         self._slide_pan.commit()
+        # activate() put the crosshair on the canvas, and the canvas keeps a
+        # cursor until it is told otherwise: without this the next tool runs
+        # under our cursor and the map still looks armed for clicks.
+        try:
+            self.canvas.unsetCursor()
+        except RuntimeError:
+            pass
         # Don't clear markers here - the plugin decides whether to keep them
         # (e.g. when user is asked to confirm leaving segmentation mode).
         self.tool_deactivated.emit()

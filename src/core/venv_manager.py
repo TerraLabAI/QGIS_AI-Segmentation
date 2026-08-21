@@ -21,6 +21,9 @@ from .install_lock import InstallLock
 from .logging_utils import log as _log
 from .model_config import IS_ROSETTA, SAM_PACKAGE, TORCH_MIN, TORCHVISION_MIN
 from .pip_diagnostics import (
+    first_run_hosts_sentence as _first_run_hosts_sentence,
+)
+from .pip_diagnostics import (
     get_app_control_help as _get_app_control_help,
 )
 from .pip_diagnostics import (
@@ -49,6 +52,9 @@ from .pip_diagnostics import (
 )
 from .pip_diagnostics import (
     get_vcpp_help as _get_vcpp_help,
+)
+from .pip_diagnostics import (
+    install_again_step as _install_again_step,
 )
 from .pip_diagnostics import (
     is_antivirus_error as _is_antivirus_error,
@@ -194,10 +200,9 @@ def _failure_is_machine_level(error_text: str, returncode: int | None) -> bool:
 
 
 # Packages older venvs contain but the plugin never imports. pandas was
-# installed up to 1.1.0 as a leftover (44 MB on disk, zero imports in src/,
-# and a recurring Windows verification failure when the VC++ Redistributable
-# is missing, see #66). It is no longer installed; existing venvs keep their
-# copy harmlessly. If one of these fails verification we warn and continue.
+# installed up to 1.1.0 as a leftover and is no longer installed; existing
+# venvs keep their copy harmlessly. If one of these fails verification we warn
+# and continue.
 NON_ESSENTIAL_PACKAGES = {"pandas"}
 
 # Official CPU-only torch wheel index, used on Linux where PyPI's default
@@ -299,6 +304,21 @@ MIN_FREE_GB_FULL = 5.0
 # hundred MB installed, and the pip cache and extraction temp sit on the same
 # volume, so 1.5 GB leaves the same kind of margin the full figure does.
 MIN_FREE_GB_AUTOMATIC = 1.5
+
+
+def tr(text: str) -> str:
+    """Translate one user-facing install message, falling back to English.
+
+    The translator is imported inside the call so this module keeps importing
+    with no QGIS around, and a failed lookup can never break an install
+    message.
+    """
+    try:
+        from .i18n import tr as translate
+
+        return translate(text)
+    except Exception:  # noqa: BLE001 -- English is a fine answer here
+        return text
 
 
 def resolved_min_free_gb_full() -> float:
@@ -1137,9 +1157,16 @@ def _fallback_python_for_platform() -> str | None:
         for prefix in (sys.prefix, sys.base_prefix):
             candidates.append(os.path.join(prefix, "bin", "python3"))
     else:
-        python3 = shutil.which("python3")
-        if python3:
-            candidates.append(python3)
+        # The version-suffixed name first: a distro where python3 points at a
+        # different minor version still ships the one this venv needs under its
+        # own name, and /usr/bin covers the sandboxed session whose PATH does
+        # not carry it.
+        versioned = f"python{sys.version_info.major}.{sys.version_info.minor}"
+        for name in (versioned, "python3"):
+            found = shutil.which(name)
+            if found:
+                candidates.append(found)
+            candidates.append(os.path.join("/usr/bin", name))
 
     for candidate in candidates:
         if os.path.exists(candidate) and _system_python_matches_target(candidate):
@@ -1546,12 +1573,24 @@ def _ensurepip_missing_help(error_text: str) -> str:
     whose only useful line, the apt command, sits past a short truncation.
     Pull the package name out of it so the fix is the first thing shown.
     """
+    opening = tr("Failed to create venv: this Python is missing its venv support.\n\n")
+    # The apt command only helps where apt exists. On Fedora, Arch, openSUSE or
+    # a container without it, printing it sends the user to a tool they do not
+    # have, and the real package is named differently on each of them.
+    if not shutil.which("apt-get"):
+        return (
+            opening
+            + tr(
+                "Install the venv module for your Python with your system's "
+                "package manager, then retry."
+            )
+        )
     match = re.search(r"(python3(?:\.\d+)?-venv)", error_text)
     package = match.group(1) if match else "python3-venv"
     return (
-        "Failed to create venv: this Python is missing its venv support.\n\n"
-        "Install it, then retry:\n"
-        f"    sudo apt install {package}"
+        opening
+        + tr("Install it, then retry:\n")
+        + f"    sudo apt install {package}"
     )
 
 
@@ -1566,7 +1605,7 @@ def create_venv(
     _log(f"Creating virtual environment at: {venv_dir}", Qgis.MessageLevel.Info)
 
     if progress_callback:
-        progress_callback(10, "Creating virtual environment...")
+        progress_callback(10, tr("Creating virtual environment..."))
 
     system_python = _get_system_python()
     _log(f"Using Python: {system_python}", Qgis.MessageLevel.Info)
@@ -1580,8 +1619,10 @@ def create_venv(
     # Try uv venv creation first (faster, no ensurepip needed)
     if _uv_available and _uv_path:
         _log("Creating venv with uv...", Qgis.MessageLevel.Info)
-        # Resolve 8.3 short paths (e.g. PROGRA~1) - uv can't inspect them
-        uv_python = _win_long_path(system_python)
+        # Resolve 8.3 short paths (e.g. PROGRA~1) - uv can't inspect them.
+        # Then take the short form back if the long one holds a space, which
+        # uv's own argument parsing does not survive.
+        uv_python = _win_short_path(_win_long_path(system_python))
         uv_cmd = [_uv_path, "venv", "--python", uv_python, venv_dir]
         try:
             subprocess_kwargs = _get_subprocess_kwargs()
@@ -1594,7 +1635,7 @@ def create_venv(
             if result.returncode == 0:
                 _log("Virtual environment created with uv", Qgis.MessageLevel.Success)
                 if progress_callback:
-                    progress_callback(20, "Virtual environment created (uv)")
+                    progress_callback(20, tr("Virtual environment created (uv)"))
                 return True, "Virtual environment created"
             error_msg = result.stderr or result.stdout or ""
             _log(f"uv venv creation failed: {error_msg[:200]}", Qgis.MessageLevel.Warning)
@@ -1664,7 +1705,7 @@ def create_venv(
                         )
 
             if progress_callback:
-                progress_callback(20, "Virtual environment created")
+                progress_callback(20, tr("Virtual environment created"))
             return True, "Virtual environment created"
         error_msg = result.stderr or result.stdout or f"Return code {result.returncode}"
         _log(f"Failed to create venv: {error_msg}", Qgis.MessageLevel.Critical)
@@ -1699,7 +1740,7 @@ def create_venv(
                 if ep_result.returncode == 0:
                     _log("pip bootstrapped via ensurepip", Qgis.MessageLevel.Success)
                     if progress_callback:
-                        progress_callback(20, "Virtual environment created")
+                        progress_callback(20, tr("Virtual environment created"))
                     return True, "Virtual environment created"
                 err = ep_result.stderr or ep_result.stdout or ""
                 _log(f"ensurepip failed: {err[:200]}", Qgis.MessageLevel.Warning)
@@ -1709,7 +1750,7 @@ def create_venv(
                         "continuing without pip",
                         Qgis.MessageLevel.Warning)
                     if progress_callback:
-                        progress_callback(20, "Virtual environment created")
+                        progress_callback(20, tr("Virtual environment created"))
                     return True, "Virtual environment created"
                 _cleanup_partial_venv(venv_dir)
                 return False, f"Failed to bootstrap pip: {err[:200]}"
@@ -1730,21 +1771,47 @@ def create_venv(
         return False, f"Error: {str(e)[:200]}"
 
 
+def _win_path_api(func_name: str, path: str) -> str | None:
+    """Call one of the kernel32 path conversion APIs and return its result.
+
+    Both GetShortPathNameW and GetLongPathNameW answer with the length the
+    result needs when the supplied buffer is too small, so a single fixed
+    buffer silently truncates a deep path. Ask once, grow to the answer, ask
+    again. Returns None when the API refuses the path.
+    """
+    try:
+        import ctypes
+        api = getattr(ctypes.windll.kernel32, func_name)
+        size = 512
+        for _attempt in range(2):
+            buf = ctypes.create_unicode_buffer(size)
+            ret = api(path, buf, size)
+            if not ret:
+                return None
+            if ret < size:
+                return buf.value
+            size = ret + 1
+    except Exception:
+        return None
+    return None
+
+
 def _win_short_path(path: str) -> str:
     """Convert a Windows path to 8.3 short form if it contains spaces.
 
-    Returns the original path on non-Windows or if conversion fails.
+    Returns the original path on non-Windows or if conversion fails. 8.3 name
+    creation can be switched off per volume, in which case the short form is
+    the long one and the space survives; say so once, because the caller
+    passes the result to a tool that cannot parse a space.
     """
     if sys.platform != "win32" or " " not in path:
         return path
-    try:
-        import ctypes
-        buf = ctypes.create_unicode_buffer(512)
-        ret = ctypes.windll.kernel32.GetShortPathNameW(path, buf, 512)
-        if ret and ret < 512:
-            return buf.value
-    except Exception:
-        pass  # nosec B110
+    result = _win_path_api("GetShortPathNameW", path)
+    if result and " " not in result:
+        return result
+    _log("Short path unavailable for a path containing a space; "
+         "8.3 names may be disabled on this volume.",
+         Qgis.MessageLevel.Warning)
     return path
 
 
@@ -1885,15 +1952,7 @@ def _win_long_path(path: str) -> str:
     """
     if sys.platform != "win32" or "~" not in path:
         return path
-    try:
-        import ctypes
-        buf = ctypes.create_unicode_buffer(512)
-        ret = ctypes.windll.kernel32.GetLongPathNameW(path, buf, 512)
-        if ret and ret < 512:
-            return buf.value
-    except Exception:
-        pass  # nosec B110
-    return path
+    return _win_path_api("GetLongPathNameW", path) or path
 
 
 def _build_install_cmd(python_path: str, pip_args: list) -> list:
@@ -1946,8 +2005,8 @@ def _build_install_cmd(python_path: str, pip_args: list) -> list:
     # Pure-Python pip fallback (no uv). The interpreter path goes through
     # UNTOUCHED: launching it in \\?\ extended-length form poisons sys.prefix
     # inside pip, and pip's legacy-script installs (site-packages\..\..\Scripts)
-    # then die with OSError 22, because \\?\ paths are never normalized (field
-    # report 2026-08-07, v2.1.9, sam2 step). It never helped MAX_PATH either:
+    # then die with OSError 22, because \\?\ paths are never normalized. It
+    # never helped MAX_PATH either:
     # pip's own file writes do not inherit argv[0]'s path form.
     return [python_path, "-m", "pip"] + pip_args
 
@@ -2091,6 +2150,78 @@ def _parse_pip_download_line(line: str) -> str | None:
     return f"Downloading {pkg_name} ({size})"
 
 
+def _tail_text(path: str, max_bytes: int = 4096) -> str:
+    """Last max_bytes of a text file, or "" when it cannot be read.
+
+    Used on a live file that another process is still writing, so a partial
+    multi-byte character at the cut is expected and replaced rather than
+    raised.
+    """
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - max_bytes))
+            return f.read()
+    except OSError:
+        return ""
+
+
+def _stream_bytes(path: str) -> int:
+    """How much an installer has written to one of its streams so far, or 0.
+
+    The watchdog reads it as a sign of life. Parsing the lines is not enough
+    on its own: a slow transfer prints a bar whose rounded figure stands still
+    for minutes, and a download that is working must not be killed for it.
+    """
+    try:
+        return int(os.path.getsize(path))
+    except OSError:
+        return 0
+
+
+def read_install_log_tail(max_lines: int = 60) -> str:
+    """Last lines of the install log, or "" when there is no log to read.
+
+    The install writes to a file that outlives the QGIS session, so this is the
+    only record of an install that failed before the user thought to report it.
+    Callers scrub it before it travels.
+    """
+    tail = _tail_text(INSTALL_LOG_FILE, max_bytes=64 * 1024)
+    if not tail:
+        return ""
+    lines = tail.splitlines()
+    # The first line of the window is usually cut mid-sentence.
+    if len(lines) > 1:
+        lines = lines[1:]
+    return "\n".join(lines[-max_lines:])
+
+
+# "12.3/2449.3 MB" in a progress bar line, in either installer's vocabulary
+# (one prints decimal units, the other binary ones).
+_DOWNLOAD_RATIO_RE = re.compile(
+    r"([\d.]+)\s*/\s*([\d.]+)\s*(kB|KiB|MB|MiB|GB|GiB)", re.IGNORECASE)
+
+
+def _parse_download_ratio(line: str) -> float | None:
+    """Fraction of the current download already fetched, or None.
+
+    Both installers redraw a progress bar carrying "done/total". Reading it
+    beats guessing from the clock, which is what makes a slow link look stalled
+    and a fast one look finished long before it is.
+    """
+    m = _DOWNLOAD_RATIO_RE.search(line)
+    if not m:
+        return None
+    try:
+        done = float(m.group(1))
+        total = float(m.group(2))
+    except ValueError:
+        return None
+    if total <= 0:
+        return None
+    return max(0.0, min(done / total, 1.0))
+
+
 # Userinfo (user[:password]) in front of a URL host.
 _URL_CREDENTIALS_RE = re.compile(r"://[^\s/@]+@")
 
@@ -2231,6 +2362,14 @@ def _run_pip_install(
 
         start_time = time.monotonic()
         last_download_status = ""
+        download_ratio: float | None = None
+        # The timeout below is an IDLE timeout, not a wall clock. A big wheel on
+        # a slow link is not a hung install, and killing it at a fixed age is
+        # how a working download gets cut off. Any sign of progress pushes this
+        # forward.
+        last_progress_at = start_time
+        stream_bytes = {stdout_path: _stream_bytes(stdout_path),
+                        stderr_path: _stream_bytes(stderr_path)}
 
         while True:
             try:
@@ -2252,8 +2391,8 @@ def _run_pip_install(
                     process.wait(timeout=5)
                 return _PipResult(-1, "", "Installation cancelled")
 
-            # Check overall timeout
-            if elapsed >= timeout:
+            # Check the idle timeout
+            if time.monotonic() - last_progress_at >= timeout:
                 process.terminate()
                 try:
                     process.wait(timeout=10)
@@ -2262,24 +2401,42 @@ def _run_pip_install(
                     process.wait(timeout=5)
                 raise subprocess.TimeoutExpired(cmd, timeout)
 
-            # Read last lines of stdout to find download progress
-            try:
-                with open(stdout_path, encoding="utf-8", errors="replace") as f:
-                    # Read last 4KB to find recent lines
-                    f.seek(0, 2)  # seek to end
-                    file_size = f.tell()
-                    read_from = max(0, file_size - 4096)
-                    f.seek(read_from)
-                    tail = f.read()
-                    lines = tail.strip().split("\n")
-                    # Search from bottom for a Downloading line
-                    for line in reversed(lines):
-                        parsed = _parse_pip_download_line(line)
-                        if parsed:
-                            last_download_status = parsed
-                            break
-            except Exception:
-                pass  # nosec B110
+            # Any byte written is a sign of life, whether or not this module
+            # can read a figure out of it. Checked before the parsing below,
+            # and on both streams, so neither one short-circuits the other.
+            for stream_path in (stdout_path, stderr_path):
+                grown = _stream_bytes(stream_path)
+                if grown > stream_bytes.get(stream_path, 0):
+                    stream_bytes[stream_path] = grown
+                    last_progress_at = time.monotonic()
+
+            # Read the tail of BOTH streams to find download progress. One
+            # installer writes its download lines to stdout, the other to
+            # stderr, and watching only one of them leaves the bar frozen for
+            # the whole download.
+            for stream_path in (stdout_path, stderr_path):
+                tail = _tail_text(stream_path)
+                if not tail:
+                    continue
+                lines = tail.strip().split("\n")
+                found_status = None
+                found_ratio = None
+                for line in reversed(lines):
+                    if found_ratio is None:
+                        found_ratio = _parse_download_ratio(line)
+                    if found_status is None:
+                        found_status = _parse_pip_download_line(line)
+                    if found_status is not None and found_ratio is not None:
+                        break
+                if found_status and found_status != last_download_status:
+                    last_download_status = found_status
+                    download_ratio = None
+                    last_progress_at = time.monotonic()
+                if found_ratio is not None and found_ratio != download_ratio:
+                    download_ratio = found_ratio
+                    last_progress_at = time.monotonic()
+                if found_status is not None or found_ratio is not None:
+                    break
 
             # Format elapsed time nicely
             if elapsed >= 60:
@@ -2287,20 +2444,27 @@ def _run_pip_install(
             else:
                 elapsed_str = f"{elapsed}s"
 
-            # Build progress message
+            # Build progress message. last_download_status is raw text parsed
+            # from the installer's own output, so it stays as the installer
+            # wrote it rather than being folded into a translated template.
             if last_download_status:
                 msg = f"{last_download_status}... {elapsed_str}"
             elif package_name == "torch":
-                msg = f"Downloading PyTorch (~600 MB)... {elapsed_str}"
+                msg = tr("Downloading PyTorch (~180 MB)... {elapsed}").format(
+                    elapsed=elapsed_str)
             else:
-                msg = f"Installing {package_name}... {elapsed_str}"
+                msg = tr("Installing {package}... {elapsed}").format(
+                    package=package_name, elapsed=elapsed_str)
 
             # Interpolate progress within the package's range
             # Use logarithmic-ish curve: fast at start, slows down
             # Cap interpolated progress at 90% of the range
             progress_range = progress_end - progress_start
-            if timeout > 0:
-                fraction = min(elapsed / timeout, 0.9)
+            if download_ratio is not None:
+                # Real bytes beat the clock whenever the installer reports them.
+                fraction = min(download_ratio, 0.95)
+            elif timeout > 0:
+                fraction = min((time.monotonic() - start_time) / timeout, 0.9)
             else:
                 fraction = 0
             interpolated = progress_start + int(progress_range * fraction)
@@ -2396,10 +2560,10 @@ def install_dependencies(
     if _uv_available:
         _log("Using uv for installation, skipping pip upgrade", Qgis.MessageLevel.Info)
         if progress_callback:
-            progress_callback(20, "Using uv package installer...")
+            progress_callback(20, tr("Using uv package installer..."))
     else:
         if progress_callback:
-            progress_callback(20, "Upgrading pip...")
+            progress_callback(20, tr("Upgrading pip..."))
         try:
             _log("Upgrading pip to latest version...", Qgis.MessageLevel.Info)
             upgrade_cmd = [
@@ -2518,11 +2682,13 @@ def install_dependencies(
                 if package_name == "torch":
                     progress_callback(
                         pkg_start,
-                        f"Installing {package_name} (~600MB)... ({i + 1}/{total_packages})")
+                        tr("Installing {package} (~180 MB)... ({done}/{total})").format(
+                            package=package_name, done=i + 1, total=total_packages))
                 else:
                     progress_callback(
                         pkg_start,
-                        f"Installing {package_name}... ({i + 1}/{total_packages})")
+                        tr("Installing {package}... ({done}/{total})").format(
+                            package=package_name, done=i + 1, total=total_packages))
 
             _log(f"[{i + 1}/{total_packages}] Installing {package_spec}...", Qgis.MessageLevel.Info)
 
@@ -2652,7 +2818,8 @@ def install_dependencies(
                     if progress_callback:
                         progress_callback(
                             pkg_start,
-                            f"Retrying {package_name}... ({i + 1}/{total_packages})"
+                            tr("Retrying {package}... ({done}/{total})").format(
+                                package=package_name, done=i + 1, total=total_packages)
                         )
 
                     fallback_cmd = [pip_path] + pip_args
@@ -2683,7 +2850,8 @@ def install_dependencies(
                         if progress_callback:
                             progress_callback(
                                 pkg_start,
-                                f"Retrying {package_name}... ({i + 1}/{total_packages})"
+                                tr("Retrying {package}... ({done}/{total})").format(
+                                    package=package_name, done=i + 1, total=total_packages)
                             )
                         fallback_cmd = [pip_path] + pip_args
                         result = _run_pip_install(
@@ -2729,7 +2897,11 @@ def install_dependencies(
                             if progress_callback:
                                 progress_callback(
                                     pkg_start,
-                                    f"SSL error, retrying {package_name} (system certs)... ({i + 1}/{total_packages})"
+                                    tr(
+                                        "SSL error, retrying {package} (system certs)... "
+                                        "({done}/{total})"
+                                    ).format(
+                                        package=package_name, done=i + 1, total=total_packages)
                                 )
                             # uv's OS-trust-store flag is --native-tls; the
                             # --system-certs previously passed here does not
@@ -2781,7 +2953,8 @@ def install_dependencies(
                             if progress_callback:
                                 progress_callback(
                                     pkg_start,
-                                    f"SSL bypass retry for {package_name}... ({i + 1}/{total_packages})"
+                                    tr("SSL bypass retry for {package}... ({done}/{total})").format(
+                                        package=package_name, done=i + 1, total=total_packages)
                                 )
                             # Build a new command with SSL bypass flags injected.
                             # For uv: --trusted-host → --allow-insecure-host (via _build_install_cmd)
@@ -2815,7 +2988,8 @@ def install_dependencies(
                         if progress_callback:
                             progress_callback(
                                 pkg_start,
-                                f"Cache error, retrying {package_name}... ({i + 1}/{total_packages})"
+                                tr("Cache error, retrying {package}... ({done}/{total})").format(
+                                    package=package_name, done=i + 1, total=total_packages)
                             )
 
                         nocache_flag = "--no-cache" if _uv_available else "--no-cache-dir"
@@ -2865,7 +3039,8 @@ def install_dependencies(
                             if progress_callback:
                                 progress_callback(
                                     pkg_start,
-                                    f"Network error, retry {attempt}/{_attempts} in {wait}s..."
+                                    tr("Network error, retry {attempt}/{total} in {wait}s...").format(
+                                        attempt=attempt, total=_attempts, wait=wait)
                                 )
                             if _sleep_unless_cancelled(wait, cancel_check):
                                 return False, "Installation cancelled"
@@ -2945,7 +3120,8 @@ def install_dependencies(
                         if progress_callback:
                             progress_callback(
                                 pkg_start,
-                                f"Retrying {package_name}... ({i + 1}/{total_packages})")
+                                tr("Retrying {package}... ({done}/{total})").format(
+                                    package=package_name, done=i + 1, total=total_packages))
                         reinstall_cmd = base_cmd + ["--force-reinstall"]
                         result = _run_pip_install(
                             cmd=reinstall_cmd,
@@ -2964,7 +3140,8 @@ def install_dependencies(
                 if result.returncode == 0:
                     _log(f"✓ Successfully installed {package_spec}", Qgis.MessageLevel.Success)
                     if progress_callback:
-                        progress_callback(pkg_end, f"✓ {package_name} installed")
+                        progress_callback(
+                            pkg_end, tr("✓ {package} installed").format(package=package_name))
                 else:
                     error_msg = _scrub_credentials(
                         result.stderr or result.stdout or f"Return code {result.returncode}")
@@ -3001,13 +3178,14 @@ def install_dependencies(
                         "The package index refused that download (HTTP 403), "
                         "which is usually a company or campus network "
                         "filtering it. Ask your IT administrator to allow "
-                        "pypi.org and files.pythonhosted.org, then install "
+                        f"{_first_run_hosts_sentence()}, then install "
                         "again to turn Semi-Auto mode on.",
                         Qgis.MessageLevel.Warning,
                     )
                 degraded_packages.append(package_name)
                 if progress_callback:
-                    progress_callback(pkg_end, f"{package_name} unavailable")
+                    progress_callback(
+                        pkg_end, tr("{package} unavailable").format(package=package_name))
                 continue
 
             if install_failed:
@@ -3040,6 +3218,37 @@ def install_dependencies(
                         "Please close and reopen QGIS, then retry."
                     )
 
+                # Check for disk-full errors: the 4 GB preflight can still
+                # miss a mid-extract ENOSPC (torch/CUDA wheels are large).
+                # Must run BEFORE the antivirus check below: a failed write
+                # from a full disk also surfaces as a Windows permission
+                # error, which that classifier would otherwise misattribute.
+                if _is_disk_full(install_error_msg):
+                    _log(_get_disk_full_help(PLUGIN_CACHE_DIR), Qgis.MessageLevel.Warning)
+                    return False, f"Failed to install {package_name}: no space left on device"
+
+                # An application-control policy (AppLocker/WDAC) needs the
+                # IT allow-rule guidance, not the antivirus advice below.
+                # The "application control" marker must survive into the
+                # returned message so the install-failed dialog routes it.
+                if _is_app_control_error(install_error_msg):
+                    _log(_get_app_control_help(PLUGIN_CACHE_DIR), Qgis.MessageLevel.Warning)
+                    return False, (
+                        f"Failed to install {package_name}: blocked by an "
+                        "application control policy"
+                    )
+
+                # Check for antivirus/security-policy blocking BEFORE the
+                # rename and network branches below. A permission block inside
+                # a download step matches the network classifier too, and
+                # "check your firewall" is the wrong advice for it. A rename
+                # that a security policy refused matches the rename branch,
+                # which then names antivirus without naming the folder to
+                # exclude, so the explicit signal has to win.
+                if _is_antivirus_error(install_error_msg):
+                    _log(_get_pip_antivirus_help(PLUGIN_CACHE_DIR), Qgis.MessageLevel.Warning)
+                    return False, f"Failed to install {package_name}: blocked by antivirus or security policy"
+
                 # Check for rename/record errors (antivirus blocking on Windows) - before SSL
                 # because uv output may contain SSL_CERT_DIR warnings alongside rename errors
                 if sys.platform == "win32" and _is_rename_or_record_error(install_error_msg):
@@ -3055,10 +3264,16 @@ def install_dependencies(
                     _log(help_msg, Qgis.MessageLevel.Warning)
                     return False, f"Failed to install {package_name}: blocked by antivirus (rename failed)"
 
-                # Check for SSL errors
+                # Check for SSL errors. Carry the tail of the real error the
+                # way the generic branch below does: two words say nothing to
+                # the user, and the downstream classifiers read this string to
+                # tell a corporate inspection proxy from an expired store.
                 if _is_ssl_error(install_error_msg):
                     _log(_get_ssl_error_help(install_error_msg), Qgis.MessageLevel.Warning)
-                    return False, f"Failed to install {package_name}: SSL error"
+                    return False, (
+                        f"Failed to install {package_name}: SSL error: "
+                        f"{install_error_msg[-400:]}"
+                    )
 
                 # Check for proxy authentication errors (407)
                 if _is_proxy_auth_error(install_error_msg):
@@ -3079,49 +3294,23 @@ def install_dependencies(
                         "The package index refused the download (HTTP 403). "
                         "This is usually a company or campus network filtering "
                         "downloads. Ask your IT administrator to allow "
-                        "pypi.org and files.pythonhosted.org, or run the "
+                        f"{_first_run_hosts_sentence()}, or run the "
                         "install from another network.",
                         Qgis.MessageLevel.Warning,
                     )
                     return False, (
                         f"Failed to install {package_name}: the package index "
-                        "refused the download (403). Your network is blocking it."
+                        "refused the download (403 Forbidden). Your network is "
+                        "blocking it."
                     )
-
-                # An application-control policy (AppLocker/WDAC) needs the
-                # IT allow-rule guidance, not the antivirus advice below.
-                # The "application control" marker must survive into the
-                # returned message so the install-failed dialog routes it.
-                if _is_app_control_error(install_error_msg):
-                    _log(_get_app_control_help(PLUGIN_CACHE_DIR), Qgis.MessageLevel.Warning)
-                    return False, (
-                        f"Failed to install {package_name}: blocked by an "
-                        "application control policy"
-                    )
-
-                # Check for disk-full errors: the 4 GB preflight can still
-                # miss a mid-extract ENOSPC (torch/CUDA wheels are large).
-                # Must run BEFORE the antivirus check below: a failed write
-                # from a full disk also surfaces as a Windows permission
-                # error, which that classifier would otherwise misattribute.
-                if _is_disk_full(install_error_msg):
-                    _log(_get_disk_full_help(PLUGIN_CACHE_DIR), Qgis.MessageLevel.Warning)
-                    return False, f"Failed to install {package_name}: no space left on device"
-
-                # Check for antivirus/security-policy blocking BEFORE the
-                # network branch: a permission block inside a download step
-                # matches both classifiers, and "check your firewall" is the
-                # wrong advice for it.
-                if _is_antivirus_error(install_error_msg):
-                    _log(_get_pip_antivirus_help(PLUGIN_CACHE_DIR), Qgis.MessageLevel.Warning)
-                    return False, f"Failed to install {package_name}: blocked by antivirus or security policy"
 
                 # Check for network/connection errors (after retries exhausted)
                 if _is_network_error(install_error_msg):
                     _log(
                         "Network connection failed after multiple retries. "
                         "Check internet connection, VPN/proxy settings, "
-                        "and firewall rules for pypi.org and files.pythonhosted.org.",
+                        "and firewall rules for "
+                        f"{_first_run_hosts_sentence()}.",
                         Qgis.MessageLevel.Warning
                     )
                     return False, f"Failed to install {package_name}: network error"
@@ -3181,7 +3370,7 @@ def install_dependencies(
         if degraded_packages:
             short = ", ".join(degraded_packages)
             if progress_callback:
-                progress_callback(100, "✓ Automatic mode ready")
+                progress_callback(100, tr("✓ Automatic mode ready"))
             _log("=" * 50, Qgis.MessageLevel.Warning)
             _log(
                 f"Installed everything except {short}. Automatic (cloud) mode "
@@ -3199,7 +3388,7 @@ def install_dependencies(
             )
 
         if progress_callback:
-            progress_callback(100, "✓ All dependencies installed")
+            progress_callback(100, tr("✓ All dependencies installed"))
 
         _log("=" * 50, Qgis.MessageLevel.Success)
         _log("All dependencies installed successfully!", Qgis.MessageLevel.Success)
@@ -3255,16 +3444,21 @@ def _apply_cache_containment(env: dict) -> None:
     env["TMP"] = tmp_dir      # Windows
 
 
-def _clear_installer_caches() -> None:
+def _clear_installer_caches(include_tmp: bool = False) -> None:
     """Delete the downloaded wheels once the environment is verified.
 
     UV_CACHE_DIR and PIP_CACHE_DIR live under the plugin cache and keep every
     wheel the install pulled, well over a gigabyte that only another install
     would ever read. Best-effort: a cache that will not go is not worth
     failing a working install over.
+
+    include_tmp also empties the containment temp directory, where a killed
+    install leaves the half-extracted archives nothing will ever finish. The
+    caller must hold the install lock, so only the preflight asks for it.
     """
+    names = ("uv_cache", "pip_cache", "tmp") if include_tmp else ("uv_cache", "pip_cache")
     freed_any = False
-    for name in ("uv_cache", "pip_cache"):
+    for name in names:
         path = os.path.join(PLUGIN_CACHE_DIR, name)
         if not os.path.isdir(path):
             continue
@@ -3309,8 +3503,13 @@ def _get_clean_env_for_venv() -> dict:
     # whatever the parent process inherited.
     proxy_url = _get_effective_proxy_url()
     if proxy_url:
+        # Both spellings. The lowercase pair is what most clients read first,
+        # so setting only the uppercase one left an inherited lowercase value
+        # in charge and the proxy the user configured in QGIS unused.
         env["HTTP_PROXY"] = proxy_url
         env["HTTPS_PROXY"] = proxy_url
+        env["http_proxy"] = proxy_url
+        env["https_proxy"] = proxy_url
         # Carry over the hosts the user told QGIS to reach directly. Forcing a
         # proxy on every address without them sends an internal package index,
         # which is exactly the kind of host people exclude, through a proxy
@@ -3425,7 +3624,10 @@ def verify_venv(
         if progress_callback:
             # Report progress for each package (0-100% within verification phase)
             percent = int((i / total_packages) * 100)
-            progress_callback(percent, f"Verifying {package_name}... ({i + 1}/{total_packages})")
+            progress_callback(
+                percent,
+                tr("Verifying {package}... ({done}/{total})").format(
+                    package=package_name, done=i + 1, total=total_packages))
 
         # Get functional test code, not just import
         verify_code = _get_verification_code(package_name)
@@ -3756,15 +3958,13 @@ def verify_venv(
                             "  1. Install Visual C++ "
                             "Redistributable:\n"
                             f"     {vcpp_url}\n"
-                            "  2. Click 'Reinstall dependencies' "
-                            "in the plugin panel\n"
+                            f"  2. {_install_again_step()}\n"
                             "  3. Restart QGIS"
                         )
                 else:
                     hint = (
                         "\n\nPlease try:\n"
-                        "  1. Click 'Reinstall dependencies' "
-                        "in the plugin panel\n"
+                        f"  1. {_install_again_step()}\n"
                         "  2. Restart QGIS"
                     )
                 return False, f"Package {package_name} is broken: {error_detail[:200]}{hint}"
@@ -3835,7 +4035,7 @@ def verify_venv(
             return False, f"Verification error: {package_name}"
 
     if progress_callback:
-        progress_callback(100, "Verification complete")
+        progress_callback(100, tr("Verification complete"))
 
     if unavailable_manual:
         short = ", ".join(unavailable_manual)
@@ -3957,32 +4157,38 @@ def create_venv_and_install(
             # reached it. We hold the install lock here, so the rmtree is safe.
             removed = cleanup_old_venv_directories()
             cleanup_old_libs()
-            if removed:
-                _log(
-                    f"Preflight short on space, removed {len(removed)} old "
-                    "venv(s) and re-measured.",
-                    Qgis.MessageLevel.Info)
-                try:
-                    free_gb = shutil.disk_usage(PLUGIN_CACHE_DIR).free / (1024 ** 3)
-                except OSError:
-                    free_gb = None
+            # The wheel caches and the containment temp are ours too, and they
+            # hold the largest downloads of the last attempt. Nothing reads
+            # them except another install, so a user who is short on space
+            # gets them back before being told to go and free some.
+            _clear_installer_caches(include_tmp=True)
+            _log(
+                f"Preflight short on space, removed {len(removed)} old "
+                "venv(s), cleared the installer caches and re-measured.",
+                Qgis.MessageLevel.Info)
+            try:
+                free_gb = shutil.disk_usage(PLUGIN_CACHE_DIR).free / (1024 ** 3)
+            except OSError:
+                free_gb = None
         if free_gb is not None and free_gb < min_free_gb_auto:
-            hint = (
-                f"Not enough free disk space to install dependencies: "
-                f"{free_gb:.1f} GB available at {PLUGIN_CACHE_DIR}, "
-                f"at least {min_free_gb_auto:.1f} GB is required.\n\n"
+            hint = tr(
+                "Not enough free disk space to install dependencies: "
+                "{free_gb:.1f} GB available at {cache_dir}, "
+                "at least {min_free_gb:.1f} GB is required.\n\n"
                 "Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR "
                 "environment variable to a directory on a larger drive, "
                 "then restart QGIS."
-            )
+            ).format(free_gb=free_gb, cache_dir=PLUGIN_CACHE_DIR, min_free_gb=min_free_gb_auto)
             _log(hint, Qgis.MessageLevel.Critical)
             return False, hint
         if free_gb is not None and free_gb < min_free_gb:
             _log(
-                f"{free_gb:.1f} GB free at {PLUGIN_CACHE_DIR}, under the "
-                f"{min_free_gb:.0f} GB the local model needs. Installing the "
-                "Automatic packages only. Free up space and install again to "
-                "turn Semi-Auto mode on.",
+                tr(
+                    "{free_gb:.1f} GB free at {cache_dir}, under the "
+                    "{min_free_gb:.0f} GB the local model needs. Installing the "
+                    "Automatic packages only. Free up space and install again to "
+                    "turn Semi-Auto mode on."
+                ).format(free_gb=free_gb, cache_dir=PLUGIN_CACHE_DIR, min_free_gb=min_free_gb),
                 Qgis.MessageLevel.Warning,
             )
 
@@ -3998,13 +4204,17 @@ def create_venv_and_install(
             _cleanup_partial_venv(VENV_DIR)
 
         _write_install_marker()
-        try:
-            return _create_venv_and_install(
-                progress_callback, cancel_check, include_local_model)
-        finally:
-            # Any normal return or exception here is reported to the user; the
-            # marker only needs to survive a hard crash, where finally never runs.
+        # The marker is cleared on success only. A cancelled or failed run
+        # leaves a venv that may be half-built, and clearing the marker told
+        # the next run that tree was sound: the packages that did land pass the
+        # filesystem check, so nothing ever rebuilt it and the user stayed on a
+        # broken environment. Leaving the marker makes the next install start
+        # from a clean venv.
+        ok, message = _create_venv_and_install(
+            progress_callback, cancel_check, include_local_model)
+        if ok:
             _clear_install_marker()
+        return ok, message
     finally:
         lock.release()
 
@@ -4021,6 +4231,7 @@ def _create_venv_and_install(
         remove_standalone_python,
         standalone_python_exists,
         standalone_python_is_current,
+        verify_standalone_python,
     )
 
     # Early Python version check (Issue #148)
@@ -4084,11 +4295,23 @@ def _create_venv_and_install(
 
     # Step 1: Download Python standalone if needed
     from .python_manager import is_nixos
-    if not standalone_python_exists():
+    need_python = not standalone_python_exists()
+    if not need_python and not verify_standalone_python()[0]:
+        # A file on disk is not an interpreter. A half-extracted archive, a
+        # quarantined binary or a missing system library all leave the path
+        # there and nothing behind it, and the install then failed later with
+        # a message about the venv instead of the interpreter.
+        _log(
+            "The downloaded Python is present but does not run; "
+            "replacing it.",
+            Qgis.MessageLevel.Warning)
+        remove_standalone_python()
+        need_python = True
+    if need_python:
         if is_nixos():
             _log("NixOS detected, using system Python", Qgis.MessageLevel.Info)
             if progress_callback:
-                progress_callback(10, "Using system Python (NixOS)...")
+                progress_callback(10, tr("Using system Python (NixOS)..."))
         else:
             python_version = get_python_full_version()
             _log(f"Downloading Python {python_version} standalone...", Qgis.MessageLevel.Info)
@@ -4116,7 +4339,7 @@ def _create_venv_and_install(
                         Qgis.MessageLevel.Warning
                     )
                     if progress_callback:
-                        progress_callback(10, "Using system Python (fallback)...")
+                        progress_callback(10, tr("Using system Python (fallback)..."))
                 elif _is_download_network_error(msg):
                     # Name it as a network error so the dialog offers proxy
                     # and firewall settings instead of a bug report form.
@@ -4130,7 +4353,7 @@ def _create_venv_and_install(
     else:
         _log("Python standalone already installed", Qgis.MessageLevel.Info)
         if progress_callback:
-            progress_callback(10, "Python standalone ready")
+            progress_callback(10, tr("Python standalone ready"))
 
     # Step 1b: Download uv package installer (non-fatal if fails)
     global _uv_available, _uv_path
@@ -4139,10 +4362,10 @@ def _create_venv_and_install(
         _uv_path = get_uv_path()
         _log("uv already installed, using for package management", Qgis.MessageLevel.Info)
         if progress_callback:
-            progress_callback(13, "uv package installer ready")
+            progress_callback(13, tr("uv package installer ready"))
     else:
         if progress_callback:
-            progress_callback(10, "Downloading uv package installer...")
+            progress_callback(10, tr("Downloading uv package installer..."))
         try:
             def uv_progress(percent, uv_msg):
                 if progress_callback:
@@ -4165,8 +4388,8 @@ def _create_venv_and_install(
             _uv_path = None
             _log(f"uv download failed (non-fatal): {e}", Qgis.MessageLevel.Warning)
         if progress_callback:
-            progress_callback(13, "uv: {}".format(
-                "ready" if _uv_available else "unavailable, using pip"))
+            progress_callback(
+                13, tr("uv: ready") if _uv_available else tr("uv: unavailable, using pip"))
 
     if cancel_check and cancel_check():
         return False, "Installation cancelled"
@@ -4183,7 +4406,7 @@ def _create_venv_and_install(
     if venv_exists() and _venv_is_functional():
         _log("Virtual environment already exists", Qgis.MessageLevel.Info)
         if progress_callback:
-            progress_callback(18, "Virtual environment ready")
+            progress_callback(18, tr("Virtual environment ready"))
     else:
         if venv_exists():
             _log(
@@ -4237,7 +4460,7 @@ def _create_venv_and_install(
     _clear_installer_caches()
 
     if progress_callback:
-        progress_callback(100, "✓ All dependencies installed")
+        progress_callback(100, tr("✓ All dependencies installed"))
 
     return True, "Virtual environment ready"
 
@@ -4345,8 +4568,7 @@ def local_model_ready(venv_dir: str = None) -> tuple[bool, str]:
     # reason. Looking only for the import directory let a half-installed SAM
     # package read as ready: the panel said "Dependencies ready", Manual
     # started, and the prediction worker died on an import the user could do
-    # nothing about (three field reports on 2026-08-02 and 2026-08-04, v2.3.0,
-    # "Worker initialization failed: No module named 'segment_anything'").
+    # nothing about.
     # This gate answers "can the local model load", so a package pip cannot
     # account for counts as not installed.
     try:
@@ -4436,11 +4658,14 @@ def get_venv_status(allow_subprocess_probe: bool = True) -> tuple[bool, str]:
             return False, "Dependencies need updating"
         if stored_hash is None:
             # First run after upgrade from a version without hash tracking.
-            # Packages passed quick check (filesystem), but on Windows the
-            # DLLs may be broken. Verify torch actually imports before
-            # writing the hash (prevents "phantom ready" state).
+            # Packages passed the quick check, which only reads the filesystem.
+            # A native extension can still fail to load: a broken DLL on
+            # Windows, a missing system library or a glibc too old elsewhere.
+            # Verify the engine actually imports on every OS before writing the
+            # hash, or the environment is recorded as good and every later run
+            # trusts that record.
             python_path = get_venv_python_path()
-            if python_path and sys.platform == "win32":
+            if python_path:
                 if not allow_subprocess_probe:
                     # Caller cannot afford a cold import here. The packages are
                     # on disk, so report the environment as usable but leave

@@ -74,16 +74,16 @@ from .styles import (
     _BTN_CHIP,
     _BTN_GHOST,
     _BTN_GREEN,
-    _BTN_LINK,
     _BTN_LINK_MUTED,
     _CARD_CHILD_BTN_RESET_QSS,
+    _CARD_JOINED_QSS,
     _CARD_MARGINS,
     _CARD_QSS,
     _CHIP_QSS,
     _INPUT_THEME_QSS,
     _MSG_GLYPHS,
-    _PREMIUM_STAR,
     _PROGRESS_THIN_QSS,
+    _SECTION_TOGGLE_QSS,
     _SLIDER_QSS,
     _SUBCARD_MARGINS,
     _btn_start_qss,
@@ -93,6 +93,7 @@ from .styles import (
     _msg_label_qss,
     _step_dial,
 )
+from .upsell_card import UpsellCard
 from .widgets import (
     Mode,
     _ZoneGestureGlyph,
@@ -134,82 +135,50 @@ class DockAutoBuildMixin:
         upsell_layout.setContentsMargins(*_SUBCARD_MARGINS)
         upsell_layout.setSpacing(4)
 
-        # The count is filled in from the fetched free-detection total by
-        # _refresh_auto_upsell_title (a number-free fallback until it is known).
-        self._auto_upsell_title = QLabel(tr("Your free detections are used up"))
-        self._auto_upsell_title.setStyleSheet(
-            "font-weight: bold; font-size: 13px; color: palette(text);")
-        self._auto_upsell_title.setWordWrap(True)
-        upsell_layout.addWidget(self._auto_upsell_title)
-
-        # The other way out of this card. A blocked user has two moves, wait or
-        # pay, and until now the card only ever named the second one. Filled by
-        # _refresh_auto_upsell_title from the fetched period end; stays hidden
-        # when the server sends none.
-        self._auto_upsell_reset = QLabel()
-        self._auto_upsell_reset.setStyleSheet(
-            "font-size: 11px; color: rgba(128,128,128,0.95);")
-        self._auto_upsell_reset.setWordWrap(True)
-        self._auto_upsell_reset.setVisible(False)
-        upsell_layout.addWidget(self._auto_upsell_reset)
-
-        # The offer, tinted, inside the card. The lines are served with the
-        # shipped ones as fallback: what Pro gives is a commercial fact that
-        # can change any week, and a plugin release takes days to reach a user.
-        upsell_layout.addSpacing(4)
-        _offer = QWidget()
-        _offer.setObjectName("autoUpsellOffer")
-        _offer.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        _offer.setStyleSheet(
-            _msg_card_qss("autoUpsellOffer", "premium") + _CARD_CHILD_BTN_RESET_QSS)
-        _offer_layout = QVBoxLayout(_offer)
-        _offer_layout.setContentsMargins(*_SUBCARD_MARGINS)
-        _offer_layout.setSpacing(3)
-
-        # The served line already carries the zone promise, so the two lines
-        # under it must not say it again.
-        _quota = QLabel(f"{_PREMIUM_STAR}  " + dial_copy(
-            "upsell.bullet_quota",
-            tr("Pro: 5,000 detections a month, on zones of any size")))
-        _quota.setStyleSheet(
-            "font-size: 12px; font-weight: bold; color: palette(text);")
-        _quota.setWordWrap(True)
-        _offer_layout.addWidget(_quota)
-
-        # Two lines, and they are limits that stop a free account on real
-        # work. The old pair sold nothing: "clean polygons" is what the free
-        # tier already returns, and "cancel anytime" belongs by the price.
-        for _bullet_id, _bullet in [
-            ("upsell.bullet_objects", tr("Small objects still show up on wide "
-                                         "areas.")),
-            ("upsell.bullet_runs", tr("Every run is kept with its image, ready "
-                                      "to open months later.")),
-        ]:
-            _lbl = QLabel(dial_copy(_bullet_id, _bullet))
-            _lbl.setStyleSheet("font-size: 11px; color: palette(text);")
-            _lbl.setWordWrap(True)
-            _offer_layout.addWidget(_lbl)
-
-        self.auto_upgrade_btn = QPushButton(
-            dial_copy("upsell.cta", tr("Upgrade to Pro")))
-        self.auto_upgrade_btn.setStyleSheet(_BTN_BLUE)
-        self.auto_upgrade_btn.setMinimumHeight(34)
-        self.auto_upgrade_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.auto_upgrade_btn.clicked.connect(self._on_upgrade_clicked)
-        _offer_layout.addWidget(self.auto_upgrade_btn)
-
-        # The price ships in the line and stays served (see the same read in
-        # manual_credit_gate.py): served alone it is absent on a cold cache,
-        # which is the launch where a buyer first meets this card.
-        _upsell_hint = QLabel(dial_copy(
-            "upsell.cta_hint",
-            tr("39 EUR a month, cancel anytime. "
-               "Opens your TerraLab dashboard.")))
-        _upsell_hint.setStyleSheet("font-size: 10px; color: rgba(128,128,128,0.95);")
-        _upsell_hint.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        _upsell_hint.setWordWrap(True)
-        _offer_layout.addWidget(_upsell_hint)
-        upsell_layout.addWidget(_offer)
+        # The offer IS a card now, the one shape every Pro CTA in the dock
+        # wears (upsell_card.py). The star variant, because this wall owns the
+        # page. The lines stay served with the shipped ones as fallback: what
+        # Pro gives is a commercial fact that can change any week, and a plugin
+        # release takes days to reach a user.
+        _wall = UpsellCard("autoUpsellOffer", "wall", self._on_upgrade_clicked)
+        # Kept as an attribute name: other code reads the button by it, and the
+        # upgrade handler tells this surface apart by the sender's identity.
+        self.auto_upgrade_btn = _wall.button
+        # The title carries the count, filled from the fetched free-detection
+        # total by _refresh_auto_upsell_title, which reads this attribute. A
+        # number-free line stands until the total is known.
+        self._auto_upsell_title = _wall.title
+        # When the quota comes back, right under the fact it belongs to.
+        # It used to be its own label below the offer, where it read as a
+        # second escape route next to "Or click objects one by one".
+        self._auto_upsell_reset = _wall.note
+        _wall.set_text(
+            # The same served id _refresh_auto_upsell_title writes here once
+            # the totals land. One sentence, one id: a deploy that rewords the
+            # wall must not leave the build-time line saying something else.
+            dial_copy(
+                "trial.exhausted_no_count",
+                tr("Your free detections are used up")),
+            # ONE line, and it answers the question this wall raises: the
+            # month ran out of surface, so what does Pro give instead. The two
+            # lines here before it sold small objects and run history, neither
+            # of which is what the reader just hit.
+            dial_copy(
+                "upsell.wall_body",
+                tr("Draw a whole city and let it run, at the finest "
+                   "precision.")),
+            dial_copy("upsell.cta", tr("Upgrade to Pro")),
+            # The price ships in the line and stays served (see the same read
+            # in manual_credit_gate.py): served alone it is absent on a cold
+            # cache, which is the launch where a buyer first meets this card.
+            escape=dial_copy(
+                "upsell.cta_hint",
+                tr("39 EUR a month, cancel anytime.")),
+            star=dial_copy(
+                "upsell.bullet_quota",
+                tr("300 km² of Automatic every month, on zones of any size")),
+        )
+        upsell_layout.addWidget(_wall)
 
         # The free way out, under a hairline and in grey: named so nobody
         # feels stuck, never weighed like the offer above it.
@@ -222,13 +191,15 @@ class DockAutoBuildMixin:
 
         _upsell_free = QLabel(dial_copy(
             "upsell.manual_free",
-            tr("Or click objects one by one in Semi-Auto, free on this "
-               "computer.")))
+            tr("Or click objects one by one in Semi-Auto.")))
         _upsell_free.setStyleSheet("font-size: 11px; color: rgba(128,128,128,0.95);")
         _upsell_free.setWordWrap(True)
         upsell_layout.addWidget(_upsell_free)
 
-        self.auto_upsell_manual_btn = QPushButton(tr("Use Semi-Auto"))
+        # The free way out is named right beside the paid one, so its label is
+        # served too: the wall reads as a dead end the day the two disagree.
+        self.auto_upsell_manual_btn = QPushButton(dial_copy(
+            "upsell.manual_cta", tr("Use Semi-Auto")))
         self.auto_upsell_manual_btn.setMinimumHeight(30)
         self.auto_upsell_manual_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_upsell_manual_btn.setStyleSheet(_BTN_CHIP)
@@ -473,7 +444,6 @@ class DockAutoBuildMixin:
         # heights. The Library is the guided path to a working prompt (curated
         # English tokens with before/after previews), so it sits right where
         # the eye lands instead of a lost ghost button below.
-        self._auto_prompt_valid = False
         _prompt_row = QHBoxLayout()
         _prompt_row.setContentsMargins(0, 0, 0, 0)
         _prompt_row.setSpacing(6)
@@ -492,6 +462,10 @@ class DockAutoBuildMixin:
         # detail default and fire their one commit before Detect.
         self.auto_prompt_input.editingFinished.connect(
             self._on_auto_prompt_editing_finished)
+        # The drop-down of catalogue objects, in the user's own language. It
+        # hangs off this box and opens on the first letter; see
+        # auto_prompt_suggest.py for why the rows carry the label alone.
+        self.install_prompt_suggest()
         _prompt_row.addWidget(self.auto_prompt_input, 1)
         # The AI Edit prompt-row look: a quiet neutral chip named "Library"
         # (the place, not the content - "Browse objects" read as jargon), so
@@ -567,6 +541,15 @@ class DockAutoBuildMixin:
         _ex_title.setStyleSheet(
             "font-size: 12px; font-weight: bold; color: palette(text);")
         _ex_hdr_row.addWidget(_ex_title)
+        # Marked optional right on the title, because the step number beside it
+        # says the opposite. Detect needs the word above and nothing here (see
+        # core/detect_gate.can_detect), and a user who reads step 2 as a thing
+        # they owe stops on a card they could have walked past. Quiet weight:
+        # it qualifies the title, it is not a second title.
+        _ex_optional = QLabel(tr("(optional)"))
+        _ex_optional.setStyleSheet(
+            "font-size: 11px; color: rgba(128, 128, 128, 0.95);")
+        _ex_hdr_row.addWidget(_ex_optional)
         _ex_hdr_row.addStretch(1)
         # Quality dots: two small dots that fill lime as positive examples are
         # drawn, so the "aim for two" goal (the model's strongest mode) reads
@@ -733,41 +716,114 @@ class DockAutoBuildMixin:
         self.auto_exemplar_panel.setVisible(False)
         _s3_layout.addWidget(self.auto_exemplar_panel)
 
-        # 5a. Detail slider (visible whenever a zone is drawn). The user picks
-        # the grid subdivision n: the zone's longer side is rendered as exactly
-        # n tiles, so a square zone costs n x n credits. Square-grid steps
-        # (1x1 .. 7x7 = 49) keep every position under MAX_TILES = 50.
-        # For local rasters the resolution is clamped to the native pixel size,
-        # so the render never upsamples the source pixels.
+        # 5a. Advanced settings: the Precision control, folded shut by default.
+        #
+        # Precision is the one control here that most runs never need. The
+        # level is seeded from the object the user named and the band is
+        # already cut to what that object can use, so the slider's job is to
+        # let someone overrule a good default, not to be answered.
+        #
+        # The fold owns the tile grid with it. Open, the canvas shows how the
+        # zone is cut; shut, it does not. The grid is the heaviest thing this
+        # screen draws over the user's imagery, and a user who has not asked
+        # how the zone is split reads it as damage rather than as a plan. So
+        # the two travel together: one click gives the slider AND the picture
+        # of what it does (see AutoZoneMixin._tile_grid_revealed).
+        #
+        # What never folds: the zone's surface (what the run is billed on),
+        # the monthly-envelope wall, the cloud disclosure and the re-run guard.
+        # Money and disclosure do not hide behind a click.
         self.auto_detail_row = QWidget()
-        self.auto_detail_row.setObjectName("autoDetailCard")
-        self.auto_detail_row.setAttribute(
-            Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.auto_detail_row.setStyleSheet(_CARD_QSS.format(name="autoDetailCard"))
         _detail_outer = QVBoxLayout(self.auto_detail_row)
-        _detail_outer.setContentsMargins(*_CARD_MARGINS)
-        _detail_outer.setSpacing(4)
-        # Header row: step dial + "Precision" on the left, the live credit cost
-        # on the right, so the price of the chosen level is read at a glance (the
-        # map shows the matching tile grid). No tile-count or m/px jargon here.
-        _detail_hdr = QHBoxLayout()
-        _detail_hdr.setContentsMargins(0, 0, 0, 0)
-        _detail_hdr.setSpacing(6)
-        _detail_hdr.addWidget(_step_dial(3, "active"))
+        _detail_outer.setContentsMargins(0, 0, 0, 0)
+        _detail_outer.setSpacing(6)
+
+        # Head over its joined body: the shared collapsible pattern (the Manual
+        # refine panel and the review's Shape settings wear the same one).
+        # Spacing 0, so open the pair draws as a single box.
+        self._auto_advanced_fold = QWidget()
+        _fold_col = QVBoxLayout(self._auto_advanced_fold)
+        _fold_col.setContentsMargins(0, 0, 0, 0)
+        _fold_col.setSpacing(0)
+        self._auto_advanced_open = False
+        self.auto_advanced_toggle_btn = QPushButton()
+        self.auto_advanced_toggle_btn.setStyleSheet(_SECTION_TOGGLE_QSS)
+        self.auto_advanced_toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        # Never steal focus from the prompt field on a toggle.
+        self.auto_advanced_toggle_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.auto_advanced_toggle_btn.clicked.connect(
+            self._on_auto_advanced_toggle_clicked)
+        _fold_col.addWidget(self.auto_advanced_toggle_btn)
+        # The zone's surface rides at the right end of the head, inside the
+        # button. It is the figure the run is billed on, so it has to read with
+        # the fold shut, and a label set beside the button would cut the head
+        # short of the body it opens. Transparent to the mouse, so a click
+        # anywhere along the row still flips the fold. Filled by
+        # set_auto_zone_surface; same widget name as the old cost line, so
+        # every existing visibility rule keeps working.
+        #
+        # The chevron and title live in their own label, laid out beside the
+        # surface figure rather than painted by the button itself: a button's
+        # own text ignores the child layout's geometry, so on a narrow dock
+        # the two can draw on top of each other. A label in the same row
+        # cannot, because the layout gives each its own rect.
+        _hdr_row = QHBoxLayout(self.auto_advanced_toggle_btn)
+        _hdr_row.setContentsMargins(10, 0, 10, 0)
+        _hdr_row.setSpacing(6)
+        self.auto_advanced_toggle_title = QLabel("")
+        self.auto_advanced_toggle_title.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.auto_advanced_toggle_title.setStyleSheet(
+            "font-size: 11px; font-weight: bold; color: palette(text);"
+            " background: transparent; border: none;")
+        _hdr_row.addWidget(self.auto_advanced_toggle_title)
+        _hdr_row.addStretch()
+        self.auto_credit_cost_label = QLabel("")
+        self.auto_credit_cost_label.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.auto_credit_cost_label.setStyleSheet(
+            "font-size: 11px; color: palette(text); background: transparent;"
+            " border: none;")
+        self.auto_credit_cost_label.setVisible(False)
+        _hdr_row.addWidget(self.auto_credit_cost_label)
+
+        # The body the head opens. Joined card: no top edge and square top
+        # corners, so head and body read as one box rather than two.
+        self.auto_advanced_body = QWidget()
+        self.auto_advanced_body.setObjectName("autoDetailCard")
+        self.auto_advanced_body.setAttribute(
+            Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.auto_advanced_body.setStyleSheet(
+            _CARD_JOINED_QSS.format(name="autoDetailCard")
+            + "QLabel { background: transparent; border: none; }")
+        self.auto_advanced_body.setVisible(False)
+        _adv_layout = QVBoxLayout(self.auto_advanced_body)
+        _adv_layout.setContentsMargins(*_CARD_MARGINS)
+        _adv_layout.setSpacing(4)
+        _fold_col.addWidget(self.auto_advanced_body)
+        _detail_outer.addWidget(self._auto_advanced_fold)
+        self._refresh_auto_advanced_header()
+
+        # Inside the fold: the control's own name. No step dial on it any more.
+        # A numbered step is a thing the user has to do, and this one is
+        # optional now.
         _detail_lbl = QLabel(tr("Precision"))
         _detail_lbl.setStyleSheet(
             "font-size: 12px; font-weight: bold; color: palette(text);")
-        _detail_hdr.addWidget(_detail_lbl)
-        _detail_hdr.addStretch()
-        # The live credit cost sits in the detail header (it tracks the slider
-        # directly). Created here so all its existing visibility wiring keeps
-        # working; the old separate placement below is removed.
-        self.auto_credit_cost_label = QLabel("")
-        self.auto_credit_cost_label.setStyleSheet(
-            "font-size: 11px; color: palette(text);")
-        self.auto_credit_cost_label.setVisible(False)
-        _detail_hdr.addWidget(self.auto_credit_cost_label)
-        _detail_outer.addLayout(_detail_hdr)
+        _adv_layout.addWidget(_detail_lbl)
+        # Right under the surface it contradicts: the drawn zone is bigger than
+        # the km² the account has left this month. The same offer card as every
+        # other Pro CTA in the dock (upsell_card.py), in its "full" variant,
+        # and it greys Detect the same way it always did. Driven by
+        # set_auto_km2_block; hidden whenever the account did not tell us both
+        # figures, so an unknown envelope never refuses a run.
+        self.auto_km2_block = UpsellCard(
+            "autoKm2Block", "full", self._on_upgrade_clicked)
+        # The button keeps its old attribute name: the upgrade handler tells
+        # this surface apart by the sender's identity.
+        self.auto_km2_block_upgrade = self.auto_km2_block.button
+        self.auto_km2_block.setVisible(False)
+        _detail_outer.addWidget(self.auto_km2_block)
         # Always-on subtitle under the title: what the control does, once, in
         # the muted-hint style. It sits ABOVE the slider so it never stacks with
         # the state hint under it (_refresh_auto_detail_hint), which says what
@@ -776,17 +832,16 @@ class DockAutoBuildMixin:
         # choice to offer, so set_auto_detail_range hides this line with the
         # slider rather than leaving a promise about a control that is gone.
         self.auto_detail_sub = QLabel(tr(
-            "More precision finds smaller objects and uses more cloud"
-            " detections."))
+            "More precision finds smaller objects."))
         self.auto_detail_sub.setWordWrap(True)
         self.auto_detail_sub.setStyleSheet(
             "font-size: 11px; color: rgba(128, 128, 128, 0.95);")
-        _detail_outer.addWidget(self.auto_detail_sub)
-        # Where the tiles go, under the line that says what they cost. This is
-        # the card that prices a run, and the last screen before Detect sends
-        # anything, so the disclosure belongs in it rather than in a box of its
-        # own. Word for word the Semi-Auto engine card's line: same data, same
-        # destination, same sentence. Retires itself once a run has completed.
+        _adv_layout.addWidget(self.auto_detail_sub)
+        # Outside the fold, and it stays there. This is the last screen
+        # before Detect sends anything, so the disclosure has to be on it
+        # whether or not the user opened a settings panel. Word for word the
+        # Semi-Auto engine card's line: same data, same destination, same
+        # sentence. Retires itself once a run has completed.
         self.auto_privacy_line = build_cloud_notice_line()
         _detail_outer.addWidget(self.auto_privacy_line)
         # Non-blocking tip shown right under the credit estimate when the next
@@ -832,13 +887,13 @@ class DockAutoBuildMixin:
         self.auto_detail_slider.setStyleSheet(_SLIDER_QSS)
         self.auto_detail_slider.setToolTip(tr(
             "More precision sweeps your zone in a finer grid, so it catches"
-            " smaller objects. Each grid cell costs one cloud detection."))
+            " smaller objects."))
         self.auto_detail_slider.valueChanged.connect(self._on_auto_detail_changed)
         _slider_row.addWidget(self.auto_detail_slider, 1)
         _fine_lbl = QLabel(tr("More"))
         _fine_lbl.setStyleSheet("font-size: 10px; color: palette(text);")
         _slider_row.addWidget(_fine_lbl)
-        _detail_outer.addWidget(self.auto_detail_slider_row)
+        _adv_layout.addWidget(self.auto_detail_slider_row)
         # One-line plain-language hint instead of a m/px figure. Starts on the
         # gated wording (slider disabled above); _apply_auto_detail_gate swaps
         # it once a prompt or an example exists.
@@ -848,24 +903,24 @@ class DockAutoBuildMixin:
         self.auto_detail_hint.setWordWrap(True)
         self.auto_detail_hint.setStyleSheet(
             "font-size: 10px; color: palette(text);")
-        # Free-plan per-run credit cap state: the slider keeps its full (Pro)
-        # travel; past the cap the ESTIMATE gates Detect (red cost line, see
-        # set_auto_credit_estimate) and this hint becomes an upgrade link.
-        self._auto_free_run_cap = None
-        self._auto_premium_gated = False
-        self._detail_cap_upsell_tracked = False
+        # The drawn zone's surface (km²) and whether it is over what the
+        # account has left this month. See set_auto_zone_surface.
+        self._auto_zone_km2 = None
+        self._auto_km2_exceeded = False
         # Object-aware slider verdict (state, object word), pushed by the
         # plugin from the credit-estimate chokepoint; None until known.
         self._auto_detail_feedback = None
         self.auto_detail_hint.linkActivated.connect(
             self._on_detail_cap_upgrade_link)
-        _detail_outer.addWidget(self.auto_detail_hint)
+        _adv_layout.addWidget(self.auto_detail_hint)
 
         # Conditional amber warning, shown by set_auto_detail_gsd_warning when
         # the chosen precision leaves the imagery too coarse for the cloud model. A proper
         # boxed alert with a warning icon (mirrors the no-rasters warning) so it
         # reads as a real callout, not recoloured hint text. Hidden by default;
         # the neutral hint hides while it shows so guidance never stacks.
+        # Lives outside the fold body: it has to read even with Advanced
+        # settings collapsed, since that is the state most runs are in.
         self.auto_detail_warning = QWidget()
         self.auto_detail_warning.setObjectName("autoDetailWarning")
         self.auto_detail_warning.setAttribute(
@@ -887,7 +942,7 @@ class DockAutoBuildMixin:
         self.auto_detail_warning_label.setStyleSheet("font-size: 11px;")
         _warn_layout.addWidget(self.auto_detail_warning_label, 1)
         self.auto_detail_warning.setVisible(False)
-        _detail_outer.addWidget(self.auto_detail_warning)
+        _detail_outer.insertWidget(1, self.auto_detail_warning)
         self.auto_detail_row.setVisible(False)
         # Gated (whole card disabled + dimmed) until the object is defined
         # (typed prompt or drawn example): the default is object-aware, so an
@@ -981,47 +1036,13 @@ class DockAutoBuildMixin:
             self.auto_tos_container.setVisible(False)
         _s3_layout.addWidget(self.auto_tos_container)
 
-        # 5d. Credit block callout: the drawn zone at the chosen detail costs
-        # more credits than the balance covers, so Detect is greyed. The
-        # sentence used to sit on the Detail header row beside the cost label,
-        # on one unwrapped line: it pushed the panel's minimum width past a
-        # normal dock and the whole page scrolled sideways. Here it is a
-        # wrapping error card right above Detect, and a free user gets the
-        # upgrade as a named way out. Driven by set_auto_credit_block.
-        self.auto_credit_block = QWidget()
-        self.auto_credit_block.setObjectName("autoCreditBlock")
-        self.auto_credit_block.setAttribute(
-            Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.auto_credit_block.setStyleSheet(
-            _msg_card_qss("autoCreditBlock", "error") + _CARD_CHILD_BTN_RESET_QSS)
-        _block_col = QVBoxLayout(self.auto_credit_block)
-        _block_col.setContentsMargins(*_SUBCARD_MARGINS)
-        _block_col.setSpacing(4)
-        _block_row = QHBoxLayout()
-        _block_row.setContentsMargins(0, 0, 0, 0)
-        _block_row.setSpacing(8)
-        # Monochrome text glyph, tinted by the card's own label color.
-        _block_icon = QLabel(_MSG_GLYPHS["error"])
-        _block_icon.setStyleSheet("font-size: 12px;")
-        _block_row.addWidget(_block_icon, 0, Qt.AlignmentFlag.AlignTop)
-        # Word-wrapped: the sentence carries two counts and has to fold over as
-        # many lines as the dock width needs, never widen the panel.
-        self.auto_credit_block_label = QLabel("")
-        self.auto_credit_block_label.setWordWrap(True)
-        self.auto_credit_block_label.setStyleSheet("font-size: 11px;")
-        _block_row.addWidget(self.auto_credit_block_label, 1)
-        _block_col.addLayout(_block_row)
-        # Same handler, same dashboard URL and same telemetry family as every
-        # other upgrade surface (see _on_upgrade_clicked). Hidden for a
-        # subscriber, who already pays and only has the detail/zone levers.
-        self.auto_credit_block_upgrade = QPushButton(tr("Upgrade to Pro"))
-        self.auto_credit_block_upgrade.setStyleSheet(_BTN_LINK)
-        self.auto_credit_block_upgrade.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.auto_credit_block_upgrade.clicked.connect(self._on_upgrade_clicked)
-        _block_col.addWidget(
-            self.auto_credit_block_upgrade, 0, Qt.AlignmentFlag.AlignLeft)
-        self.auto_credit_block.setVisible(False)
-        _s3_layout.addWidget(self.auto_credit_block)
+        # No balance callout above Detect any more. It refused a run when the
+        # zone's TILE count passed the wallet, which is a unit Automatic stopped
+        # billing in: precision moves tiles and never moves the price, so it
+        # blocked zones that fitted the month easily and stacked a second
+        # Upgrade button under the surface wall that was already saying it.
+        # The monthly-surface wall in the Advanced settings card is the one
+        # refusal, and it speaks km2 (see set_auto_zone_surface).
 
         # 6. Detect + Exit row (mirrors AI Edit's Generate + Exit): the green
         # primary grows, the ghost Exit stays compact beside it. Exit leaves
@@ -1160,21 +1181,30 @@ class DockAutoBuildMixin:
         self.auto_zero_assist_row.setVisible(False)
         _s3_layout.addWidget(self.auto_zero_assist_row)
 
-        # 11b. Subscribe link for free users when a run stops on exhausted
-        # credits (Moment C). A quiet text-link under the status; the partial
-        # results are still kept in review. Hidden by default; shown by
-        # set_auto_exhausted_subscribe_visible.
-        # Served, like the rest of the upsell card above it: the sentence
-        # quotes the Pro monthly quota, so a hardcoded number makes the plugin
-        # misstate the offer until the next release.
-        self.auto_exhausted_subscribe_link = QPushButton(dial_copy(
-            "upsell.exhausted_link",
-            tr("Finish this zone with Pro: 5,000 cloud detections a month.")))
-        self.auto_exhausted_subscribe_link.setStyleSheet(_BTN_LINK)
-        self.auto_exhausted_subscribe_link.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.auto_exhausted_subscribe_link.setVisible(False)
-        self.auto_exhausted_subscribe_link.clicked.connect(self._on_upgrade_clicked)
-        _s3_layout.addWidget(self.auto_exhausted_subscribe_link)
+        # 11b. The offer shown to a free user when a run stops on an exhausted
+        # allowance (Moment C). The partial results are still kept in review,
+        # so this is a nudge and not a wall: the compact variant of the shared
+        # offer card (upsell_card.py), one line and an outline button. Hidden
+        # by default; shown by set_auto_exhausted_subscribe_visible.
+        self.auto_exhausted_subscribe = UpsellCard(
+            "autoExhaustedOffer", "compact", self._on_upgrade_clicked)
+        # The button keeps the old attribute name: the upgrade handler tells
+        # this surface apart by the sender's identity.
+        self.auto_exhausted_subscribe_link = self.auto_exhausted_subscribe.button
+        self.auto_exhausted_subscribe.set_text(
+            dial_copy(
+                "upsell.exhausted_title",
+                tr("Your Automatic allowance ran out mid-zone.")),
+            # Served, like the rest of the upsell copy: the sentence quotes the
+            # Pro monthly quota, so a hardcoded number makes the plugin
+            # misstate the offer until the next release.
+            dial_copy(
+                "upsell.exhausted_link",
+                tr("Pro picks it up where it stopped and finishes the zone.")),
+            dial_copy("upsell.exhausted_cta", tr("Finish with Pro")),
+        )
+        self.auto_exhausted_subscribe.setVisible(False)
+        _s3_layout.addWidget(self.auto_exhausted_subscribe)
 
         # 12. Post-run review panel, built by DockAutoReviewBuildMixin
         # (auto_review_build.py) so this construction module stays a readable

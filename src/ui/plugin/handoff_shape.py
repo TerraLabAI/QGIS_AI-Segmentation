@@ -20,19 +20,28 @@ class HandoffShapeMixin:
 
     def _handoff_ground_mupp(self) -> float:
         """Map units per pixel of the handoff raster (its CRS matches the
-        stored entry geometries). Falls back to the canvas resolution, then 1."""
+        stored entry geometries).
+
+        The canvas resolution stands in only when the canvas draws in that same
+        CRS: it is measured in the canvas CRS, and on a Mercator canvas over a
+        metric layer the two differ by a factor that grows with latitude, which
+        would rescale every ground dial of the panel. Otherwise 1.
+        """
         layer = getattr(self, "_handoff_source_layer", None)
+        if layer is None:
+            return 1.0
         try:
-            if layer is not None:
-                v = float(layer.rasterUnitsPerPixelX())
-                if v > 0:
-                    return v
+            v = float(layer.rasterUnitsPerPixelX())
+            if v > 0:
+                return v
         except (RuntimeError, AttributeError):
             pass
         try:
-            v = float(self.iface.mapCanvas().mapUnitsPerPixel())
-            if v > 0:
-                return v
+            canvas = self.iface.mapCanvas()
+            if canvas.mapSettings().destinationCrs() == layer.crs():
+                v = float(canvas.mapUnitsPerPixel())
+                if v > 0:
+                    return v
         except (RuntimeError, AttributeError):
             pass
         return 1.0

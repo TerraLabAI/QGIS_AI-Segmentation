@@ -245,10 +245,43 @@ def read_pending(check_file: bool = True) -> dict | None:
         return None
 
 
-def clear_pending(run_id: str | None = None) -> None:
+def drop_autosave_table(path: str, table: str) -> None:
+    """Delete one autosave table from its GeoPackage. Never raises.
+
+    Only the table: the shared project file holds every committed run beside
+    it, and a standalone fallback file is left in place empty rather than
+    removed, since deleting a file the user may have opened is not this
+    module's call to make.
+    """
+    if not path or not table or not os.path.exists(path):
+        return
+    try:
+        from qgis.core import QgsProviderRegistry
+
+        metadata = QgsProviderRegistry.instance().providerMetadata("ogr")
+        if metadata is None:
+            return
+        connection = metadata.createConnection(path, {})
+        if connection is None:
+            return
+        connection.dropVectorTable("", table)
+    except Exception:  # noqa: BLE001 -- a table left behind changes nothing
+        pass  # nosec B110
+
+
+def clear_pending(run_id: str | None = None, drop_table: bool = False) -> None:
     """Drop the pending pointer. With ``run_id``, only when the stored pointer
     belongs to that run, so finishing today's run never consumes a previous
-    session's still-unrecovered autosave."""
+    session's still-unrecovered autosave.
+
+    ``drop_table`` also deletes that run's autosave table, and needs a
+    ``run_id`` to know which one. It is for the caller that just wrote the same
+    objects to a real layer: the crash-net copy is then a duplicate, and
+    without this every finished run leaves one more table in the project's
+    GeoPackage for good. Every other caller keeps the file, because that is
+    where it is the only copy left.
+    """
+    info = None
     try:
         if run_id:
             info = read_pending(check_file=False)
@@ -257,6 +290,9 @@ def clear_pending(run_id: str | None = None) -> None:
         QSettings().remove(_PENDING_KEY)
     except Exception:  # nosec B110
         pass
+    if drop_table and info:
+        drop_autosave_table(str(info.get("path") or ""),
+                            str(info.get("table") or ""))
 
 
 def log_and_clear_stale_pending(current_run_id: str | None = None) -> None:

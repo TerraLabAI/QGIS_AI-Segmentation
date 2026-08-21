@@ -12,7 +12,7 @@ import time
 from qgis.core import QgsTask
 from qgis.PyQt.QtCore import pyqtSignal
 
-from ..core.activation_manager import _KEY_RE
+from ..core.activation_manager import ACTIVATION_KEY_RE
 from ..core.i18n import tr
 from ..core.logging_utils import log
 from .adaptive_concurrency import OfflineFastFail
@@ -35,11 +35,26 @@ class PairingPollTask(QgsTask):
     # once each; older servers never report 'pending' before success, in
     # which case only the stalled hint can fire and the flow is unchanged.
     pairing_browser_seen = pyqtSignal()
-    pairing_stalled = pyqtSignal()
+    # Carries why the wait is stuck: STALL_BROWSER_NOT_SEEN or
+    # STALL_CODE_EXPIRED. A slot that takes no argument still works, so the
+    # reason reaches the panel only once the panel asks for it.
+    pairing_stalled = pyqtSignal(str)
+
+    # The page never opened: no browser has reached the server yet.
+    STALL_BROWSER_NOT_SEEN = "browser_not_seen"
+    # The browser did open, and the code it carries has run out of time.
+    STALL_CODE_EXPIRED = "code_expired"
 
     # How long to poll without ever seeing the browser before hinting the
     # user that the page probably never opened.
     STALL_AFTER_S = 45.0
+
+    # A pairing code lives ten minutes on the server, so a wait that reaches
+    # that mark is waiting on a code nothing can bind any more. The hint goes
+    # out a little early: the poll window is the same ten minutes, and a line
+    # the user only sees at the moment the wait is called off is not a hint.
+    CODE_TTL_S = 600.0
+    EXPIRY_HINT_LEAD_S = 30.0
 
     # Polls in a row that never reached a server before the wait is called off.
     # The browser signs in from this same machine, so a link that cannot carry
@@ -87,6 +102,7 @@ class PairingPollTask(QgsTask):
         deadline = started + self._total_timeout_s
         browser_seen = False
         stall_hinted = False
+        expiry_hinted = False
         offline_streak = 0
         while not self.isCanceled() and time.monotonic() < deadline:
             try:
@@ -118,7 +134,7 @@ class PairingPollTask(QgsTask):
 
             if status == "ready":
                 key = (result.get("activation_key") or "").strip()
-                if _KEY_RE.match(key):
+                if ACTIVATION_KEY_RE.match(key):
                     self._key = key
                     return True
                 # Server said ready but the key is malformed: terminal, never
@@ -155,18 +171,30 @@ class PairingPollTask(QgsTask):
             # signing in), "not_found" (the browser never reached /connect, or
             # the code expired), and transient network/server errors - just
             # means "keep waiting". The poll is idempotent, so we loop until
-            # ready or the overall deadline. Newer servers hint how long to
-            # wait; absent or junk falls back to the fixed interval so older
-            # servers behave unchanged.
+            # ready or the overall deadline. The server cannot tell an expired
+            # code from one that never existed, so the two hints below split
+            # the wait instead: which one fires depends on whether a browser
+            # was ever seen. Newer servers hint how long to wait; absent or
+            # junk falls back to the fixed interval so older servers behave
+            # unchanged.
+            waited_s = time.monotonic() - started
             if status == "pending" and not browser_seen:
                 browser_seen = True
                 self.pairing_browser_seen.emit()
-            elif not browser_seen and not stall_hinted and time.monotonic() - started >= self.STALL_AFTER_S:
+            elif not browser_seen and not stall_hinted and waited_s >= self.STALL_AFTER_S:
                 # Long wait and the server never saw the browser: the page
                 # probably never opened (blocked browser, page error). Hint
                 # the recovery paths instead of spinning silently.
                 stall_hinted = True
-                self.pairing_stalled.emit()
+                self.pairing_stalled.emit(self.STALL_BROWSER_NOT_SEEN)
+            elif (browser_seen and not expiry_hinted
+                    and waited_s >= self.CODE_TTL_S - self.EXPIRY_HINT_LEAD_S):
+                # The browser did reach the page and the code has run out of
+                # time, so the server answers the same "keep waiting" it would
+                # for a code that never existed. Say which one it is: a new
+                # code is one click away, and waiting is not.
+                expiry_hinted = True
+                self.pairing_stalled.emit(self.STALL_CODE_EXPIRED)
 
             sleep_s = self._interval_s
             hint = result.get("retry_after") if isinstance(result, dict) else None

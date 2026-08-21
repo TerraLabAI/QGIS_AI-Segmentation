@@ -54,6 +54,39 @@ _PROMPT_COMMAND_WORDS_FALLBACK = {
     "i", "me", "you",
 }
 
+# Three guards that used to exist only in the served policy, so they said
+# nothing at all until the config arrived: the first launch of every new
+# account, a cold cache, and any session started offline. That is the moment a
+# first prompt is typed, so it is the worst moment to have no guard.
+#
+# Each list here is a short generic core, not a copy of the served one (24, 12
+# and 16 entries there). The server stays the place to tune the vocabulary; the
+# client only guarantees the guard exists at all.
+_PROMPT_ABSTRACT_FALLBACK = {
+    "thing", "things", "stuff", "object", "objects", "item", "items",
+    "anything", "everything", "area", "areas", "zone", "zones",
+}
+# Words that describe how something looks, which the model cannot ground.
+_PROMPT_SUBJECTIVE_FALLBACK = {
+    "nice", "beautiful", "good", "bad", "ugly", "pretty", "interesting",
+}
+# Words that place one object relative to another: the model reads one object,
+# not a relation between two.
+_PROMPT_REFERENTIAL_FALLBACK = {
+    "near", "next", "behind", "between", "around", "beside", "above",
+    "below", "inside", "outside", "without", "except",
+}
+
+# English nouns that end in s and are already singular. Without them the bare
+# plural rewrite, which runs whether or not a policy is loaded, turns "species"
+# into "specie", "series" into "sery" and "lens" into "len", and ships the
+# non-word to the model. Kept short and generic; the served list is where the
+# vocabulary is tuned.
+_PROMPT_PLURAL_KEEP_FALLBACK = {
+    "species", "series", "lens", "premises", "works", "woods", "crossroads",
+    "headquarters",
+}
+
 # Separators that mean "several objects at once" - the cloud model grounds ONE
 # concept per run, so "building, tree" quietly biases toward garbage.
 _MULTI_OBJECT_RE = re.compile(r"[,;/+&]| and | or ")
@@ -82,6 +115,17 @@ def _build_prompt_tables(policy: dict) -> dict:
     def _as_set(key: str) -> set[str]:
         v = policy.get(key)
         return {str(w).lower() for w in v} if isinstance(v, list) else set()
+
+    def _as_set_with(key: str, shipped: set[str]) -> set[str]:
+        """A served list UNION the shipped one, never instead of it.
+
+        A served list is tuned as extra vocabulary, not as a replacement, and
+        it arrives partial: taking it whole dropped every shipped word it did
+        not repeat, so a guard that worked offline stopped working the moment
+        the configuration landed. Union-only also means a deploy can teach the
+        guard a word and can never take one away.
+        """
+        return _as_set(key) | shipped
 
     def _as_map(key: str) -> dict[str, str]:
         v = policy.get(key)
@@ -121,18 +165,21 @@ def _build_prompt_tables(policy: dict) -> dict:
         return out
 
     return {
-        "strip": _as_set("strip_words") or set(_PROMPT_STRIP_WORDS_FALLBACK),
-        "command": _as_set("command_words") or set(_PROMPT_COMMAND_WORDS_FALLBACK),
-        "abstract": _as_set("abstract"),
-        "subjective": _as_set("subjective"),
-        "referential": _as_set("referential"),
+        "strip": _as_set_with("strip_words", _PROMPT_STRIP_WORDS_FALLBACK),
+        "command": _as_set_with("command_words", _PROMPT_COMMAND_WORDS_FALLBACK),
+        "abstract": _as_set_with("abstract", _PROMPT_ABSTRACT_FALLBACK),
+        "subjective": _as_set_with("subjective", _PROMPT_SUBJECTIVE_FALLBACK),
+        "referential": _as_set_with("referential", _PROMPT_REFERENTIAL_FALLBACK),
         "foreign_stopwords": _as_set("foreign_stopwords"),
         "foreign_to_english": _as_map("foreign_to_english"),
         "english_object_words": _as_set("english_object_words"),
         "steer": _as_steer("steer"),
-        # Words never singularized even when their singular is a known object
-        # (empty fallback, so the bare-plural rewrite is off without a policy).
-        "plural_keep": _as_set("plural_keep"),
+        # Words never singularized even when their singular is a known object.
+        # This one DOES ship a fallback, unlike its plural_strip sibling: an
+        # absent list is no protection, not a switched-off rewrite, and the
+        # rewrite runs on any word with or without a policy. Union too, so a
+        # served list that omits "species" cannot put "specy" back on the wire.
+        "plural_keep": _as_set_with("plural_keep", _PROMPT_PLURAL_KEEP_FALLBACK),
         # Words singularized even when a guard would otherwise hold them back
         # ("villas" is blocked by the same ending that protects "canvas").
         # Empty fallback, never a shipped list; plural_keep still wins.
@@ -190,12 +237,30 @@ def _fold_ascii(text: str) -> str:
     )
 
 
+# Same reasoning as the label index below: the token pool now reads the live
+# catalogue, which re-parses its cache on every read, and this runs on every
+# keystroke. A short TTL keeps the per-keystroke cost flat.
+_TOKENS_CACHE_TTL_S = 2.0
+_TOKENS_CACHE: list[str] | None = None
+_TOKENS_CACHE_TIME: float = 0.0
+
+
 def _prompt_known_tokens() -> list[str]:
+    global _TOKENS_CACHE, _TOKENS_CACHE_TIME
+    now = time.monotonic()
+    if _TOKENS_CACHE is not None and (now - _TOKENS_CACHE_TIME) < _TOKENS_CACHE_TTL_S:
+        return _TOKENS_CACHE
     try:
         from ...core.presets.segmentation_presets import known_tokens
-        return known_tokens()
+        tokens = known_tokens()
     except Exception:  # noqa: BLE001
-        return []
+        tokens = []
+    # An empty pool is not cached: a catalogue import that failed once must be
+    # retried, not remembered for the rest of the session.
+    if tokens:
+        _TOKENS_CACHE = tokens
+        _TOKENS_CACHE_TIME = now
+    return tokens
 
 
 def _prompt_suggestion(norm: str, words: list[str]) -> str | None:
@@ -370,6 +435,19 @@ def is_known_object(text: str) -> bool:
         return True
     vocab = _known_vocabulary()
     return all(_word_is_known(w, vocab) for w in core)
+
+
+def prompt_vocabulary_is_loaded() -> bool:
+    """Is the wide English object vocabulary in hand?
+
+    The catalogue tokens ship with the plugin, but the long tail of object
+    words ("barn", "cliff", "meadow", "pine") lives only in the served policy.
+    Before it arrives, a perfectly good object looks unrecognized, so anything
+    that tells the user their word is unknown has to hold its tongue until this
+    answers True. Not knowing a word and having no vocabulary are different
+    things, and only the first is worth saying out loud.
+    """
+    return bool(_prompt_tables()["english_object_words"])
 
 
 def _typo_correction(words: list[str]) -> str | None:

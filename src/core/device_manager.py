@@ -79,11 +79,10 @@ def _configure_cpu_optimizations():
     import torch
 
     num_cores = os.cpu_count() or 4
-
-    if sys.platform == "darwin":
-        optimal_threads = max(4, num_cores // 2)
-    else:
-        optimal_threads = num_cores
+    # Same share as the inference subprocess, on every OS. This torch runs
+    # inside QGIS itself, so taking every core freezes the canvas and the
+    # event loop while the work runs.
+    optimal_threads = max(1, min(num_cores - 1, max(2, num_cores // 2)))
 
     torch.set_num_threads(optimal_threads)
 

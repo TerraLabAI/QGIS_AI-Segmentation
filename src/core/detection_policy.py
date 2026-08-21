@@ -1388,7 +1388,7 @@ _REGULARIZE_FALLBACK_DIAGONAL_REDUCTION = 8.0
 _REGULARIZE_DIAGONAL_REDUCTION_MAX = 22.5
 # ONE generic fallback for the IoU above which a near-round shape is replaced
 # by a true circle.
-_REGULARIZE_FALLBACK_CIRCLE_THRESHOLD = 0.90
+_REGULARIZE_FALLBACK_CIRCLE_THRESHOLD = 0.94
 # ONE generic fallback for the de-staircase pass, as a multiple of the
 # detection pixel. A raw mask outline is already all 90-degree pixel steps, so
 # it is simplified before the snap; the tuned ground value lives server-side.
@@ -1738,6 +1738,128 @@ def regularize_enabled_for(prompt: str, policy: dict | None = None) -> bool:
         return False
     keywords = regularize_settings(policy)["keywords"]
     return any(keyword_matches(text, kw) for kw in keywords)
+
+
+# Compiled client defaults for the run-wide footprint alignment
+# (core.footprint_alignment): the values a served but PARTIAL auto_regularize
+# object falls back to, key by key. Never an enable: the feature is off
+# whenever the object itself is absent, unreadable, or not enabled, so the
+# guards always travel with the flag that turns the pass on.
+_AUTO_REGULARIZE_DEFAULTS: dict[str, float | int] = {
+    "simplify_gsd_factor": 3.0,
+    "simplify_min_m": 0.6,
+    "simplify_max_m": 1.5,
+    "ortho_window_deg": 15.0,
+    "diag_window_deg": 7.0,
+    "min_edge_abs_m": 1.0,
+    "min_edge_rel": 0.02,
+    "min_corner_deg": 30.0,
+    "parallel_threshold_m": 1.0,
+    "circularity_skip": 0.90,
+    "hist_bin_deg": 1.0,
+    "bin_halo": 3,
+    "mrr_when_top_below": 0.50,
+    "consensus_radius_m": 100.0,
+    "consensus_min_neighbours": 3,
+    "consensus_iou_margin": 0.01,
+    "guard_iou_floor": 0.90,
+    "guard_area_ceiling": 0.10,
+}
+
+
+def auto_regularize_policy(policy: dict | None = None) -> dict:
+    """The top-level ``auto_regularize`` object of the detection policy blob
+    (the run-wide footprint alignment applied at Automatic finalize). Empty
+    dict when absent or malformed, which the reader below treats as OFF."""
+    policy = get_detection_policy() if policy is None else policy
+    val = policy.get("auto_regularize") if isinstance(policy, dict) else None
+    return val if isinstance(val, dict) else {}
+
+
+def auto_regularize_settings(shape_class: str,
+                             policy: dict | None = None) -> dict | None:
+    """The run-wide footprint-alignment settings for one shape class, or None
+    (the pass does not run).
+
+    Fail-closed on the whole object: the pass runs only when the served
+    ``auto_regularize`` object exists, carries ``enabled: true``, AND names
+    the run's shape class in its ``classes`` list. There is no client-side
+    enable, so a cold cache, an old server, or an unreadable object all mean
+    the run keeps its raw shapes, and the give-up guards can never be
+    separated from the flag that turns the snapping on.
+
+    When the pass runs, every numeric dial is read from the object and falls
+    back to the compiled default in ``_AUTO_REGULARIZE_DEFAULTS`` when absent
+    or malformed. The returned dict always carries the full key set.
+    """
+    reg = auto_regularize_policy(policy)
+    if reg.get("enabled") is not True:
+        return None
+    classes = reg.get("classes")
+    if not isinstance(classes, list) or shape_class not in classes:
+        return None
+    return _auto_regularize_dials(reg)
+
+
+# Dials where a served 0 is a real instruction (turn that behaviour off),
+# not a malformed value to replace with the compiled default.
+_AUTO_REGULARIZE_ZERO_OK = frozenset({
+    "diag_window_deg", "bin_halo", "min_edge_rel", "min_edge_abs_m",
+    "consensus_iou_margin",
+})
+
+# Dials where an absurd served value is not a bad shape but a big allocation,
+# with the range each one is read inside. The edge-angle histogram holds
+# 90/hist_bin_deg bins and the halo indexes that many bins on each side, so a
+# misplaced decimal point on either builds a list long enough to hang the
+# finalize step. Outside the range the value is a typo, not an instruction.
+_AUTO_REGULARIZE_RANGES: dict[str, tuple[float, float]] = {
+    "hist_bin_deg": (0.1, 45.0),
+    "bin_halo": (0.0, 45.0),
+}
+
+
+def _auto_regularize_dials(reg: dict) -> dict:
+    """Every numeric dial of a served ``auto_regularize`` object, filled key
+    by key from the compiled default when absent or malformed. The caller has
+    already answered the enable question; this never does.
+
+    A dial listed in ``_AUTO_REGULARIZE_RANGES`` is also range-checked, and a
+    value outside its range is read as a typo: the compiled default stands."""
+    out: dict[str, float | int] = {}
+    for key, fallback in _AUTO_REGULARIZE_DEFAULTS.items():
+        val = reg.get(key)
+        if _is_finite_policy_value(val) and (
+                val >= 0 if key in _AUTO_REGULARIZE_ZERO_OK else val > 0):
+            bounds = _AUTO_REGULARIZE_RANGES.get(key)
+            if bounds is not None and not bounds[0] <= val <= bounds[1]:
+                out[key] = fallback
+                continue
+            out[key] = int(val) if isinstance(fallback, int) else float(val)
+        else:
+            out[key] = fallback
+    return out
+
+
+def manual_save_alignment_settings(policy: dict | None = None) -> dict | None:
+    """The footprint-alignment dials for one Semi-Auto save, or None (the
+    pass does not run).
+
+    Fail-closed on the SAME served ``auto_regularize.enabled`` flag as the
+    Automatic pass, so one server switch turns both off, and a cold cache
+    (offline Manual included) keeps the pass off: the give-up guards always
+    travel with the flag that turns the snapping on. The ``classes`` list
+    does NOT gate here, because a Semi-Auto object carries no shape class;
+    the user's Right angles toggle is the intent signal, and the caller
+    checks it. The dial set is shared with the Automatic reader, never
+    forked, except the circle rebuild: Right angles promises corners, so a
+    near-round Semi-Auto save is left alone instead of becoming a circle."""
+    reg = auto_regularize_policy(policy)
+    if reg.get("enabled") is not True:
+        return None
+    dials = _auto_regularize_dials(reg)
+    dials["circularity_skip"] = 1.01
+    return dials
 
 
 def adaptive_confidence_policy(policy: dict | None = None) -> dict:

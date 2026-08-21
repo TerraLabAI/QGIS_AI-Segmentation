@@ -80,7 +80,11 @@ _affine_transform: Any = None
 # core.detection_policy.regularize_settings).
 _DEFAULT_MIN_KEEP_IOU = 0.70
 _DEFAULT_DIAGONAL_REDUCTION = 15.0
-_DEFAULT_CIRCLE_THRESHOLD = 0.90
+# A regular polygon of six or eight sides already overlaps its own equal-area
+# circle by more than nine tenths, so a threshold in the low nineties turns a
+# hexagonal tank or a chamfered silo into a circle. The floor has to sit above
+# that band for the substitution to mean "this really is round".
+_DEFAULT_CIRCLE_THRESHOLD = 0.94
 # Below this symmetric-difference share the output is treated as identical to
 # the input, so a run that changed nothing is reported as not regularized.
 _CHANGED_MIN_FRACTION = 1.0e-3
@@ -1247,7 +1251,10 @@ def regularize_single_polygon(
         multi_min_separation_deg=multi_min_separation_deg,
     )
 
-    if allow_circles and polygon.area > 0:
+    # Never on a shape with holes: the substitution replaces the outer ring
+    # only, so the original's interior rings would come back sitting in a
+    # circle that was never measured against them.
+    if allow_circles and polygon.area > 0 and not simple_polygon.interiors:
         radius = math.sqrt(polygon.area / math.pi)
         perfect_circle = polygon.centroid.buffer(radius, quad_segs=42)
         circle_iou, _ = iou_and_symmetric_fraction(perfect_circle, polygon)
@@ -1353,24 +1360,70 @@ def _regularize_part_local(
 def _cleanup_polygon(polygon: Any, simplify_tolerance: float) -> Any:
     """Remove thin slivers left by regularization with a square/mitre buffer
     open-close, then drop collinear vertices. Best-effort: returns the input on
-    any failure or when the cleanup empties the shape."""
+    any failure or when the cleanup empties the shape.
+
+    OPEN first (shrink, grow), close after. A closing run first bridges
+    everything narrower than its own reach, which shuts a narrow courtyard and
+    joins two parts before the opening it exists to serve has run at all.
+
+    A cleanup that costs the shape a part or an interior ring is refused
+    outright. Removing a sliver is all this is for, and a hole or a part going
+    missing is not a sliver."""
     if polygon is None or polygon.is_empty or simplify_tolerance <= 0:
         return polygon
     try:
         buffer_size = simplify_tolerance / 50.0
-        cleaned = polygon.buffer(buffer_size, cap_style="square", join_style="mitre")
+        cleaned = polygon.buffer(-buffer_size, cap_style="square", join_style="mitre")
         cleaned = cleaned.buffer(
-            buffer_size * -2, cap_style="square", join_style="mitre"
+            buffer_size * 2, cap_style="square", join_style="mitre"
         )
-        cleaned = cleaned.buffer(buffer_size, cap_style="square", join_style="mitre")
+        cleaned = cleaned.buffer(-buffer_size, cap_style="square", join_style="mitre")
         if cleaned.is_empty:
             return polygon
         cleaned = cleaned.simplify(tolerance=buffer_size, preserve_topology=True)
         if cleaned.is_empty:
             return polygon
+        if (_component_count(cleaned) < _component_count(polygon)
+                or _hole_count(cleaned) < _hole_count(polygon)):
+            return polygon
         return cleaned
     except Exception:  # noqa: BLE001 -- best-effort  # nosec B110
         return polygon
+
+
+def _assemble_parts(per_part: list[list[Any]]) -> Any:
+    """The regularized pieces put back into one geometry, part by part.
+
+    Pieces that came out of the SAME input part are joined: the regularizer can
+    cut one part into several and they are one object.
+
+    Pieces from DIFFERENT input parts are not. Squaring pushes walls outward,
+    and joining across parts welds two roof pieces the input deliberately kept
+    apart, which the user then has to split by hand. They are joined only when
+    keeping them apart would produce an overlapping, invalid shape, which no
+    caller can save.
+
+    None when nothing survived.
+    """
+    merged: list[Any] = []
+    for bucket in per_part:
+        alive = [p for p in bucket if p is not None and not p.is_empty]
+        if not alive:
+            continue
+        one = alive[0] if len(alive) == 1 else _unary_union(alive)
+        if one is not None and not one.is_empty:
+            merged.append(one)
+    if not merged:
+        return None
+    if len(merged) == 1:
+        return merged[0]
+    try:
+        apart = MultiPolygon(flatten_to_polygons(merged))
+        if not apart.is_empty and apart.is_valid:
+            return apart
+    except Exception:  # noqa: BLE001 -- an unbuildable set falls through  # nosec B110
+        pass
+    return _unary_union(merged)
 
 
 def _destaircase_geometry(geometry: Any, tolerance_m: float) -> Any:
@@ -1569,13 +1622,16 @@ def _regularize_geometry(
         # (already de-staircased/simplified upstream), never a squared guess.
         return geometry, False, True
 
-    out_pieces: list[Any] = []
+    # One bucket per INPUT part, kept apart on purpose: see _assemble_parts.
+    per_part: list[list[Any]] = []
     for part in parts:
+        bucket: list[Any] = []
+        per_part.append(bucket)
         rect = _ombb_candidate(part, pol) if pol.rectangle_enabled else None
         if rect is not None:
             cleaned = _cleanup_polygon(rect, tolerance_m)
             if cleaned is not None and not cleaned.is_empty:
-                out_pieces.append(cleaned)
+                bucket.append(cleaned)
             continue
         try:
             results = _regularize_part_local(
@@ -1594,13 +1650,13 @@ def _regularize_geometry(
         for piece in results:
             cleaned = _cleanup_polygon(piece, tolerance_m)
             if cleaned is not None and not cleaned.is_empty:
-                out_pieces.append(cleaned)
+                bucket.append(cleaned)
 
-    if not out_pieces:
+    if not any(per_part):
         return geometry, False, False
 
     try:
-        regularized = out_pieces[0] if len(out_pieces) == 1 else _unary_union(out_pieces)
+        regularized = _assemble_parts(per_part)
         if regularized is None or regularized.is_empty:
             return geometry, False, False
     except Exception:  # noqa: BLE001 -- best-effort  # nosec B110

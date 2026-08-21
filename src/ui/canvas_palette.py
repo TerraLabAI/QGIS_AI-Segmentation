@@ -97,6 +97,25 @@ SHAPE_EDIT_MARKER_FILL = QColor(255, 255, 255)
 SESSION_DIM_FILL_STR = "150,150,150,90"
 SESSION_DIM_STROKE_STR = "230,230,230,190"
 
+# The outline that follows the cursor before any click. Pending-blue, because
+# it is the same AI output the click keeps, one step earlier. Well under
+# PENDING_FILL on purpose: nothing has been chosen yet, so it must read as a
+# ghost of a suggestion, with the imagery still legible through it, never as a
+# selection the user made. The alpha sits at the dim-fill floor above which a
+# tint still reads on dark imagery; below it the rim alone would carry the
+# shape. The edge is a light pending-family stroke, so the shape stays readable
+# over dark imagery where the fill alone washes out. Its alpha sits one step
+# above the fill's old rim because the dashed stroke below carries less ink
+# than a solid line.
+HOVER_PREVIEW_FILL = QColor(0, 120, 255, 60)
+HOVER_PREVIEW_EDGE = QColor(120, 200, 255, 235)
+# Every stroked ghost outline is DASHED: the broken line is the "not saved
+# yet" cue, against the solid stroke every kept shape wears. The pattern is in
+# pen widths (Qt's dash unit), 3 on then 2 off, so at the 2 px cosmetic width
+# below a dash is 6 px and a gap 4 px: broken at a glance, still one shape.
+HOVER_PREVIEW_DASH_PATTERN = (3.0, 2.0)
+HOVER_PREVIEW_OUTLINE_WIDTH = 2.0
+
 # Click markers (manual maptool)
 MARKER_POSITIVE = QColor(0, 200, 0)
 MARKER_NEGATIVE = QColor(220, 0, 0)

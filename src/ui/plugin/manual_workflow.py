@@ -12,10 +12,12 @@ from qgis.core import (
     Qgis,
     QgsCoordinateReferenceSystem,
     QgsCoordinateTransform,
+    QgsCsException,
     QgsFeature,
     QgsField,
     QgsGeometry,
     QgsMessageLog,
+    QgsPointXY,
     QgsProject,
     QgsRasterLayer,
     QgsVectorLayer,
@@ -59,12 +61,15 @@ class ManualWorkflowMixin:
         self._maybe_warmup_auto()
 
     def _warmup_if_manual_cloud(self) -> None:
-        """Ask for a machine when Semi-Auto opens already on the cloud engine.
+        """Ask for a machine when Semi-Auto is on the cloud engine already.
 
         The card is only picked once. Every session after that arrives with
-        the choice already made and nothing to emit, so the mode switch is the
-        other place the intent shows. Silent, and debounced with every other
-        caller of the ping, so the two triggers together still cost one.
+        the choice already made and nothing to emit, so the other places the
+        intent shows call here instead: the mode switch, and the map tool
+        being armed (Start, a session restored, or the tool coming back after
+        an idle gap long enough for the machine to have gone away). Silent,
+        and debounced with every other caller of the ping, so the triggers
+        together still cost one.
         """
         try:
             from ...core.manual_cloud_route import (
@@ -98,6 +103,19 @@ class ManualWorkflowMixin:
                 # closed repeatedly costs one ping.
                 self._maybe_warmup_auto()
         if self.predictor is None:
+            if getattr(self, "_local_ai_load_failed", False):
+                # The load already came back and failed. "Still loading" is a
+                # promise nothing is keeping, and the user waited on it for the
+                # rest of the session, so name what happened and where the way
+                # out is.
+                QMessageBox.warning(
+                    self.iface.mainWindow(),
+                    tr("AI not available"),
+                    tr("The offline AI did not load, so this session cannot "
+                       "start. Use the Install button in the panel to set it "
+                       "up again.")
+                )
+                return
             # A user who turns the cloud option back off after a session has no
             # on-device predictor in the slot, and the loader stands down while
             # a remote one holds it. Ask for the load here so the sentence below
@@ -132,6 +150,14 @@ class ManualWorkflowMixin:
             return
 
         self._reset_session()
+        # _reset_session puts every refine value back to the shipped default,
+        # and the panel is showing this user's remembered choices, so the
+        # session would start on settings nobody can see. The panel publishes
+        # what it holds and the two agree from the first click.
+        try:
+            self.dock_widget.publish_refine_settings()
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110 -- no dock, or torn down
         # No warm-up of the previous session survives into this one, and a flag
         # left standing would let a Save here abandon a crop this session asked
         # for by name.
@@ -326,6 +352,47 @@ class ManualWorkflowMixin:
             self._stop_canvas_crs_watch()
             return
         self._rebuild_manual_crs_transforms()
+        self._reproject_session_canvas_items()
+
+    def _reproject_session_canvas_items(self) -> None:
+        """Redraw what the session put on the map under the new canvas CRS.
+
+        Rubber bands and markers hold canvas coordinates, not ground ones, so
+        a project CRS change leaves every one of them where the old CRS put
+        it: the outlines and the click marks drift away from the imagery they
+        belong to, and only a new click moves them back. Never raises: a
+        redraw is not worth a broken session.
+        """
+        try:
+            if self.map_tool is not None:
+                self.map_tool.clear_markers()
+                points = [(pt, True) for pt in self._active_crop_points_positive]
+                points += [(pt, False) for pt in self._active_crop_points_negative]
+                for raw, is_positive in points:
+                    canvas_pt = self._transform_to_canvas_crs(
+                        QgsPointXY(raw[0], raw[1]))
+                    if canvas_pt is not None:
+                        self.map_tool.add_marker(canvas_pt, is_positive=is_positive)
+        except (QgsCsException, RuntimeError, AttributeError, TypeError, IndexError):
+            pass
+        for entry, band in zip(self.saved_polygons, self.saved_rubber_bands):
+            if band is None:
+                continue
+            geometry = entry.get("geom_obj")
+            if geometry is None:
+                continue
+            try:
+                display_geom = QgsGeometry(geometry)
+                self._transform_geometry_to_canvas_crs(display_geom)
+                band.setToGeometry(display_geom, None)
+            except (QgsCsException, RuntimeError, AttributeError):
+                # A point with no image in the new projection is one band left
+                # where it was, not a session lost.
+                continue
+        try:
+            self._update_mask_visualization()
+        except (QgsCsException, RuntimeError, AttributeError):
+            pass
 
     def _active_space_pan_tool(self):
         """Return the plugin-owned map tool currently active on the canvas
@@ -340,6 +407,15 @@ class ManualWorkflowMixin:
         return None
 
     def _activate_segmentation_tool(self):
+        # The tool being armed means a click is coming. On the cloud engine
+        # that click needs a machine, so ask for one here: this covers the
+        # arms that never pass a Start (a restored session, the tool coming
+        # back mid-session after an idle gap). Debounced and silent, and it
+        # must never block the tool from arming.
+        try:
+            self._warmup_if_manual_cloud()
+        except Exception:  # noqa: BLE001 -- a warm never blocks the tool  # nosec B110
+            pass
         # Save the current map tool to restore it later
         current_tool = self.iface.mapCanvas().mapTool()
         if current_tool and current_tool != self.map_tool:
@@ -413,52 +489,57 @@ class ManualWorkflowMixin:
         if new_layer_id == current_layer_id:
             return
 
-        # Different layer selected while segmenting
-        if self.iface.mapCanvas().mapTool() == self.map_tool:
-            has_unsaved_mask = self.current_mask is not None
-            has_unsaved_mask = has_unsaved_mask or bool(self._frozen_sessions)
-            has_unsaved_mask = has_unsaved_mask or self._unfrozen_display_polygon is not None
-            has_saved_polygons = len(self.saved_polygons) > 0
+        # Different layer picked while a session owns one. The session is what
+        # decides, never the armed tool: the user can be on the pan tool for a
+        # moment, and the work is just as live and just as easy to lose.
+        has_unsaved_mask = self.current_mask is not None
+        has_unsaved_mask = has_unsaved_mask or bool(self._frozen_sessions)
+        has_unsaved_mask = has_unsaved_mask or self._unfrozen_display_polygon is not None
+        has_saved_polygons = len(self.saved_polygons) > 0
 
-            if has_unsaved_mask or has_saved_polygons:
-                polygon_count = len(self.saved_polygons)
-                if has_unsaved_mask:
-                    polygon_count += 1
-                message = "{}\n\n{}".format(
-                    tr("You have {count} unsaved polygon(s).").format(
-                        count=polygon_count),
-                    tr("Changing layer will discard your current segmentation. Continue?"))
+        if has_unsaved_mask or has_saved_polygons:
+            polygon_count = len(self.saved_polygons)
+            if has_unsaved_mask:
+                polygon_count += 1
+            if polygon_count == 1:
+                held = tr("You have 1 unsaved polygon.")
+            else:
+                held = tr("You have {count} unsaved polygons.").format(
+                    count=polygon_count)
+            message = "{}\n\n{}".format(
+                held,
+                tr("Changing layer will discard your current segmentation. Continue?"))
 
-                reply = QMessageBox.warning(
-                    self.iface.mainWindow(),
-                    tr("Change Layer?"),
-                    message,
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No
-                )
+            reply = QMessageBox.warning(
+                self.iface.mainWindow(),
+                tr("Change Layer?"),
+                message,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
 
-                if reply != QMessageBox.StandardButton.Yes:
-                    self.dock_widget.layer_combo.blockSignals(True)
-                    self.dock_widget.layer_combo.setLayer(self._current_layer)
-                    self.dock_widget.layer_combo.blockSignals(False)
-                    return
-                try:
-                    from ...core import telemetry_session_events
-                    telemetry_session_events.track_manual_abandoned(
-                        context="change_layer", polygon_count=polygon_count)
-                except Exception:
-                    pass  # nosec B110
-
-            self._stopping_segmentation = True
+            if reply != QMessageBox.StandardButton.Yes:
+                self.dock_widget.layer_combo.blockSignals(True)
+                self.dock_widget.layer_combo.setLayer(self._current_layer)
+                self.dock_widget.layer_combo.blockSignals(False)
+                return
             try:
-                self.iface.mapCanvas().unsetMapTool(self.map_tool)
-                self._restore_previous_map_tool()
-            finally:
-                # A stuck-True flag makes _on_tool_deactivated refuse to ever
-                # re-arm the segmentation tool for the rest of the session.
-                self._stopping_segmentation = False
-            self._reset_session()
-            self.dock_widget.reset_session()
+                from ...core import telemetry_session_events
+                telemetry_session_events.track_manual_abandoned(
+                    context="change_layer", polygon_count=polygon_count)
+            except Exception:
+                pass  # nosec B110
+
+        self._stopping_segmentation = True
+        try:
+            self.iface.mapCanvas().unsetMapTool(self.map_tool)
+            self._restore_previous_map_tool()
+        finally:
+            # A stuck-True flag makes _on_tool_deactivated refuse to ever
+            # re-arm the segmentation tool for the rest of the session.
+            self._stopping_segmentation = False
+        self._reset_session()
+        self.dock_widget.reset_session()
 
     def _on_save_polygon(self):
         """Save current mask as polygon (including any frozen crop sessions)."""
@@ -507,6 +588,13 @@ class ManualWorkflowMixin:
             # Refine handoff: count the edit. The shape is saved as drawn, and
             # the detections around it are not touched. No-op in base Manual.
             combined = self._note_handoff_shape_saved(combined)
+            # Save-time footprint alignment (Right angles ON, server-gated):
+            # snap this shape onto the grid the session's already saved
+            # neighbours agree on, the same competition and give-up guards as
+            # the Automatic finalize, so the result never strays visibly from
+            # the shape on screen. No-op when gated off or reverted.
+            from .manual_save_alignment import align_manual_saved_shape
+            combined = align_manual_saved_shape(self, combined)
             # Per-instance identity: an object re-opened for editing keeps its
             # original det_id (its Random colour survives the edit); a brand-new
             # hand save gets a synthetic one. Score follows the same rule.
@@ -821,6 +909,7 @@ class ManualWorkflowMixin:
         # it, one object per session travels to TerraLab's servers and out to a
         # file for nothing.
         live_billing_id = None
+        live_billing_geom = None
         if current_geoms:
             combined = QgsGeometry.unaryUnion(current_geoms)
             if combined and not combined.isEmpty():
@@ -837,6 +926,9 @@ class ManualWorkflowMixin:
                     return
                 live_billing_id = (int(origin_id) if origin_id is not None
                                    else self._next_handoff_det_id())
+                # The live object never reaches the saved list, so the charge
+                # is handed its shape here or carries no ground surface.
+                live_billing_geom = combined
                 polygons_to_export.append({
                     "geometry_wkt": combined.asWkt(),
                     "score": origin.get("score"),
@@ -1082,7 +1174,8 @@ class ManualWorkflowMixin:
         # in the session, and the next try mints it a new id, so charging early
         # bills twice for a file that was never written once.
         if live_billing_id is not None:
-            self._charge_manual_saved_object(live_billing_id)
+            self._charge_manual_saved_object(
+                live_billing_id, geom=live_billing_geom)
 
         result_layer = result.layer
         gpkg_path = result.gpkg_path
@@ -1181,6 +1274,9 @@ class ManualWorkflowMixin:
         self.dock_widget.reset_session()
 
     def _on_tool_deactivated(self):
+        # The preview follows this tool, so it goes down with it. Cheap and
+        # unconditional: the tool may come straight back below.
+        self._stop_hover_preview("tool deactivated")
         # Remove keyboard shortcut filter from all targets
         try:
             if self._shortcut_filter is not None:
@@ -1205,6 +1301,97 @@ class ManualWorkflowMixin:
         if self._stopping_segmentation:
             return
         if not self.map_tool or not self.dock_widget:
+            return
+        self._say_tool_stays_armed_once()
+        self._activate_segmentation_tool()
+
+    def _say_tool_stays_armed_once(self) -> None:
+        """Explain the tool coming straight back, once per session.
+
+        Picking Pan or Identify during a session looks like it worked and then
+        silently undoes itself one turn later, which reads as a broken tool
+        rather than a rule. Said once: a user who now knows does not need it
+        on every attempt.
+        """
+        if getattr(self, "_tool_rearm_notice_shown", False):
+            return
+        self._tool_rearm_notice_shown = True
+        try:
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation",
+                tr("The click tool stays on while this session is open. Stop "
+                   "the session to use another map tool."),
+                level=Qgis.MessageLevel.Info,
+                duration=6,
+            )
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _stop_manual_session_for_hidden_dock(self) -> None:
+        """The panel went away: take the click tool off the map with it.
+
+        A hidden panel still had a live map tool under it, so every click kept
+        segmenting with nothing on screen to say so, and on the cloud engine
+        it kept spending. Parked rather than stopped: nothing the user traced
+        is discarded, and re-opening the panel arms the same session again.
+
+        A dock tabbed behind a sibling panel is not a dock that closed: Qt
+        reports both the same way, so the tab group is asked, and a switch
+        between two tabs leaves the session alone.
+        """
+        try:
+            if getattr(self, "_refine_handoff_active", False):
+                return
+            main_window = self.iface.mainWindow()
+            siblings = main_window.tabifiedDockWidgets(self.dock_widget) or []
+            for sibling in siblings:
+                if sibling.isVisible():
+                    return
+        except (RuntimeError, AttributeError, TypeError):
+            return
+        self._park_manual_session()
+
+    def _park_manual_session(self) -> bool:
+        """Take the armed click tool off the canvas, keeping the session.
+
+        The one way to leave a Manual session running while the user is
+        somewhere else: the panel hidden, or the mode switched to Automatic.
+        The work stays exactly where it is, on the map and in the session, and
+        `_resume_parked_manual_session` arms it again on the way back. Answers
+        whether anything was parked.
+        """
+        tool = getattr(self, "map_tool", None)
+        if tool is None or self._current_layer is None:
+            return False
+        try:
+            canvas = self.iface.mapCanvas()
+            if canvas.mapTool() is not tool:
+                return False
+            # Without the flag the deactivate handler puts the tool straight
+            # back one event-loop turn later, which is the whole bug.
+            self._stopping_segmentation = True
+            try:
+                canvas.unsetMapTool(tool)
+                self._restore_previous_map_tool()
+            finally:
+                self._stopping_segmentation = False
+        except (RuntimeError, AttributeError):
+            return False
+        self._manual_session_parked = True
+        return True
+
+    def _resume_parked_manual_session(self) -> None:
+        """Arm the click tool again for a session that was parked.
+
+        Does nothing unless a park is outstanding and its raster is still the
+        session's, so it is safe to call on every return to Semi-Auto.
+        """
+        if not getattr(self, "_manual_session_parked", False):
+            return
+        self._manual_session_parked = False
+        if self.map_tool is None or self._current_layer is None:
+            return
+        if not self._is_layer_valid():
             return
         self._activate_segmentation_tool()
 
@@ -1237,11 +1424,16 @@ class ManualWorkflowMixin:
             polygon_count += 1
 
         if polygon_count > 0:
+            if polygon_count == 1:
+                losing = tr("This will discard 1 polygon.")
+            else:
+                losing = tr("This will discard {count} polygons.").format(
+                    count=polygon_count)
             reply = QMessageBox.warning(
                 self.iface.mainWindow(),
                 tr("Stop Segmentation?"),
                 "{}\n\n{}".format(
-                    tr("This will discard {count} polygon(s).").format(count=polygon_count),
+                    losing,
                     tr("Use 'Export to layer' to keep them.")),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.Yes
@@ -1390,6 +1582,12 @@ class ManualWorkflowMixin:
         self._refine_expand = expand
         self._refine_fill_holes = fill_holes
         self._refine_ortho = right_angles
+
+        # The hover ghost shows the FINAL click shape, so it re-shapes its
+        # cached mask under the new settings now (offline, no request). The
+        # store-only handlers above all funnel into this signal on the same
+        # debounce tick, so this one call covers every refine control.
+        self._reshape_hover_preview()
 
         # Refine handoff: the panel is per-polygon Shape settings, applied in
         # geometry space to the open edit or the selected detections (the

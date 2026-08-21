@@ -49,6 +49,7 @@ from qgis.core import (
     Qgis,
     QgsApplication,
     QgsBlockingNetworkRequest,
+    QgsFeedback,
     QgsTask,
 )
 from qgis.PyQt.QtCore import QByteArray, QSettings, QThread, QTimer, QUrl
@@ -70,6 +71,8 @@ _BATCH_HARD_MAX = 200
 _POST_MAX_BYTES = 128 * 1024
 # How often the main thread ships what the worker threads queued.
 _FLUSH_INTERVAL_S = 60
+# Wait between the one POST and its single retry, spent in cancellable slices.
+_RETRY_BACKOFF_S = 2.0
 
 # How much telemetry travels is a server dial: batch size, transport timeout,
 # and a per-event sample rate for throttling one noisy event during an
@@ -93,11 +96,16 @@ def _batch_max() -> int:
 
 
 def _timeout_ms() -> int:
-    """Transport timeout on one relay call."""
+    """Transport timeout on one relay call.
+
+    The ceiling is deliberately low. This timeout is what a flush at unload
+    waits out before it gives up, so a high one served by mistake would hold
+    the teardown for that long, and no batch of usage events is worth that.
+    """
     try:
         from .server_dials import dial_in_range
 
-        return int(dial_in_range("telemetry.timeout_ms", _TIMEOUT_MS, 500, 60_000))
+        return int(dial_in_range("telemetry.timeout_ms", _TIMEOUT_MS, 500, 10_000))
     except Exception:  # noqa: BLE001 -- telemetry must never break a caller
         return _TIMEOUT_MS
 
@@ -177,19 +185,40 @@ def is_telemetry_enabled() -> bool:
 def set_telemetry_enabled(enabled: bool) -> None:
     """Persist the global telemetry opt-out flag (shared across TerraLab plugins).
 
-    Turning it OFF also drops what is still queued. The opt-out event itself is
-    a flush-now event and the dialog sends it before flipping the flag, so it
-    has already left; everything behind it was queued under a consent the user
-    has just withdrawn. The drop runs even when the write failed, because an
-    unwritten preference is the fail-closed case."""
+    Turning it OFF also drops what is still queued. The queues are already
+    empty on the normal path, since the opt-out wrapper drops them before it
+    records the choice; this is the backstop for any other caller. The drop
+    runs even when the write failed, because an unwritten preference is the
+    fail-closed case."""
     try:
         QSettings().setValue(_TELEMETRY_ENABLED_KEY, bool(enabled))
     except Exception:  # nosec B110
         pass
     if not enabled:
-        with _lock:
-            _batch.clear()
-            _pending_pre_auth.clear()
+        drop_queued_events()
+
+
+def drop_queued_events() -> None:
+    """Throw away everything still queued, sent nowhere.
+
+    The opt-out path calls this BEFORE it records the choice, so the events
+    behind the record cannot ride out with it: they were queued under a
+    consent the user is in the middle of withdrawing.
+
+    A batch already handed to the task manager is queued too, just one step
+    further along, so cancel those as well: the cancel reaches the blocking
+    POST through the task's own feedback.
+    """
+    with _lock:
+        _batch.clear()
+        _pending_pre_auth.clear()
+        pending_tasks = list(_inflight)
+        _inflight.clear()
+    for task in pending_tasks:
+        try:
+            task.cancel()
+        except Exception:  # nosec B110 - telemetry must never break the plugin
+            pass
 
 
 def new_session() -> None:
@@ -333,6 +362,17 @@ class _TelemetryFlushTask(QgsTask):
         super().__init__("AI Segmentation telemetry flush", silent_task_flags())
         self._events = events
         self._auth = auth
+        # Carries the cancel into the blocking POST. Without it the transport
+        # runs to its own timeout whatever the task manager asks, and the last
+        # flush of a session is exactly the one a user is waiting on.
+        self._feedback = QgsFeedback()
+
+    def cancel(self) -> None:
+        try:
+            self._feedback.cancel()
+        except Exception:  # nosec B110 - telemetry must never break the plugin
+            pass
+        super().cancel()
 
     def run(self) -> bool:
         if self.isCanceled():
@@ -340,12 +380,20 @@ class _TelemetryFlushTask(QgsTask):
         # One retry with a short backoff covers a transient network blip without
         # a disk queue; a hard-offline session still loses the batch (accepted).
         if not self._post() and not self.isCanceled():
-            import time
-            time.sleep(2)
+            self._wait_before_retry(_RETRY_BACKOFF_S)
             if self.isCanceled():
                 return False
             self._post()
         return True
+
+    def _wait_before_retry(self, seconds: float) -> None:
+        """Back off in slices, so a cancel is honoured while it waits."""
+        import time
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            if self.isCanceled():
+                return
+            time.sleep(0.1)
 
     def _post(self) -> bool:
         try:
@@ -358,7 +406,12 @@ class _TelemetryFlushTask(QgsTask):
             for k, v in self._auth.items():
                 req.setRawHeader(k.encode("utf-8"), v.encode("utf-8"))
             blocker = QgsBlockingNetworkRequest()
-            err = blocker.post(req, QByteArray(payload))
+            try:
+                err = blocker.post(req, QByteArray(payload), False, self._feedback)
+            except TypeError:
+                # Bindings without the feedback argument: the POST then runs to
+                # the transport timeout, which is why that dial stays short.
+                err = blocker.post(req, QByteArray(payload))
             # ErrorCode 0 = NoError. Ignoring the result made run()'s single
             # retry dead code: a failed batch returned True and was dropped.
             if int(err) != 0:
@@ -483,6 +536,29 @@ def _arm_flush_timer() -> None:
         _flush_timer = timer
     except Exception:  # nosec B110
         _flush_timer = None
+
+
+def stop_flush_timer() -> None:
+    """Stop the periodic flush. Called from the plugin unload.
+
+    A QTimer with no parent outlives the plugin that armed it, so without this
+    it keeps firing into a module the user has just disabled. The next
+    main-thread track() arms a fresh one, so a re-enable is unaffected.
+    """
+    global _flush_timer
+    timer = _flush_timer
+    _flush_timer = None
+    if timer is None:
+        return
+    try:
+        timer.stop()
+        timer.timeout.disconnect(_on_flush_timer)
+    except Exception:  # nosec B110
+        pass
+    try:
+        timer.deleteLater()
+    except Exception:  # nosec B110
+        pass
 
 
 def _split_for_post(events: list[dict]) -> list[list[dict]]:

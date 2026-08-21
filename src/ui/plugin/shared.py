@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import sys
+import weakref
 
 from qgis.core import QgsFeatureSink
 
@@ -26,12 +27,15 @@ SETTINGS_KEY_TUTORIAL_SHOWN = "AISegmentation/tutorial_simple_shown"
 SETTINGS_KEY_LAST_MANUAL_SESSION_TS = "AISegmentation/last_manual_session_ts"
 
 # Free-trial zone cap: a free-tier user's Automatic zone may not exceed this
-# geodesic area (km2, ~5 x 5 km). All features and detail levels stay
-# available under the cap; subscribers are never capped. Enforced at zone
-# commit time (interactive draw AND the MCP/headless paths). What a run at
-# that size costs is a separate gate: the credit estimate and the per-run cap
-# still apply, so a wide zone buys a coarser grid rather than a free ride.
-FREE_TRIAL_MAX_ZONE_KM2 = 25.0
+# geodesic area (km2). All features and detail levels stay available under
+# the cap; subscribers are never capped. Enforced at zone commit time
+# (interactive draw AND the MCP/headless paths). The surface IS the price:
+# Precision changes the grid, never the bill. This is the fallback only: the
+# figure that applies is the served free_zone_max_km2 dial, set against the
+# monthly allowance so one drag can never take all of it and a second real
+# test is always left. The allowance is a commercial number and is not
+# written down here.
+FREE_TRIAL_MAX_ZONE_KM2 = 1.5
 
 
 def free_zone_cap_km2() -> float:
@@ -105,7 +109,7 @@ def zone_too_large_message(max_tiles: int, fallback: str | None = None) -> str:
     from ...core.server_dials import dial_copy
 
     if fallback is None:
-        fallback = tr("Zone too large. Reduce the area to {max} tiles or fewer.")
+        fallback = tr("Zone too large. Reduce the area to {max} detections or fewer.")
     text = dial_copy("zone.too_large", fallback)
     return text.replace("{max}", str(int(max_tiles)))
 
@@ -173,6 +177,90 @@ def _fill_free_cap_text(text: str, area_km2: float, upgrade_url: str) -> str:
             .replace("{max}", f"{free_zone_cap_km2():g}")
             .replace("{url}", upgrade_url)
             .strip())
+
+
+def _zone_shape_key(plugin) -> str | None:
+    """The drawn zone as one comparable string, or None when there is no zone.
+
+    The SHAPE, not its box: two zones that share a bounding box can cover very
+    different ground, and a key built from the box alone called the second one
+    a repeat of the first. The outline is written at a fixed precision, because
+    the same shape redrawn by hand never reproduces its float tail, and it is
+    hashed so a traced outline of a thousand points stays one short value. The
+    canvas CRS is part of the key: the zone is stored in canvas numbers, and
+    the same numbers in another CRS are another place.
+    """
+    import hashlib
+
+    crs_id = ""
+    try:
+        crs_id = plugin.iface.mapCanvas().mapSettings().destinationCrs().authid()
+    except (RuntimeError, AttributeError):
+        crs_id = ""
+    outline = ""
+    polygon = getattr(plugin, "_auto_zone_polygon", None)
+    if polygon is not None:
+        try:
+            outline = polygon.asWkt(6) or ""
+        except (RuntimeError, AttributeError, TypeError):
+            outline = ""
+    if not outline:
+        # No polygon: the MCP rectangle path and any run started from a box.
+        zone = getattr(plugin, "_auto_zone", None)
+        if zone is None:
+            return None
+        try:
+            outline = (f"{zone.xMinimum():.6f} {zone.yMinimum():.6f} "
+                       f"{zone.xMaximum():.6f} {zone.yMaximum():.6f}")
+        except (AttributeError, TypeError, ValueError):
+            return None
+    digest = hashlib.sha256(outline.encode("utf-8")).hexdigest()[:16]
+    return f"{crs_id}:{digest}"
+
+
+def auto_rerun_scope(plugin) -> tuple:
+    """Where a finished Automatic run stood: its zone, and the raster it read."""
+    zone_key = _zone_shape_key(plugin)
+    layer_id = ""
+    try:
+        layer = plugin._get_active_raster_layer()
+        if layer is not None:
+            layer_id = layer.id()
+    except (RuntimeError, AttributeError):
+        layer_id = ""
+    return (zone_key, layer_id)
+
+
+class AutoRerunSignature(tuple):
+    """A finished run's inputs, as the identical-re-run note compares them.
+
+    It IS the (prompt, detail, example count) tuple the note builds from the
+    current panel, so the comparison stays a plain tuple compare wherever it
+    is read. What it adds is the run's SCOPE: the same prompt over a different
+    zone, or against a different raster, gives a different answer, so equality
+    also asks where the zone and the layer stand now. Without that the note
+    called the second zone of a prompt a repeat of the first.
+    """
+
+    def __new__(cls, plugin, fields, scope):
+        obj = super().__new__(cls, fields)
+        obj._plugin = weakref.ref(plugin)
+        obj._scope = scope
+        return obj
+
+    def __eq__(self, other):
+        if not isinstance(other, tuple):
+            return NotImplemented
+        if tuple(self) != tuple(other):
+            return False
+        plugin = self._plugin()
+        return plugin is not None and self._scope == auto_rerun_scope(plugin)
+
+    def __ne__(self, other):
+        equal = self.__eq__(other)
+        return equal if equal is NotImplemented else not equal
+
+    __hash__ = tuple.__hash__
 
 
 def backend_stalled_flag(tiles_done: int, warming_ms: int,

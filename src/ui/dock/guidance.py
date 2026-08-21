@@ -80,6 +80,14 @@ HINT_PROMPT_TREE_OR_FOREST = "prompt_tree_or_forest"
 HINT_PROMPT_ONE_OBJECT_PER_RUN = "prompt_one_object_per_run"
 HINT_PROMPT_EXEMPLAR_BOOST = "prompt_exemplar_boost"
 HINT_PROMPT_UNKNOWN_OBJECT = "prompt_unknown_object"
+# The typed word is a poor name from above: a part of the object ("wall" ->
+# building) or a cover the model reads one crown at a time ("forest" -> tree).
+# Advice only, the typed word still runs, so it closes like its siblings.
+HINT_PROMPT_STEER_OBJECT = "prompt_steer_object"
+# UNCLAIMED (2026-08-20): the "will run as" note stopped being closable, since
+# it explains text the user did not type and closing it once made every later
+# rewrite silent. Left declared rather than recycled, the key sits dismissed in
+# real profiles.
 HINT_PROMPT_SILENT_SWAP = "prompt_silent_swap"
 HINT_PROMPT_EXAMPLES_DRIVE = "prompt_examples_drive"
 HINT_PROMPT_RUN_PLAN = "prompt_run_plan"
@@ -94,6 +102,11 @@ HINT_PROMPT_RUN_PLAN = "prompt_run_plan"
 # rewording that leaves the gesture alone.
 HINT_EXEMPLAR_DRAW_BOX = "exemplar_draw_polygon"
 HINT_EXEMPLAR_EXCLUDE_BOX = "exemplar_exclude_polygon"
+# The zoom at the click decides the outline's precision. Shown only in a
+# Semi-Auto cloud session with the hover preview on: that ghost is what lets
+# the user judge the outline before spending a click, and zooming in is the
+# one lever that sharpens it.
+HINT_PREVIEW_ZOOM = "preview_zoom_precision"
 ALL_HINTS = [
     HINT_START_AUTO,
     HINT_TUTORIAL_FIRST_STEPS,
@@ -110,11 +123,13 @@ ALL_HINTS = [
     HINT_PROMPT_ONE_OBJECT_PER_RUN,
     HINT_PROMPT_EXEMPLAR_BOOST,
     HINT_PROMPT_UNKNOWN_OBJECT,
+    HINT_PROMPT_STEER_OBJECT,
     HINT_PROMPT_SILENT_SWAP,
     HINT_PROMPT_EXAMPLES_DRIVE,
     HINT_PROMPT_RUN_PLAN,
     HINT_EXEMPLAR_DRAW_BOX,
     HINT_EXEMPLAR_EXCLUDE_BOX,
+    HINT_PREVIEW_ZOOM,
 ]
 
 

@@ -15,6 +15,8 @@ which is the way out of a staircased wall.
 """
 from __future__ import annotations
 
+from ..dock.manual_recap import format_ground_area
+
 try:
     from ...core.i18n import tr
 except ImportError:  # no QGIS bindings: the store logic is plain dict work,
@@ -168,17 +170,23 @@ class AutoShapeOverridesMixin:
         The point count is measured on the geometry as DRAWN, so it answers the
         question Points raises ("how many points is this thing carrying?")
         and moves as the control moves. Returns the area alone when the outline
-        cannot be counted, and an empty string when neither is available.
+        cannot be counted, the points alone when the area is not usable, and an
+        empty string when neither is available.
         """
         try:
             area = float(self._auto_objects[det_idx][2])
         except (IndexError, TypeError, ValueError):
             return ""
-        area_txt = f"{area:,.0f} m²" if area >= 100 else f"{area:,.1f} m²"
+        # The house area format: the unit follows the size, and the thousands
+        # separator is a space, not the comma this line used to print.
+        area_txt = format_ground_area(area)
         points = self._selected_shape_vertex_count(det_idx)
         if points is None:
             return area_txt
-        return f"{area_txt} · " + tr("{count} vertices").format(count=points)
+        points_txt = tr("{count} vertices").format(count=points)
+        if not area_txt:
+            return points_txt
+        return f"{area_txt} · " + points_txt
 
     def _selected_shape_vertex_count(self, det_idx: int) -> int | None:
         """Points in the outline currently drawn for this object, or None."""

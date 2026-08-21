@@ -36,7 +36,13 @@ from collections import OrderedDict
 import numpy as np
 from qgis.core import Qgis, QgsMessageLog
 
-from .click_crop_encoding import crop_webp_allowed, encode_crop_png, encode_crop_webp
+from .click_crop_encoding import (
+    crop_png_preferred,
+    crop_webp_allowed,
+    encode_crop_png,
+    encode_crop_webp,
+    note_crop_upload,
+)
 from .log_scrub import scrub_sensitive
 from .sam_predictor import SamWorkerError
 
@@ -59,6 +65,10 @@ INVALID_INPUT_CODE = "INVALID_INPUT"
 # travelled as webp this is what a server that predates the format answers, and
 # the recovery is to send the same pixels as PNG, which every server reads.
 INVALID_REQUEST_CODE = "INVALID_REQUEST"
+
+# The service refuses a body carrying more points than this. A long correction
+# session must not push its whole history over the wire.
+MAX_REFINE_POINTS = 64
 
 
 # What the caller has to do about a refusal. Three answers, because they need
@@ -133,6 +143,28 @@ def _log(message: str, level=Qgis.MessageLevel.Info) -> None:
 def _as_ms(value) -> int:
     """A reported duration as whole milliseconds, or 0 when it is not a number."""
     return int(value) if isinstance(value, (int, float)) else 0
+
+
+def capped_refine_points(points: list, labels: list) -> tuple[list, list]:
+    """The points one request body may carry, positives kept first.
+
+    The list arrives positives first then negatives, each in click order.
+    Keeping the trailing ``MAX_REFINE_POINTS`` dropped every positive as soon
+    as a session had that many negatives, and a prompt with no positive point
+    asks for nothing at all. So every positive is kept, the newest negatives
+    fill what is left, and a session whose positives alone overflow keeps its
+    newest positives. Order inside each group is the click order, unchanged.
+    """
+    if len(points) <= MAX_REFINE_POINTS:
+        return points, labels
+    pairs = list(zip(points, labels))
+    positives = [pair for pair in pairs if pair[1]]
+    if len(positives) >= MAX_REFINE_POINTS:
+        kept = positives[-MAX_REFINE_POINTS:]
+    else:
+        negatives = [pair for pair in pairs if not pair[1]]
+        kept = positives + negatives[-(MAX_REFINE_POINTS - len(positives)):]
+    return [pair[0] for pair in kept], [pair[1] for pair in kept]
 
 
 def pack_float16_payload(array: np.ndarray) -> str:
@@ -417,6 +449,24 @@ class CloudSamPredictor:
         if self._held_crop_token() is None:
             self._register_crop(image_np)
 
+    def hover_preview_handle(self) -> tuple[str, tuple[int, int]] | None:
+        """The far side's name for the crop in hand, plus its pixel size.
+
+        For the preview loop, which asks about the crop under the cursor before
+        any click. None whenever the question cannot be asked without sending a
+        picture: no crop, or no name for one yet. A preview never uploads
+        anything, so None means wait rather than send.
+        """
+        if not self.is_image_set or self._crop is None:
+            return None
+        size = self.original_size
+        if size is None:
+            return None
+        token = self._held_crop_token()
+        if not token:
+            return None
+        return token, (int(size[0]), int(size[1]))
+
     def _encoded_crop(self, crop: np.ndarray) -> tuple[str, str]:
         """The crop ready to travel: (body text, the form it is in).
 
@@ -431,8 +481,10 @@ class CloudSamPredictor:
         # WebP first when the server says the fleet is ready for it, PNG when
         # it is not or when this Qt cannot write it. PNG is always the caller's
         # own pixels; webp is too until the server asks for a lighter one.
+        pixels = int(crop.shape[0]) * int(crop.shape[1]) if crop.ndim == 3 else 0
         packed = (encode_crop_webp(crop)
-                  if crop_webp_allowed() and not self._webp_refused else None)
+                  if crop_webp_allowed() and not self._webp_refused
+                  and not crop_png_preferred(pixels) else None)
         if packed is not None:
             made = (base64.b64encode(packed).decode("ascii"), "webp")
         else:
@@ -463,8 +515,12 @@ class CloudSamPredictor:
         body = {"crop": payload, "crop_format": form,
                 "crop_shape": list(crop.shape)}
         try:
+            # The hand-over is the one upload whose whole duration is the wire,
+            # so it is where the session learns how fast this link sends.
+            sent_at = time.monotonic()
             answer = self._resolve_client().submit_refine_register(
                 body, self._resolve_auth())
+            upload_s = time.monotonic() - sent_at
             if (form == "webp" and generation == self._generation
                     and (answer or {}).get("code") == INVALID_REQUEST_CODE):
                 # This server cannot read the webp form (it predates it, or a
@@ -479,8 +535,11 @@ class CloudSamPredictor:
                 payload, form = self._encoded_crop(crop)
                 body = {"crop": payload, "crop_format": form,
                         "crop_shape": list(crop.shape)}
+                sent_at = time.monotonic()
                 answer = self._resolve_client().submit_refine_register(
                     body, self._resolve_auth())
+                upload_s = time.monotonic() - sent_at
+            note_crop_upload(len(body["crop"]), upload_s)
             if generation != self._generation:
                 # The crop changed while its pixels were on their way. The
                 # session has moved, and filing this name now would put it in
@@ -641,6 +700,11 @@ class CloudSamPredictor:
         name_seed: bool,
     ) -> dict:
         crop = self._crop
+        points = ([] if point_coords is None
+                  else np.asarray(point_coords, dtype=float).tolist())
+        labels = ([] if point_labels is None
+                  else np.asarray(point_labels, dtype=int).tolist())
+        points, labels = capped_refine_points(points, labels)
         body: dict = {
             "crop": None,
             "crop_shape": None,
@@ -648,14 +712,8 @@ class CloudSamPredictor:
             # otherwise, so this line only ever moves to "png".
             "crop_format": "raw",
             "crop_token": None if send_crop else self._held_crop_token(),
-            "points": (
-                [] if point_coords is None
-                else np.asarray(point_coords, dtype=float).tolist()
-            ),
-            "labels": (
-                [] if point_labels is None
-                else np.asarray(point_labels, dtype=int).tolist()
-            ),
+            "points": points,
+            "labels": labels,
             "mask_input": None,
             "mask_input_shape": None,
             "multimask_output": bool(multimask_output),

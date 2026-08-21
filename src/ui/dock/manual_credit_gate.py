@@ -29,26 +29,22 @@ from qgis.PyQt.QtWidgets import (
 from ...core.i18n import tr
 from ...core.server_dials import dial_copy
 from .styles import (
-    _BTN_BLUE,
     _BTN_CHIP,
     _CARD_CHILD_BTN_RESET_QSS,
     _CARD_QSS,
-    _PREMIUM_STAR,
     _SUBCARD_MARGINS,
-    _msg_card_qss,
     _msg_label_qss,
     _msg_text,
 )
+from .ui_refresh import format_quota_count
+from .upsell_card import UpsellCard
 from .widgets import Mode
 
 # Labels inside a _CARD_QSS card must not inherit its fill or its border.
 _CARD_LABEL_RESET_QSS = "QLabel { background: transparent; border: none; }"
 
 _TITLE_QSS = "font-size: 13px; font-weight: bold; color: palette(text);"
-_LANE_TITLE_QSS = "font-size: 12px; font-weight: bold; color: palette(text);"
-_LANE_LINE_QSS = "font-size: 11px; color: palette(text);"
 _QUIET_QSS = "font-size: 11px; color: rgba(128,128,128,0.95);"
-_HINT_QSS = "font-size: 10px; color: rgba(128,128,128,0.95);"
 
 
 class DockManualCreditGateMixin:
@@ -108,61 +104,46 @@ class DockManualCreditGateMixin:
         self.main_layout.addWidget(holder)
 
     def _build_manual_credit_pro_lane(self) -> QWidget:
-        """The paid lane: tinted, one filled button, the price under it."""
-        lane = QWidget()
-        lane.setObjectName("manualCreditOffer")
-        lane.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        lane.setStyleSheet(
-            _msg_card_qss("manualCreditOffer", "premium")
-            + _CARD_CHILD_BTN_RESET_QSS)
-        lane_layout = QVBoxLayout(lane)
-        lane_layout.setContentsMargins(*_SUBCARD_MARGINS)
-        lane_layout.setSpacing(3)
+        """The paid lane, in the shared offer card. Star variant: this is the
+        end of an allowance and it owns the page."""
+        lane = UpsellCard("manualCreditOffer", "star",
+                          on_cta=self._on_upgrade_clicked)
+        # The name the rest of the dock reads. `_on_upgrade_clicked` picks its
+        # cta source off the sender, so this has to stay the button itself.
+        self.manual_credit_upgrade_btn = lane.button
+        # A subscriber has nothing to buy here, so the refresh hides the whole
+        # lane rather than the button alone.
+        self.manual_credit_pro_lane = lane
 
         # Its OWN served id, not the Automatic one: that card counts a whole
         # run, this one counts objects saved one click at a time. Both say
         # "cloud detections", which is what the counter in the footer counts.
-        title = QLabel(f"{_PREMIUM_STAR}  " + dial_copy(
+        star = dial_copy(
             "upsell.bullet_quota_manual",
-            tr("Pro: 5,000 cloud detections a month")))
-        title.setWordWrap(True)
-        title.setStyleSheet(_LANE_TITLE_QSS)
-        lane_layout.addWidget(title)
-
-        # Two lines, and they answer the free lane's two lines in the same
-        # order: what the AI does, then what it asks of you. Feature lists were
-        # tried here and none of them let a reader compare the lanes.
-        for line in (
-            tr("The same cloud AI, and the cleanest shapes."),
-            tr("Nothing to install, works right away."),
-        ):
-            label = QLabel(line)
-            label.setWordWrap(True)
-            label.setStyleSheet(_LANE_LINE_QSS)
-            lane_layout.addWidget(label)
-
-        self.manual_credit_upgrade_btn = QPushButton(
-            dial_copy("upsell.cta", tr("Upgrade to Pro")))
-        self.manual_credit_upgrade_btn.setMinimumHeight(34)
-        self.manual_credit_upgrade_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.manual_credit_upgrade_btn.setStyleSheet(_BTN_BLUE)
-        self.manual_credit_upgrade_btn.clicked.connect(self._on_upgrade_clicked)
-        lane_layout.addWidget(self.manual_credit_upgrade_btn)
-
+            tr("2,000 cloud objects every month in Semi-Auto"))
+        # One line, and it answers the free lane in the same order: what the AI
+        # does, then what it asks of you. Feature lists were tried here and none
+        # of them let a reader compare the lanes.
+        # The star line above already carries the 2,000 figure, so this line
+        # must not repeat it: it says what the figure buys you.
+        title = dial_copy(
+            "upsell.manual_lane_title",
+            tr("Keep clicking with the same cloud AI, nothing to install."))
         # The price ships in the sentence AND stays served. A number that only
         # lives on the server is absent on a cold cache, which is exactly the
         # screen where a buyer decides, and the price was missing from all six
         # Upgrade screens for that reason. The served id still wins, so a
         # change of price reaches the fleet the same day; the shipped line is
         # what a first launch with no configuration shows.
-        hint = QLabel(dial_copy(
-            "upsell.cta_hint",
-            tr("39 EUR a month, cancel anytime. "
-               "Opens your TerraLab dashboard.")))
-        hint.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        hint.setWordWrap(True)
-        hint.setStyleSheet(_HINT_QSS)
-        lane_layout.addWidget(hint)
+        lane.set_text(
+            title,
+            None,
+            dial_copy("upsell.cta", tr("Upgrade to Pro")),
+            escape=dial_copy(
+                "upsell.cta_hint",
+                tr("39 EUR a month, cancel anytime.")),
+            star=star,
+        )
         return lane
 
     def _build_manual_credit_free_way_out(self) -> list[QWidget]:
@@ -183,7 +164,10 @@ class DockManualCreditGateMixin:
         self.manual_credit_free_note.setWordWrap(True)
         self.manual_credit_free_note.setStyleSheet(_QUIET_QSS)
 
-        self.manual_credit_offline_btn = QPushButton(tr("Use my computer"))
+        # Served like the paid button beside it. _refresh_manual_credit_gate
+        # rewrites this label per session state and reads the same two ids.
+        self.manual_credit_offline_btn = QPushButton(dial_copy(
+            "manual_gate.offline_cta", tr("Use my computer")))
         self.manual_credit_offline_btn.setMinimumHeight(30)
         self.manual_credit_offline_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.manual_credit_offline_btn.setStyleSheet(_BTN_CHIP)
@@ -201,6 +185,12 @@ class DockManualCreditGateMixin:
         the account yet must never refuse work on a guess.
         """
         try:
+            env = getattr(self, "_quota_envelopes", None)
+            if env is not None and env.objects_remaining is not None:
+                # Saves spend the objects envelope, never the km² one: the
+                # wallet figure below can be the km² gauge in tile terms and
+                # must not close Semi-Auto while objects remain.
+                return env.objects_remaining <= 0
             left = getattr(self, "_auto_credits", None)
             return left is not None and int(left) <= 0
         except (RuntimeError, AttributeError, TypeError, ValueError):
@@ -255,23 +245,52 @@ class DockManualCreditGateMixin:
             has_saved = bool(getattr(self, "_saved_polygon_count", 0) > 0)
             if in_session:
                 self.manual_credit_notice.setText(_msg_text("warning", (
-                    tr("This polygon stays on the map, and Export still works.")
+                    dial_copy(
+                        "manual_gate.notice_saved",
+                        tr("This polygon stays on the map, and Export still "
+                           "works."))
                     if has_saved else
-                    tr("This polygon stays on the map, but it cannot be "
-                       "saved."))))
+                    dial_copy(
+                        "manual_gate.notice_unsaved",
+                        tr("This polygon stays on the map, but it cannot be "
+                           "saved.")))))
             self.manual_credit_notice.setVisible(in_session)
-            self.manual_credit_title.setText(
-                tr("Your cloud detections are used up")
-                if getattr(self, "_auto_is_subscriber", False) else
-                tr("Your free cloud detections are used up"))
+            # The paid lane sells the plan this user already has. A subscriber
+            # who spent the month's objects reads the fact and the two ways
+            # out, never an offer to buy it again.
+            subscriber = bool(getattr(self, "_auto_is_subscriber", False))
+            lane = getattr(self, "manual_credit_pro_lane", None)
+            if lane is not None:
+                lane.setVisible(not subscriber)
+            env = getattr(self, "_quota_envelopes", None)
+            if env is not None and env.objects_cap:
+                # Open with what the month produced, in the envelope's unit.
+                # Served, and filled with str.replace: format() on a served
+                # sentence raises on a stray brace.
+                self.manual_credit_title.setText(dial_copy(
+                    "manual_gate.title_objects",
+                    tr("You saved your {n} cloud objects in Semi-Auto this month"),
+                ).replace("{n}", format_quota_count(env.objects_cap)))
+            else:
+                self.manual_credit_title.setText(
+                    dial_copy(
+                        "manual_gate.title_exhausted_pro",
+                        tr("Your cloud detections are used up"))
+                    if getattr(self, "_auto_is_subscriber", False) else
+                    dial_copy(
+                        "manual_gate.title_exhausted_free",
+                        tr("Your free cloud detections are used up")))
             self.manual_credit_reset.setText(self._manual_credit_reset_text())
             self.manual_credit_reset.setVisible(
                 bool(self.manual_credit_reset.text()))
             # Mid-session the offline AI cannot take over the open session, so
             # the button says what it will actually do: end this one.
             self.manual_credit_offline_btn.setText(
-                tr("Stop and use my computer") if in_session else
-                tr("Use my computer"))
+                dial_copy("manual_gate.offline_cta_in_session",
+                          tr("Stop and use my computer"))
+                if in_session else
+                dial_copy("manual_gate.offline_cta",
+                          tr("Use my computer")))
             # Never repeat the notice's own promise here. In a session the one
             # thing this lane has to say is what the button DOES: it ends the
             # session, because the route is fixed for its whole life.
@@ -289,15 +308,32 @@ class DockManualCreditGateMixin:
         None" is worse than no sentence.
         """
         reset_day = getattr(self, "_auto_reset_display", "")
+        env = getattr(self, "_quota_envelopes", None)
+        # Served, and filled with str.replace: format() on a served sentence
+        # raises on a stray brace, and this one paints the gate.
+        if env is not None and env.objects_cap:
+            # The title already carries the count; the wallet total below can
+            # be the km² gauge in tile terms, which is not what a save spends.
+            if reset_day:
+                return dial_copy(
+                    "manual_gate.reset_date",
+                    tr("They come back on {date}."),
+                ).replace("{date}", reset_day)
+            return ""
         try:
             total = int(getattr(self, "_auto_credits_total", 0) or 0)
         except (TypeError, ValueError):
             total = 0
         if total > 0 and reset_day:
-            return tr("You used all {n}. They come back on {date}.").format(
-                n=total, date=reset_day)
+            return dial_copy(
+                "manual_gate.reset_used_all",
+                tr("You used all {n}. They come back on {date}."),
+            ).replace("{n}", str(total)).replace("{date}", reset_day)
         if reset_day:
-            return tr("They come back on {date}.").format(date=reset_day)
+            return dial_copy(
+                "manual_gate.reset_date",
+                tr("They come back on {date}."),
+            ).replace("{date}", reset_day)
         return ""
 
     def _manual_credit_free_note_text(self, in_session: bool) -> str:
@@ -312,10 +348,15 @@ class DockManualCreditGateMixin:
         # button; running it down in words as well would read as bullying a
         # user who cannot pay.
         if in_session:
-            base = tr("Or end this session and work free on this computer. "
-                      "Your saved polygons are kept.")
+            base = dial_copy(
+                "manual_gate.free_note_in_session",
+                tr("Or end this session and work free on this computer. "
+                   "Your saved polygons are kept."))
         else:
-            base = tr("Or work free with a smaller AI on this computer.")
+            base = dial_copy(
+                "manual_gate.free_note",
+                tr("Or keep clicking for free with a smaller AI on this "
+                   "computer."))
         if self._manual_engine_local_ready():
             return base
         try:
@@ -333,7 +374,7 @@ class DockManualCreditGateMixin:
             return base + " " + dial_copy(
                 "manual_gate.install_note",
                 tr("It downloads first: {gb} GB and about 10 minutes."),
-            ).format(gb=f"{need:g}")
+            ).replace("{gb}", f"{need:g}")
         return base + " " + dial_copy(
             "manual_gate.install_note_no_size",
             tr("It downloads first, and takes about 10 minutes."),

@@ -21,9 +21,11 @@ from qgis.PyQt.QtWidgets import (
 
 from ...core.activation_manager import (
     TUTORIAL_URL_FALLBACK,
+    get_contact_call_url,
     get_tutorial_url,
 )
 from ...core.i18n import tr
+from ...core.server_dials import dial_copy
 from ..credit_ring import CreditRing
 from .font_scale import apply_font_scale_to_tree, scale_px_length
 from .footer_bar import (
@@ -201,11 +203,17 @@ class DockAboutMixin:
         self._footer_credits_label.setVisible(False)
         gauge_row.addWidget(self._footer_credits_label)
 
-        self._subscribe_pill = QPushButton(tr("Upgrade to Pro"))
-        self._subscribe_pill.setToolTip(tr(
-            "Pro: 5,000 cloud detections a month, zones of any size, up to 800 "
-            "cloud detections in one run. Same AI, same free clicks and "
-            "corrections, every machine you work on."))
+        # The same served label every other Pro button in the dock wears, so
+        # one deploy renames them together.
+        self._subscribe_pill = QPushButton(
+            dial_copy("upsell.cta", tr("Upgrade to Pro")))
+        # The tooltip quotes both monthly envelopes, two commercial figures
+        # that move without waiting for a plugin release.
+        self._subscribe_pill.setToolTip(dial_copy(
+            "upsell.pill_tooltip",
+            tr("Pro: 2,000 objects a month in Semi-Auto with Cloud AI, and "
+               "300 km² of Automatic. Same AI, same free clicks and "
+               "corrections, every machine you work on.")))
         self._subscribe_pill.setCursor(Qt.CursorShape.PointingHandCursor)
         # Filled brand-blue pill (stronger than the old ghost outline): white
         # text on a solid blue, lighter blue on hover. Kept small.
@@ -514,7 +522,9 @@ class DockAboutMixin:
         from qgis.PyQt.QtWidgets import QApplication, QDialog
         from qgis.PyQt.QtWidgets import QVBoxLayout as _VBox
 
-        calendly_url = "https://calendly.com/barbot-yvann/30min"
+        # Served like every other outbound link on this screen, so the
+        # booking address can move without a plugin release.
+        calendly_url = get_contact_call_url()
         support_email = "yvann.barbot@terra-lab.ai"
 
         dlg = QDialog(self)

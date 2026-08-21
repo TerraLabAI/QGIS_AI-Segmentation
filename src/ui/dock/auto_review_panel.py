@@ -7,6 +7,8 @@ are plain mixin members: widgets/signals live on the dock instance.
 """
 from __future__ import annotations
 
+from qgis.PyQt.QtCore import QLocale
+
 from ...core.i18n import tr
 from ...core.review_defaults import (
     AUTO_REVIEW_CLEAN_DEFAULT as _AUTO_REVIEW_CLEAN_DEFAULT,
@@ -244,6 +246,20 @@ class DockAutoReviewPanelMixin:
                     "confidence would show all of them or none. Use Size "
                     "below, or fix objects in the next step.")))
             self.auto_review_flat_score_note.setVisible(not useful)
+            # The View-detections-as combo offers a Confidence heatmap too.
+            # Painting one colour on a run with no ranking to show is the
+            # same dead-control problem as the slider above, so the item
+            # leaves the list rather than sitting there disabled.
+            combo = getattr(self, "auto_display_combo", None)
+            if combo is not None:
+                idx = combo.findData("confidence")
+                if idx >= 0:
+                    combo.view().setRowHidden(idx, not useful)
+                    item = combo.model().item(idx)
+                    if item is not None:
+                        item.setEnabled(useful)
+                    if not useful and combo.currentData() == "confidence":
+                        combo.setCurrentIndex(max(0, combo.findData("random")))
         except (RuntimeError, AttributeError):
             pass
 
@@ -269,20 +285,22 @@ class DockAutoReviewPanelMixin:
         if total <= 0:
             # Empty runs use the guidance box instead of this label; safe fallback.
             return "<b>{title}</b>".format(title=tr("No objects found"))
+        loc = QLocale()
         if visible >= total:
             bold = (tr("1 object found") if total == 1
-                    else tr("{n} objects found").format(n=total))
+                    else tr("{n} objects found").format(n=loc.toString(total)))
             tail = tr("all shown")
         elif visible > 0:
-            bold = tr("{visible} of {n} shown").format(visible=visible, n=total)
+            bold = tr("{visible} of {n} shown").format(
+                visible=loc.toString(visible), n=loc.toString(total))
             tail = tr("{hidden} hidden by the filters").format(
-                hidden=total - visible)
+                hidden=loc.toString(total - visible))
         else:
             # No green check at 0 visible: nothing is shown, but the count is
             # honest and the tail tells the user how to reveal them - naming the
             # binding filter (Min size vs Confidence) so they pull the right one.
             bold = (tr("1 object found") if total == 1
-                    else tr("{n} objects found").format(n=total))
+                    else tr("{n} objects found").format(n=loc.toString(total)))
             if size_bound:
                 tail = tr("0 shown - lower the Min size filter to reveal them")
             else:

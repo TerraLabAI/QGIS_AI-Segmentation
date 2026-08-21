@@ -137,5 +137,7 @@ def cached_or_offline_catalog() -> tuple[list[dict], list[str]]:
         cats = data.get("categories") or []
         tops = data.get("top_picks") or []
         if cats:
-            return _enrich_categories(cats), list(tops)
+            # Same merge as the prompt box: a shipped object the served
+            # catalogue lacks still shows in the gallery.
+            return _fallback.merged_categories(_enrich_categories(cats)), list(tops)
     return _fallback.fallback_categories(), list(_fallback.TOP_PICKS)

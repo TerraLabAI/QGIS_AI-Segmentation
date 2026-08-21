@@ -57,17 +57,29 @@ def track_auto_prompt_committed(prompt: str, from_library: bool = False) -> None
 
 def track_auto_prompt_steered(prompt: str, suggestion: str = "") -> None:
     """prompt is the weak 1-2 word object the user typed; suggestion is the term
-    steered toward ("" = pointed at the Library). No PII by construction."""
-    track(ev.AUTO_PROMPT_STEERED, {"prompt": prompt, "suggestion": suggestion or ""})
+    steered toward ("" = pointed at the Library).
+
+    The prompt is the user's own text, so it is scrubbed here rather than at
+    the call sites: a wrapper cannot know what was pasted into the box, and one
+    scrub in one place is the only version that stays true as callers are
+    added."""
+    track(ev.AUTO_PROMPT_STEERED, {
+        "prompt": scrub_payload_value(prompt or ""),
+        "suggestion": suggestion or "",
+    })
 
 
 def track_auto_prompt_rewritten(kind: str, prompt: str = "") -> None:
     """A committed prompt was swapped for a cleaner run phrase. kind is one of
     "translated" / "plural" / "alias" (the commit-time guard) or
     "server_rewrite" (a server-side language-model rewrite from the run plan);
-    prompt is the 1-2 word English token/phrase that will run (no PII by
-    construction)."""
-    track(ev.AUTO_PROMPT_REWRITTEN, {"kind": kind, "prompt": prompt or ""})
+    prompt is the 1-2 word English phrase that will run. Scrubbed like every
+    other prompt that leaves the machine: a server rewrite carries the user's
+    own text forward, so "short by construction" is not a guarantee."""
+    track(ev.AUTO_PROMPT_REWRITTEN, {
+        "kind": kind,
+        "prompt": scrub_payload_value(prompt or ""),
+    })
 
 
 def track_auto_prompt_hint_shown(kind: str, prompt: str = "") -> None:
@@ -75,9 +87,13 @@ def track_auto_prompt_hint_shown(kind: str, prompt: str = "") -> None:
     "exemplar_boost" (a curated high-value-exemplar object with no example
     drawn), "unknown_object" (a word the model does not know well), "plan_hint"
     (a server run-plan hint under the prompt box), or "identical_rerun" (the
-    next Detect would repeat the last run exactly); prompt is the 1-2 word
-    object class (no PII by construction)."""
-    track(ev.AUTO_PROMPT_HINT_SHOWN, {"kind": kind, "prompt": prompt or ""})
+    next Detect would repeat the last run exactly); prompt is the object class
+    the user typed, scrubbed here like every other prompt that leaves the
+    machine."""
+    track(ev.AUTO_PROMPT_HINT_SHOWN, {
+        "kind": kind,
+        "prompt": scrub_payload_value(prompt or ""),
+    })
 
 
 def track_tutorial_opened(source: str) -> None:
@@ -122,23 +138,44 @@ def track_auto_detect_started(run_id: str, tiles: int, zone_km2: float,
                               est_credits: int, credits_before: int | None,
                               is_free_tier: bool,
                               merge_mode: str = "separate",
-                              merge_mode_source: str = "prompt") -> None:
+                              merge_mode_source: str = "prompt",
+                              detail_seeded: int | None = None) -> None:
     """merge_mode is the count-vs-map policy the run picked ("separate"/"map");
     merge_mode_source says how it was decided: "prompt" (object token) or
-    "signal" (exemplar-only, read from the run's own masks)."""
-    track(ev.AUTO_DETECT_STARTED, {
+    "signal" (exemplar-only, read from the run's own masks).
+
+    detail_seeded is the level the plugin recommended for this zone and prompt,
+    and detail_source says whether the run kept it ("seed") or the user picked
+    another one ("user"). With no seed to compare against, the source is
+    "unknown" and detail_seeded is left out rather than sent wrong: an absent
+    property reads as absent, a made-up number reads as a retune that never
+    happened.
+    """
+    if detail_seeded is None:
+        detail_source = "unknown"
+    elif int(detail_seeded) == int(detail):
+        detail_source = "seed"
+    else:
+        detail_source = "user"
+    props = {
         "run_id": run_id,
         "tiles": tiles,
         "zone_km2": round(zone_km2, 2),
-        "object_class": object_class,
+        # The object class is the prompt the run went out with, so it carries
+        # whatever the user typed and is scrubbed like the prompt events.
+        "object_class": scrub_payload_value(object_class or ""),
         "detail": detail,
+        "detail_source": detail_source,
         "exemplar_count": exemplar_count,
         "est_credits": est_credits,
         "credits_before": credits_before,
         "is_free_tier": bool(is_free_tier),
         "merge_mode": merge_mode,
         "merge_mode_source": merge_mode_source,
-    })
+    }
+    if detail_seeded is not None:
+        props["detail_seeded"] = int(detail_seeded)
+    track(ev.AUTO_DETECT_STARTED, props)
 
 
 def track_auto_detect_completed(run_id: str, duration_ms: int, tiles_done: int,
@@ -199,7 +236,8 @@ def track_auto_gate_scan(run_id: str, tiles: int, group: int, scans: int,
 def track_auto_detect_failed(run_id: str, error_class: str, tiles_done: int,
                              duration_ms: int | None = None,
                              warming_ms: int = 0) -> None:
-    """error_class: NETWORK/AUTH/CREDITS_EXHAUSTED/SERVER/CANCELLED/TIMEOUT/UNKNOWN."""
+    """error_class: NETWORK/AUTH/CREDITS_EXHAUSTED/SERVER/CANCELLED/TIMEOUT/
+    DEVICE_LIMIT/UNKNOWN."""
     track(ev.AUTO_DETECT_FAILED, {
         "run_id": run_id,
         "error_class": error_class,
@@ -265,7 +303,8 @@ def track_auto_zero_result(run_id: str, tiles: int, object_class: str,
     track(ev.AUTO_ZERO_RESULT, {
         "run_id": run_id,
         "tiles": tiles,
-        "object_class": object_class,
+        # Same user text as the run that found nothing, same scrub.
+        "object_class": scrub_payload_value(object_class or ""),
         "had_exemplar": bool(had_exemplar),
     })
 
@@ -278,7 +317,7 @@ def track_zero_assist_clicked(kind: str, from_prompt: str,
         # leaves the machine: the object word is the signal, a pasted address
         # or contact is not.
         "from_prompt": scrub_payload_value(from_prompt),
-        "to_prompt": to_prompt,
+        "to_prompt": scrub_payload_value(to_prompt or ""),
     })
 
 

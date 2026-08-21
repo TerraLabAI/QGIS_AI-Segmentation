@@ -21,6 +21,7 @@ what an empty balance means.
 """
 from __future__ import annotations
 
+import math
 import uuid
 
 # What one saved object costs when the server names no rate. The shipped
@@ -52,6 +53,17 @@ def credits_per_object() -> float:
         return float(CREDITS_PER_OBJECT)
 
 
+def object_cost() -> int:
+    """The credits one saved object costs, rounded up.
+
+    Rounded up for the same reason ``credit_gate.run_cost`` rounds up: the
+    number the panel showed must never be lower than what is charged. It is
+    also what keeps a rate below one from costing nothing at all, which would
+    let an empty account go on saving for ever.
+    """
+    return int(math.ceil(credits_per_object()))
+
+
 def save_affordable(balance) -> bool:
     """True when one more object may be saved against ``balance`` credits.
 
@@ -62,7 +74,7 @@ def save_affordable(balance) -> bool:
     try:
         from .credit_gate import run_affordable
 
-        return bool(run_affordable(credits_per_object(), balance))
+        return bool(run_affordable(object_cost(), balance))
     except Exception:  # noqa: BLE001 -- a gate must never break on config
         return True
 

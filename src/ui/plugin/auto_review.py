@@ -617,7 +617,13 @@ class AutoReviewMixin:
         if not self.dock_widget:
             return
         try:
-            total = len(self._auto_objects)
+            # Rows are overwritten and appended, never deleted, so the raw
+            # length keeps counting what the user removed. The header is a
+            # count of what is still there, hand-drawn objects included: they
+            # are what lifts a review that found nothing out of its empty state.
+            removed = self._review_removed_fids()
+            total = sum(1 for det_idx in range(len(self._auto_objects))
+                        if det_idx not in removed)
             pct = int(round((self._auto_confidence or 0.0) * 100))
             # When nothing is visible, tell the user which filter is actually
             # hiding the objects so they reach for the right lever: the Min size
@@ -681,7 +687,11 @@ class AutoReviewMixin:
         for det_idx, (base, score, area) in enumerate(self._auto_objects):
             if det_idx in removed or base is None or base.isEmpty():
                 continue
-            if self._passes_review_filters(score, area, params):
+            # A hand-drawn object skips the gates everywhere else, so counting
+            # it under them here promised the user fewer objects than the save
+            # actually wrote.
+            if (self._object_is_manual(det_idx)
+                    or self._passes_review_filters(score, area, params)):
                 n += 1
         return n
 
@@ -770,13 +780,14 @@ class AutoReviewMixin:
         self._drop_preview_geom_cache()
         name = self._export_auto_detections(
             refined, review["crs"], review["source_layer_name"], review["prompt"],
-            scores=refined_scores)
+            scores=refined_scores, confidence_applied=conf_applied)
         if name:
-            # The billed set reached a real layer: this run's crash-net
-            # autosave pointer is superseded (the disk table stays either way).
+            # The billed set reached a real layer, so this run's crash-net
+            # copy is a duplicate of it: the pointer goes, and so does the
+            # table it points at, which nothing pruned before.
             try:
                 from ...core.run_autosave import clear_pending
-                clear_pending(self._auto_run_id or None)
+                clear_pending(self._auto_run_id or None, drop_table=True)
             except Exception:  # nosec B110
                 pass
         else:
@@ -786,6 +797,14 @@ class AutoReviewMixin:
             # and leave the user no Finish to press, which is what the caller's
             # message asks them to do. The autosave pointer stays too, so the
             # run is still recoverable.
+            # The cache freed above goes back too: the review stays open, and
+            # without it every confidence move the user makes while they free
+            # the file takes the slow path.
+            try:
+                self._start_build_preview_cache(
+                    (self._auto_review or {}).get("pixel_size", 1.0) or 1.0)
+            except (RuntimeError, AttributeError):
+                pass
             return None, len(refined)
         # Capture the run's REAL outcome (chosen confidence, refine settings,
         # the kept geometry - even after a Refine-in-Manual detour) on a hidden
@@ -846,7 +865,11 @@ class AutoReviewMixin:
                 self.dock_widget.set_auto_review_active(False)
             except (RuntimeError, AttributeError):
                 pass
-        return name, len(refined)
+        # The written count, not the offered one: a shape the writer could not
+        # take is not a saved object, and "Saved 12" over 11 rows is the one
+        # error a user cannot check.
+        written = int(getattr(self, "_auto_export_feature_count", 0) or 0)
+        return name, (written or len(refined))
 
     @slot_guard(stage="export", user_message=tr(
         "Something went wrong saving your detections. Please try again."))
@@ -867,13 +890,22 @@ class AutoReviewMixin:
         # the failure instead, and leave the run context alone so nothing
         # downstream reads it as a completed export.
         if not name:
+            reason = getattr(self, "_auto_export_failure", "") or "file_refused"
+            if reason == "nothing_visible":
+                detail = tr("Nothing is visible to save. Lower Confidence, or "
+                            "widen the size range, then try Finish again.")
+            elif reason == "no_shapes":
+                detail = tr("None of the objects came out as a shape the file "
+                            "could take. Turn the cleanup settings down and "
+                            "try Finish again.")
+            else:
+                detail = tr("The file may be open in QGIS or in another "
+                            "program. Close it and try Finish again.")
             show_error_report(
                 self.iface.mainWindow(),
                 tr("Export Failed"),
                 "{}\n\n{}".format(
-                    tr("Could not save your detections to a file."),
-                    tr("The file may be open in QGIS or in another program. "
-                       "Close it and try Finish again.")),
+                    tr("Could not save your detections to a file."), detail),
                 error_code="export_failed",
             )
             return
@@ -995,14 +1027,15 @@ class AutoReviewMixin:
         them, or Cancel, so a billed result is NEVER silently dropped nor
         silently autosaved. On Save/Discard, leave to the Start step (unlocked)."""
         visible = self._current_visible_review_count()
-        total = len(self._auto_objects)
-        if total > 0 and not self._auto_headless_run:
-            # Save exports the FULL found set (Confidence gate dropped, size +
-            # shape kept) whenever it is larger than the visible set, so a billed
-            # detection hidden by Confidence is never lost. The label states the
-            # count that will be saved via the CHEAP filter-only count (the full
-            # shape refine of the hidden cohort used to freeze this click).
-            save_count = max(self._full_found_review_count(), visible)
+        # Save exports the FULL found set (Confidence gate dropped, size + shape
+        # kept) whenever it is larger than the visible set, so a billed
+        # detection hidden by Confidence is never lost. The label states the
+        # count that will be saved via the CHEAP filter-only count (the full
+        # shape refine of the hidden cohort used to freeze this click). Counting
+        # the rows instead would offer to save 0 objects on a review the user
+        # emptied by hand, since a removed object keeps its row.
+        save_count = max(self._full_found_review_count(), visible)
+        if save_count > 0 and not self._auto_headless_run:
             hidden = save_count - visible
             if hidden > 0:
                 label = tr(

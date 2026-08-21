@@ -76,6 +76,7 @@ from .plugin.manual_cloud_predictor import ManualCloudPredictorMixin
 from .plugin.manual_crop_window import ManualCropWindowMixin
 from .plugin.manual_crops import ManualCropsMixin
 from .plugin.manual_handoff import ManualHandoffMixin
+from .plugin.manual_hover_preview import ManualHoverPreviewMixin
 from .plugin.manual_object_billing import ManualObjectBillingMixin
 from .plugin.manual_predict import ManualPredictMixin
 from .plugin.manual_shape_cache import ManualShapeCacheMixin
@@ -114,6 +115,7 @@ class AISegmentationPlugin(
     AutoReviewOpenMixin,
     AutoReviewMixin,
     ManualHandoffMixin,
+    ManualHoverPreviewMixin,
     ManualAddMixin,
     HandoffShapeMixin,
     ExemplarsMixin,
@@ -372,6 +374,10 @@ class AISegmentationPlugin(
         # sizing problem, the auto seed owns the slider again).
         self._auto_detail_user_locked = False
         self._auto_detail_lock_prompt = ""
+        # The level the plugin itself last recommended for the current zone and
+        # prompt, as the slider ended up holding it. None means no seed stands,
+        # so the started event cannot say where the run's level came from.
+        self._auto_detail_seeded: int | None = None
         self._zone_rubber_band: QgsRubberBand | None = None
         self._zone_delete_badge = None  # ZoneDeleteBadge | None
         self._zone_badge_filter = None  # ZoneBadgeClickFilter | None
@@ -467,6 +473,12 @@ class AISegmentationPlugin(
         # (Finish still uploads the reviewed set later; same run_id, latest wins).
         self._auto_default_export_run_id: str | None = None
         self._auto_run_ctx: dict | None = None     # inputs of the active run
+        # The per-run lambda wired to the worker's cancelled signal, kept so
+        # unload can disconnect the exact slot it connected.
+        self._auto_cancelled_slot = None
+        # The line a quota-refused run leaves for the setup step it lands on,
+        # so the generic "no matches" note never covers the real reason.
+        self._auto_quota_stop_banner: str | None = None
         self._last_usage: dict = {}  # last fetched usage (credits/is_free_tier) for telemetry
         self._usage_fetch_task = None  # GenericRequestTask | None (plan #79)
         # One-shot guard so a lapsed-subscription (failed payment) notice is
@@ -508,6 +520,10 @@ class AISegmentationPlugin(
         self._auto_review: dict | None = None
         # True while _run_auto_detect_headless drives a synchronous MCP call.
         self._auto_headless_run: bool = False
+        # Shape-cleanup overrides a programmatic caller asked for, merged onto
+        # the run's review preset and cleared when that run ends. None outside
+        # such a call, which is what makes the panel's own behaviour untouched.
+        self._auto_review_preset_overrides: dict | None = None
         # Live confidence re-filter: the run keeps every detection above a low
         # recall floor as (per-tile geom, score); the review confidence slider
         # re-filters this list with no re-detection. _auto_confidence is the
@@ -694,8 +710,50 @@ class AISegmentationPlugin(
         return pixel_size * simplify_value
 
     def initGui(self):
+        """Register everything this plugin puts into QGIS.
+
+        A failure part way through used to leave the half that had already
+        landed: a toolbar action pointing at a dead controller, a Processing
+        provider whose algorithms answer to nothing, the log collector still
+        attached. QGIS reports the error and carries on, so the cleanup has to
+        happen here: undo what took, then let the error travel as before.
+        """
+        try:
+            self._build_gui()
+        except Exception:
+            try:
+                self.unload()
+            except Exception:  # noqa: BLE001 -- the first error is the one to report
+                pass  # nosec B110
+            raise
+
+    def _build_gui(self):
         from ..mcp_api import SegmentationMCPAPI
         self.mcp_api = SegmentationMCPAPI(self)
+
+        # Publish a `terralab` module an outside agent can import, so a QGIS MCP
+        # server that only offers code execution can still find this plugin.
+        # Never fatal: the panel loads with or without it.
+        try:
+            from ..agent_bridge import register_product
+            register_product("segmentation", self.mcp_api)
+        except Exception as err:  # noqa: BLE001 -- discovery is a bonus, not the product
+            QgsMessageLog.logMessage(
+                f"Agent bridge not published: {err}",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning
+            )
+
+        # Publish the algorithms to the Processing Toolbox, the modeler, batch
+        # mode and every tool that drives Processing. Never fatal: a provider
+        # that fails to register must not stop the panel from loading.
+        self.processing_provider = None
+        try:
+            self._register_processing_provider()
+        except Exception as err:  # noqa: BLE001 -- discovery is a bonus, not the product
+            QgsMessageLog.logMessage(
+                f"Processing provider not registered: {err}",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning
+            )
 
         start_log_collector()
 
@@ -773,6 +831,10 @@ class AISegmentationPlugin(
         # the handoff).
         self.map_tool.double_click.connect(self._on_canvas_double_click)
         self.map_tool.cursor_moved.connect(self._on_handoff_cursor_moved)
+        # The preview that follows the cursor in Semi-Auto on the cloud engine.
+        # A second slot rather than a branch inside the handoff one: the two
+        # answer the same motion for unrelated reasons.
+        self.map_tool.cursor_moved.connect(self._on_hover_cursor_moved)
         self.map_tool.tool_deactivated.connect(self._on_tool_deactivated)
         self.map_tool.undo_requested.connect(self._on_undo)
         self.map_tool.save_polygon_requested.connect(self._on_save_polygon)
@@ -854,6 +916,54 @@ class AISegmentationPlugin(
                 self.dock_widget.raise_()
                 self._ensure_dock_height()
 
+    def _register_processing_provider(self):
+        """Add the TerraLab provider to the Processing registry.
+
+        Imported here rather than at module level so plugin load stays light,
+        and so a QGIS build without the Processing plugin enabled fails on this
+        one call instead of on the import of the whole controller.
+        """
+        from qgis.core import QgsApplication
+
+        from ..processing.segmentation_provider import (
+            TERRALAB_PROVIDER_ID,
+            TerraLabProcessingProvider,
+        )
+        registry = QgsApplication.processingRegistry()
+        provider = TerraLabProcessingProvider()
+        # addProvider DELETES the provider it was handed when the id is already
+        # taken, so keeping the reference leaves a wrapper around a dead C++
+        # object and the later removeProvider raises on it.
+        if not registry.addProvider(provider):
+            # Reloading the plugin can leave the previous provider behind with
+            # its Python half collected: it answers to no id and lists no
+            # algorithm, and it holds the name against us. Whoever reloaded
+            # would have no algorithms until they restart QGIS, so take the id
+            # back rather than stopping here. A fresh instance is needed
+            # because the one above is already deleted.
+            stale = registry.providerById(TERRALAB_PROVIDER_ID)
+            if stale is not None:
+                registry.removeProvider(stale)
+            provider = TerraLabProcessingProvider()
+            if not registry.addProvider(provider):
+                self.processing_provider = None
+                QgsMessageLog.logMessage(
+                    "Processing provider not registered: the id "
+                    f"'{TERRALAB_PROVIDER_ID}' is already taken.",
+                    "AI Segmentation", level=Qgis.MessageLevel.Warning
+                )
+                return
+        self.processing_provider = provider
+
+    def _unregister_processing_provider(self):
+        """Remove the provider, so a reload does not leave two of them registered."""
+        provider = getattr(self, "processing_provider", None)
+        if provider is None:
+            return
+        from qgis.core import QgsApplication
+        QgsApplication.processingRegistry().removeProvider(provider)
+        self.processing_provider = None
+
     @staticmethod
     @lru_cache(maxsize=1)
     def _read_plugin_version() -> str:
@@ -919,10 +1029,41 @@ class AISegmentationPlugin(
             pass
 
     def unload(self):
-        # Ship any queued telemetry before teardown (main thread here).
+        # A headless run blocks its caller inside a nested event loop, and this
+        # call can be delivered from that very loop. Tearing the plugin down
+        # under a live run frees objects its stack still holds, which takes
+        # QGIS with it. Wait instead: the run finishes the unload on its way
+        # out (see _run_auto_detect_headless).
+        if getattr(self, "_auto_headless_run", False):
+            self._unload_deferred = True
+            QgsMessageLog.logMessage(
+                "Unload deferred: a detection started from the API is still "
+                "running", "AI Segmentation", level=Qgis.MessageLevel.Info)
+            return
+        self._unload_deferred = False
+        # First, because the registry outlives the plugin object: a provider
+        # left behind keeps algorithms in the Toolbox that call a dead facade.
+        try:
+            self._unregister_processing_provider()
+        except Exception:  # noqa: BLE001 -- unload must never raise
+            pass  # nosec B110
+        # Stop advertising this plugin to outside agents once it is disabled.
+        try:
+            from ..agent_bridge import unregister_product
+            unregister_product("segmentation")
+        except Exception:  # noqa: BLE001 -- unload must never raise
+            pass  # nosec B110
+        # Ship any queued telemetry before teardown (main thread here), then
+        # stop the periodic flush: its timer has no parent, so nothing else
+        # takes it down with the plugin.
         try:
             from ..core.telemetry import flush as _telemetry_flush
             _telemetry_flush()
+        except Exception:
+            pass  # nosec B110
+        try:
+            from ..core.telemetry import stop_flush_timer as _telemetry_stop_timer
+            _telemetry_stop_timer()
         except Exception:
             pass  # nosec B110
         # Up here, not at the end: the flag behind it is a module global, so a
@@ -962,6 +1103,14 @@ class AISegmentationPlugin(
         try:
             from ..core.online_layer_twin import release_online_layer_twin
             release_online_layer_twin()
+        except Exception:  # noqa: BLE001 -- unload must never raise
+            pass  # nosec B110
+        # Which basemaps refused to serve their tiles by number. Also module
+        # state, and a network that was down at the wrong moment must not
+        # outlive the session that hit it.
+        try:
+            from ..core.xyz_tile_fetch import forget_direct_tile_fetch_failures
+            forget_direct_tile_fetch_failures()
         except Exception:  # noqa: BLE001 -- unload must never raise
             pass  # nosec B110
         # Same for the raster held open for windowed reads: a module holds it,
@@ -1101,6 +1250,7 @@ class AISegmentationPlugin(
                     (self.dock_widget.zone_draw_requested, self._on_zone_draw_requested),
                     (self.dock_widget.auto_step_changed, self._on_auto_step_changed),
                     (self.dock_widget.auto_detail_changed, self._on_auto_detail_changed),
+                    (self.dock_widget.auto_advanced_toggled, self._on_auto_advanced_toggled),
                     (self.dock_widget.auto_prompt_committed, self._reseed_auto_detail_for_object),
                     (self.dock_widget.auto_layer_combo.layerChanged, self._on_auto_layer_combo_changed),
                     (self.dock_widget.auto_cancel_btn.clicked, self._on_auto_cancel_clicked),
@@ -1194,6 +1344,7 @@ class AISegmentationPlugin(
                 ("negative_click", self._on_negative_click),
                 ("double_click", self._on_canvas_double_click),
                 ("cursor_moved", self._on_handoff_cursor_moved),
+                ("cursor_moved", self._on_hover_cursor_moved),
                 ("tool_deactivated", self._on_tool_deactivated),
                 ("undo_requested", self._on_undo),
                 ("save_polygon_requested", self._on_save_polygon),
@@ -1204,6 +1355,12 @@ class AISegmentationPlugin(
                     getattr(self.map_tool, sig_name).disconnect(slot)
                 except (TypeError, RuntimeError, AttributeError):
                     pass
+
+        # The hover preview owns a timer on the canvas, a filter on its
+        # viewport and a canvas item. All three outlive this controller unless
+        # they are given back here, and each one would keep a torn-down plugin
+        # alive behind a callback.
+        self._teardown_hover_preview()
 
         # 2. Cleanup predictor subprocess (with timeout to avoid blocking unload)
         # A remote route holding the slot has an on-device predictor parked
@@ -1427,6 +1584,10 @@ class AISegmentationPlugin(
             try:
                 if self.iface.mapCanvas().mapTool() == self.map_tool:
                     self.iface.mapCanvas().unsetMapTool(self.map_tool)
+                    # Unsetting leaves the canvas with no tool at all, so a
+                    # plugin removed mid-session left the user clicking on a
+                    # dead map. Hand back the tool the session took over from.
+                    self._restore_previous_map_tool()
             except RuntimeError:
                 pass
             self.map_tool = None
@@ -1453,10 +1614,17 @@ class AISegmentationPlugin(
         self._stop_auto_detection()
         auto_worker = self._auto_worker
         if auto_worker is not None:
-            try:
-                auto_worker.cancelled.disconnect(self._on_auto_cancelled)
-            except (TypeError, RuntimeError):
-                pass
+            # The slot is the per-run bound lambda wired in _launch_auto_worker,
+            # so the disconnect has to name it, not the method it calls.
+            for slot in (getattr(self, "_auto_cancelled_slot", None),
+                         self._on_auto_cancelled):
+                if slot is None:
+                    continue
+                try:
+                    auto_worker.cancelled.disconnect(slot)
+                except (TypeError, RuntimeError):
+                    pass
+            self._auto_cancelled_slot = None
             try:
                 still_running = auto_worker.isRunning() and not auto_worker.wait(5000)
             except RuntimeError:
@@ -1561,6 +1729,7 @@ class AISegmentationPlugin(
         self.dock_widget.zone_draw_requested.connect(self._on_zone_draw_requested)
         self.dock_widget.auto_step_changed.connect(self._on_auto_step_changed)
         self.dock_widget.auto_detail_changed.connect(self._on_auto_detail_changed)
+        self.dock_widget.auto_advanced_toggled.connect(self._on_auto_advanced_toggled)
         self.dock_widget.auto_prompt_committed.connect(self._reseed_auto_detail_for_object)
         self.dock_widget.auto_layer_combo.layerChanged.connect(
             self._on_auto_layer_combo_changed)
@@ -1690,7 +1859,17 @@ class AISegmentationPlugin(
         return False
 
     def _on_dock_visibility_changed(self, visible: bool):
-        if not visible or self._first_time_setup_done:
+        if not visible:
+            # The panel closed or was tabbed away, so nothing on the map should
+            # still be describing what the cursor was over.
+            self._stop_hover_preview("dock hidden")
+            # A panel that is gone cannot show what the clicks are doing, so
+            # the session goes with it rather than staying armed underneath.
+            self._stop_manual_session_for_hidden_dock()
+            return
+        # The panel is back: a session parked when it went away is armed again.
+        self._resume_parked_manual_session()
+        if self._first_time_setup_done:
             return
         self._first_time_setup_done = True
         # Armed for the whole session, whatever mode the dock opens in: the

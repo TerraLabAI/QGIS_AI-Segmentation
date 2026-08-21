@@ -7,6 +7,7 @@ plain mixin members: state lives on the plugin instance (self).
 from __future__ import annotations
 
 import os
+import threading
 
 from qgis.core import (
     Qgis,
@@ -59,6 +60,51 @@ class CropReadWorker(QThread):
         except Exception as e:  # noqa: BLE001 - a raise here must not kill the thread
             result = (None, None, str(e), "crop_error_unknown")
         self.done.emit(self._generation, result)
+
+
+class DirectTileFetchWorker(QThread):
+    """Downloads one online crop's tiles off the GUI thread.
+
+    A crop whose tiles can be asked for by number comes down in one go, and
+    that one go used to sit on the thread that draws the window, so the click
+    that started it froze QGIS until the last tile landed. Only the download
+    moves here. The provider read ladder that serves every other online layer
+    stays where it was, because it drives a QGIS raster provider and that
+    belongs to the thread that owns it.
+
+    It takes ONLY the plain request the fetcher built (strings and numbers) and
+    touches no QGIS or Qt object, so it is safe on a secondary thread and safe
+    to let finish after its owner is gone. `done` carries the generation the
+    fetch started with, so a completion the main thread no longer owns is
+    dropped there. `cancel_check` is polled before the download starts and again
+    between tiles, so a fetch superseded while its tiles are coming down stops
+    paying for them.
+    """
+
+    done = pyqtSignal(int, object)  # (generation, (image, error_code, elapsed_ms))
+
+    def __init__(self, request, generation: int, cancel_check=None, parent=None):
+        super().__init__(parent)
+        self._request = request
+        self._generation = generation
+        self._cancel_check = cancel_check
+
+    def run(self):
+        try:
+            if self._cancel_check is not None and self._cancel_check():
+                result = (None, "crop_error_online_cancelled", 0)
+            else:
+                result = self._fetch_tiles()
+        except Exception as e:  # noqa: BLE001 - a raise here must not kill the thread
+            result = (None, str(e), 0)
+        self.done.emit(self._generation, result)
+
+    def _fetch_tiles(self):
+        """The download itself, with the cancel handed down to the tile loop."""
+        from ...core.feature_encoder import run_direct_tile_fetch
+
+        return run_direct_tile_fetch(self._request,
+                                     cancel_check=self._cancel_check)
 
 
 class ManualCropsMixin:
@@ -1394,6 +1440,11 @@ class ManualCropsMixin:
             "gen": gen,
             "on_encoded": on_encoded,
             "cursor": bool(show_busy),
+            # The tile download, when it runs on a worker thread, and the flag
+            # that tells it nobody wants the tiles any more. Set by the one
+            # release site, so every way this fetch can end stops the download.
+            "worker": None,
+            "cancel": threading.Event(),
             # Rides the fetch so a failure several steps later still knows
             # nobody asked for this crop.
             "quiet": bool(quiet),
@@ -1426,9 +1477,11 @@ class ManualCropsMixin:
         """Run one online-fetch attempt on the GUI thread, then finish (on
         success/exhaustion) or schedule the next attempt after its back-off via
         QTimer.singleShot. A stale step (session torn down / superseded) is
-        dropped: its lock and cursor were already released by the teardown."""
-        from qgis.PyQt.QtCore import QTimer
+        dropped: its lock and cursor were already released by the teardown.
 
+        The one attempt that does NOT run here is a crop whose tiles can be
+        asked for by number: that is a single uninterrupted download, so it
+        goes to a worker and comes back through its completion."""
         self._ensure_manual_encode_state()
         if self.dock_widget is None:
             # Unloaded while a fetch was scheduled: revert the provider state
@@ -1438,17 +1491,97 @@ class ManualCropsMixin:
         fetch = self._online_fetch
         if fetch is None or fetch.get("gen") != self._manual_encode_gen:
             return  # superseded; teardown already released the lock/cursor
+        if self._start_direct_tile_fetch(fetch):
+            return
         try:
             action, delay = fetch["fetcher"].step()
         except Exception as e:  # noqa: BLE001
             self._fail_online_fetch(str(e), "crop_error_online_exception")
             return
+        self._route_online_fetch_action(action, delay)
+
+    def _route_online_fetch_action(self, action, delay) -> None:
+        """Act on what one fetch attempt answered: finish it, or wait out its
+        back-off off the event loop and take the next attempt. Shared by the
+        inline step and the tile-download completion, so both read the same
+        answers the same way."""
+        from qgis.PyQt.QtCore import QTimer
+
         if action in ("stabilized", "exhausted"):
             self._complete_online_crop_fetch()
             return
         # ("refetch", 0.5) or ("retry", delay): wait off the event loop, then
         # take the next attempt.
         QTimer.singleShot(max(0, int(delay * 1000)), self._step_online_crop_fetch)
+
+    def _start_direct_tile_fetch(self, fetch) -> bool:
+        """Send this fetch's tile download to a worker thread. True when the
+        worker started, and the step then routes through its completion instead
+        of downloading here.
+
+        False leaves the caller to take the attempt inline exactly as before:
+        there is no request to download (the crop reads the layer through the
+        provider ladder), or the thread refused to start. A click is worth more
+        than the thread it would have run on, so a refusal costs the freeze it
+        always cost and nothing else.
+        """
+        if fetch.get("worker") is not None:
+            # A download is already on its way, and its completion drives what
+            # comes next. Reading the provider now would race it.
+            return True
+        fetcher = fetch.get("fetcher")
+        request = fetcher.direct_tile_request() if fetcher is not None else None
+        if request is None:
+            return False
+        cancel = fetch.get("cancel")
+        try:
+            from .shared import park_orphaned_worker
+            worker = DirectTileFetchWorker(
+                request, fetch["gen"],
+                cancel_check=None if cancel is None else cancel.is_set)
+            worker.done.connect(self._on_direct_tile_fetch_done)
+            park_orphaned_worker(worker)
+            worker.start()
+        except Exception as e:  # noqa: BLE001 - a failed start reads inline
+            QgsMessageLog.logMessage(
+                f"Tile download stays on the main thread: {e}",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            return False
+        # The fetcher must not download these tiles a second time, whatever the
+        # worker comes back with. The completion names the request again, so it
+        # is kept here rather than left on the fetcher.
+        fetcher.take_direct_tile_request()
+        fetch["worker"] = worker
+        fetch["request"] = request
+        return True
+
+    def _on_direct_tile_fetch_done(self, gen: int, result) -> None:
+        """Main-thread completion of an off-thread tile download (queued via the
+        worker's `done` signal). Hands the outcome to the fetcher, which either
+        keeps the picture or falls back to the layer read, then routes the
+        answer exactly as an inline step would.
+
+        The fetch keeps the transport lock and the busy cursor across this, so
+        nothing is taken or released here: this is one attempt of a fetch that
+        is still running, not the end of it."""
+        self._ensure_manual_encode_state()
+        if self.dock_widget is None:
+            # Unloaded while the tiles were coming down.
+            self._release_online_fetch()
+            return
+        fetch = self._online_fetch
+        if fetch is None or fetch.get("gen") != gen:
+            return  # superseded; teardown already released the lock/cursor
+        if gen != self._manual_encode_gen:
+            return
+        fetch["worker"] = None
+        request = fetch.pop("request", None)
+        try:
+            action, delay = fetch["fetcher"].accept_direct_tiles(request, *result)
+        except Exception as e:  # noqa: BLE001
+            self._fail_online_fetch(str(e), "crop_error_online_exception")
+            return
+        self._route_online_fetch_action(action, delay)
 
     def _complete_online_crop_fetch(self) -> None:
         """Fetch stabilized: read the bands, revert the provider state, then
@@ -1524,12 +1657,30 @@ class ManualCropsMixin:
         resampling state, drop the transport lock, pop the busy cursor.
         Idempotent; safe when no fetch is active. A live encode WORKER never
         owns _online_fetch (it starts only after a fetch clears it), so clearing
-        the lock here can never clobber a worker's pipe ownership."""
+        the lock here can never clobber a worker's pipe ownership.
+
+        A tile download still on its thread is told to stop and cut loose here,
+        which is what makes this the single release site for the worker too:
+        unload runs it (through _invalidate_manual_encode) while the dock is
+        still alive, so the download's completion is disconnected before
+        anything it could touch is deleted. The thread itself is never stopped
+        by force. It is parked, it holds nothing but plain data, and
+        park_orphaned_worker joins it before its object goes."""
         self._ensure_manual_encode_state()
         fetch = self._online_fetch
         self._online_fetch = None
         if fetch is None:
             return
+        cancel = fetch.get("cancel")
+        if cancel is not None:
+            cancel.set()
+        worker = fetch.get("worker")
+        if worker is not None:
+            fetch["worker"] = None
+            try:
+                worker.done.disconnect()
+            except (TypeError, RuntimeError):
+                pass  # never connected, or the C++ half is already gone
         if restore_provider:
             try:
                 fetch["fetcher"].restore()

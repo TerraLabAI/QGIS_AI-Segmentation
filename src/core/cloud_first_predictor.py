@@ -123,6 +123,20 @@ class CloudFirstPredictor:
         when the plugin loads it."""
         return True
 
+    def hover_preview_handle(self):
+        """The remote side's name for the crop in hand, or None.
+
+        Only the network answers a preview, so there is nothing to fall back
+        to: a session on the machine simply has no preview to give.
+        """
+        getter = getattr(self._remote, "hover_preview_handle", None)
+        if getter is None:
+            return None
+        try:
+            return getter()
+        except Exception:  # noqa: BLE001 -- an unnamed crop is no preview
+            return None
+
     def session_generation(self) -> int:
         """Which crop this predictor is on. Moves whenever the pixels change or
         the session ends."""

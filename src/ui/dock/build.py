@@ -34,6 +34,11 @@ from ...core.i18n import tr
 from ...core.model_config import _IS_MACOS_X86, USE_SAM2
 from ...core.qt_compat import QShortcut
 from ..layer_tree_combobox import LayerTreeComboBox
+from .guidance import (
+    BLUE_TINT,
+    HINT_PREVIEW_ZOOM,
+    DismissibleHint,
+)
 from .styles import (
     _BTN_BLUE,
     _BTN_EXPORT_DISABLED,
@@ -607,6 +612,22 @@ class DockBuildMixin:
         self.instructions_label.setVisible(False)
         layout.addWidget(self.instructions_label)
 
+        # The one aiming tip of the live preview: the zoom at the click decides
+        # the outline's precision, and zooming in is the lever. Under the
+        # instructions and above the refine panel, because it changes how the
+        # user frames the object BEFORE judging the ghost's shape. Shown only in
+        # a cloud session with the preview on (_preview_zoom_tip_wanted); an
+        # offline session never sees this cloud-only affordance.
+        self.preview_zoom_hint = DismissibleHint(
+            HINT_PREVIEW_ZOOM,
+            tr("Zoom in for a finer outline. The AI reads the image at "
+               "your current zoom."),
+            tint=BLUE_TINT,
+            visibility_gate=self._preview_zoom_tip_wanted,
+        )
+        self.preview_zoom_hint.setVisible(False)
+        layout.addWidget(self.preview_zoom_hint)
+
         # Refine-handoff state card (replaces the instructions label while a
         # handoff is active; see dock/handoff.py).
         self._setup_handoff_state_card(layout)
@@ -779,8 +800,9 @@ class DockBuildMixin:
         self.save_mask_button.setMinimumHeight(34)
         self.save_mask_button.setStyleSheet(_BTN_BLUE)
         self.save_mask_button.setToolTip(
-            tr("Keeps this polygon in your session. Export writes all kept "
-               "polygons to a layer.")
+            tr("Off until a selection is on screen. Click the object first, "
+               "then Save polygon keeps it in your session; Export writes "
+               "all kept polygons to a layer.")
         )
         layout.addWidget(self.save_mask_button)
 
@@ -799,6 +821,8 @@ class DockBuildMixin:
 
         self.undo_button = QPushButton(tr("Undo last point"))
         self.undo_button.setEnabled(False)
+        self.undo_button.setToolTip(
+            tr("Removes the last point you placed on the object."))
         self.undo_button.clicked.connect(self._on_undo_clicked)
         self.undo_button.setVisible(False)  # Hidden until segmentation starts
         self.undo_button.setMinimumHeight(30)

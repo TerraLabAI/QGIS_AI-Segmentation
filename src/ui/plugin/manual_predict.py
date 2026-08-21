@@ -72,6 +72,13 @@ def _click_was_superseded(err: Exception) -> bool:
         return False
 
 
+# How many clicks back the per-point undo can reach. Each entry holds a copy
+# of the mask, so the depth is a memory ceiling as much as a UI one. The point
+# lists themselves are not capped: dropping the oldest point would change what
+# the next prediction is given, and the shape on screen with it.
+MASK_UNDO_DEPTH = 30
+
+
 def _click_refusal_answer(err: Exception) -> str:
     """The answer a refused click deserves, or "" when it was not a refusal.
 
@@ -92,6 +99,32 @@ def _click_refusal_answer(err: Exception) -> str:
 
 class ManualPredictMixin:
     """Manual clicks, SAM prediction, mask visualization, undo and session reset."""
+
+    def _report_click_without_model(self) -> None:
+        """Say why a click did nothing, once per session.
+
+        A click with no model in the slot took the marker back off the map and
+        returned, so the map answered a click by erasing it and the user had
+        no idea whether the click, the layer or the plugin was at fault.
+        """
+        if getattr(self, "_click_without_model_reported", False):
+            return
+        if getattr(self, "_headless", False):
+            return
+        self._click_without_model_reported = True
+        try:
+            if getattr(self, "_local_ai_load_failed", False):
+                line = tr("The AI did not load, so this click was not "
+                          "answered. Use the Install button in the panel to "
+                          "set it up again.")
+            else:
+                line = tr("The AI is still loading, so this click was not "
+                          "answered. Try again in a few seconds.")
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation", line,
+                level=Qgis.MessageLevel.Warning, duration=6)
+        except (RuntimeError, AttributeError):
+            pass
 
     def _refine_click_is_stale(self) -> bool:
         """True when a point click arrived from a fix session that is already
@@ -124,12 +157,21 @@ class ManualPredictMixin:
         abort path in PyQt. What the click knows how to report, it reports
         below; the guard is for everything else.
         """
+        # The click pipeline takes over from here, so the shape that was
+        # following the cursor comes off the map before anything else runs.
+        # Its answer is taken first, because clearing the ghost drops it, and
+        # a click landing on the ghost asks the service what the ghost already
+        # asked. Read and cleared in _run_prediction; a click that never gets
+        # there leaves it for the next one to overwrite on this line.
+        self._hover_click_answer = self._take_hover_preview_answer()
+        self._stop_hover_preview("click")
         if self._refine_click_is_stale():
             self._drop_stale_refine_click()
             return
         if self.predictor is None:
             if self.map_tool:
                 self.map_tool.remove_last_marker()
+            self._report_click_without_model()
             return
 
         # Transform click from canvas CRS to raster CRS for all downstream use
@@ -138,11 +180,15 @@ class ManualPredictMixin:
         if not self._is_point_in_raster_extent(raster_pt):
             if self.map_tool:
                 self.map_tool.remove_last_marker()
+            # The session's own raster, never the combo: the combo can have
+            # moved on to another layer, and naming that one told the user the
+            # click missed a raster they were not working in.
             layer_name = ""
-            dock = self.dock_widget
-            sel = dock.layer_combo.currentLayer() if dock is not None else None
-            if sel:
-                layer_name = sel.name()
+            try:
+                if self._current_layer is not None:
+                    layer_name = self._current_layer.name()
+            except RuntimeError:
+                layer_name = ""
             self.iface.messageBar().pushMessage(
                 "AI Segmentation",
                 tr("Click is outside the '{layer}' raster. To segment another raster, stop the current segmentation first.").format(layer=layer_name),  # noqa: E501
@@ -230,7 +276,7 @@ class ManualPredictMixin:
         # replayed click lands on once the encode has committed the new crop.
         # Save current mask state for undo before modifying anything
         # Cap at 30 entries (~30MB) to prevent unbounded memory growth.
-        if len(self._mask_state_history) >= 30:
+        if len(self._mask_state_history) >= MASK_UNDO_DEPTH:
             self._mask_state_history.pop(0)
         self._mask_state_history.append(self._snapshot_mask_state())
 
@@ -301,12 +347,14 @@ class ManualPredictMixin:
         Guarded like the keep click above, and for the same reason: it runs on
         the map tool's C++ stack frame, where an escaping exception aborts.
         """
+        self._stop_hover_preview("click")
         if self._refine_click_is_stale():
             self._drop_stale_refine_click()
             return
         if self.predictor is None:
             if self.map_tool:
                 self.map_tool.remove_last_marker()
+            self._report_click_without_model()
             return
 
         # Refine-in-Manual, resting state: a right-click SELECTS like a left
@@ -412,7 +460,7 @@ class ManualPredictMixin:
 
         # --- Fast path: crop already encoded, predict synchronously (also the
         # path the replayed click lands on after the encode commits the crop).
-        if len(self._mask_state_history) >= 30:
+        if len(self._mask_state_history) >= MASK_UNDO_DEPTH:
             self._mask_state_history.pop(0)
         self._mask_state_history.append(self._snapshot_mask_state())
 
@@ -638,6 +686,16 @@ class ManualPredictMixin:
         is_first_point = one_positive and no_negatives and mask_input is None
         use_multimask = is_first_point
 
+        # The ghost the user clicked on asked this crop this question already,
+        # so its answer stands in for the round trip instead of paying it a
+        # second time. Taken whatever happens, so a held answer can never reach
+        # a later click.
+        held_hover = getattr(self, "_hover_click_answer", None)
+        self._hover_click_answer = None
+        reused = (self._reused_hover_answer(held_hover, crop_bounds, img_shape,
+                                            point_coords_list)
+                  if held_hover is not None and use_multimask else None)
+
         # Timed from here: this is the wait the user actually sits through, on
         # whichever route answers them.
         import time as _click_clock
@@ -645,12 +703,19 @@ class ManualPredictMixin:
         click_started_at = _click_clock.monotonic()
 
         try:
-            masks, scores, low_res_masks = self.predictor.predict(
-                point_coords=point_coords,
-                point_labels=point_labels,
-                mask_input=mask_input,
-                multimask_output=use_multimask,
-            )
+            if reused is not None:
+                masks, scores, low_res_masks = reused
+                # The network answered this, as a preview. The ledger hangs the
+                # object's charge on a network answer, so it is noted here
+                # exactly as the predictor notes one of its own.
+                self._note_manual_cloud_answer()
+            else:
+                masks, scores, low_res_masks = self.predictor.predict(
+                    point_coords=point_coords,
+                    point_labels=point_labels,
+                    mask_input=mask_input,
+                    multimask_output=use_multimask,
+                )
         except RuntimeError as e:
             if _click_was_superseded(e):
                 # The session moved to another crop while this click was out.
@@ -679,8 +744,16 @@ class ManualPredictMixin:
                 except Exception:
                     pass  # nosec B110
                 try:
+                    if refusal == "SIGN_IN":
+                        line = tr("Session expired. Sign in again to continue.")
+                    else:
+                        line = tr("You saved your cloud objects for this "
+                                  "month. Switch to your own computer to keep "
+                                  "working free, or upgrade from the panel.")
+                    # The wire's own sentence stays in the log: it is English,
+                    # it can name internals, and the user cannot act on it.
                     self.iface.messageBar().pushWarning(
-                        "AI Segmentation", error_str)
+                        "AI Segmentation", line)
                 except (RuntimeError, AttributeError):
                     pass
                 self._end_click_quietly(QUIET_CLICK_REFUSED)
@@ -898,6 +971,72 @@ class ManualPredictMixin:
 
         self._update_ui_after_prediction()
         return True
+
+    # How far, in crop pixels, a click may land from the pixel a ghost was
+    # asked about and still be answered by it. The preview loop's own drift,
+    # so the two agree on what one spot is. Only the fallback test below reads
+    # it: a click inside the drawn outline is the ghost's own question at any
+    # distance, because the outline is what the user was aiming at.
+    _HOVER_REUSE_NEAR_PX = 32
+
+    def _reused_hover_answer(self, held, crop_bounds, img_shape, points):
+        """The ghost's own answer for this click, as ``(masks, scores, seed)``.
+
+        None whenever the click is not the question the ghost asked: another
+        crop, another spot, more than one point, or an answer carrying no seed
+        for the click after it.
+
+        Two ways to be the same question, and the first is the one that matches
+        what the user did. They aimed at an outline, so a click inside that
+        outline is a click on the ghost, however far it sits from the pixel the
+        hover happened to ask about. Simplify, Round corners and Expand all
+        move that outline off the raw mask, so a shaped ghost regularly covers
+        ground the mask does not, and testing the mask alone refused reuse for
+        clicks that landed squarely on the drawn shape. The mask-and-distance
+        test stays as the fallback for a click just off the drawn edge.
+
+        Every doubt refuses: a refused reuse costs one round trip, a wrong one
+        hands the user another object.
+        """
+        import numpy as np
+
+        try:
+            bounds, shape, asked, mask, score, logits, drawn = held
+        except (TypeError, ValueError):
+            return None
+        if logits is None or len(points) != 1:
+            return None
+        if tuple(bounds) != tuple(crop_bounds):
+            return None
+        if (int(shape[0]), int(shape[1])) != (int(img_shape[0]), int(img_shape[1])):
+            return None
+        col, row = int(points[0][0]), int(points[0][1])
+        if not (0 <= row < mask.shape[0] and 0 <= col < mask.shape[1]):
+            return None
+        answer = np.asarray([mask]), np.asarray([float(score)]), logits
+        # The drawn outline arrives in the raster CRS, the frame crop_bounds is
+        # in, so the click pixel goes back to the ground rather than the shape
+        # coming to the grid. Its centre is the point the pixel address stands
+        # for.
+        if drawn is not None:
+            try:
+                minx, miny, maxx, maxy = (float(v) for v in crop_bounds)
+                height, width = int(shape[0]), int(shape[1])
+                if height > 0 and width > 0 and maxx > minx and maxy > miny:
+                    x = minx + (col + 0.5) * (maxx - minx) / width
+                    y = maxy - (row + 0.5) * (maxy - miny) / height
+                    if drawn.contains(QgsPointXY(x, y)):
+                        return answer
+            except Exception:  # noqa: BLE001 -- an unreadable ghost answers nothing  # nosec B110
+                pass
+        if (abs(row - int(asked[0])) > self._HOVER_REUSE_NEAR_PX
+                or abs(col - int(asked[1])) > self._HOVER_REUSE_NEAR_PX):
+            return None
+        if not mask[row, col]:
+            # Off the drawn shape and off the mask under it, so the click is
+            # asking about something else and the service has to say what.
+            return None
+        return answer
 
     def _last_prediction_found_nothing(self) -> bool:
         """Did the last click's own answer come back empty? Judged on the raw
@@ -1643,7 +1782,7 @@ class ManualPredictMixin:
         """
         return self._manual_active_outline()
 
-    def _fill_holes_pixel_cap(self):
+    def _fill_holes_pixel_cap(self, info=None):
         """The Fill-holes size threshold in MASK PIXELS.
 
         Three answers, and the last two are NOT the same. A number is the
@@ -1657,11 +1796,16 @@ class ManualPredictMixin:
         pixels through the same area convention (layer_conventions.
         make_area_measurer): measure the crop's ground area, divide by its pixel
         count, and one mask pixel has a ground area whatever the layer CRS is.
+
+        ``info`` is the crop window the cap is asked about; the click session's
+        own window when left out. The hover ghost passes its answer's window,
+        which exists before any click has set the session's.
         """
         max_m2 = float(getattr(self, "_refine_fill_holes_max_m2", 0.0) or 0.0)
         if max_m2 <= 0:
             return None
-        info = self.current_transform_info
+        if info is None:
+            info = self.current_transform_info
         if not info:
             return FILL_HOLES_CAP_UNKNOWN
         try:
@@ -1687,17 +1831,17 @@ class ManualPredictMixin:
         except (RuntimeError, AttributeError, KeyError, TypeError, ValueError):
             return FILL_HOLES_CAP_UNKNOWN
 
-    def _fill_holes_arguments(self):
+    def _fill_holes_arguments(self, info=None):
         """``(fill_holes, max_hole_px)`` for apply_mask_refinement.
 
         The step is OFF when the user asked for a bounded fill and the bound
         cannot be measured. apply_mask_refinement reads a max of None as "fill
         every hole", so passing an unmeasurable bound through as None does the
         opposite of what was asked, on the objects that have courtyards to
-        lose."""
+        lose. ``info`` names the crop window, as in _fill_holes_pixel_cap."""
         if not self._refine_fill_holes:
             return False, None
-        cap = self._fill_holes_pixel_cap()
+        cap = self._fill_holes_pixel_cap(info)
         if cap is FILL_HOLES_CAP_UNKNOWN:
             return False, None
         return True, cap
@@ -1800,9 +1944,13 @@ class ManualPredictMixin:
             # Detect disjoint regions and show message bar warning. The region
             # count dilates and labels the whole mask, so it is asked for only
             # when the one-shot warning can still fire; every repaint used to
-            # pay it (refine sliders repaint on every drag step).
+            # pay it (refine sliders repaint on every drag step). A mask that
+            # polygonized to at most one piece cannot hold more than one
+            # significant region, so that already-computed count gates the
+            # expensive dilate-and-label pass too.
             may_warn = not self._disjoint_warning_shown and len(self._active_crop_points_positive) >= 2
-            if may_warn and count_significant_regions(mask_to_display) > 1:
+            if (may_warn and len(geometries) > 1
+                    and count_significant_regions(mask_to_display) > 1):
                 self.iface.messageBar().pushMessage(
                     "AI Segmentation",
                     tr("Disconnected parts detected. For best accuracy, segment one element at a time."),
@@ -1955,6 +2103,10 @@ class ManualPredictMixin:
                 # still open exactly as before that click.
                 self._update_mask_visualization()
                 self.dock_widget.set_point_count(0, 0)
+                # No points is not nothing to save: the shape on screen is
+                # what a Save commits, and the point count alone greyed the
+                # button out from under it.
+                self._keep_save_alive_for_display_polygon()
             else:
                 # Active crop is empty - check if we can unfreeze a previous crop
                 if self._frozen_sessions:
@@ -1981,11 +2133,30 @@ class ManualPredictMixin:
                     tr("Warning: you are about to edit an already saved polygon."),
                     tr("Do you want to continue?")),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes
+                # No by default: the press that lands here is usually one undo
+                # too many, and Yes re-opens an object that was finished.
+                QMessageBox.StandardButton.No
             )
             if reply == QMessageBox.StandardButton.Yes:
                 self._restore_last_saved_mask()
             self._safe_restore_canvas_focus()
+
+    def _keep_save_alive_for_display_polygon(self) -> None:
+        """Re-arm Save after a point count of zero left a shape on the map.
+
+        The dock drives Save off the point count, which is right for a click
+        session and wrong for an object opened for editing: it carries a shape
+        and no points of its own until the first click lands.
+        """
+        if self._unfrozen_display_polygon is None:
+            return
+        button = getattr(self.dock_widget, "save_mask_button", None)
+        if button is None:
+            return
+        try:
+            button.setEnabled(True)
+        except RuntimeError:
+            pass
 
     def _unfreeze_last_session(self):
         """Unfreeze the last frozen crop session back to active display.
@@ -2036,6 +2207,9 @@ class ManualPredictMixin:
 
         pos_count, neg_count = self.prompts.point_count
         self.dock_widget.set_point_count(pos_count, neg_count)
+        # Same rule as a reopened polygon: the shape is back on the map, and
+        # the point count it came back with must not decide Save.
+        self._keep_save_alive_for_display_polygon()
 
         QgsMessageLog.logMessage(
             f"Unfroze crop session, {len(self._frozen_sessions)} frozen remaining",
@@ -2173,6 +2347,10 @@ class ManualPredictMixin:
         # Update UI counters
         pos_count, neg_count = self.prompts.point_count
         self.dock_widget.set_point_count(pos_count, neg_count)
+        # A polygon reopened for editing carries a shape and no points of its
+        # own, and the dock drives Save off the point count. Without this the
+        # object comes back on the map with Save greyed out under it.
+        self._keep_save_alive_for_display_polygon()
         self.dock_widget.set_saved_polygon_count(len(self.saved_polygons))
 
         QgsMessageLog.logMessage(
@@ -2318,6 +2496,18 @@ class ManualPredictMixin:
         self._refine_min_size_m2 = REFINE_MIN_SIZE_M2_DEFAULT
         self._refine_max_size_m2 = REFINE_MAX_SIZE_M2_DEFAULT
 
+        # One-shot lines and a parked tool belong to the session that raised
+        # them: a new session must be able to say the same thing again, and
+        # must never inherit an older session's park.
+        self._tool_rearm_notice_shown = False
+        self._manual_session_parked = False
+        self._click_without_model_reported = False
+
         if self.dock_widget:
             self.dock_widget.set_point_count(0, 0)
             self.dock_widget.set_saved_polygon_count(0)
+            try:
+                # The notice describes a click in the session that is ending.
+                self.dock_widget.clear_manual_notice()
+            except (RuntimeError, AttributeError):
+                pass

@@ -288,6 +288,17 @@ class AutoReviewDisplayMixin:
         # from the one place every mode switch already goes through is enough.
         self._watch_review_edit_state(layer)
         mode = getattr(self, "_auto_display_mode", "normal")
+        if mode == "confidence":
+            # A run whose objects all came back rated the same has no heatmap
+            # to paint: every polygon would take one colour and read as a
+            # measurement of nothing. Fall back to one colour per object, which
+            # still tells them apart.
+            try:
+                flat = not self._run_scores_rank_objects()
+            except (RuntimeError, AttributeError, TypeError):
+                flat = False
+            if flat:
+                mode = "random"
         if mode == "random":
             self._apply_review_random_renderer(layer)
         elif mode == "outline":
