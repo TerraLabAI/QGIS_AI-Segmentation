@@ -2295,7 +2295,10 @@ def _release_project_layers_on_gui(path: str, table: str = "") -> int:
         target = os.path.normcase(os.path.abspath(path))
     except (OSError, ValueError):
         return 0
-    wanted = str(table or "").strip()
+    # casefold on both sides: OGR reads a GeoPackage table name without
+    # regard to case, so "Buildings" and "buildings" are one table and a
+    # case-sensitive test would leave its layer holding the file.
+    wanted = str(table or "").strip().casefold()
     tables_by_file: dict[str, list[str]] = {}
     doomed = []
     for layer_id, layer in QgsProject.instance().mapLayers().items():
@@ -2308,7 +2311,9 @@ def _release_project_layers_on_gui(path: str, table: str = "") -> int:
                 continue
             if os.path.normcase(os.path.abspath(file_part)) != target:
                 continue
-            if wanted and _layer_table(layer, source, file_part, tables_by_file) != wanted:
+            if wanted and str(_layer_table(
+                    layer, source, file_part,
+                    tables_by_file) or "").casefold() != wanted:
                 continue
             doomed.append(layer_id)
         except (AttributeError, RuntimeError, OSError, ValueError):

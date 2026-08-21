@@ -952,7 +952,15 @@ class AutoLifecycleMixin:
         # than one distinct class value (a future multi-class run, or a user
         # merging several committed runs) gets a categorized color per class;
         # today's common one-prompt run keeps its single stable color.
-        class_renderer = make_class_categorized_renderer(result_layer)
+        #
+        # A run writes ONE class literal on every row (object_class above), so
+        # asking the file for its distinct values can only ever answer "one",
+        # and that answer costs a DISTINCT scan of the table just written, on
+        # the click, between the user and their layer. Only ask when a run can
+        # actually carry more than one class.
+        class_renderer = (
+            make_class_categorized_renderer(result_layer)
+            if not object_class else None)
         if class_renderer is not None:
             result_layer.setRenderer(class_renderer)
         else:
@@ -995,15 +1003,13 @@ class AutoLifecycleMixin:
         # A run reviewed with one colour per object must not save to one flat
         # colour: objects that touch then read as a single blob, which is the
         # opposite of what the review just showed. Cosmetic and best-effort,
-        # and only under the ceiling the palette stays readable at.
+        # and no object count refuses it: the renderer wears one symbol whose
+        # colour is computed per feature, so it is the same size at ten objects
+        # and at ten thousand.
         if getattr(self, "_auto_display_mode", "") == "random":
             try:
-                from ...core.instance_symbology import (
-                    instance_color_ceiling,
-                    paint_instances_apart,
-                )
-                if len(features_to_add) <= instance_color_ceiling():
-                    paint_instances_apart(result_layer)
+                from ...core.instance_symbology import paint_instances_apart
+                paint_instances_apart(result_layer)
             except Exception:  # noqa: BLE001 -- colour never fails an export  # nosec B110
                 pass
         # The id, not the layer: the Start page's two recap lines link to the

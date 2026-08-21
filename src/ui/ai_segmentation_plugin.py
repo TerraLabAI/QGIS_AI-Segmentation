@@ -1041,6 +1041,15 @@ class AISegmentationPlugin(
                 "running", "AI Segmentation", level=Qgis.MessageLevel.Info)
             return
         self._unload_deferred = False
+        # A successful export parks the drop of its crash-net copy on a timer
+        # owned by the dock, and the dock is about to go. Run it here instead,
+        # or the duplicate table stays on disk for good.
+        parked_drop = getattr(self, "_pending_autosave_drop", None)
+        if parked_drop is not None:
+            try:
+                parked_drop()
+            except Exception:  # noqa: BLE001 -- unload must never raise
+                pass  # nosec B110
         # First, because the registry outlives the plugin object: a provider
         # left behind keeps algorithms in the Toolbox that call a dead facade.
         try:

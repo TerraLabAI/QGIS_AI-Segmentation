@@ -4,6 +4,10 @@
     <name>AISegmentation</name>
     
     <message>
+        <source>Saving...</source>
+        <translation>Guardando...</translation>
+    </message>
+    <message>
         <source>Your selection is sent to our servers in Europe {dot} {privacy}</source>
         <translation>Tu selección se envía a nuestros servidores en Europa {dot} {privacy}</translation>
     </message>
@@ -5001,6 +5005,10 @@ está bloqueando el entorno de IA local del complemento.</translation>
     <message>
         <source>the download stalled, no data was received</source>
         <translation>la descarga se detuvo, no se recibieron datos</translation>
+    </message>
+    <message>
+        <source>the network reported: {error}</source>
+        <translation>la red informó: {error}</translation>
     </message>
 </context>
 </TS>

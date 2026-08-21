@@ -3,6 +3,10 @@
 <context>
     <name>AISegmentation</name>
     <message>
+        <source>Saving...</source>
+        <translation>儲存中...</translation>
+    </message>
+    <message>
         <source>Your selection is sent to our servers in Europe {dot} {privacy}</source>
         <translation>您選取的範圍會傳送至我們位於歐洲的伺服器 {dot} {privacy}</translation>
     </message>
@@ -4942,6 +4946,10 @@ is blocking the plugin&apos;s local AI environment.</source>
     <message>
         <source>the download stalled, no data was received</source>
         <translation>下載停滯，未收到任何資料</translation>
+    </message>
+    <message>
+        <source>the network reported: {error}</source>
+        <translation>網路回報：{error}</translation>
     </message>
 </context>
 </TS>

@@ -309,6 +309,36 @@ class DockAutoReviewPanelMixin:
             return f"<b>{bold}</b> <span {muted}>· {tail}</span>"
         return f"{check}<b>{bold}</b> <span {muted}>· {tail}</span>"
 
+    def set_auto_export_saving(self, saving: bool) -> None:
+        """Put the Export button in its saving state, and repaint it now.
+
+        Everything the click does runs on the GUI thread: the shapes are
+        checked, measured, written to a GeoPackage and drawn, and the map is
+        held still for the redraw that follows. On a big run that is seconds
+        with nothing moving on screen, which reads as a plugin that has
+        stopped rather than one that is working. The button says what it is
+        doing before the work starts, and refuses a second click while it runs.
+        """
+        btn = getattr(self, "auto_export_btn", None)
+        if btn is None:
+            return
+        try:
+            if saving:
+                self._auto_export_label_before_save = btn.text()
+                btn.setText(tr("Saving..."))
+                btn.setEnabled(False)
+            else:
+                held = getattr(self, "_auto_export_label_before_save", "")
+                if held:
+                    btn.setText(held)
+                self._auto_export_label_before_save = ""
+                btn.setEnabled(True)
+            # The handler does not return to the event loop until the write is
+            # done, so without this the new text is never painted.
+            btn.repaint()
+        except (RuntimeError, AttributeError):
+            pass
+
     def update_auto_review_count(self, visible: int, total: int, pct: int,
                                  size_bound: bool = False) -> None:
         """Update the two-line review header + the Export button label after a

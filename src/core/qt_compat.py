@@ -397,6 +397,44 @@ def silent_task_flags():
     return flags
 
 
+# ``Qgis.GeometryOperationResult.Success``, or None on a build that does not
+# name it. Resolved once at import: the value cannot change inside a session,
+# and the int comparison below still answers when it is None.
+try:
+    from qgis.core import Qgis as _QgisGeometryOps
+    _GEOMETRY_OP_SUCCESS = getattr(
+        getattr(_QgisGeometryOps, "GeometryOperationResult", None),
+        "Success", None)
+except Exception:
+    _GEOMETRY_OP_SUCCESS = None
+
+
+def geometry_op_succeeded(result) -> bool:
+    """Whether a QgsGeometry operation reported that it worked.
+
+    ``QgsGeometry.transform`` and its siblings answer with an operation CODE
+    whose success value is 0, not with a bool, so a plain truth test on it
+    reads every success as a failure. Both bindings the plugin runs on hand
+    back an int-backed enum that compares equal to 0, but a caller should not
+    have to know that, and a site that writes ``!= 0`` says nothing about what
+    it is testing.
+
+    True for 0, for the named Success value, and for anything whose ``int()``
+    is 0. False for everything else, None included: a caller that cannot read
+    the answer must treat the geometry as half moved rather than ship it.
+    """
+    if isinstance(result, bool):
+        return result
+    if result is None:
+        return False
+    if _GEOMETRY_OP_SUCCESS is not None and result == _GEOMETRY_OP_SUCCESS:
+        return True
+    try:
+        return int(result) == 0
+    except (TypeError, ValueError):
+        return False
+
+
 def safe_single_shot(msec: int, owner: QObject, callback) -> QTimer:
     """A single-shot timer bound to ``owner``'s lifetime.
 

@@ -3,6 +3,10 @@
 <context>
     <name>AISegmentation</name>
     <message>
+        <source>Saving...</source>
+        <translation>Menyimpan...</translation>
+    </message>
+    <message>
         <source>Your selection is sent to our servers in Europe {dot} {privacy}</source>
         <translation>Pilihan Anda dikirim ke server kami di Eropa {dot} {privacy}</translation>
     </message>
@@ -4702,6 +4706,10 @@ memblokir lingkungan AI lokal plugin.</translation>
     <message>
         <source>the download stalled, no data was received</source>
         <translation>pengunduhan terhenti, tidak ada data yang diterima</translation>
+    </message>
+    <message>
+        <source>the network reported: {error}</source>
+        <translation>jaringan melaporkan: {error}</translation>
     </message>
 </context>
 </TS>

@@ -4,6 +4,10 @@
     <name>AISegmentation</name>
     
     <message>
+        <source>Saving...</source>
+        <translation>Speichern...</translation>
+    </message>
+    <message>
         <source>Your selection is sent to our servers in Europe {dot} {privacy}</source>
         <translation>Ihre Auswahl wird an unsere Server in Europa gesendet {dot} {privacy}</translation>
     </message>
@@ -4999,6 +5003,10 @@ blockiert die lokale AI-Umgebung des Plugins.</translation>
     <message>
         <source>the download stalled, no data was received</source>
         <translation>Der Download wurde angehalten, es wurden keine Daten empfangen</translation>
+    </message>
+    <message>
+        <source>the network reported: {error}</source>
+        <translation>Das Netzwerk meldete: {error}</translation>
     </message>
 </context>
 </TS>

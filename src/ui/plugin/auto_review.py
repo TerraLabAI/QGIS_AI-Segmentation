@@ -785,11 +785,31 @@ class AutoReviewMixin:
             # The billed set reached a real layer, so this run's crash-net
             # copy is a duplicate of it: the pointer goes, and so does the
             # table it points at, which nothing pruned before.
+            # One event-loop turn later: dropping the table is a SQLite delete
+            # of a duplicate of everything just written, and it was sitting
+            # between the user's click and their layer.
+            run_id = self._auto_run_id or None
+
+            def _drop_autosave_copy():
+                self._pending_autosave_drop = None
+                try:
+                    from ...core.run_autosave import clear_pending
+                    clear_pending(run_id, drop_table=True)
+                except Exception:  # nosec B110
+                    pass
+
+            # The timer belongs to the dock and dies with it, so an unload
+            # between the click and the next turn would leave the duplicate
+            # table on disk with nothing left to drop it. unload() runs
+            # whatever is still parked here.
+            self._pending_autosave_drop = _drop_autosave_copy
+
             try:
-                from ...core.run_autosave import clear_pending
-                clear_pending(self._auto_run_id or None, drop_table=True)
-            except Exception:  # nosec B110
-                pass
+                from ...core.qt_compat import safe_single_shot
+
+                safe_single_shot(0, self.dock_widget, _drop_autosave_copy)
+            except Exception:  # noqa: BLE001  # nosec B110
+                _drop_autosave_copy()
         else:
             # Every write target refused. Keep the review, the objects and the
             # selection layer exactly as they are, and report the failure with
@@ -879,7 +899,24 @@ class AutoReviewMixin:
         # Snapshot the prompt BEFORE _export_auto_review nulls the review, so the
         # end-of-run value recap (shown on the Start page) can name the object.
         recap_prompt = ((self._auto_review or {}).get("prompt") or "").strip()
-        exported = self._export_auto_review()
+        # Say it is working before the work starts: the whole commit is
+        # synchronous, and the map is deliberately held still for the redraw
+        # that follows, so nothing else on screen can answer the click.
+        from qgis.PyQt.QtCore import Qt
+        from qgis.PyQt.QtWidgets import QApplication
+        try:
+            self.dock_widget.set_auto_export_saving(True)
+        except (RuntimeError, AttributeError):
+            pass
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            exported = self._export_auto_review()
+        finally:
+            QApplication.restoreOverrideCursor()
+            try:
+                self.dock_widget.set_auto_export_saving(False)
+            except (RuntimeError, AttributeError):
+                pass
         if exported is None:
             return
         name, count = exported

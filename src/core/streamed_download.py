@@ -133,7 +133,7 @@ def stream_url_to_file(
 
     def on_error(_code) -> None:
         try:
-            state["error"] = reply.errorString()
+            state["error"] = _network_error(reply.errorString())
         except (RuntimeError, AttributeError):
             state["error"] = tr("Download failed")
 
@@ -198,7 +198,7 @@ def stream_url_to_file(
         # literal and cannot be flagged by the Qt6 checker.
         with suppress(RuntimeError, AttributeError, TypeError):
             if reply.error():
-                state["error"] = reply.errorString()
+                state["error"] = _network_error(reply.errorString())
     with suppress(RuntimeError, AttributeError):
         reply.deleteLater()
 
@@ -226,6 +226,18 @@ def stream_url_to_file(
             tr("Cannot save download: {error}").format(error=err),
             status, written, False)
     return StreamedDownload(True, "", status, written, False)
+
+
+def _network_error(raw) -> str:
+    """One Qt error string in a sentence the reader's own language carries.
+
+    Qt writes ``errorString()`` in English whatever the interface language is,
+    so it reached the user as the only untranslated line of a failed install.
+    The raw text is kept whole inside the sentence, because it is the only
+    thing that names the address and the HTTP answer, and because the caller
+    reads it to tell "this archive is not published" from "try again".
+    """
+    return tr("the network reported: {error}").format(error=str(raw or ""))
 
 
 def _abort(reply) -> None:

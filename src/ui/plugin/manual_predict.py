@@ -295,11 +295,11 @@ class ManualPredictMixin:
         self._last_click_point = (raster_pt.x(), raster_pt.y())
         self._last_click_polarity = "positive"
 
-        # The predict blocks this thread, so the busy cursor and the dashed
-        # outline go up before it and come down whatever it returns. Only when
-        # this call started them: a predict running under a read the session
-        # already announced must not take that read's cursor down with it.
-        waiting = self._begin_click_wait()
+        # The busy cursor and the dashed outline go up inside the prediction,
+        # on the branch that actually blocks, and come down here whatever it
+        # returns. Only when that branch started them: a predict running under
+        # a read the session already announced must not take that read's
+        # cursor down with it.
         try:
             predicted = self._run_prediction()
         except Exception:
@@ -309,8 +309,7 @@ class ManualPredictMixin:
             self._rollback_failed_click("positive", point)
             raise
         finally:
-            if waiting:
-                self._end_click_wait()
+            self._end_click_wait_started_here()
         if not predicted:
             self._rollback_failed_click("positive", point)
             return
@@ -479,9 +478,9 @@ class ManualPredictMixin:
         self._last_click_point = (raster_pt.x(), raster_pt.y())
         self._last_click_polarity = "negative"
 
-        # Same wait treatment as the keep click above: the predict blocks, so
-        # say so on the polygon and on the cursor for as long as it runs.
-        waiting = self._begin_click_wait()
+        # Same wait treatment as the keep click above: the prediction says on
+        # the polygon and on the cursor that it is working, for as long as it
+        # blocks, and this is where that comes back down.
         try:
             predicted = self._run_prediction()
         except Exception:
@@ -490,8 +489,7 @@ class ManualPredictMixin:
             self._rollback_failed_click("negative", point)
             raise
         finally:
-            if waiting:
-                self._end_click_wait()
+            self._end_click_wait_started_here()
         if not predicted:
             self._rollback_failed_click("negative", point)
             return
@@ -701,6 +699,15 @@ class ManualPredictMixin:
         import time as _click_clock
         self._manual_click_fell_back = False
         click_started_at = _click_clock.monotonic()
+
+        # Say the model is working, but only for a click that has work to wait
+        # on. A click standing on the ghost's answer is already answered on
+        # this frame, and pushing the busy cursor and the dashed outline for it
+        # only makes the instant answer flash. Every other click goes through
+        # the predictor and gets the wait it always had. The caller ends it,
+        # whatever this returns and whatever it raises.
+        self._click_wait_started_here = (
+            self._begin_click_wait() if reused is None else False)
 
         try:
             if reused is not None:
@@ -1189,12 +1196,15 @@ class ManualPredictMixin:
             refresh()
 
         if self.current_mask is not None:
-            mask_pixels = int(self.current_mask.sum())
             # A mask restored by undo can carry no score (e.g. seeded from a
             # saved polygon before any prediction): log 0, never crash.
+            #
+            # The pixel count used to go in this line. Counting them reads the
+            # whole crop, on every click, to write a number nobody acts on. The
+            # shape is on screen, which says more than the count ever did.
             score = self.current_score if self.current_score is not None else 0.0
             QgsMessageLog.logMessage(
-                f"Segmentation result: score={score:.3f}, mask_pixels={mask_pixels}",
+                f"Segmentation result: score={score:.3f}",
                 "AI Segmentation",
                 level=Qgis.MessageLevel.Info
             )
@@ -1332,6 +1342,19 @@ class ManualPredictMixin:
             except (RuntimeError, AttributeError):
                 pass
         self._set_manual_encoding_note(False)
+
+    def _end_click_wait_started_here(self) -> None:
+        """Take down the wait THIS click put up, and only that one.
+
+        The wait goes up inside the prediction, on the branch that blocks, and
+        comes down here: one pop for the one push, on every way out of the
+        prediction, the early returns and the exceptions included. A click that
+        never put one up leaves the flag clear and this does nothing, so a
+        wait the session announced around the click survives it."""
+        if not getattr(self, "_click_wait_started_here", False):
+            return
+        self._click_wait_started_here = False
+        self._end_click_wait()
 
     def _end_click_wait(self) -> None:
         """Take this click's waiting outline and busy cursor back down. ONE pop

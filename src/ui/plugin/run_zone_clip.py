@@ -56,6 +56,8 @@ def zone_geometry_from_run(run: dict, crs_authid: str):
             QgsCoordinateTransformContext,
         )
 
+        from ...core.qt_compat import geometry_op_succeeded
+
         source_authid = (
             str(run.get("zone_crs_authid") or "").strip() or ZONE_WKT_CRS_AUTHID)
         target_authid = str(crs_authid or "").strip()
@@ -67,12 +69,12 @@ def zone_geometry_from_run(run: dict, crs_authid: str):
         target = QgsCoordinateReferenceSystem(target_authid)
         if not source.isValid() or not target.isValid():
             return None
-        # transform() answers 0 on success and edits the geometry in place, so
-        # anything else leaves half-moved coordinates behind. A zone on the
-        # wrong ground clips every real object away, which is worse than no
-        # clip at all: refuse it.
-        if geom.transform(QgsCoordinateTransform(
-                source, target, QgsCoordinateTransformContext())) != 0:
+        # transform() edits the geometry in place, so anything short of
+        # success leaves half-moved coordinates behind. A zone on the wrong
+        # ground clips every real object away, which is worse than no clip at
+        # all: refuse it.
+        if not geometry_op_succeeded(geom.transform(QgsCoordinateTransform(
+                source, target, QgsCoordinateTransformContext()))):
             return None
         return None if geom.isEmpty() else geom
     except Exception:  # noqa: BLE001 -- an unreadable zone clips nothing

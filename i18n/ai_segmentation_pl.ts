@@ -3,6 +3,10 @@
 <context>
     <name>AISegmentation</name>
     <message>
+        <source>Saving...</source>
+        <translation>Zapisywanie...</translation>
+    </message>
+    <message>
         <source>Your selection is sent to our servers in Europe {dot} {privacy}</source>
         <translation>Twój wybór jest wysyłany na nasze serwery w Europie {dot} {privacy}</translation>
     </message>
@@ -4765,6 +4769,10 @@ blokują lokalne środowisko AI wtyczki.</translation>
     <message>
         <source>the download stalled, no data was received</source>
         <translation>pobieranie zatrzymało się, nie odebrano danych</translation>
+    </message>
+    <message>
+        <source>the network reported: {error}</source>
+        <translation>sieć zgłosiła: {error}</translation>
     </message>
 </context>
 </TS>

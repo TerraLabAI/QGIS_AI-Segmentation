@@ -22,7 +22,11 @@ from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QColor
 
 from ...core.i18n import tr
-from ...core.qt_compat import PolygonGeometry, safe_disconnect
+from ...core.qt_compat import (
+    PolygonGeometry,
+    geometry_op_succeeded,
+    safe_disconnect,
+)
 from ...core.shape_edits import KIND_MERGE
 from ..canvas_palette import GRID_LINE, ZONE_FILL, ZONE_STROKE
 from ..shortcut_filter import ShortcutFilter
@@ -437,10 +441,10 @@ class AutoZoneMixin:
             try:
                 xform = QgsCoordinateTransform(
                     src, canvas_crs, QgsProject.instance())
-                # 0 is success. Anything else leaves part of the ring moved and
+                # Anything but success leaves part of the ring moved and
                 # part of it where it was, which draws a zone over ground
                 # nobody picked.
-                if geom.transform(xform) != 0:
+                if not geometry_op_succeeded(geom.transform(xform)):
                     return None
             except Exception:  # nosec B110 -- antimeridian, invalid CRS, etc.
                 return None
@@ -471,9 +475,9 @@ class AutoZoneMixin:
             try:
                 xform = QgsCoordinateTransform(
                     src, canvas_crs, QgsProject.instance())
-                # 0 is success; a refused transform leaves a half-moved
-                # rectangle, which is ground the user never picked.
-                if geom.transform(xform) != 0:
+                # A refused transform leaves a half-moved rectangle,
+                # which is ground the user never picked.
+                if not geometry_op_succeeded(geom.transform(xform)):
                     return None
             except Exception:  # nosec B110 -- antimeridian, invalid CRS, etc.
                 return None
@@ -609,10 +613,10 @@ class AutoZoneMixin:
                     return "ok"
                 xform = QgsCoordinateTransform(
                     canvas_crs, layer_crs, QgsProject.instance())
-                # 0 is success. A half-moved zone would be compared against the
-                # raster's extent as if it were on the ground, and the answer
-                # would be a warning about the wrong place: skip the check.
-                if zone.transform(xform) != 0:
+                # A half-moved zone would be compared against the raster's
+                # extent as if it were on the ground, and the answer would be a
+                # warning about the wrong place: skip the check.
+                if not geometry_op_succeeded(zone.transform(xform)):
                     return "ok"
                 if zone.isEmpty():
                     return "ok"
@@ -1473,10 +1477,10 @@ class AutoZoneMixin:
             return geom
         try:
             xform = QgsCoordinateTransform(zone_crs, target_crs, QgsProject.instance())
-            # 0 is success. A half-moved clip polygon is worse than none: every
-            # detection is tested against it, so the run would come back empty
-            # with nothing to say why.
-            if geom.transform(xform) != 0:
+            # A half-moved clip polygon is worse than none: every detection
+            # is tested against it, so the run would come back empty with
+            # nothing to say why.
+            if not geometry_op_succeeded(geom.transform(xform)):
                 return None
         except Exception:  # nosec B110 -- antimeridian, invalid CRS, etc.
             return None

@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import os
 import platform
+import re
 import shutil
 import stat
 import subprocess  # nosec B404
@@ -70,28 +71,36 @@ def tr(text: str) -> str:
 
 STANDALONE_DIR = os.path.join(PLUGIN_CACHE_DIR, "python_standalone")
 
-#: The two 4xx answers that mean "ask again later" rather than "not here":
-#: a request timeout and a rate limit. Every other 4xx is about the address.
-_RETRIABLE_STATUSES = (408, 429)
+#: The three answers that say the asset is not published for this build:
+#: forbidden, absent, withdrawn. They read the same to a caller: retrying the
+#: same address cannot change the answer, and the fallback archive is the only
+#: thing that recovers the machine. Treating 403 and 410 as plain failures
+#: ended the install with a variant left untried.
+_UNAVAILABLE_STATUSES = (403, 404, 410)
+
+#: The same three in an error string, for the transfers that end with no status
+#: at all. The codes need a boundary on each side or a release tag like
+#: 20240415 reads as a 404; the words are how Qt spells them.
+_UNAVAILABLE_IN_TEXT = re.compile(r"\b(?:403|404|410)\b|Not Found|Forbidden|Gone")
 
 
 def _asset_unavailable(status, error_msg: str) -> bool:
     """Whether this address will never serve the archive.
 
-    403, 404 and 410 all say the asset is not published for this build, and so
-    does any other 4xx that is not a timeout or a rate limit. They read the
-    same to a caller: retrying the same address cannot change the answer, and
-    the fallback archive is the only thing that recovers the machine. Treating
-    403 and 410 as plain failures ended the install with a variant left
-    untried.
+    Only the three answers above. Every other 4xx, a timeout and a rate limit
+    among them, is about the moment rather than the address, so it keeps its
+    retries. The error text is read only when the transfer came back with no
+    status to read, which is what a connection cut mid-answer looks like.
     """
     try:
         code = int(status)
     except (TypeError, ValueError):
         code = 0
-    if 400 <= code < 500 and code not in _RETRIABLE_STATUSES:
+    if code in _UNAVAILABLE_STATUSES:
         return True
-    return "404" in error_msg or "Not Found" in error_msg
+    if 400 <= code < 500:
+        return False
+    return bool(_UNAVAILABLE_IN_TEXT.search(error_msg or ""))
 
 
 def resolved_release_tag() -> str:

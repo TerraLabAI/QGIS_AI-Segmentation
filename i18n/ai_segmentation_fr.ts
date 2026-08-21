@@ -4,6 +4,10 @@
     <name>AISegmentation</name>
     
     <message>
+        <source>Saving...</source>
+        <translation>Enregistrement...</translation>
+    </message>
+    <message>
         <source>Your selection is sent to our servers in Europe {dot} {privacy}</source>
         <translation>Votre sélection est envoyée à nos serveurs en Europe {dot} {privacy}</translation>
     </message>
@@ -5001,6 +5005,10 @@ bloque l&apos;environnement IA local du plugin.</translation>
     <message>
         <source>the download stalled, no data was received</source>
         <translation>le téléchargement est bloqué, aucune donnée n’a été reçue</translation>
+    </message>
+    <message>
+        <source>the network reported: {error}</source>
+        <translation>le réseau a signalé : {error}</translation>
     </message>
 </context>
 </TS>

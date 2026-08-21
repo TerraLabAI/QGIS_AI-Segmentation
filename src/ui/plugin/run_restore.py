@@ -476,7 +476,19 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
                 if clipped is None:
                     dropped_outside += 1
                     continue
-                geom = to_multipolygon(repair_polygon(clipped) or clipped)
+                # The worker repairs what the clip CUT and nothing else: the
+                # polygonizer already hands back valid polygons, repair costs a
+                # full validity walk on every one of them, and only an
+                # intersection can return the collection it exists for.
+                # clip_geometry_to_zone gives back the same geometry it was
+                # handed when the engine vouched for it whole, so identity is
+                # what tells the two apart. With no zone there is no engine to
+                # vouch for anything, and then the repair stands, as it does in
+                # the worker.
+                if zone is not None and clipped is geom:
+                    geom = to_multipolygon(clipped)
+                else:
+                    geom = to_multipolygon(repair_polygon(clipped) or clipped)
                 if geom is None or geom.isEmpty():
                     continue
                 # After the clip, as in the worker: a detection trimmed to a

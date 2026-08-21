@@ -136,8 +136,11 @@ _CARD_STYLE = (
 
 
 # Last-resort denominator for a paid plan when neither the usage response nor
-# the account row carries one. Never used to grant or spend anything.
-_PRO_MONTHLY_CREDITS_FALLBACK = 5000
+# the account row carries one. Never used to grant or spend anything, but it IS
+# printed: a wrong number here reads as a wrong allowance on the billing card.
+# It said 5000 while the plan sold 2000, so a Pro whose payload lost its limit
+# saw a denominator two and a half times the truth.
+_PRO_MONTHLY_CREDITS_FALLBACK = 2000
 
 
 class PlanCredits(NamedTuple):

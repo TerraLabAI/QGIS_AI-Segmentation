@@ -354,13 +354,23 @@ class AutoFlowMixin:
             # gauge. Read the getter, never a second copy of the number: a
             # literal here would let the gauge disagree with the credit gate.
             from ...core.detection_policy import free_monthly_allowance
-            total = int(usage.get("free_detections_total") or free_monthly_allowance())
+            # A number, and a positive one: a served 0 is not a denominator any
+            # gauge can draw, and a served string would blow up int(). Anything
+            # else means the field did not travel, which is what the dial is for.
+            served_total = usage.get("free_detections_total")
+            total = (int(served_total)
+                     if isinstance(served_total, (int, float)) and served_total > 0
+                     else free_monthly_allowance())
         else:
             used = usage.get("images_used", 0) or 0
             limit = usage.get("images_limit", 0) or 0
             credits = max(0, limit - used)
             total = limit or None
-        reset_date = usage.get("period_end") or ""
+        # Both names carry the same instant. Read the newer one first, exactly
+        # as the account dialog does: the two surfaces must never disagree
+        # about the renewal day, and a payload that ships only one of them
+        # would otherwise blank the whole dock while the dialog kept its date.
+        reset_date = usage.get("reset_date") or usage.get("period_end") or ""
         self.dock_widget.set_auto_credits(credits, reset_date,
                                           is_subscriber=not is_free,
                                           total=total)

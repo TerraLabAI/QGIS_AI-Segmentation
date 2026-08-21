@@ -30,7 +30,7 @@ import math
 
 from qgis.core import QgsApplication, QgsTask
 
-from ...core.qt_compat import silent_task_flags
+from ...core.qt_compat import geometry_op_succeeded, silent_task_flags
 from .run_zone_clip import ZONE_WKT_CRS_AUTHID
 
 # Geometry ceiling for the uploaded FeatureCollection. Above this the summary
@@ -246,12 +246,12 @@ def zone_outline_for_upload(plugin) -> tuple[str, str] | None:
             target = QgsCoordinateReferenceSystem(ZONE_WKT_CRS_AUTHID)
             if not source.isValid() or not target.isValid():
                 return None
-            # 0 is success. Anything else leaves half-moved coordinates, and a
+            # Anything but success leaves half-moved coordinates, and a
             # zone on the wrong ground clips a later restore down to nothing,
             # so the row travels without an outline instead.
-            if outline.transform(QgsCoordinateTransform(
+            if not geometry_op_succeeded(outline.transform(QgsCoordinateTransform(
                     source, target,
-                    QgsProject.instance().transformContext())) != 0:
+                    QgsProject.instance().transformContext()))):
                 return None
             if outline.isEmpty():
                 return None
