@@ -3,7 +3,7 @@ name=AI Segmentation by TerraLab
 description=AI segmentation for QGIS: detect and extract building footprints, trees, vegetation or any object from your raster, then refine & export as vector polygons
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
-version=2.5.0
+version=2.5.1
 author=Yvann and Lilien from TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
@@ -29,6 +29,14 @@ about=
     • Multilingual: English, French, Portuguese, Spanish, German, Italian, Dutch, Polish, Indonesian, Japanese, Chinese
 
 changelog=
+    2.5.1
+    - Installing on Windows works where it used to stop: a path with a space in it, a file QGIS itself holds open, and a package that has to be built
+    - A package left broken is repaired on its own, instead of sending you to reinstall the one thing that was never the problem
+    - "Another process is using the file" now tells you to restart QGIS, instead of blaming your antivirus
+    - Closing QGIS during a run, a download or an install no longer crashes it
+    - Removing the downloaded AI data can be stopped, and says so when the folder is only partly cleared
+    - A button that opens a page or a folder hands you the address when your desktop has no browser to open it with
+    - Your output file rolls over correctly on a network drive
     2.5.0
     - A wide zone now reads as sharply as a small one, so a big run no longer comes back coarser than a small one
     - Your run reads the sharpest picture the map source actually holds, instead of enlarging one tile into blurry copies
