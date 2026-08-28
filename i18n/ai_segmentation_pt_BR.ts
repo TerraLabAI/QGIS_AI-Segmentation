@@ -5031,5 +5031,45 @@ está bloqueando o ambiente de IA local do plugin.</translation>
         <source>This map source has no sharper picture of this area. The run uses the sharpest one it has, and costs fewer tiles than the estimate.</source>
         <translation>Esta fonte do mapa não tem uma imagem mais nítida desta área. A execução usa a mais nítida disponível e custa menos tiles do que o estimado.</translation>
     </message>
+    <message>
+        <source>QGIS could not open a file manager.</source>
+        <translation>O QGIS não conseguiu abrir um gerenciador de arquivos.</translation>
+    </message>
+    <message>
+        <source>The folder is copied to your clipboard: paste it into your file manager.</source>
+        <translation>A pasta foi copiada para a área de transferência: cole-a no gerenciador de arquivos.</translation>
+    </message>
+    <message>
+        <source>Copy the folder below and paste it into your file manager.</source>
+        <translation>Copie a pasta abaixo e cole-a no gerenciador de arquivos.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open your email app.</source>
+        <translation>O QGIS não conseguiu abrir seu aplicativo de e-mail.</translation>
+    </message>
+    <message>
+        <source>The support address is copied to your clipboard: paste it into your email app.</source>
+        <translation>O endereço de suporte foi copiado para a área de transferência: cole-o no aplicativo de e-mail.</translation>
+    </message>
+    <message>
+        <source>Copy the support address below into your email app.</source>
+        <translation>Copie o endereço de suporte abaixo para o aplicativo de e-mail.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser.</source>
+        <translation>O QGIS não conseguiu abrir um navegador.</translation>
+    </message>
+    <message>
+        <source>The address is copied to your clipboard: paste it into a browser to continue.</source>
+        <translation>O endereço foi copiado para a área de transferência: cole-o em um navegador para continuar.</translation>
+    </message>
+    <message>
+        <source>Copy the address below and paste it into a browser.</source>
+        <translation>Copie o endereço abaixo e cole-o em um navegador.</translation>
+    </message>
+    <message>
+        <source>Open it yourself</source>
+        <translation>Abra você mesmo</translation>
+    </message>
 </context>
 </TS>

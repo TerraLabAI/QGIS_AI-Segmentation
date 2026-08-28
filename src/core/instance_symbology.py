@@ -241,10 +241,9 @@ def _bucketed_instance_renderer(layer, palette):
     This is what a dense layer gets. The colours are the same golden-angle walk
     the expression below builds, but read from a fixed set of categories rather
     than computed for every polygon on every repaint, which QGIS caches nothing
-    of. Measured on 2 000 objects: 31 ms a frame against 142 ms, and on 8 000,
-    116 ms against 569 ms. The trade is that hues repeat every
-    ``INSTANCE_HUE_BUCKETS`` objects; at that count no two neighbours share one,
-    which is the whole job.
+    of. On a dense layer it costs several times the frame time. The trade is
+    that hues repeat every ``INSTANCE_HUE_BUCKETS`` objects; at that count no
+    two neighbours share one, which is the whole job.
     """
     from qgis.core import QgsCategorizedSymbolRenderer, QgsRendererCategory
 

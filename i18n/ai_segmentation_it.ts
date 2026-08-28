@@ -5007,5 +5007,45 @@ sta bloccando l&apos;ambiente AI locale del plugin.</translation>
         <source>This map source has no sharper picture of this area. The run uses the sharpest one it has, and costs fewer tiles than the estimate.</source>
         <translation>Questo layer di base non ha un'immagine più nitida di quest'area. L'esecuzione usa quella più nitida disponibile e richiede meno tile rispetto alla stima.</translation>
     </message>
+    <message>
+        <source>QGIS could not open a file manager.</source>
+        <translation>QGIS non ha potuto aprire un gestore dei file.</translation>
+    </message>
+    <message>
+        <source>The folder is copied to your clipboard: paste it into your file manager.</source>
+        <translation>La cartella è stata copiata negli appunti: incollala nel gestore dei file.</translation>
+    </message>
+    <message>
+        <source>Copy the folder below and paste it into your file manager.</source>
+        <translation>Copia la cartella qui sotto e incollala nel gestore dei file.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open your email app.</source>
+        <translation>QGIS non ha potuto aprire la tua app di posta elettronica.</translation>
+    </message>
+    <message>
+        <source>The support address is copied to your clipboard: paste it into your email app.</source>
+        <translation>L'indirizzo dell'assistenza è stato copiato negli appunti: incollalo nella tua app di posta elettronica.</translation>
+    </message>
+    <message>
+        <source>Copy the support address below into your email app.</source>
+        <translation>Copia l'indirizzo dell'assistenza qui sotto nella tua app di posta elettronica.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser.</source>
+        <translation>QGIS non ha potuto aprire un browser.</translation>
+    </message>
+    <message>
+        <source>The address is copied to your clipboard: paste it into a browser to continue.</source>
+        <translation>L'indirizzo è stato copiato negli appunti: incollalo in un browser per continuare.</translation>
+    </message>
+    <message>
+        <source>Copy the address below and paste it into a browser.</source>
+        <translation>Copia l'indirizzo qui sotto e incollalo in un browser.</translation>
+    </message>
+    <message>
+        <source>Open it yourself</source>
+        <translation>Aprilo manualmente</translation>
+    </message>
 </context>
 </TS>

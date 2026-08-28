@@ -1,9 +1,9 @@
 """The two pieces the Automatic recap card is built from.
 
-It was the Semi-Auto recap's own module until 2026-08-11, when that card was
-removed: a line counting what the last session produced sat on the Start view
-for the rest of the session, and the saved layer in the legend says the same
-thing without taking a quarter of the panel. What is left here is what
+It was the Semi-Auto recap's own module until that card was removed: a line
+counting what the last session produced sat on the Start view for the rest of
+the session, and the saved layer in the legend says the same thing without
+taking a quarter of the panel. What is left here is what
 ``auto_recap.py`` still reads.
 """
 from __future__ import annotations

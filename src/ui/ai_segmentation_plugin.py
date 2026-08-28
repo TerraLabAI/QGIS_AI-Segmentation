@@ -85,7 +85,7 @@ from .plugin.manual_shape_cache import ManualShapeCacheMixin
 from .plugin.manual_workflow import ManualWorkflowMixin
 from .plugin.qgis_edit_bridge import QgisEditBridgeMixin
 from .plugin.qgis_edit_tool_messages import QgisEditToolMessagesMixin
-from .plugin.shared import park_orphaned_worker
+from .plugin.shared import join_orphaned_workers, park_orphaned_worker
 
 
 class AISegmentationPlugin(
@@ -419,7 +419,7 @@ class AISegmentationPlugin(
         # _previous_map_tool / _restore_previous_map_tool).
         self._maptool_before_zone = None
 
-        # Auto detection worker state (plan #78)
+        # Auto detection worker state
         self._auto_worker = None  # AutoDetectionWorker | None
         # Main-thread per-tile render bridge for the active run (held so it is
         # not garbage-collected mid-run; nulled when the run winds down).
@@ -484,7 +484,7 @@ class AISegmentationPlugin(
         # so the generic "no matches" note never covers the real reason.
         self._auto_quota_stop_banner: str | None = None
         self._last_usage: dict = {}  # last fetched usage (credits/is_free_tier) for telemetry
-        self._usage_fetch_task = None  # GenericRequestTask | None (plan #79)
+        self._usage_fetch_task = None  # GenericRequestTask | None
         # One-shot guard so a lapsed-subscription (failed payment) notice is
         # shown at most once per session, not on every credits refresh.
         self._billing_warning_shown = False
@@ -508,7 +508,7 @@ class AISegmentationPlugin(
         # user's own words; this only steers the policy lookups.
         self._auto_token_cache: dict[str, str] = {}
         self._auto_token_task = None  # GenericRequestTask | None
-        # MCP headless result bookkeeping (plan #79): set by signal handlers.
+        # MCP headless result bookkeeping: set by signal handlers.
         self._last_auto_result: dict | None = None
         # Timing/observability for the auto run: render duration (the upfront
         # basemap fetch) and the detection-phase start, logged as a run summary at
@@ -520,7 +520,7 @@ class AISegmentationPlugin(
         self._auto_tel_stop_reason: str | None = None
         self._auto_skipped_tiles: int = 0
         self._auto_timeout_tiles: int = 0
-        # Post-run review state (plan #78 round 5): geoms waiting for explicit Export.
+        # Post-run review state: geoms waiting for explicit Export.
         self._auto_review: dict | None = None
         # True while _run_auto_detect_headless drives a synchronous MCP call.
         self._auto_headless_run: bool = False
@@ -1468,6 +1468,17 @@ class AISegmentationPlugin(
         # half-written venv, or abort all of QGIS outright. A thread that
         # outlives the wait keeps its last reference parked until its finished
         # signal fires, mirroring the auto worker path (see park_orphaned_worker).
+        # The model download is the one worker whose stop does not travel
+        # through cancel(): it sits in a nested event loop on its own thread,
+        # so the request goes through a module flag its poll reads twice a
+        # second. Only the Cancel button ever set it, so quitting QGIS during
+        # "Downloading the model" left a thread that could retry for the best
+        # part of an hour, and ~QThread aborted QGIS on the way out.
+        try:
+            from ..core.checkpoint_manager import request_download_cancel
+            request_download_cancel()
+        except Exception:
+            pass  # nosec B110 - teardown never blocks on this
         for worker in _qthread_workers:
             # isRunning() INSIDE the try, like the wait loop below. A worker
             # whose C++ half is already gone raises there, and this is step 4
@@ -1486,7 +1497,6 @@ class AISegmentationPlugin(
         # above, so the ones that can stop stop together; this only bounds how
         # long we wait before parking the rest.
         deadline = time.monotonic() + 3.0
-        _parked_workers = []
         for worker in _qthread_workers:
             # isRunning() inside the try here too: a dead C++ wrapper raised
             # RuntimeError on the line that reads it and took the rest of
@@ -1498,7 +1508,6 @@ class AISegmentationPlugin(
                 if left_ms > 0 and worker.wait(left_ms):
                     continue
                 park_orphaned_worker(worker)
-                _parked_workers.append(worker)
             except RuntimeError:
                 pass
         self.deps_install_worker = None
@@ -1689,22 +1698,15 @@ class AISegmentationPlugin(
         self._exemplar_maptool = None
         self._shape_maptool = None
 
-        # 11. One last bounded wait on the threads parked above. Nothing else
-        # ever joins them: a parked thread that is still running when Python
-        # shuts down is destroyed by ~QThread, which aborts the whole process.
-        # A wait here cannot cover a long install, so it is a narrower window,
-        # not a closed one, and it stays bounded so quitting never hangs.
-        if _parked_workers:
-            park_deadline = time.monotonic() + 5.0
-            for worker in _parked_workers:
-                try:
-                    left_ms = int(
-                        max(0.0, park_deadline - time.monotonic()) * 1000)
-                    if left_ms <= 0:
-                        break
-                    worker.wait(left_ms)
-                except (RuntimeError, AttributeError):
-                    pass
+        # 11. One last bounded wait on EVERY parked thread, not only the ones
+        # step 4 parked. Nothing else ever joins them, and a parked thread still
+        # running when Python shuts down is destroyed by ~QThread, which aborts
+        # the whole process. This used to walk a local list, so the online tile
+        # fetch, the live stitcher, the review refine thread and the diagnostics
+        # collector were parked and then waited on by nobody. A wait here cannot
+        # cover a long install, so it is a narrower window, not a closed one,
+        # and it stays bounded so quitting never hangs.
+        join_orphaned_workers(5.0)
 
     def _ensure_dock_widget(self):
         """Create the dock widget and register it with QGIS (idempotent)."""
@@ -1759,7 +1761,7 @@ class AISegmentationPlugin(
             self._on_auto_layer_combo_changed)
         # Cancel button (dock stub is a pass; we wire the real handler here).
         self.dock_widget.auto_cancel_btn.clicked.connect(self._on_auto_cancel_clicked)
-        # Auto review panel signals (plan #78 round 5).
+        # Auto review panel signals.
         self.dock_widget.auto_refine_changed.connect(self._on_auto_refine_changed_debounced)
         self.dock_widget.auto_export_requested.connect(self._on_auto_export_clicked)
         self.dock_widget.auto_retry_requested.connect(self._on_auto_retry_guarded)

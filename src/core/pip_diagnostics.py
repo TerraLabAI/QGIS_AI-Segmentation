@@ -709,6 +709,13 @@ def is_antivirus_error(stderr: str) -> bool:
 # to file-locking by the current process, not to antivirus interference.
 _BINARY_MODULE_EXTENSIONS = (".pyd", ".dll", ".so", ".dylib")
 
+# ERROR_SHARING_VIOLATION: another process has the file open. It belongs to the
+# lock family only, never to the antivirus one, so it stays out of
+# _BLOCKED_ERROR_CODE_RE: telling a user to disable their scanner does nothing
+# for a DLL that QGIS itself imported. Anchored, for the same prefix reason as
+# the block above.
+_SHARING_VIOLATION_RE = re.compile(r"winerror\s+32\b|os error\s+32\b")
+
 
 def is_file_locked_error(output: str) -> bool:
     """Detect native-module file-lock errors during package upgrade.
@@ -740,7 +747,9 @@ def is_file_locked_error(output: str) -> bool:
     # substring "os error 5" is a prefix of the whole 50-to-59 network block,
     # so a cache on a mapped drive ("the network path was not found (os error
     # 53)") read as a locked binary and sent the user to restart QGIS.
-    return bool(_BLOCKED_ERROR_CODE_RE.search(lower)) or "permission denied" in lower
+    return (bool(_BLOCKED_ERROR_CODE_RE.search(lower))
+            or bool(_SHARING_VIOLATION_RE.search(lower))
+            or "permission denied" in lower)
 
 
 def get_file_locked_help() -> str:
@@ -764,9 +773,9 @@ def get_pip_antivirus_help(exclude_dir: str) -> str:
     """Get actionable help message for antivirus blocking pip.
 
     `exclude_dir` must be the whole plugin cache folder, never the venv alone.
-    Callers used to pass the venv, and a real 2026-07-27 install failure was
-    antivirus locking a file under `uv_cache`, a SIBLING of the venv: the user
-    was told to exclude a folder that could not stop the failure they had.
+    Callers used to pass the venv, but antivirus can lock a file under
+    `uv_cache`, a SIBLING of the venv, and then the user is told to exclude a
+    folder that cannot stop the failure they have.
     """
     steps = (
         tr(

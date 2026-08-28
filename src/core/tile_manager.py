@@ -16,8 +16,8 @@ OVERLAP_FRACTION = 0.20
 # Hard cap on tiles per run. Tiles stopped being credits when Automatic moved
 # to per-km2 billing: a run is priced on the surface the user drew, and the
 # tile count only moves how finely that surface is read. So this bounds the
-# two things tiles still cost, our GPU seconds and the user's wait, and
-# nothing else. Memory stays flat (tiles render just-in-time). Client fallback
+# two things tiles still cost, service time and the user's wait, and nothing
+# else. Memory stays flat (tiles render just-in-time). Client fallback
 # for the server policy's `max_tiles_per_run`.
 MAX_TILES = 2500
 # Target ground footprint per tile (meters). Used to size tiles when the source
@@ -49,9 +49,9 @@ DEFAULT_AUTO_TILE_BUDGET = 30
 
 # Hard ceiling on tiles the auto-picked default may propose. It existed to
 # stop one default run draining a credit allowance; per-km2 billing removed
-# that risk, so what it guards now is the wait and our GPU bill. It sits just
-# under MAX_TILES rather than at it, so the recommended level always leaves
-# the user somewhere finer to drag to. Client fallback for the server policy's
+# that risk, so what it guards now is the wait and the service time. It sits
+# just under MAX_TILES rather than at it, so the recommended level always
+# leaves the user somewhere finer to drag to. Client fallback for the server policy's
 # `seed_tile_cap`.
 AUTO_SEED_TILE_CAP = 2000
 
@@ -211,9 +211,8 @@ class TileManager:
         ``apply_cap=False`` returns the grid whatever its size, so the caller
         can cull it against the drawn polygon FIRST and cap what the run will
         really send. Every zone is a hand-drawn polygon and the grid covers its
-        bounding box, so the two counts are far apart: across 27 archived runs
-        only 26% of the bounding-box grid sat inside the zone. Capping before
-        the cull refused zones whose real run was a fraction of the ceiling.
+        bounding box, so the two counts are far apart. Capping before the
+        cull refused zones whose real run was a fraction of the ceiling.
         The uncapped path still stops at HARD_GRID_LIMIT, which is a memory
         guard and not a product limit.
 

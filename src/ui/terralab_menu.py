@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import os
 
-from qgis.PyQt.QtCore import QUrl
-from qgis.PyQt.QtGui import QDesktopServices, QIcon
+from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QMenu
+
+from .external_links import open_external_url
 
 TERRALAB_URL = (
     "https://terra-lab.ai"
@@ -51,7 +52,7 @@ def get_or_create_terralab_menu(main_window) -> QMenu:
     logo_path = _find_terralab_logo()
     website_icon = QIcon(logo_path) if logo_path else QIcon()
     more_action = menu.addAction(website_icon, "More from TerraLab...")
-    more_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(TERRALAB_URL)))
+    more_action.triggered.connect(lambda: open_external_url(TERRALAB_URL, parent=menu))
     return menu
 
 
@@ -116,7 +117,7 @@ def _get_or_create_plugins_submenu(iface) -> QMenu:
     check_update.triggered.connect(_open_plugin_manager_updates)
     website_icon = QIcon(logo_path) if logo_path else QIcon()
     more_action = submenu.addAction(website_icon, "More from TerraLab...")
-    more_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(TERRALAB_URL)))
+    more_action.triggered.connect(lambda: open_external_url(TERRALAB_URL, parent=submenu))
     return submenu
 
 

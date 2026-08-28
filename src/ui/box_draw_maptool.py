@@ -1,6 +1,6 @@
 """Drag-rectangle map tool for object-designating gestures.
 
-UNREACHABLE (2026-07-30): no caller in `src/`. The example and exclude draws
+UNREACHABLE: no caller in `src/`. The example and exclude draws
 were its last ones and now trace the object point by point with
 `PolygonZoneMapTool`, because users asked to outline the object itself rather
 than a box around it. Kept because it is the ready-made rectangle gesture, it

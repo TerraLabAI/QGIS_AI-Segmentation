@@ -5031,5 +5031,45 @@ está bloqueando el entorno de IA local del complemento.</translation>
         <source>This map source has no sharper picture of this area. The run uses the sharpest one it has, and costs fewer tiles than the estimate.</source>
         <translation>Esta fuente de mapa no tiene una imagen más nítida de esta zona. La ejecución usa la más nítida disponible y consume menos tiles que la estimación.</translation>
     </message>
+    <message>
+        <source>QGIS could not open a file manager.</source>
+        <translation>QGIS no pudo abrir un gestor de archivos.</translation>
+    </message>
+    <message>
+        <source>The folder is copied to your clipboard: paste it into your file manager.</source>
+        <translation>La carpeta se copió al portapapeles: péguela en el gestor de archivos.</translation>
+    </message>
+    <message>
+        <source>Copy the folder below and paste it into your file manager.</source>
+        <translation>Copie la carpeta siguiente y péguela en el gestor de archivos.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open your email app.</source>
+        <translation>QGIS no pudo abrir su aplicación de correo.</translation>
+    </message>
+    <message>
+        <source>The support address is copied to your clipboard: paste it into your email app.</source>
+        <translation>La dirección de soporte se copió al portapapeles: péguela en su aplicación de correo.</translation>
+    </message>
+    <message>
+        <source>Copy the support address below into your email app.</source>
+        <translation>Copie la dirección de soporte siguiente en su aplicación de correo.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser.</source>
+        <translation>QGIS no pudo abrir un navegador.</translation>
+    </message>
+    <message>
+        <source>The address is copied to your clipboard: paste it into a browser to continue.</source>
+        <translation>La dirección se copió al portapapeles: péguela en un navegador para continuar.</translation>
+    </message>
+    <message>
+        <source>Copy the address below and paste it into a browser.</source>
+        <translation>Copie la dirección siguiente y péguela en un navegador.</translation>
+    </message>
+    <message>
+        <source>Open it yourself</source>
+        <translation>Ábralo manualmente</translation>
+    </message>
 </context>
 </TS>

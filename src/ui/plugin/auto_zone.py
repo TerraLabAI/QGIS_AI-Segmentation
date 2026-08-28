@@ -928,8 +928,8 @@ class AutoZoneMixin:
         # Build the grid WITHOUT the per-run cap, cull it, then cap. The grid
         # covers the zone's bounding box and the run sends only the tiles the
         # drawn polygon touches, so capping first refused zones whose real run
-        # was a fraction of the ceiling: across 27 archived runs the polygon
-        # kept 26% of the bounding-box grid, and a road zone kept 10%.
+        # was a fraction of the ceiling: the drawn polygon keeps only part of
+        # its bounding-box grid, and least of all on a long thin zone.
         tiles_list = self._tile_manager.compute_grid(
             pixel_w, pixel_h, apply_cap=False)
         if tiles_list is not None:

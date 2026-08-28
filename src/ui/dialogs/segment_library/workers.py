@@ -44,6 +44,10 @@ class _HistoryFetchWorker(QThread):
         self._before = before
 
     def run(self):
+        # Interrupted means the dialog that would receive the answer is going,
+        # so nothing is fetched and nothing is emitted into it.
+        if self.isInterruptionRequested():
+            return
         try:
             resp = self._client.get_seg_history(
                 self._auth,
@@ -53,7 +57,10 @@ class _HistoryFetchWorker(QThread):
                 deleted=False,
             )
         except Exception as err:  # noqa: BLE001
-            self.failed.emit(self._view, f"exception: {err}")
+            if not self.isInterruptionRequested():
+                self.failed.emit(self._view, f"exception: {err}")
+            return
+        if self.isInterruptionRequested():
             return
         code = _history_error(resp)
         if code is not None:
@@ -79,6 +86,10 @@ class _RunFavoriteWorker(QThread):
         self._fav = is_favorite
 
     def run(self):
+        # Interrupted means the dialog that would revert the star is going, so
+        # the call is skipped and nothing is emitted into it.
+        if self.isInterruptionRequested():
+            return
         ok = False
         try:
             resp = self._client.set_seg_run_favorite(
@@ -86,6 +97,8 @@ class _RunFavoriteWorker(QThread):
             ok = _history_error(resp) is None
         except Exception:  # noqa: BLE001
             ok = False
+        if self.isInterruptionRequested():
+            return
         self.done.emit(self._run_id, self._fav, ok)
 
 
@@ -106,6 +119,10 @@ class _RunZoneFetchWorker(QThread):
         self._run = dict(run)
 
     def run(self):
+        # Interrupted means the dialog that would point at the zone is going,
+        # so nothing is fetched and nothing is emitted into it.
+        if self.isInterruptionRequested():
+            return
         try:
             detail = self._client.get_seg_run_detail(
                 self._auth,
@@ -113,7 +130,10 @@ class _RunZoneFetchWorker(QThread):
                 group_key=self._run.get("group_key"),
             )
         except Exception as err:  # noqa: BLE001
-            self.failed.emit(f"detail exception: {err}")
+            if not self.isInterruptionRequested():
+                self.failed.emit(f"detail exception: {err}")
+            return
+        if self.isInterruptionRequested():
             return
         code = _history_error(detail)
         if code is not None:

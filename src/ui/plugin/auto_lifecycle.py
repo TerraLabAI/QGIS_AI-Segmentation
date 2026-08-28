@@ -205,7 +205,7 @@ class AutoLifecycleMixin:
             except Exception:  # nosec B110
                 pass
 
-    # No cross-session recovery offer (removed 2026-07-30, Yvann's call): the
+    # No cross-session recovery offer: the
     # message bar asked about a run the user had already walked away from, and
     # it only ever fired after QGIS died with a review open. The autosave table
     # itself still goes to disk, and the SAME-session error path in
@@ -1010,11 +1010,11 @@ class AutoLifecycleMixin:
         #
         # It is also the difference between a map that draws and a map that
         # does not. Colouring per object needs an expression QGIS evaluates for
-        # every polygon on every repaint, which it caches nothing of: measured
-        # at 142 ms against 56 ms for 2 000 objects, 569 ms against 223 ms for
-        # 8 000, paid again on every pan and every zoom for the life of the
-        # layer. auto_review_display reached the same conclusion for the review
-        # and moved to bucketed categories; the export goes flat.
+        # every polygon on every repaint, which it caches nothing of, so a
+        # dense layer costs several times the frame time, paid again on every
+        # pan and every zoom for the life of the layer. auto_review_display
+        # reached the same conclusion for the review and moved to bucketed
+        # categories; the export goes flat.
         # The id, not the layer: the Start page's two recap lines link to the
         # result, and the user may remove it before clicking, so the link is
         # resolved against the project at click time.

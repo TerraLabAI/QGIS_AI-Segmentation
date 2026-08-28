@@ -4795,5 +4795,45 @@ blokują lokalne środowisko AI wtyczki.</translation>
         <source>This map source has no sharper picture of this area. The run uses the sharpest one it has, and costs fewer tiles than the estimate.</source>
         <translation>To źródło mapy nie ma bardziej szczegółowego obrazu tego obszaru. Zadanie korzysta z najbardziej szczegółowego dostępnego obrazu i kosztuje mniej kafelków niż szacowano.</translation>
     </message>
+    <message>
+        <source>QGIS could not open a file manager.</source>
+        <translation>QGIS nie może otworzyć menedżera plików.</translation>
+    </message>
+    <message>
+        <source>The folder is copied to your clipboard: paste it into your file manager.</source>
+        <translation>Folder został skopiowany do schowka: wklej go do menedżera plików.</translation>
+    </message>
+    <message>
+        <source>Copy the folder below and paste it into your file manager.</source>
+        <translation>Skopiuj poniższy folder i wklej go do menedżera plików.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open your email app.</source>
+        <translation>QGIS nie może otworzyć aplikacji pocztowej.</translation>
+    </message>
+    <message>
+        <source>The support address is copied to your clipboard: paste it into your email app.</source>
+        <translation>Adres pomocy technicznej został skopiowany do schowka: wklej go do aplikacji pocztowej.</translation>
+    </message>
+    <message>
+        <source>Copy the support address below into your email app.</source>
+        <translation>Skopiuj poniższy adres pomocy technicznej do aplikacji pocztowej.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser.</source>
+        <translation>QGIS nie może otworzyć przeglądarki.</translation>
+    </message>
+    <message>
+        <source>The address is copied to your clipboard: paste it into a browser to continue.</source>
+        <translation>Adres został skopiowany do schowka: wklej go do przeglądarki, aby kontynuować.</translation>
+    </message>
+    <message>
+        <source>Copy the address below and paste it into a browser.</source>
+        <translation>Skopiuj poniższy adres i wklej go do przeglądarki.</translation>
+    </message>
+    <message>
+        <source>Open it yourself</source>
+        <translation>Otwórz samodzielnie</translation>
+    </message>
 </context>
 </TS>

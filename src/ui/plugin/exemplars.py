@@ -1006,9 +1006,9 @@ class ExemplarsMixin:
             img, act = None, None
         if img is None or img.isNull() or act is None:
             return None
-        # Natural context is sent (no grey mask): live user feedback showed the
-        # real surrounding pixels recall more true objects than an object-on-grey
-        # patch. The tight obj_box below keeps the object dominant in the ROI.
+        # Natural context is sent (no grey mask): the real surrounding pixels
+        # find more true objects than an object cut onto grey. The tight
+        # obj_box below keeps the object dominant in the ROI.
         # Object box (the drawn bbox) within the rendered crop, in px.
         aw = act.xMaximum() - act.xMinimum()
         ah = act.yMaximum() - act.yMinimum()

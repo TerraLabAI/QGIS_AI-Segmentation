@@ -30,10 +30,10 @@ from .shared import (
 
 # A cooperative stop normally confirms within ~3s (the poll loop breaks within
 # one 250ms slice, then drains its in-flight tiles for up to _STOP_DRAIN_BUDGET_S).
-# If a wedged reply (a GPU cold-starting past our submit deadline) keeps the
-# worker from confirming, this watchdog forces the UI out of the run so Cancel
-# can never read as ignored. Comfortably past the normal path, short enough that
-# a genuinely stuck cancel still feels handled.
+# If a wedged reply (the service cold-starting past our submit deadline) keeps
+# the worker from confirming, this watchdog forces the UI out of the run so
+# Cancel can never read as ignored. Comfortably past the normal path, short
+# enough that a genuinely stuck cancel still feels handled.
 _CANCEL_WATCHDOG_MS = 5000
 
 # Stall watchdog. The worker's poll loop gives every in-flight tile a per-tile

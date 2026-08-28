@@ -10,8 +10,7 @@ from __future__ import annotations
 import os
 from typing import NamedTuple
 
-from qgis.PyQt.QtCore import QRect, Qt, QTimer, QUrl, pyqtSignal
-from qgis.PyQt.QtGui import QDesktopServices
+from qgis.PyQt.QtCore import QRect, Qt, QTimer, pyqtSignal
 from qgis.PyQt.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -46,6 +45,7 @@ from .ai_segmentation_dockwidget import (
 from .dock.font_scale import scale_px_length
 from .dock.ui_refresh import format_quota_count
 from .dock.upsell_card import UpsellCard
+from .external_links import open_external_url, open_local_path
 
 PRODUCT_NAME = "AI Segmentation"
 
@@ -788,7 +788,7 @@ class AccountSettingsDialog(QDialog):
             telemetry_session_events.track_account_dashboard_opened(source)
         except Exception:
             pass  # nosec B110 -- telemetry never blocks the handoff
-        QDesktopServices.openUrl(QUrl(get_dashboard_url()))
+        open_external_url(get_dashboard_url(), parent=self)
 
     def _build_subscription_card(self, sub: dict, usage: dict | None = None) -> QFrame:
         """Plan status, credits (Pro) or monthly free allowance (Free), with a
@@ -1052,7 +1052,7 @@ class AccountSettingsDialog(QDialog):
             telemetry_session_events.track_pro_upsell_clicked(source="account_dialog")
         except Exception:
             pass  # nosec B110
-        QDesktopServices.openUrl(QUrl(get_upgrade_url()))
+        open_external_url(get_upgrade_url(), parent=self)
 
     def _build_dependencies_card(self) -> QFrame:
         """Local AI dependencies: where they live, how big, and an Open button.
@@ -1384,7 +1384,7 @@ class AccountSettingsDialog(QDialog):
             if parent == target:
                 break
             target = parent
-        QDesktopServices.openUrl(QUrl.fromLocalFile(target))
+        open_local_path(target)
 
     @staticmethod
     def _format_dir_size(path: str) -> str:

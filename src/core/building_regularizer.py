@@ -1308,16 +1308,13 @@ def _regularize_part_local(
     ``c = x1*y2 - x2*y1`` out of absolute positions, and
     calculate_line_intersection rejects a parallel pair with ``d != 0``, an
     exact test. Both therefore behave differently depending on how large the
-    numbers in the layer happen to be, and a geographic CRS makes them tiny: on
-    a WGS84 run the ring that came back had a symmetric difference of about 75
-    million times the object's own area, and only the IoU guard below kept that
-    off the map. What the user saw was Right angles doing nothing at all, on
-    every object, with no message. Measured on the same run once the frame is
-    local: square corners 0.10 to 0.72, which is what a projected run already
-    gets.
+    numbers in the layer happen to be, and a geographic CRS makes them tiny.
+    On a geographic CRS the ring came back so far off that only the IoU guard
+    kept it off the map, and what the user saw was Right angles doing nothing
+    at all, on every object, with no message. In a local frame it squares
+    corners the way a projected run already does.
 
-    Centring and scaling costs nothing on a projected run (measured
-    identical to four decimals on the shape metrics) and it makes every
+    Centring and scaling costs nothing on a projected run, and it makes every
     hardcoded epsilon in the path mean the same thing in every CRS. The
     de-staircase, the cleanup and the guards all still run in the caller's
     frame.

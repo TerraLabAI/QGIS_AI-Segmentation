@@ -5031,5 +5031,45 @@ bloque l&apos;environnement IA local du plugin.</translation>
         <source>This map source has no sharper picture of this area. The run uses the sharpest one it has, and costs fewer tiles than the estimate.</source>
         <translation>Cette source cartographique ne propose pas d’image plus détaillée de cette zone. L’exécution utilise la plus détaillée disponible et coûte moins de tuiles que l’estimation.</translation>
     </message>
+    <message>
+        <source>QGIS could not open a file manager.</source>
+        <translation>QGIS n’a pas pu ouvrir de gestionnaire de fichiers.</translation>
+    </message>
+    <message>
+        <source>The folder is copied to your clipboard: paste it into your file manager.</source>
+        <translation>Le dossier est copié dans votre presse-papiers : collez-le dans votre gestionnaire de fichiers.</translation>
+    </message>
+    <message>
+        <source>Copy the folder below and paste it into your file manager.</source>
+        <translation>Copiez le dossier ci-dessous et collez-le dans votre gestionnaire de fichiers.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open your email app.</source>
+        <translation>QGIS n’a pas pu ouvrir votre application de messagerie.</translation>
+    </message>
+    <message>
+        <source>The support address is copied to your clipboard: paste it into your email app.</source>
+        <translation>L’adresse du support est copiée dans votre presse-papiers : collez-la dans votre application de messagerie.</translation>
+    </message>
+    <message>
+        <source>Copy the support address below into your email app.</source>
+        <translation>Copiez l’adresse du support ci-dessous dans votre application de messagerie.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser.</source>
+        <translation>QGIS n’a pas pu ouvrir de navigateur.</translation>
+    </message>
+    <message>
+        <source>The address is copied to your clipboard: paste it into a browser to continue.</source>
+        <translation>L’adresse est copiée dans votre presse-papiers : collez-la dans un navigateur pour continuer.</translation>
+    </message>
+    <message>
+        <source>Copy the address below and paste it into a browser.</source>
+        <translation>Copiez l’adresse ci-dessous et collez-la dans un navigateur.</translation>
+    </message>
+    <message>
+        <source>Open it yourself</source>
+        <translation>Ouvrir vous-même</translation>
+    </message>
 </context>
 </TS>

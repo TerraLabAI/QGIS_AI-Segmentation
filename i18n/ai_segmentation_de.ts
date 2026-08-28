@@ -5029,5 +5029,45 @@ blockiert die lokale AI-Umgebung des Plugins.</translation>
         <source>This map source has no sharper picture of this area. The run uses the sharpest one it has, and costs fewer tiles than the estimate.</source>
         <translation>Diese Kartenquelle hat kein schärferes Bild für dieses Gebiet. Der Durchlauf verwendet das schärfste verfügbare Bild und kostet weniger Kacheln als geschätzt.</translation>
     </message>
+    <message>
+        <source>QGIS could not open a file manager.</source>
+        <translation>QGIS konnte keinen Dateimanager öffnen.</translation>
+    </message>
+    <message>
+        <source>The folder is copied to your clipboard: paste it into your file manager.</source>
+        <translation>Der Ordner wurde in die Zwischenablage kopiert: Fügen Sie ihn in Ihren Dateimanager ein.</translation>
+    </message>
+    <message>
+        <source>Copy the folder below and paste it into your file manager.</source>
+        <translation>Kopieren Sie den unten stehenden Ordner und fügen Sie ihn in Ihren Dateimanager ein.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open your email app.</source>
+        <translation>QGIS konnte Ihre E-Mail-Anwendung nicht öffnen.</translation>
+    </message>
+    <message>
+        <source>The support address is copied to your clipboard: paste it into your email app.</source>
+        <translation>Die Supportadresse wurde in die Zwischenablage kopiert: Fügen Sie sie in Ihre E-Mail-Anwendung ein.</translation>
+    </message>
+    <message>
+        <source>Copy the support address below into your email app.</source>
+        <translation>Kopieren Sie die unten stehende Supportadresse in Ihre E-Mail-Anwendung.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser.</source>
+        <translation>QGIS konnte keinen Browser öffnen.</translation>
+    </message>
+    <message>
+        <source>The address is copied to your clipboard: paste it into a browser to continue.</source>
+        <translation>Die Adresse wurde in die Zwischenablage kopiert: Fügen Sie sie in einen Browser ein, um fortzufahren.</translation>
+    </message>
+    <message>
+        <source>Copy the address below and paste it into a browser.</source>
+        <translation>Kopieren Sie die unten stehende Adresse und fügen Sie sie in einen Browser ein.</translation>
+    </message>
+    <message>
+        <source>Open it yourself</source>
+        <translation>Selbst öffnen</translation>
+    </message>
 </context>
 </TS>

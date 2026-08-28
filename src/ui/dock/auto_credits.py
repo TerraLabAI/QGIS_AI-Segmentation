@@ -26,8 +26,7 @@ class DockAutoCreditsMixin:
     gate, plus every upsell surface that sends the user to the dashboard."""
 
     def _on_upgrade_clicked(self) -> None:
-        from qgis.PyQt.QtCore import QUrl
-        from qgis.PyQt.QtGui import QDesktopServices
+        from ..external_links import open_external_url
         cta_source = "plugin_upsell_card"
         try:
             from ...core import telemetry_session_events
@@ -48,7 +47,7 @@ class DockAutoCreditsMixin:
         except Exception:
             pass  # nosec B110
         url = self._build_upgrade_url(cta_source)
-        QDesktopServices.openUrl(QUrl(url))
+        open_external_url(url, parent=self)
 
     def _build_upgrade_url(self, cta_source: str = "plugin_upsell_card") -> str:
         from ...core.activation_manager import get_pro_checkout_url
@@ -478,14 +477,13 @@ class DockAutoCreditsMixin:
     def _on_zone_cap_link_activated(self, url: str) -> None:
         """Subscribe link inside the zone-cap message: same destination as the
         footer pill, tracked with its own upsell source."""
-        from qgis.PyQt.QtCore import QUrl
-        from qgis.PyQt.QtGui import QDesktopServices
+        from ..external_links import open_external_url
         try:
             from ...core import telemetry_session_events
             telemetry_session_events.track_pro_upsell_clicked(source="zone_too_large")
         except Exception:
             pass  # nosec B110
-        QDesktopServices.openUrl(QUrl(url))
+        open_external_url(url, parent=self)
 
     def _update_auto_low_credit_note(self) -> None:
         """Free-tier low-credit nudge on the Automatic Start step (step 0).
@@ -618,14 +616,13 @@ class DockAutoCreditsMixin:
     def _on_low_credit_link_activated(self, url: str) -> None:
         """Upgrade button on the low-credit note: same destination as the
         footer pill, tracked with its own upsell source."""
-        from qgis.PyQt.QtCore import QUrl
-        from qgis.PyQt.QtGui import QDesktopServices
+        from ..external_links import open_external_url
         try:
             from ...core import telemetry_session_events
             telemetry_session_events.track_pro_upsell_clicked(source="low_credit")
         except Exception:
             pass  # nosec B110
-        QDesktopServices.openUrl(QUrl(url))
+        open_external_url(url, parent=self)
 
     def set_auto_exhausted_subscribe_visible(self, visible: bool) -> None:
         """Show/hide the free-user offer shown under the status when a run

@@ -8,6 +8,7 @@ Source: https://github.com/astral-sh/python-build-standalone
 """
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 import platform
@@ -785,16 +786,28 @@ def verify_standalone_python() -> tuple[bool, str]:
         # '_posixsubprocess'" crash at venv-creation time. Importing it here
         # catches the broken build now, so it is removed and re-downloaded
         # instead of being trusted (#bug-anehm).
-        result = subprocess.run(  # nosec B603
-            [python_path, "-c", "import subprocess, sys; print(sys.version)"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=30,
-            env=env,
-            **get_subprocess_kwargs(),
-        )
+        # A machine that momentarily refuses a new process (EAGAIN) must not
+        # cost us an archive that is already downloaded and on disk. Retry the
+        # spawn a couple of times; every other error fails immediately, so a
+        # genuinely broken interpreter is still rejected at once.
+        result = None
+        for attempt in range(3):
+            try:
+                result = subprocess.run(  # nosec B603
+                    [python_path, "-c", "import subprocess, sys; print(sys.version)"],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=30,
+                    env=env,
+                    **get_subprocess_kwargs(),
+                )
+                break
+            except OSError as err:
+                if err.errno != errno.EAGAIN or attempt == 2:
+                    raise
+                time.sleep(2)
 
         if result.returncode == 0:
             version_output = result.stdout.strip().split()[0]

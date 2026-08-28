@@ -4794,5 +4794,45 @@ blokkeert de lokale AI-omgeving van de plugin.</translation>
         <source>This map source has no sharper picture of this area. The run uses the sharpest one it has, and costs fewer tiles than the estimate.</source>
         <translation>Deze kaartbron heeft geen scherper beeld van dit gebied. De detectietaak gebruikt het scherpste beschikbare beeld en kost minder tegels dan geschat.</translation>
     </message>
+    <message>
+        <source>QGIS could not open a file manager.</source>
+        <translation>QGIS kon geen bestandsbeheer openen.</translation>
+    </message>
+    <message>
+        <source>The folder is copied to your clipboard: paste it into your file manager.</source>
+        <translation>De map is naar het klembord gekopieerd: plak deze in uw bestandsbeheer.</translation>
+    </message>
+    <message>
+        <source>Copy the folder below and paste it into your file manager.</source>
+        <translation>Kopieer de map hieronder en plak deze in uw bestandsbeheer.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open your email app.</source>
+        <translation>QGIS kon uw e-mailapp niet openen.</translation>
+    </message>
+    <message>
+        <source>The support address is copied to your clipboard: paste it into your email app.</source>
+        <translation>Het supportadres is naar het klembord gekopieerd: plak dit in uw e-mailapp.</translation>
+    </message>
+    <message>
+        <source>Copy the support address below into your email app.</source>
+        <translation>Kopieer het supportadres hieronder naar uw e-mailapp.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser.</source>
+        <translation>QGIS kon geen browser openen.</translation>
+    </message>
+    <message>
+        <source>The address is copied to your clipboard: paste it into a browser to continue.</source>
+        <translation>Het adres is naar het klembord gekopieerd: plak dit in een browser om door te gaan.</translation>
+    </message>
+    <message>
+        <source>Copy the address below and paste it into a browser.</source>
+        <translation>Kopieer het adres hieronder en plak dit in een browser.</translation>
+    </message>
+    <message>
+        <source>Open it yourself</source>
+        <translation>Zelf openen</translation>
+    </message>
 </context>
 </TS>

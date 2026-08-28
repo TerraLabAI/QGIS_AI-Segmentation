@@ -119,8 +119,8 @@ def conditional_headers(meta: dict | None) -> dict[str, str]:
     Sent twice under two names. The standard header is dropped in transit (the
     host strips it before its own code runs, and it does not survive the
     redirect either), so the validator also travels prefixed, which nothing
-    along the way claims to own. Measured: with the standard header alone every
-    check answered 200 and re-downloaded the whole image.
+    along the way claims to own. With the standard header alone every check
+    answered 200 and re-downloaded the whole image.
 
     Plain ``str`` keys and values, because they are merged into the caller's
     own header dict and encoded there.

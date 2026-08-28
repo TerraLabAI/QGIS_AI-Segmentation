@@ -29,9 +29,8 @@ _PARKED_UPDATE_INTERVAL_MS = 3_600_000
 # 2 s, not the 8 s this shipped with. The hold is nearly always lifted by the
 # redraw finishing, so the number only ever shows itself when something has
 # gone wrong, and then it is the whole of what the user feels: a map that will
-# not answer. The redraw it covers is 223 ms for 8 000 saved polygons, so 2 s
-# is an order of magnitude of headroom, and a stuck one now costs two seconds
-# instead of eight.
+# not answer. A normal redraw finishes well inside 2 s even on a dense layer,
+# and a stuck one now costs two seconds instead of eight.
 HOLD_TIMEOUT_MS = 2_000
 
 # One hold per canvas: a second commit while the first is still drawing must

@@ -109,7 +109,7 @@ class AutoReviewDisplayMixin:
         per feature on every repaint and QGIS caches none of it, which on a
         dense run is the single largest per-frame cost the review carries.
         Classifying on a plain field expression skips the whole data-defined
-        symbol path (measured: the frame drops by a third at review scale).
+        symbol path, which is a large share of the frame at review scale.
 
         The classifier must NOT mention ``$id``: referencing it costs more than
         the data-defined colour it replaces. A categorized renderer also has no

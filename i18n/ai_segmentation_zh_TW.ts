@@ -4972,5 +4972,45 @@ is blocking the plugin&apos;s local AI environment.</source>
         <source>This map source has no sharper picture of this area. The run uses the sharpest one it has, and costs fewer tiles than the estimate.</source>
         <translation>此底圖圖層在此區域沒有更高解析度的影像。此偵測工作會使用它能取得的最高解析度影像，使用的圖磚數少於估算值。</translation>
     </message>
+    <message>
+        <source>QGIS could not open a file manager.</source>
+        <translation>QGIS 無法開啟檔案管理員。</translation>
+    </message>
+    <message>
+        <source>The folder is copied to your clipboard: paste it into your file manager.</source>
+        <translation>資料夾已複製到剪貼簿：請將其貼到檔案管理員中。</translation>
+    </message>
+    <message>
+        <source>Copy the folder below and paste it into your file manager.</source>
+        <translation>請複製下方的資料夾，並將其貼到檔案管理員中。</translation>
+    </message>
+    <message>
+        <source>QGIS could not open your email app.</source>
+        <translation>QGIS 無法開啟您的電子郵件應用程式。</translation>
+    </message>
+    <message>
+        <source>The support address is copied to your clipboard: paste it into your email app.</source>
+        <translation>支援地址已複製到剪貼簿：請將其貼到您的電子郵件應用程式中。</translation>
+    </message>
+    <message>
+        <source>Copy the support address below into your email app.</source>
+        <translation>請將下方的支援地址複製到您的電子郵件應用程式中。</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser.</source>
+        <translation>QGIS 無法開啟瀏覽器。</translation>
+    </message>
+    <message>
+        <source>The address is copied to your clipboard: paste it into a browser to continue.</source>
+        <translation>地址已複製到剪貼簿：請將其貼到瀏覽器中以繼續。</translation>
+    </message>
+    <message>
+        <source>Copy the address below and paste it into a browser.</source>
+        <translation>請複製下方的地址，並將其貼到瀏覽器中。</translation>
+    </message>
+    <message>
+        <source>Open it yourself</source>
+        <translation>自行開啟</translation>
+    </message>
 </context>
 </TS>

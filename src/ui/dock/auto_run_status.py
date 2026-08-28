@@ -210,7 +210,7 @@ class DockAutoRunStatusMixin:
         self._auto_progress_target = max(
             getattr(self, "_auto_progress_target", 0), target)
         if done <= 0 and phase == "grid":
-            # No tile has landed yet (a cold GPU can take ~a minute to answer):
+            # No tile has landed yet (a cold service can take about a minute to answer):
             # keep the bar ALIVE instead of a frozen 0%. _ensure_auto_warming_anim
             # switches the bar to indeterminate (Qt animates it) and runs a 1s
             # timer that evolves the label. Row-3 copy is chosen by the shared

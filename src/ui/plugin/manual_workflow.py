@@ -1269,7 +1269,7 @@ class ManualWorkflowMixin:
         # No value recap here any more. A card counting what the last session
         # produced sat on the Start view for the rest of the session, and the
         # saved layer in the legend says the same thing without taking a
-        # quarter of the panel. Removed 2026-08-11.
+        # quarter of the panel.
 
         self._reset_session()
         self.dock_widget.reset_session()

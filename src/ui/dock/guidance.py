@@ -39,11 +39,11 @@ _SETTINGS_PREFIX = "AISegmentation/hints/"
 
 # Hint ids. Listed here so settings can reset them all at once.
 #
-# There is no Semi-Auto one. Its caption under the Start button was removed on
-# 2026-08-11: the panel already carries the two engine cards and a line saying
-# what a click costs, and a third block of prose on an idle screen was the one
-# thing Yvann kept striking out. The stored key "start_manual_info" is left
-# unclaimed rather than recycled, since it sits dismissed in real profiles.
+# There is no Semi-Auto one. Its caption under the Start button was removed.
+# The panel already carries the two engine cards and a line saying what a click
+# costs, and a third block of prose was one block of prose too many on an idle
+# screen. The stored key "start_manual_info" is left unclaimed rather than
+# recycled, since it sits dismissed in real profiles.
 HINT_START_AUTO = "start_auto_info"
 # Tutorial-discovery nudges: a post-sign-in first-steps banner and
 # a zero-result friction banner, both pointing at the step-by-step guide.
@@ -84,18 +84,18 @@ HINT_PROMPT_UNKNOWN_OBJECT = "prompt_unknown_object"
 # building) or a cover the model reads one crown at a time ("forest" -> tree).
 # Advice only, the typed word still runs, so it closes like its siblings.
 HINT_PROMPT_STEER_OBJECT = "prompt_steer_object"
-# UNCLAIMED (2026-08-20): the "will run as" note stopped being closable, since
-# it explains text the user did not type and closing it once made every later
-# rewrite silent. Left declared rather than recycled, the key sits dismissed in
-# real profiles.
+# UNCLAIMED: the "will run as" note stopped being closable, since it explains
+# text the user did not type and closing it once made every later rewrite
+# silent. Left declared rather than recycled, the key sits dismissed in real
+# profiles.
 HINT_PROMPT_SILENT_SWAP = "prompt_silent_swap"
 HINT_PROMPT_EXAMPLES_DRIVE = "prompt_examples_drive"
 HINT_PROMPT_RUN_PLAN = "prompt_run_plan"
 # The two armed example-draw instructions, on the example card's message line.
-# The amber too-small warning shares that line and stays non-dismissible, and
-# since 2026-08-11 so do these two: the line is the only place on screen that
-# says how to trace an example, so closing it left every later arming with
-# nothing to read. They keep their ids for the served copy.
+# The amber too-small warning shares that line and stays non-dismissible, and so
+# do these two: the line is the only place on screen that says how to trace an
+# example, so closing it left every later arming with nothing to read. They keep
+# their ids for the served copy.
 # The stored id carries the GESTURE, not the card: the draw went from dragging a
 # box to tracing a polygon, so a user who dismissed the box wording had never
 # been told the new one. Do not recycle these two ids for a later
@@ -198,10 +198,9 @@ def open_guide(content: str) -> None:
     ``content`` is the touchpoint id (also the utm_content and telemetry
     source), one of: footer_tutorial, post_signin, zero_results.
     """
-    from qgis.PyQt.QtCore import QUrl
-    from qgis.PyQt.QtGui import QDesktopServices
+    from ..external_links import open_external_url
 
-    QDesktopServices.openUrl(QUrl(guide_url(content)))
+    open_external_url(guide_url(content))
     try:
         from ...core import telemetry_run_events
         telemetry_run_events.track_tutorial_opened(content)

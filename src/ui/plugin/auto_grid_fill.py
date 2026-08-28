@@ -3,9 +3,8 @@
 Every Automatic zone is a hand-drawn polygon. The tile grid is built over its
 BOUNDING BOX, then culled: a tile whose ground touches neither the polygon nor
 the raster's own extent is never rendered, sent or billed. So two counts exist
-for the same detail level, and they are far apart. Over 27 archived user runs
-only 26% of the bounding-box grid was inside the zone, and the widest zones
-were the worst: a road run kept 10%, a building run over Paris kept 19%.
+for the same detail level, and they are far apart. On a long, thin or diagonal
+zone the polygon keeps only a small share of its bounding-box grid.
 
 The seed walk compares a level's cost against a tile cap. Comparing the
 bounding-box count stopped it several levels early on exactly the long, thin,
@@ -153,18 +152,18 @@ class AutoGridFillMixin:
         """Like `_tiles_after_cull`, but exact when the answer decides the walk.
 
         The probe measures the kept share on a small grid, where boundary tiles
-        are a large part of the answer, so it reads HIGH: on a 20 km corridor
-        200 m wide it says 18% where the level the walk actually reaches keeps
-        3.9%. That only ever costs levels, never spends them, but on a long
-        thin zone it costs four or five of them, and those are the zones this
-        whole adjustment exists for.
+        are a large part of the answer, so it reads HIGH, and on a long thin
+        corridor it reads far higher than the level the walk actually reaches.
+        That only ever costs levels, never spends them, but on a long thin zone
+        it costs four or five of them, and those are the zones this whole
+        adjustment exists for.
 
         So when the scaled count says the level is over the cap, cull that
         level exactly before believing it, and keep the measured share for the
         rest of the walk. The share falls as levels get finer, so replacing the
         probe with a real measurement taken further along only ever improves
-        it. One cull of 32000 tiles costs 134 ms measured, and the walk breaks
-        right after, so it is paid at most a couple of times per zone.
+        it. One exact cull is cheap and the walk breaks right after, so it is
+        paid at most a couple of times per zone.
         """
         estimate = self._tiles_after_cull(layer, zone_in_layer, bbox_tiles)
         if estimate <= cap:

@@ -255,9 +255,9 @@ class DockAutoRunLifecycleMixin:
             except (RuntimeError, AttributeError):
                 pass
 
-    # set_last_run_recap and clear_last_run_recap were removed on 2026-08-11
-    # with the card they drove. What a finished run produced is in the legend
-    # and on the footer credit ring; the Start page is about the next run. The
+    # set_last_run_recap and clear_last_run_recap were removed with the card
+    # they drove. What a finished run produced is in the legend and on the
+    # footer credit ring; the Start page is about the next run. The
     # success line below is what survives, because it answers "where did it go"
     # at the one moment the user asks it.
 

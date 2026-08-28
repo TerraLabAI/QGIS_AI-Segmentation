@@ -3,10 +3,9 @@
 The moment a run's merger is read at finalize, the merged scored set is
 streamed to a GeoPackage table, BEFORE the review-entry tail (sweep, build,
 filter, review) runs on it. If QGIS dies anywhere past that point, the billed
-detections are still on disk. Nothing on screen offers them back (removed
-2026-07-30): the same-session finalize error path reloads them silently, and a
-pointer left by a dead session is written to the log with its path, then
-dropped.
+detections are still on disk. Nothing on screen offers them back (removed):
+the same-session finalize error path reloads them silently, and a pointer left
+by a dead session is written to the log with its path, then dropped.
 
 Storage reuses the committed-run conventions from ``output_store`` (the same
 per-project ``ai_segmentation.gpkg``, the same table/name shapes), so a
@@ -340,10 +339,11 @@ def orphan_autosave_tables(gpkg_path: str) -> list[dict]:
     connection = None
     try:
         import sqlite3
-        from pathlib import Path
+
+        from .output_gpkg_rollover import read_only_gpkg_uri
 
         connection = sqlite3.connect(
-            f"{Path(gpkg_path).as_uri()}?mode=ro", uri=True, timeout=0.5)
+            read_only_gpkg_uri(gpkg_path), uri=True, timeout=0.5)
         geometry_column = {
             str(name): str(column)
             for name, column in connection.execute(

@@ -4792,5 +4792,45 @@ is blocking the plugin&apos;s local AI environment.</source>
         <source>This map source has no sharper picture of this area. The run uses the sharpest one it has, and costs fewer tiles than the estimate.</source>
         <translation>この地図ソースには、この地域のより高解像度の画像がありません。実行では利用できる最も高解像度の画像を使用するため、見積もりよりタイル数が少なくなります。</translation>
     </message>
+    <message>
+        <source>QGIS could not open a file manager.</source>
+        <translation>QGISはファイルマネージャーを開けませんでした。</translation>
+    </message>
+    <message>
+        <source>The folder is copied to your clipboard: paste it into your file manager.</source>
+        <translation>フォルダーをクリップボードにコピーしました。ファイルマネージャーに貼り付けてください。</translation>
+    </message>
+    <message>
+        <source>Copy the folder below and paste it into your file manager.</source>
+        <translation>下のフォルダーをコピーして、ファイルマネージャーに貼り付けてください。</translation>
+    </message>
+    <message>
+        <source>QGIS could not open your email app.</source>
+        <translation>QGISはメールアプリを開けませんでした。</translation>
+    </message>
+    <message>
+        <source>The support address is copied to your clipboard: paste it into your email app.</source>
+        <translation>サポートアドレスをクリップボードにコピーしました。メールアプリに貼り付けてください。</translation>
+    </message>
+    <message>
+        <source>Copy the support address below into your email app.</source>
+        <translation>下のサポートアドレスをコピーして、メールアプリに貼り付けてください。</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser.</source>
+        <translation>QGISはブラウザを開けませんでした。</translation>
+    </message>
+    <message>
+        <source>The address is copied to your clipboard: paste it into a browser to continue.</source>
+        <translation>アドレスをクリップボードにコピーしました。ブラウザに貼り付けて続行してください。</translation>
+    </message>
+    <message>
+        <source>Copy the address below and paste it into a browser.</source>
+        <translation>下のアドレスをコピーして、ブラウザに貼り付けてください。</translation>
+    </message>
+    <message>
+        <source>Open it yourself</source>
+        <translation>自分で開く</translation>
+    </message>
 </context>
 </TS>

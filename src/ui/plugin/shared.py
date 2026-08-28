@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 import weakref
 
 from qgis.core import QgsFeatureSink
@@ -148,12 +149,11 @@ def zone_over_free_cap_lines(area_km2: float, upgrade_url: str) -> tuple[str, st
 
     # Two lines: the gap, then the action. The served head owns the numbers AND
     # the reason to pay, so the tail carries the two ways out and nothing else.
-    # It used to carry an offer line of its own ("5,000 tiles a month"), which
-    # quoted the MONTHLY quota next to a SIZE refusal, in a unit the product no
-    # longer uses, and repeated the size promise the head already makes. No
-    # figure belongs here: the tail cannot be reached by a deploy, so any number
-    # in it goes stale on the next pricing change and stays stale until the user
-    # updates the plugin.
+    # It used to carry an offer line of its own, quoting the MONTHLY quota next
+    # to a SIZE refusal, in a unit the product no longer uses, and repeating the
+    # size promise the head already makes. No figure belongs here: the tail
+    # cannot be reached by a deploy, so any number in it goes stale on the next
+    # pricing change and stays stale until the user updates the plugin.
     shipped_head = tr(
         "This zone is {area} km². Free zones stop at {max} km².")
     shipped_tail = tr(
@@ -569,6 +569,59 @@ def park_orphaned_worker(worker) -> None:
         finished_in_gap = True  # dead C++ object: just drop the anchor
     if finished_in_gap:
         _release()
+
+
+def join_orphaned_workers(budget_seconds: float) -> int:
+    """Wait, inside one budget, on every worker parked anywhere in the plugin.
+
+    Parking keeps a worker alive. It does not wait for it, and a parked thread
+    still running when Python shuts down is destroyed by ~QThread, which aborts
+    all of QGIS. Teardown reads the bucket itself rather than a list one caller
+    built, because parking happens in a dozen places across the mixins and only
+    two of them were ever on that list: the online tile fetch, the live
+    stitcher, the review refine thread and the diagnostics collector all parked
+    and then nothing ever joined them.
+
+    A worker parked before start() has never run, and wait() returns at once for
+    it, so an anchor costs nothing here. The budget is shared, so a set of stuck
+    threads cannot add up to a frozen quit.
+
+    Asking first is what makes the wait mean anything. Teardown's cancel loop
+    only reaches the workers the controller holds, and most of this bucket was
+    parked at its own call site by code that never went through that loop. A
+    thread nobody asked to stop is still working when the wait starts, so it
+    runs the budget out and gets destroyed anyway. Both stop channels are used:
+    the Qt flag a run loop polls, and the cancel() method the plugin's own
+    workers expose.
+
+    Returns how many stopped inside the budget, for the teardown log.
+    """
+    workers = list(_ORPHANED_WORKERS)
+    if not workers:
+        return 0
+    for worker in workers:
+        try:
+            worker.requestInterruption()
+        except (RuntimeError, AttributeError):
+            pass  # dead C++ wrapper, or not a QThread
+        try:
+            cancel = getattr(worker, "cancel", None)
+            if callable(cancel):
+                cancel()
+        except (RuntimeError, AttributeError, TypeError):
+            pass  # a cancel that refuses must never abort teardown
+    deadline = time.monotonic() + budget_seconds
+    joined = 0
+    for worker in workers:
+        left_ms = int(max(0.0, deadline - time.monotonic()) * 1000)
+        if left_ms <= 0:
+            break
+        try:
+            if worker.wait(left_ms):
+                joined += 1
+        except (RuntimeError, AttributeError):
+            pass  # dead C++ wrapper, or not a QThread: nothing to join
+    return joined
 
 
 def dir_size_label(path: str) -> str:

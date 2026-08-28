@@ -11,12 +11,12 @@ Two properties decide the shape of what is shown:
 - **The relationship is a line.** A fixed opening cost, then a steady cost per
   tile. Concurrency is fixed, so throughput does not improve with size and the
   per-tile cost stays flat across the whole range.
-- **The spread is too wide for one number.** The middle half of runs sits
-  inside a band about two times wide, and the slow tenth sits well past it.
-  Most of that is time no tile is in flight at all: imagery that arrives
-  slowly, a retry, a link that stalls. None of it is visible before the run
-  starts, so no amount of client-side arithmetic can narrow the band. The
-  answer is to quote the band instead of pretending to a single number.
+- **The spread is too wide for one number.** Wait times vary by more than a
+  factor of two between an ordinary run and a slow one. Most of that is time
+  no tile is in flight at all: imagery that arrives slowly, a retry, a link
+  that stalls. None of it is visible before the run starts, so no amount of
+  client-side arithmetic can narrow the band. The answer is to quote the band
+  instead of pretending to a single number.
 
 So the estimate is a RANGE, from the typical run to the slow one, in one unit,
 rounded coarsely. It is deliberately blunt: "8-18 min" survives being wrong,

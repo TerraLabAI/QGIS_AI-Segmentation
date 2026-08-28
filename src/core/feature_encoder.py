@@ -161,7 +161,7 @@ def _percentiles_2_98(values):
     pixels is most of what a crop read spends on a raster that is not already
     8-bit stretched, and the answer is the same one: the linear interpolation
     below is numpy's own, read off the cumulative counts rather than off a
-    sorted copy. Measured on 1024x1024 bands, 6-8 ms down to about 1.5 ms.
+    sorted copy, which is several times faster on a full band.
 
     Anything else (float, signed, a range wider than 16 bits) goes to
     np.percentile untouched.

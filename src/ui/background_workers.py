@@ -264,7 +264,11 @@ class RemoveAiDataWorker(QThread):
 
     def __init__(self, predictor=None, parent=None):
         super().__init__(parent)
+        self._cancelled = False
         self._predictor = predictor
+
+    def cancel(self):
+        self._cancelled = True
 
     def run(self):
         import os
@@ -306,9 +310,17 @@ class RemoveAiDataWorker(QThread):
             self.progress.emit(tr("Measuring the downloaded data..."))
             freed = dir_size_label(PLUGIN_CACHE_DIR)
             self.progress.emit(tr("Deleting the downloaded data..."))
-            nothing_left = purge_cache_dir()
+            nothing_left = purge_cache_dir(cancel_check=lambda: self._cancelled)
         except Exception as e:  # noqa: BLE001
             self.done.emit(False, freed, str(e)[:80])
+            return
+        if self._cancelled:
+            # Stopped part way, so the tree is half gone: no size is claimed as
+            # freed, and the detail flags the removal as unfinished. Same as the
+            # shutdown stop above, it is a log line the caller never shows as
+            # written.
+            self.done.emit(
+                False, "", "the removal was stopped; the data is partly deleted")
             return
         self.done.emit(bool(nothing_left), freed, "")
 

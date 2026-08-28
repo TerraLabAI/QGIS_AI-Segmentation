@@ -363,16 +363,14 @@ def restore_partitions_for(prompt: str, policy: dict | None = None,
     The merger's additive union skips a member that adds no new area. For a
     cross-tile jitter duplicate that is right. For the individual buildings of
     a complex the model ALSO read as one shape it is wrong: each sits whole
-    inside that shape, adds nothing, and is dropped. Measured offline over ten
-    archived runs, that is 8.6 points of recall, the largest single loss in
-    the client pipeline.
+    inside that shape, adds nothing, and is dropped. That is the largest
+    single loss in the client pipeline.
 
-    It is per CLASS, not global, and the numbers say why. Restoring the parts
-    on building and house lifts recall 0.783 to 0.867 on the tuning runs and
-    0.943 to 0.965 on the holdout, for 0.008 and 0.006 of precision. On tree,
-    swimming pool and lake it only costs precision (lake 1.000 to 0.875): a
-    canopy or a pool read in pieces is one object fragmented, not a group.
-    Car and solar panel never trigger it at all.
+    It is per CLASS, not global, because the two cases pull apart. On a class
+    whose objects sit side by side inside one reading, such as a terrace of
+    houses, restoring the parts finds objects the run had lost. On a class
+    whose object simply came back in pieces, such as a canopy or a pool,
+    restoring them turns one object into several and only costs precision.
 
     So the list arrives server-side at ``review.merge.restore_partition_
     prompts`` and the fallback is EMPTY: no class gets this until the server

@@ -442,10 +442,9 @@ class ErrorReportDialog(QDialog):
         """Open email client with support address."""
         from urllib.parse import quote
 
-        from qgis.PyQt.QtCore import QUrl
-        from qgis.PyQt.QtGui import QDesktopServices
+        from .external_links import open_email
         subject = quote("AI Segmentation - Bug Report")
-        QDesktopServices.openUrl(QUrl(f"mailto:{SUPPORT_EMAIL}?subject={subject}"))
+        open_email(f"mailto:{SUPPORT_EMAIL}?subject={subject}", SUPPORT_EMAIL, parent=self)
 
 
 def show_error_report(

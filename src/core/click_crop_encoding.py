@@ -58,9 +58,8 @@ _WEBP_QUALITY_MAX = 100
 # reads "quality" as an effort dial and never as picture: every value gives the
 # caller's own pixels back. The writer's own default is 80, which spends six
 # times the work of 20 to produce a FRACTIONALLY LARGER file, so the default is
-# the wrong end of its own curve. Measured on two 1024 px aerial crops: 660 and
-# 760 ms at 80 against 108 and 122 ms at 20, for 1117 and 1036 KB against 1111
-# and 1030 KB, and the decode is byte-identical to the input at both.
+# the wrong end of its own curve. The higher effort costs several times the
+# work for a file no smaller, and both decode byte-identical to the input.
 _WEBP_LOSSLESS_EFFORT = 20
 
 # Both forms are lossless, so the choice between them is only ever a trade of

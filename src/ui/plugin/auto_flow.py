@@ -661,7 +661,7 @@ class AutoFlowMixin:
                 self.dock_widget.set_prompt_text(token)
 
     def _on_zone_draw_requested(self) -> None:
-        """Handle the dock's 'Draw zone' button (wired by plan #76)."""
+        """Handle the dock's 'Draw zone' button."""
         self._activate_zone_drawing()
 
     def _on_auto_detail_changed(self, _value: int) -> None:
@@ -751,7 +751,7 @@ class AutoFlowMixin:
             # hand the pan tool back rather than leaving a bare cursor.
             self._restore_maptool_after_zone()
 
-    # ---- Pro Auto mode: detection worker (plan #78) -------------------------
+    # ---- Pro Auto mode: detection worker ------------------------------------
 
     def _get_auto_detail_level(self) -> int:
         """Current detail slider value (grid side n, 1-7). Defaults to 1."""
@@ -1173,12 +1173,12 @@ class AutoFlowMixin:
         than the walk it rescued: when the cap cut the walk short it dropped
         back to the finest level inside the soft budget, which on a large zone
         was several levels COARSER than the cap itself allowed. That made the
-        seed non-monotonic in zone size, so a 14 km2 zone was read at 0.88 m/px
-        where a 9 km2 zone of the same ground was read at 0.40, and every run
-        past about 30 tiles landed in the same coarse band whatever it was
-        looking for. Keeping the finest level the walk reached removes the
-        cliff by construction: a bigger zone can never come back coarser than a
-        smaller one asking for the same object.
+        seed non-monotonic in zone size, so a larger zone could come back
+        coarser than a smaller one over the same ground, and a big run landed
+        in one coarse band whatever it was looking for. Keeping the finest
+        level the walk reached removes the cliff by construction: a bigger zone
+        can never come back coarser than a smaller one asking for the same
+        object.
 
         Always >= 1.
         """

@@ -258,14 +258,13 @@ class DockAutoDetailLevelMixin:
     def _on_detail_cap_upgrade_link(self, _href: str = "") -> None:
         """Upgrade link inside the detail hint: same dashboard URL as every
         other upsell surface, its own telemetry source."""
-        from qgis.PyQt.QtCore import QUrl
-        from qgis.PyQt.QtGui import QDesktopServices
+        from ..external_links import open_external_url
         try:
             from ...core import telemetry_session_events
             telemetry_session_events.track_pro_upsell_clicked(source="detail_cap")
         except Exception:
             pass  # nosec B110
-        QDesktopServices.openUrl(QUrl(self._build_upgrade_url("plugin_detail_cap")))
+        open_external_url(self._build_upgrade_url("plugin_detail_cap"), parent=self)
 
     def set_auto_detail_feedback(self, state: str | None, object_word: str) -> None:
         """Live verdict for the CURRENT slider level against the named object

@@ -960,7 +960,7 @@ class AutoReviewMixin:
         # the line survives the return to Start.
         #
         # A second, quieter card used to carry the same run plus its credit cost
-        # for the rest of the session. Removed 2026-08-11: it repeated the
+        # for the rest of the session. Removed: it repeated the
         # legend and the footer ring on the page about the NEXT run.
         try:
             if self.dock_widget:

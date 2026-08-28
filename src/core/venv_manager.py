@@ -283,7 +283,7 @@ PENDING_DELETE_DIR = os.path.join(PLUGIN_CACHE_DIR, ".pending_delete")
 # an install DOES, and the users it helps have no environment to invalidate.
 # Bumping would push every healthy environment through a network reinstall to
 # reach machines that will run the install anyway.
-# NOT bumped for the 2026-08-11 install fixes either (pip redirection variables
+# NOT bumped for the later install fixes either (pip redirection variables
 # scrubbed, uv verified with the clean environment and moved with the retry
 # ladder, a proxy host that already carries its scheme, the old-venv sweep left
 # conservative). None of them can leave a WRONG environment on disk: an install
@@ -1878,7 +1878,8 @@ def _defer_cache_entry(path: str) -> bool:
     return not os.path.exists(long_path)
 
 
-def purge_cache_dir(keep_install_lock: bool = True) -> bool:
+def purge_cache_dir(keep_install_lock: bool = True,
+                    cancel_check: Callable[[], bool] | None = None) -> bool:
     """Delete the contents of PLUGIN_CACHE_DIR (venv, weights, caches).
 
     The cross-process install lock file lives directly in PLUGIN_CACHE_DIR and the
@@ -1899,6 +1900,10 @@ def purge_cache_dir(keep_install_lock: bool = True) -> bool:
     as a leftover.
 
     Returns True when nothing but the kept lock file survived.
+
+    ``cancel_check`` is consulted between entries. When it fires the walk stops
+    and False comes back: a delete that stopped part way leaves the tree half
+    gone, so it can never be reported as a clean removal.
     """
     if not os.path.isdir(PLUGIN_CACHE_DIR):
         return True
@@ -1919,6 +1924,8 @@ def purge_cache_dir(keep_install_lock: bool = True) -> bool:
         ]
 
     for name in _deletable() or []:
+        if cancel_check is not None and cancel_check():
+            return False
         path = os.path.join(PLUGIN_CACHE_DIR, name)
         long_path = _win_extended_path(path)
         if os.path.isdir(path) and not os.path.islink(path):
@@ -1955,6 +1962,20 @@ def _win_long_path(path: str) -> str:
     return _win_path_api("GetLongPathNameW", path) or path
 
 
+def _uv_would_choke_on(python_path: str) -> bool:
+    """True when uv cannot be given this interpreter path safely.
+
+    uv reads a path with a space in it as something other than a path. The 8.3
+    short form avoids that, but short-name creation can be switched off per
+    volume, and then the space comes back. pip takes the same path without
+    complaint, so the install falls back to it rather than failing: slower, and
+    it works.
+    """
+    if sys.platform != "win32" or " " not in python_path:
+        return False
+    return " " in _win_short_path(python_path)
+
+
 def _build_install_cmd(python_path: str, pip_args: list) -> list:
     """Build an install command using uv (if available) or pip.
 
@@ -1963,7 +1984,7 @@ def _build_install_cmd(python_path: str, pip_args: list) -> list:
     which disables TLS verification. This should only be present in
     pip_args during SSL error retry, never in the default install path.
     """
-    if _uv_available and _uv_path:
+    if _uv_available and _uv_path and not _uv_would_choke_on(python_path):
         cmd = [_uv_path, "pip"]
         skip_next = False
         for i, arg in enumerate(pip_args):
@@ -2011,6 +2032,37 @@ def _build_install_cmd(python_path: str, pip_args: list) -> list:
     return [python_path, "-m", "pip"] + pip_args
 
 
+# Packages with no wheel: pip runs their setup.py. Build isolation would put
+# that build in an empty environment, where the backend and torch are both
+# absent, so every install path that touches one of these has to turn isolation
+# off. Kept in one place because a repair that forgot the flag failed with a
+# missing build backend, which reads like a broken package rather than a
+# missing flag.
+_SOURCE_BUILT_PACKAGES = ("sam2", "segment-anything")
+
+
+def _builds_from_source(package_name: str) -> bool:
+    """True when pip has to run this package's setup.py rather than a wheel."""
+    return package_name in _SOURCE_BUILT_PACKAGES
+
+
+def _repair_install_args(package_name: str, pkg_spec: str) -> list:
+    """Arguments for reinstalling one package over a broken copy.
+
+    A source-built package keeps its dependency resolution: the usual reason it
+    fails to import is a missing link in its own chain, and --no-deps would
+    reinstall the package over the same gap. Everything else keeps --no-deps,
+    so repairing one wheel cannot drag a pinned neighbour along with it.
+    """
+    args = ["install", "--force-reinstall", "--disable-pip-version-check"]
+    if _builds_from_source(package_name):
+        args.append("--no-build-isolation")
+    else:
+        args.append("--no-deps")
+    args += ["--prefer-binary", pkg_spec]
+    return args
+
+
 def _repin_numpy(venv_dir: str):
     """
     Check numpy version in the venv and force-downgrade if >= 2.0.
@@ -2022,6 +2074,14 @@ def _repin_numpy(venv_dir: str):
     if sys.version_info >= (3, 13):
         _log("Python >= 3.13: numpy 2.x is expected, skipping repin",
              Qgis.MessageLevel.Info)
+        return
+    if _package_loaded_in_process("numpy"):
+        # QGIS has numpy's compiled modules open, and Windows refuses to replace
+        # an open .pyd. The reinstall cannot win here: it removes what it can and
+        # leaves the binaries, which is worse than the version it was fixing. The
+        # pin holds from the next start, once nothing has the files open.
+        _log("numpy is already loaded in QGIS; its version is left alone until "
+             "the next start.", Qgis.MessageLevel.Info)
         return
 
     python_path = get_venv_python_path(venv_dir)
@@ -2710,7 +2770,7 @@ def install_dependencies(
             # Without --no-build-isolation pip creates a separate env and
             # re-downloads torch (~2.5 GB), which often fails. Since torch
             # is already installed in the venv at this point, skip isolation.
-            if package_name in ("sam2", "segment-anything"):
+            if _builds_from_source(package_name):
                 pip_args.append("--no-build-isolation")
             # Force binary-only for rasterio to prevent source builds that
             # fail when gdal-config is missing (macOS Rosetta, etc.) (#186)
@@ -3183,6 +3243,17 @@ def install_dependencies(
                         Qgis.MessageLevel.Warning,
                     )
                 degraded_packages.append(package_name)
+                if package_name == "torch" and SAM_PACKAGE[0] not in degraded_packages:
+                    # The model package is built from source against torch. On a
+                    # venv with no torch that build fails late and reports a
+                    # missing build dependency, which sends the user to reinstall
+                    # the one thing that was never the problem.
+                    degraded_packages.append(SAM_PACKAGE[0])
+                    _log(
+                        f"{SAM_PACKAGE[0]} is skipped as well: it is built "
+                        "against torch, which did not install.",
+                        Qgis.MessageLevel.Warning,
+                    )
                 if progress_callback:
                     progress_callback(
                         pkg_end, tr("{package} unavailable").format(package=package_name))
@@ -3734,8 +3805,7 @@ def verify_venv(
                             break
                     reinstall_cmd = _build_install_cmd(
                         python_path,
-                        ["install", "--force-reinstall", "--no-deps",
-                         "--prefer-binary", pkg_spec])
+                        _repair_install_args(package_name, pkg_spec))
                     try:
                         subprocess.run(  # nosec B603
                             reinstall_cmd,
@@ -3883,9 +3953,7 @@ def verify_venv(
                             break
                     reinstall_cmd = _build_install_cmd(
                         python_path,
-                        ["install", "--force-reinstall", "--no-deps",
-                         "--disable-pip-version-check",
-                         "--prefer-binary", pkg_spec])
+                        _repair_install_args(package_name, pkg_spec))
                     try:
                         subprocess.run(  # nosec B603
                             reinstall_cmd,

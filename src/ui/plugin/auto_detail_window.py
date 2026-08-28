@@ -193,9 +193,8 @@ class AutoDetailWindowMixin:
         min_px = object_min_px()
         # The coarse end also stops where the answer is known to die for this
         # object. The object-size rule alone reads the tier's typical size and
-        # runs far past that point: on a 14 km2 zone asking for buildings it
-        # offered a tile covering 1371 m of ground, and buildings at 454 m come
-        # back at 0.013 recall. Absent for a class nobody has measured, which
+        # runs far past that point: it can offer a tile so coarse the object no
+        # longer comes back. Absent for a class with no ceiling served, which
         # leaves that class the travel it has today.
         ceiling_m = object_tile_ceiling_m(object_class) if object_class else 0.0
         free_cap = self._free_run_tile_cap()

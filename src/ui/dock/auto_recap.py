@@ -51,7 +51,7 @@ def auto_export_success_html(count: int, object_word: str, layer_name: str,
         n=n, object=obj, layer=link)
 
 
-# auto_last_run_html was removed on 2026-08-11 with the card it filled. It read
-# "Last run: 69 building in Building 4 (11 Aug) · 14 credits" and stayed on the
-# Start page for the rest of the session, repeating the legend and the footer
-# credit ring on the one screen that is about the NEXT run.
+# auto_last_run_html was removed with the card it filled. It named the last run
+# and what it cost, and stayed on the Start page for the rest of the session,
+# repeating the legend and the footer credit ring on the one screen that is
+# about the NEXT run.

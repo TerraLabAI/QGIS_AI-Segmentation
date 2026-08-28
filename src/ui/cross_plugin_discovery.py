@@ -5,10 +5,10 @@ place (with the product page as a fallback when the manager can't open).
 """
 from __future__ import annotations
 
-from qgis.PyQt.QtCore import QUrl
-from qgis.PyQt.QtGui import QDesktopServices, QIcon
+from qgis.PyQt.QtGui import QIcon
 
 from ..core.qt_compat import QAction
+from .external_links import open_external_url
 
 # QGIS registers a plugin under its install folder name, so match the released
 # folder first and fall back to any folder that starts with one of these.
@@ -63,7 +63,7 @@ def open_ai_edit_page() -> None:
     """Open the AI Edit product page in the browser - always the website, with
     no installed-plugin detection. Used by the in-dock footer CTA.
     """
-    QDesktopServices.openUrl(QUrl(_AI_EDIT_PRODUCT_URL))
+    open_external_url(_AI_EDIT_PRODUCT_URL)
 
 
 def open_plugin_manager(plugin_name: str, fallback_url: str) -> None:
@@ -80,7 +80,7 @@ def open_plugin_manager(plugin_name: str, fallback_url: str) -> None:
         # on the FIRST open the dialog is still being built and repopulated.
         QTimer.singleShot(0, lambda: _prefill_plugin_filter(plugin_name))
     except Exception:
-        QDesktopServices.openUrl(QUrl(fallback_url))
+        open_external_url(fallback_url)
 
 
 def _prefill_plugin_filter(text: str, attempts: int = 14, confirmed: int = 0) -> None:

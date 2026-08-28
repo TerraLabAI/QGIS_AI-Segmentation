@@ -340,10 +340,10 @@ class DockAutoBuildMixin:
         )
         _s1_layout.addWidget(self.auto_start_caption)
 
-        # A last-run recap card lived here and was removed on 2026-08-11. It
-        # said "Last run: 69 building in Building 4 (11 Aug) · 14 credits" and
-        # sat on the Start page for the rest of the session. The saved layer is
-        # in the legend and the balance is on the footer ring, so it repeated
+        # A last-run recap card lived here and was removed. It named the last
+        # run and what it cost, and sat on the Start page for the rest of the
+        # session. The saved layer is in the legend and the balance is on the
+        # footer ring, so it repeated
         # two things the user could already see, on the one screen that should
         # be about the next run. The success line below still names the layer
         # right after a Finish, which is the moment that needed an answer.

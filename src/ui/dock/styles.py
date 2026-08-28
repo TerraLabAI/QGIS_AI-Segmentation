@@ -784,10 +784,9 @@ _ENGINE_CARD_QSS = (
 # picked card would ship near-white text on the brand blue.
 #
 # White on the filled blue, not the black the filled-button constants use.
-# Yvann's call, twice: a picked card has to keep reading as a card of text, and
-# black on blue read as a disabled control to him. The gloss is the full white
-# too, not a dimmed one, because at 11px on a saturated fill any transparency
-# turns to mud.
+# A picked card has to keep reading as a card of text, and black on blue reads
+# as a disabled control. The gloss is the full white too, not a dimmed one,
+# because at 11px on a saturated fill any transparency turns to mud.
 _ENGINE_CARD_TITLE_QSS = (
     "font-size: 12px; font-weight: bold; color: palette(text);")
 _ENGINE_CARD_GLOSS_QSS = "font-size: 11px; color: palette(text);"
@@ -807,7 +806,7 @@ _BTN_REMOVE_ROW = (
     f"QPushButton:disabled {{ color: {DISABLED_TEXT}; }}"
 )
 
-# _RECAP_CARD_QSS lived here and went on 2026-08-11 with its last caller. Both
+# _RECAP_CARD_QSS lived here and went with its last caller. Both
 # last-run recap cards, Semi-Auto's and Automatic's, are gone: what a finished
 # run produced is in the legend and on the footer credit ring, and a Start page
 # is about the next run. Do not rebuild a green summary card for that.

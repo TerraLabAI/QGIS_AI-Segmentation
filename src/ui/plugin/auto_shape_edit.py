@@ -660,7 +660,7 @@ class AutoShapeEditMixin:
                     self._det_id_for_object_index(det_idx)):
                 return
             # A click goes straight into the fix session. An intermediate menu
-            # was tried on 2026-07-30 and removed the same day: it cost a click
+            # was tried and dropped: it cost a click
             # on the one gesture the step exists for. The polygon's own dials
             # ride along INSIDE the session instead (set_correct_session_active).
             self._set_correct_selection(det_idx, enter_session=True)

@@ -443,15 +443,14 @@ class DockManualEngineMixin:
         it into the other would leave the impression this mode already tracks
         with nothing to divide it by.
         """
-        from qgis.PyQt.QtCore import QUrl
-        from qgis.PyQt.QtGui import QDesktopServices
+        from ..external_links import open_external_url
         try:
             from ...core import telemetry_session_events
             telemetry_session_events.track_pro_upsell_clicked(
                 source="manual_credits_low")
         except Exception:  # noqa: BLE001 -- telemetry never blocks a click
             pass  # nosec B110
-        QDesktopServices.openUrl(QUrl(url))
+        open_external_url(url, parent=self)
 
     def _on_manual_low_credit_cta(self) -> None:
         """The card button, one hop to the link handler above.

@@ -105,7 +105,7 @@ _MAX_RATE_LIMIT_RETRIES = 8
 # under load, which surfaced as holes in the result. Per-tile patience window
 # from the tile's FIRST busy answer; within it the tile keeps its place in line.
 _QUEUE_RETRY_BUDGET_S = 300.0
-# Retry delays are jittered (AWS full-jitter rationale): N clients told
+# Retry delays are jittered: N clients told
 # "retry in 5s" must not all come back at t+5.000 in one synchronized wave.
 _BUSY_JITTER = (0.85, 1.30)
 # How many upcoming tiles the streaming path asks the main thread to render
@@ -215,12 +215,9 @@ _HARD_TILE_COVERAGE = 0.80
 # with the escape, such a mask meets the same span test and compactness check
 # the 0.55-0.80 band meets, so a tile-shaped blob and a ragged texture fill are
 # still dropped and only a solid near-rectangular object gets through.
-# Measured over 619087 masks from 261 count-mode runs and sweep cells, tile
-# ground 35 m to 2130 m: 1438 masks are over the cap and 1424 of them (99.0%)
-# bound the tile in both directions, so the span test drops them anyway. The
-# escape changes the answer for 14. Object counts and the score against IGN
-# references were identical on all three scenes it was A/B'd on. It is here to
-# take the shape-blind drop out of the code, not to move today's numbers.
+# A mask over the hard cap is still judged on shape: the span test and the
+# compactness check already drop tile-shaped blobs and texture fills, so the
+# coverage number alone should not decide.
 # Client fallback; server-overridable (seed.saturation.hard_cover_shape_escape).
 _HARD_COVER_SHAPE_ESCAPE = True
 # Share of its oriented bounding box a large mask must fill for that
@@ -1023,8 +1020,8 @@ class AutoDetectionWorker(QThread):
         thread un-joinable at unload and crashes QGIS at teardown)."""
         return self._stop_requested
 
-    # UNREACHABLE (2026-07-25): no caller anywhere. The resume flow this was
-    # written for was removed as confusing, and every Detect is a fresh run.
+    # UNREACHABLE: no caller anywhere. The resume flow this was written for
+    # was removed as confusing, and every Detect is a fresh run.
     # Kept on purpose so the worker surface stays stable. Do not delete it, and
     # do not treat it as live.
     def remaining_tiles(self) -> list[tuple[int, int, int, int]]:

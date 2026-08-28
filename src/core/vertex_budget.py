@@ -43,10 +43,9 @@ def _ring_metrics(pts: list, prev: list, nxt: list, i: int) -> tuple[float, floa
     replace it, which is exactly how far the outline moves.
 
     The reference vector-simplifying tools weight this area by the angle the
-    vertex sits at, to drop spikes before bends. Measured on a run of real
-    building outlines it moved nothing here (identical IoU, same spike count at
-    every reduction): the deviation cap and the edge fitting below already do
-    that work. Left out rather than shipped as a dial that does nothing.
+    vertex sits at, to drop spikes before bends. It changes nothing here,
+    because the deviation cap and the edge fitting below already do that work.
+    Left out rather than shipped as a dial that does nothing.
     """
     ax, ay = pts[prev[i]]
     bx, by = pts[i]

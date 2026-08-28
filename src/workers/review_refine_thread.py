@@ -4,9 +4,8 @@ Moving a Shape control re-shapes every object of the run, because the controls
 describe the whole set. On a dense run that is tens of thousands of GEOS and
 Python passes, and until this thread existed they all ran on the GUI thread in
 20 ms cooperative slices. The slices kept QGIS answering, but only in the gaps
-between them: the canvas got about four fifths of the frames it asked for while
-a pass converged, and the pass itself owned the thread that draws the map for as
-long as it took.
+between them: the canvas dropped frames while a pass converged, and the pass
+itself owned the thread that draws the map for as long as it took.
 
 This thread takes the same work instead. The GUI picks the refiner (that reads
 the project, so it stays where the project is), hands over one job per object,

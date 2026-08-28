@@ -52,8 +52,8 @@ def min_meta_positives() -> int:
     return _policy_min("exemplar_min_meta_positives", MIN_META_POSITIVES)
 
 
-# UNREACHABLE (2026-07-30): nothing in src/ calls this any more. It gated the
-# green Detect button until the button moved to the plain can_detect floor, and
+# UNREACHABLE: nothing in src/ calls this any more. It gated the green Detect
+# button until the button moved to the plain can_detect floor, and
 # it is kept because the same combination is still the model's most accurate
 # mode, so a future nudge (never a gate) would ask exactly this question.
 def meta_satisfied(has_text: bool, positives: int) -> bool:

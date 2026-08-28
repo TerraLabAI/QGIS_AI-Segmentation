@@ -231,7 +231,7 @@ class DockAboutMixin:
         # beside the gear/help icons without crowding them (#30). Always opens
         # the AI Edit product page in the browser.
         #
-        # SURFACED NOWHERE (2026-08-10): the credit gauge took the bottom-left
+        # SURFACED NOWHERE: the credit gauge took the bottom-left
         # slot in both modes, and signed out the footer shows neither. Every
         # setVisible on this button is now False. It is built and wired so the
         # slot can be given back without rebuilding the footer.
@@ -317,11 +317,9 @@ class DockAboutMixin:
         """Footer credit gauge: open the dashboard, where the balance, the plan
         and the invoices live. The address is a plugin constant, so it needs no
         https guard (that one is for server-supplied URLs)."""
-        from qgis.PyQt.QtCore import QUrl
-        from qgis.PyQt.QtGui import QDesktopServices
-
         from ...core.activation_manager import get_dashboard_url
-        QDesktopServices.openUrl(QUrl(get_dashboard_url()))
+        from ..external_links import open_external_url
+        open_external_url(get_dashboard_url(), parent=self)
         try:
             from ...core import telemetry_session_events
             telemetry_session_events.track_pro_upsell_clicked(source="credit_gauge")
@@ -334,10 +332,9 @@ class DockAboutMixin:
         The address is server-supplied, so it goes through the https guard and
         falls back to the built-in one when it is anything else.
         """
-        from qgis.PyQt.QtCore import QUrl
-        from qgis.PyQt.QtGui import QDesktopServices
-        QDesktopServices.openUrl(
-            QUrl(_web_url_or(get_tutorial_url(), TUTORIAL_URL_FALLBACK)))
+        from ..external_links import open_external_url
+        open_external_url(
+            _web_url_or(get_tutorial_url(), TUTORIAL_URL_FALLBACK), parent=self)
 
     def _on_open_guide_footer(self):
         """Footer book button: open the step-by-step written guide.
@@ -518,10 +515,10 @@ class DockAboutMixin:
         dlg.exec()
 
     def _on_contact_us(self, _link=None):
-        from qgis.PyQt.QtCore import QUrl
-        from qgis.PyQt.QtGui import QDesktopServices
         from qgis.PyQt.QtWidgets import QApplication, QDialog
         from qgis.PyQt.QtWidgets import QVBoxLayout as _VBox
+
+        from ..external_links import open_external_url
 
         # Served like every other outbound link on this screen, so the
         # booking address can move without a plugin release.
@@ -569,7 +566,7 @@ class DockAboutMixin:
         call_btn.setStyleSheet(_BTN_BLUE)
         call_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         call_btn.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl(calendly_url))
+            lambda: open_external_url(calendly_url, parent=dlg)
         )
         lay.addWidget(call_btn)
 

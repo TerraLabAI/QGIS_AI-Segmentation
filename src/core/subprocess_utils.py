@@ -93,6 +93,10 @@ def get_clean_env_for_venv() -> dict:
         if not exists(store) or any(_sits_inside(store, r) for r in qgis_roots):
             env.pop(store_var, None)
     env["PYTHONIOENCODING"] = "utf-8"
+    # Keep the user site directory out of the child. Dropping variables
+    # never reaches a sitecustomize.py or a .pth file already sitting
+    # there, and either one is imported before anything we control.
+    env["PYTHONNOUSERSITE"] = "1"
     # Keep the working directory off the child's sys.path. Around twenty
     # `python -c` probes run with cwd set to the cache directory, and without
     # this a torch.py sitting there would be imported instead of the real one.

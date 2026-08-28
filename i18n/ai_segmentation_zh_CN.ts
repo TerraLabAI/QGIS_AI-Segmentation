@@ -5025,5 +5025,45 @@ is blocking the plugin&apos;s local AI environment.</source>
         <source>This map source has no sharper picture of this area. The run uses the sharpest one it has, and costs fewer tiles than the estimate.</source>
         <translation>此地图源没有该区域更清晰的图像。此次检测任务将使用现有的最清晰图像，消耗的图块少于预估值。</translation>
     </message>
+    <message>
+        <source>QGIS could not open a file manager.</source>
+        <translation>QGIS 无法打开文件管理器。</translation>
+    </message>
+    <message>
+        <source>The folder is copied to your clipboard: paste it into your file manager.</source>
+        <translation>文件夹已复制到剪贴板：请将其粘贴到文件管理器中。</translation>
+    </message>
+    <message>
+        <source>Copy the folder below and paste it into your file manager.</source>
+        <translation>复制下面的文件夹并将其粘贴到文件管理器中。</translation>
+    </message>
+    <message>
+        <source>QGIS could not open your email app.</source>
+        <translation>QGIS 无法打开邮件应用。</translation>
+    </message>
+    <message>
+        <source>The support address is copied to your clipboard: paste it into your email app.</source>
+        <translation>支持地址已复制到剪贴板：请将其粘贴到邮件应用中。</translation>
+    </message>
+    <message>
+        <source>Copy the support address below into your email app.</source>
+        <translation>将下面的支持地址复制到邮件应用中。</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser.</source>
+        <translation>QGIS 无法打开浏览器。</translation>
+    </message>
+    <message>
+        <source>The address is copied to your clipboard: paste it into a browser to continue.</source>
+        <translation>地址已复制到剪贴板：请将其粘贴到浏览器中以继续。</translation>
+    </message>
+    <message>
+        <source>Copy the address below and paste it into a browser.</source>
+        <translation>复制下面的地址并将其粘贴到浏览器中。</translation>
+    </message>
+    <message>
+        <source>Open it yourself</source>
+        <translation>自行打开</translation>
+    </message>
 </context>
 </TS>

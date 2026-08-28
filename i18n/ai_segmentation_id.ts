@@ -4732,5 +4732,45 @@ memblokir lingkungan AI lokal plugin.</translation>
         <source>This map source has no sharper picture of this area. The run uses the sharpest one it has, and costs fewer tiles than the estimate.</source>
         <translation>Sumber peta ini tidak memiliki gambar yang lebih tajam untuk area ini. Proses menggunakan gambar paling tajam yang tersedia, dan menghabiskan lebih sedikit tile daripada perkiraan.</translation>
     </message>
+    <message>
+        <source>QGIS could not open a file manager.</source>
+        <translation>QGIS tidak dapat membuka pengelola berkas.</translation>
+    </message>
+    <message>
+        <source>The folder is copied to your clipboard: paste it into your file manager.</source>
+        <translation>Folder telah disalin ke papan klip: tempelkan ke pengelola berkas Anda.</translation>
+    </message>
+    <message>
+        <source>Copy the folder below and paste it into your file manager.</source>
+        <translation>Salin folder di bawah ini lalu tempelkan ke pengelola berkas Anda.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open your email app.</source>
+        <translation>QGIS tidak dapat membuka aplikasi email Anda.</translation>
+    </message>
+    <message>
+        <source>The support address is copied to your clipboard: paste it into your email app.</source>
+        <translation>Alamat dukungan telah disalin ke papan klip: tempelkan ke aplikasi email Anda.</translation>
+    </message>
+    <message>
+        <source>Copy the support address below into your email app.</source>
+        <translation>Salin alamat dukungan di bawah ini ke aplikasi email Anda.</translation>
+    </message>
+    <message>
+        <source>QGIS could not open a browser.</source>
+        <translation>QGIS tidak dapat membuka peramban.</translation>
+    </message>
+    <message>
+        <source>The address is copied to your clipboard: paste it into a browser to continue.</source>
+        <translation>Alamat telah disalin ke papan klip: tempelkan ke peramban untuk melanjutkan.</translation>
+    </message>
+    <message>
+        <source>Copy the address below and paste it into a browser.</source>
+        <translation>Salin alamat di bawah ini lalu tempelkan ke peramban.</translation>
+    </message>
+    <message>
+        <source>Open it yourself</source>
+        <translation>Buka sendiri</translation>
+    </message>
 </context>
 </TS>

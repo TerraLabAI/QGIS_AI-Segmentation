@@ -642,8 +642,8 @@ class AutoResultsMixin:
         start over. A zone of many thousands of objects takes longer to draw
         than the live cadence, so every tick threw away a frame that was never
         finished: the polygons blinked in and out, and a zoom could not settle
-        until the run ended. Measured on 17655 objects, whole zone visible: 1.4 s
-        to draw, against a tick every 1.2 s.
+        until the run ended. On a dense zone one draw takes longer than the
+        live cadence.
 
         So a tick that lands mid-draw only marks the layer dirty (the deferred
         flag: the cached image is dropped, the canvas is NOT told to refresh)

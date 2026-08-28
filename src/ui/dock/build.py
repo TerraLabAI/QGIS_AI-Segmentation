@@ -693,11 +693,11 @@ class DockBuildMixin:
         )
         start_layout.addWidget(self.start_button)
 
-        # Three things used to live here and no longer do, all removed on
-        # 2026-08-11. Two filled the panel after the work was over: the export
-        # recap said what the last session produced, which the saved layer in
-        # the legend already says, and the Try-Automatic band sold the other
-        # mode to somebody who had just finished using this one.
+        # Three things used to live here and no longer do. Two filled the panel
+        # after the work was over: the export recap said what the last session
+        # produced, which the saved layer in the legend already says, and the
+        # Try-Automatic band sold the other mode to somebody who had just
+        # finished using this one.
         #
         # The third was a dismissible caption describing the mode ("click an
         # object and the AI outlines it, one at a time"). It went because the
