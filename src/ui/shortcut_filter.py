@@ -57,6 +57,24 @@ class ShortcutFilter(QObject):
         except (RuntimeError, AttributeError):
             return False
 
+    def _clear_selection_offered(self) -> bool:
+        """True only while the panel is actually offering Clear selection.
+
+        The button and the key must say the same thing, so the key reads the
+        button rather than keeping a second copy of the rule. A refine handoff
+        hides the whole secondary row, and the object open there has already
+        left saved_polygons, so a key that fired while the button was hidden
+        took a polygon nobody could get back.
+        """
+        dock = getattr(self._plugin, "dock_widget", None)
+        button = getattr(dock, "clear_selection_button", None)
+        if button is None:
+            return False
+        try:
+            return bool(button.isVisible() and button.isEnabled())
+        except (RuntimeError, AttributeError):
+            return False
+
     def _session_owns_key(self, key, modifiers) -> bool:
         """Whether the armed session handles this key in the KeyPress branch.
 
@@ -77,6 +95,10 @@ class ShortcutFilter(QObject):
         blocking = Qt.KeyboardModifier.ControlModifier
         blocking |= Qt.KeyboardModifier.AltModifier
         blocking |= Qt.KeyboardModifier.ShiftModifier
+        if key == Qt.Key.Key_C and not (modifiers & blocking):
+            # Claimed only while the panel offers it, so a key the session
+            # would drop is left to whoever else wants it.
+            return self._clear_selection_offered()
         if key in (Qt.Key.Key_S, Qt.Key.Key_E) and not (modifiers & blocking):
             return True
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Escape):
@@ -284,6 +306,14 @@ class ShortcutFilter(QObject):
         if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             if self._confirm_export_and_end():
                 plugin._on_export_layer()
+            return True
+        if key == Qt.Key.Key_C and not modifiers:
+            # The explicit way out of a selection that ran away. Esc below
+            # means "stop the session", and a trim click is local by design,
+            # so neither of them can take a whole run-away shape back.
+            if not self._clear_selection_offered():
+                return False
+            plugin._on_clear_selection()
             return True
         if key == Qt.Key.Key_Escape:
             # Selection-first: Esc clears the selection before it ever means

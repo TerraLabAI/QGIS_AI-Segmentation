@@ -1367,56 +1367,78 @@ def tile_is_unavailable(img) -> bool:
         return False
 
 
-# Side (px) and time budget of the pre-run imagery probe. Small on purpose: it
-# has to render at the RUN's ground resolution to ask the right question, but
-# it only needs enough pixels to recognise a placeholder card, and the user is
-# waiting on it before the run starts.
+# Side (px) and time budget of the finest render in the pre-run imagery probe.
+# Small on purpose: it has to render at the RUN's ground resolution to ask the
+# right question, but it only needs enough pixels to recognise a placeholder
+# card, and the user is waiting on it before the run starts. Every coarser
+# render in the chain halves this again.
 _IMAGERY_PROBE_PX: int = 256
 _IMAGERY_PROBE_TIMEOUT_MS: int = 12000
 
 
-def probe_imagery_availability(
-    layer,
-    extent,
-    render_crs=None,
-    width: int = _IMAGERY_PROBE_PX,
-    height: int = _IMAGERY_PROBE_PX,
-    timeout_ms: int = _IMAGERY_PROBE_TIMEOUT_MS,
-):
-    """Render one small window at the run's resolution and say what came back.
+def render_verdict(img) -> str:
+    """What one rendered window shows: "ok", "unavailable" or "blank".
 
-    Answers the question a run cannot ask afterwards: does this source actually
-    hold a picture of this ground at this level of detail? Asked BEFORE any
-    billable work, and the pixels it fetches warm the provider cache for the
-    first real tile, so the cost is close to free.
-
-    ``extent`` must already be in ``render_crs`` (the run CRS), and must span
-    the ground of one probe window at the run's resolution, not the whole zone:
-    a whole-zone probe renders at a coarser zoom, where a source usually does
-    have imagery even when it has none at the run's.
-
-    Returns one of:
-        "ok"           - real imagery came back
-        "unavailable"  - the source answered with a "no image here" card
-        "blank"        - a single flat colour (nodata, out of footprint)
-        "failed"       - nothing rendered (timeout, provider error)
-
-    MAIN THREAD ONLY (it waits on a nested event loop, see render_zone_to_image).
+    The single-picture classifier, shared by every probe so there is one place
+    that decides what a card looks like. "unavailable" is a flat grey card,
+    "blank" a single flat colour (nodata, outside the footprint), "ok"
+    anything else.
     """
-    try:
-        img, _actual = render_zone_to_image(
-            layer, extent, int(width), int(height),
-            timeout_ms=int(timeout_ms), render_crs=render_crs)
-    except Exception as exc:  # noqa: BLE001 - a probe must never block a run
-        logger.debug("probe_imagery_availability: render failed: %s", exc)
-        return "failed"
-    if img is None:
-        return "failed"
     if tile_is_unavailable(img):
         return "unavailable"
     if tile_is_blank(img):
         return "blank"
     return "ok"
+
+
+def probe_depth_chain(
+    layer,
+    extent,
+    render_crs=None,
+    count: int = 2,
+    side_px: int = _IMAGERY_PROBE_PX,
+    min_side_px: int = 32,
+    timeout_ms: int = _IMAGERY_PROBE_TIMEOUT_MS,
+):
+    """One piece of ground rendered at several depths, finest first.
+
+    Every render covers the SAME extent in half as many pixels as the one
+    before, so each asks the source for one zoom level less. Comparing
+    consecutive pairs is what tells a placeholder card apart from genuinely
+    flat grey ground: real ground looks like itself at both depths, a card does
+    not, because one level down the source has a picture.
+
+    Returns the QImages it managed to render, so a caller must handle a list
+    shorter than ``count`` (and an empty one) by leaving the run alone. Stops
+    at the first render that does not come back and at ``min_side_px``, under
+    which there are not enough pixels left to compare.
+
+    MAIN THREAD ONLY (each render waits on a nested event loop, see
+    render_zone_to_image).
+    """
+    images = []
+    side = int(side_px)
+    for _ in range(max(2, int(count))):
+        if side < int(min_side_px):
+            break
+        img = _probe_render(layer, extent, side, render_crs, int(timeout_ms))
+        if img is None:
+            break
+        images.append(img)
+        side //= 2
+    return images
+
+
+def _probe_render(layer, extent, side_px: int, render_crs, timeout_ms: int):
+    """One probe render, or None. Never raises: a probe must not stop a run."""
+    try:
+        img, _actual = render_zone_to_image(
+            layer, extent, side_px, side_px,
+            timeout_ms=timeout_ms, render_crs=render_crs)
+    except Exception as exc:  # noqa: BLE001 - a probe must never block a run
+        logger.debug("probe render failed: %s", exc)
+        return None
+    return img
 
 
 def encode_tile_png(

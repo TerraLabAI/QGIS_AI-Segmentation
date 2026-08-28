@@ -5004,5 +5004,26 @@ is blocking the plugin&apos;s local AI environment.</source>
         <source>the network reported: {error}</source>
         <translation>网络报告：{error}</translation>
     </message>
+    <message>
+        <location filename="../src/ui/plugin/manual_predict.py" line="0" />
+        <source>That click selected nothing. Move the points and click again.</source>
+        <translation>这次点击未选中任何内容。移动点后再次点击。</translation>
+    </message>
+    <message>
+        <source>Clear selection (C)</source>
+        <translation>清除选择 (C)</translation>
+    </message>
+    <message>
+        <source>Removes the points and the shape you are working on. Saved polygons stay.</source>
+        <translation>移除正在处理的点和形状。保留已保存的多边形。</translation>
+    </message>
+    <message>
+        <source>Clear the selection in progress</source>
+        <translation>清除正在绘制的选区</translation>
+    </message>
+    <message>
+        <source>This map source has no sharper picture of this area. The run uses the sharpest one it has, and costs fewer tiles than the estimate.</source>
+        <translation>此地图源没有该区域更清晰的图像。此次检测任务将使用现有的最清晰图像，消耗的图块少于预估值。</translation>
+    </message>
 </context>
 </TS>

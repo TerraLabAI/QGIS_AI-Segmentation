@@ -1210,6 +1210,8 @@ class TerraLabClient:
     #   policy_rev       which policy revision produced the run (per-run
     #                    provenance)
     #   prompt_mode      "count" or "map", the client's read of the prompt kind
+    #   basemap          short provider label for the imagery the run reads
+    #                    ("Esri", "IGN", "local raster"), never a source URL
     #   zone_geojson     the drawn zone polygon (sent once, on the run's first
     #                    request, whatever its tile index)
     #   zone_wkt         the same zone as WGS84 WKT (sent once, same request)
@@ -1221,8 +1223,8 @@ class TerraLabClient:
     #                    stamps were composited into the sent tile
     _PREDICT_EXTRA_FIELDS = (
         "return_semantic", "charge_tiles", "mask_scale",
-        "plugin_version", "policy_rev", "prompt_mode", "zone_geojson",
-        "zone_wkt", "zone_km2", "native_mupp",
+        "plugin_version", "policy_rev", "prompt_mode", "basemap",
+        "zone_geojson", "zone_wkt", "zone_km2", "native_mupp",
         "clean_image",
     )
 

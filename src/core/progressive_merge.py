@@ -20,26 +20,85 @@ from __future__ import annotations
 from typing import Any
 
 
+def _row_spans(window: Any) -> tuple:
+    """Every run of set pixels, as (row, start, end) arrays. One vector pass."""
+    import numpy as np
+    h, w = window.shape
+    padded = np.zeros((h, w + 2), dtype=np.int8)
+    padded[:, 1:-1] = window
+    edges = np.diff(padded, axis=1)
+    starts = np.argwhere(edges == 1)
+    ends = np.argwhere(edges == -1)
+    if len(starts) == 0 or len(starts) != len(ends):
+        return None
+    return (starts[:, 0].tolist(), starts[:, 1].tolist(), ends[:, 1].tolist())
+
+
 def _region_reached_by_click(window: Any, seed_row: int, seed_col: int) -> Any:
-    """The part of a boolean ``window`` the click can reach, by geodesic
-    dilation of the seed. A seed that sits on a False pixel reaches the whole
-    window, so a click is never a silent no-op; the window itself is what keeps
-    it local."""
+    """The part of a boolean ``window`` the click can reach.
+
+    Row spans, not a geodesic dilation: dilating grows the reached set by one
+    pixel per pass and re-reads the whole window on every pass, so a mask that
+    winds across the crop costs one pass per pixel of its length and freezes the
+    click. Spans walk the same connected piece once, in the order they touch.
+    A seed that sits on a False pixel reaches the whole window, so a click is
+    never a silent no-op; the window itself is what keeps it local.
+    """
+    import bisect
+
     import numpy as np
     if not window[seed_row, seed_col]:
         return window
+    spans = _row_spans(window)
+    if spans is None:
+        return window
+    rows, lo, hi = spans
+    h = window.shape[0]
+    by_row_lo: list = [[] for _ in range(h)]
+    by_row_hi: list = [[] for _ in range(h)]
+    by_row_idx: list = [[] for _ in range(h)]
+    for i, r in enumerate(rows):
+        by_row_lo[r].append(lo[i])
+        by_row_hi[r].append(hi[i])
+        by_row_idx[r].append(i)
+    seed = -1
+    at = bisect.bisect_right(by_row_lo[seed_row], seed_col) - 1
+    if at >= 0 and by_row_hi[seed_row][at] > seed_col:
+        seed = by_row_idx[seed_row][at]
+    if seed < 0:
+        return window
+    seen = bytearray(len(rows))
+    seen[seed] = 1
+    stack = [seed]
+    # A span is a run of set pixels on one row, so this window holds at most
+    # h * ceil(w / 2) of them and a fill marks each one before pushing it. The
+    # ceiling can therefore never cut a correct fill short; it is there so a
+    # bad span index bounds the loop instead of hanging the click, and what it
+    # ships is still one connected piece holding the click, never more.
+    visits_left = h * ((window.shape[1] + 1) // 2) + 1
+    while stack and visits_left > 0:
+        visits_left -= 1
+        i = stack.pop()
+        r = rows[i]
+        for near in (r - 1, r + 1):
+            if not 0 <= near < h:
+                continue
+            # The first span of that row ending past this one's start, then
+            # forward while they still overlap: touching spans only.
+            k = bisect.bisect_right(by_row_hi[near], lo[i])
+            row_lo = by_row_lo[near]
+            row_idx = by_row_idx[near]
+            while k < len(row_idx) and row_lo[k] < hi[i]:
+                j = row_idx[k]
+                if not seen[j]:
+                    seen[j] = 1
+                    stack.append(j)
+                k += 1
     reach = np.zeros_like(window)
-    reach[seed_row, seed_col] = True
-    while True:
-        grown = reach.copy()
-        grown[1:, :] |= reach[:-1, :]
-        grown[:-1, :] |= reach[1:, :]
-        grown[:, 1:] |= reach[:, :-1]
-        grown[:, :-1] |= reach[:, 1:]
-        grown &= window
-        if np.array_equal(grown, reach):
-            return reach
-        reach = grown
+    for i in range(len(rows)):
+        if seen[i]:
+            reach[rows[i], lo[i]:hi[i]] = True
+    return reach
 
 
 def subtract_click_region(

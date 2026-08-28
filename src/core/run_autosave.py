@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 
 from qgis.core import (
@@ -74,6 +75,21 @@ def _autosave_output_crs(source_crs, merged_ided):
 # QSettings pointer to the single run autosave that was never exported.
 # JSON: {path, table, layer_name, prompt, run_id, count, ts}.
 _PENDING_KEY = "AISegmentation/pending_run_autosave"
+
+# The word every autosave table name carries, between the prompt slug and the
+# date snake_table_name appends. Written once here, read by the writer, by the
+# orphan report and by the drop guard, so the naming rule has one home.
+AUTOSAVE_TABLE_MARK = "autosave"
+_AUTOSAVE_TABLE_RE = re.compile(
+    rf"_{AUTOSAVE_TABLE_MARK}_[0-9]{{8}}(?:_[0-9]+)?$")
+
+# Where this session armed an autosave, keyed by run id. The QSettings pointer
+# holds ONE slot, so a second run overwrites it and the first run's table then
+# had nothing left naming it: that is how a project file collects autosave
+# tables nobody drops. Bounded, session-only, and never the authority on what
+# is still pending: only the pointer is.
+_ARMED_TABLES: dict[str, dict] = {}
+_MAX_ARMED_TABLES = 16
 
 
 def _autosave_fields() -> QgsFields:
@@ -137,7 +153,8 @@ def write_autosave(merged_ided: list, crs_authid: str, prompt: str,
         fields = _autosave_fields()
         stem = (prompt or "").strip() or "detection"
         gpkg_path = output_store.project_gpkg_path(source_layer)
-        table = output_store.snake_table_name(stem + " autosave", gpkg_path)
+        table = output_store.snake_table_name(
+            f"{stem} {AUTOSAVE_TABLE_MARK}", gpkg_path)
         writer = _open_writer(gpkg_path, table, fields, crs)
         if writer is None:
             # Shared file locked/corrupt: a standalone file still saves the run.
@@ -224,17 +241,40 @@ def record_pending(info: dict) -> None:
         QSettings().setValue(_PENDING_KEY, json.dumps(info))
     except Exception:  # nosec B110 -- best-effort marker
         pass
+    try:
+        run_id = str(info.get("run_id") or "")
+        if len(_ARMED_TABLES) >= _MAX_ARMED_TABLES:
+            _ARMED_TABLES.pop(next(iter(_ARMED_TABLES)), None)
+        _ARMED_TABLES[run_id] = dict(info)
+    except Exception:  # nosec B110 -- the registry is a convenience
+        pass
+
+
+def _pointer_raw() -> dict | None:
+    """The stored pointer exactly as written, with no repair and no side
+    effect. ``read_pending`` and ``clear_pending`` both need to look without
+    one calling the other."""
+    try:
+        raw = QSettings().value(_PENDING_KEY, "", type=str)
+        if not raw:
+            return None
+        info = json.loads(raw)
+        return info if isinstance(info, dict) else None
+    except Exception:  # noqa: BLE001 -- unreadable pointer = no pending
+        return None
 
 
 def read_pending(check_file: bool = True) -> dict | None:
     """The pending autosave pointer, or None. With ``check_file`` (default) a
     pointer whose GeoPackage no longer exists is dropped and cleared."""
     try:
-        raw = QSettings().value(_PENDING_KEY, "", type=str)
-        if not raw:
+        info = _pointer_raw()
+        if info is None:
+            # Stored but unreadable: drop it, or it is re-parsed every start.
+            if QSettings().value(_PENDING_KEY, "", type=str):
+                clear_pending()
             return None
-        info = json.loads(raw)
-        if not isinstance(info, dict) or not info.get("path") or not info.get("table"):
+        if not info.get("path") or not info.get("table"):
             clear_pending()
             return None
         if check_file and not os.path.exists(str(info["path"])):
@@ -269,30 +309,176 @@ def drop_autosave_table(path: str, table: str) -> None:
         pass  # nosec B110
 
 
+def is_autosave_table(table: str) -> bool:
+    """Whether this table name was produced by the autosave naming rule.
+
+    The rule is ``<prompt slug> autosave`` through ``snake_table_name``, so the
+    name ends in ``_autosave_<yyyymmdd>``, plus the ``_2`` the deduper appends.
+    A prompt long enough to push the mark past the 40-character cut answers no,
+    which costs a table left on disk and never risks one that is not ours.
+    """
+    return bool(table) and _AUTOSAVE_TABLE_RE.search(str(table)) is not None
+
+
+def orphan_autosave_tables(gpkg_path: str) -> list[dict]:
+    """Autosave tables in this GeoPackage that no armed pointer claims.
+
+    REPORTS, never deletes. Each entry is ``{"table", "rows", "bytes"}``, where
+    ``bytes`` sums the stored geometry blobs: the bulk of an autosave table,
+    and an estimate, since SQLite hands pages back to the file's free list
+    rather than to the disk until the file is vacuumed.
+
+    Nothing in the plugin calls this on a schedule, and nothing should: one of
+    these tables is the only unfiltered copy of a past run, held exactly for
+    the session that died before its export. Read straight from SQLite, so a
+    report costs no OGR layer opens. Never raises.
+    """
+    out: list[dict] = []
+    if not gpkg_path or not os.path.exists(gpkg_path):
+        return out
+    pointer = _pointer_raw() or {}
+    connection = None
+    try:
+        import sqlite3
+        from pathlib import Path
+
+        connection = sqlite3.connect(
+            f"{Path(gpkg_path).as_uri()}?mode=ro", uri=True, timeout=0.5)
+        geometry_column = {
+            str(name): str(column)
+            for name, column in connection.execute(
+                "SELECT table_name, column_name FROM gpkg_geometry_columns")
+        }
+        names = [str(row[0]) for row in connection.execute(
+            "SELECT table_name FROM gpkg_contents")]
+        for name in sorted(names):
+            if not is_autosave_table(name):
+                continue
+            if _same_table(pointer, gpkg_path, name):
+                continue  # still pending: this copy is the only one left
+            quoted = '"{}"'.format(name.replace('"', '""'))
+            # The name comes from gpkg_contents and is quoted above.
+            rows = _scalar(
+                connection,
+                f"SELECT COUNT(*) FROM {quoted}") or 0  # nosec B608
+            column = geometry_column.get(name)
+            size = 0
+            if column:
+                quoted_column = '"{}"'.format(column.replace('"', '""'))
+                size = _scalar(
+                    connection,
+                    # Both names come from gpkg metadata and are quoted above.
+                    f"SELECT SUM(LENGTH({quoted_column})) FROM {quoted}"  # nosec B608
+                ) or 0
+            out.append({"table": name, "rows": int(rows), "bytes": int(size)})
+    except Exception:  # noqa: BLE001 -- a report that fails reports nothing
+        return out
+    finally:
+        if connection is not None:
+            try:
+                connection.close()
+            except Exception:  # nosec B110
+                pass
+    return out
+
+
+def _scalar(connection, statement: str):
+    """First column of the first row, or None. Never raises."""
+    try:
+        row = connection.execute(statement).fetchone()  # nosec B608
+    except Exception:  # noqa: BLE001 -- a table that will not answer counts 0
+        return None
+    return row[0] if row else None
+
+
+def drop_listed_autosave_tables(gpkg_path: str, tables) -> list[str]:
+    """Drop the autosave tables NAMED by the caller. Returns what went.
+
+    The list is the caller's, always. Nothing here scans a file and deletes
+    what it finds: pair it with ``orphan_autosave_tables`` and a human who
+    read the report, because every table it names holds objects that exist
+    nowhere else. Two names are refused whatever the caller asked: one that
+    the autosave rule did not produce, and one an armed pointer still claims.
+    """
+    dropped: list[str] = []
+    if not gpkg_path or not tables:
+        return dropped
+    pointer = _pointer_raw() or {}
+    for table in tables:
+        name = str(table or "")
+        if not is_autosave_table(name) or _same_table(pointer, gpkg_path, name):
+            continue
+        drop_autosave_table(gpkg_path, name)
+        dropped.append(name)
+    return dropped
+
+
 def clear_pending(run_id: str | None = None, drop_table: bool = False) -> None:
     """Drop the pending pointer. With ``run_id``, only when the stored pointer
     belongs to that run, so finishing today's run never consumes a previous
     session's still-unrecovered autosave.
 
-    ``drop_table`` also deletes that run's autosave table, and needs a
-    ``run_id`` to know which one. It is for the caller that just wrote the same
-    objects to a real layer: the crash-net copy is then a duplicate, and
-    without this every finished run leaves one more table in the project's
-    GeoPackage for good. Every other caller keeps the file, because that is
-    where it is the only copy left.
+    ``drop_table`` also deletes that run's autosave table. It is for the caller
+    that just wrote the same objects to a real layer: the crash-net copy is
+    then a duplicate, and without this every finished run leaves one more table
+    in the project's GeoPackage for good. Every other caller keeps the file,
+    because that is where it is the only copy left.
+
+    The table is found from the pointer, and from this session's own arming
+    record when the pointer is gone, was never armed, or carries no run id. It
+    used to be found from the pointer alone, under a run id test that a caller
+    with an empty run id could not pass, so those runs kept their table for
+    good. A table an armed pointer for ANOTHER run claims is never dropped:
+    there it is still the only copy of that run.
     """
-    info = None
+    pointer = _pointer_raw()
+    mine = pointer if (not run_id or (pointer or {}).get("run_id") == run_id) else None
+    if pointer is not None and mine is None:
+        # Someone else's run is still pending: leave its pointer armed. This
+        # run's own table can still go, when this session recorded where it is.
+        if drop_table:
+            _drop_run_table(run_id, protected=pointer)
+        return
     try:
-        if run_id:
-            info = read_pending(check_file=False)
-            if not info or info.get("run_id") != run_id:
-                return
         QSettings().remove(_PENDING_KEY)
     except Exception:  # nosec B110
         pass
-    if drop_table and info:
-        drop_autosave_table(str(info.get("path") or ""),
-                            str(info.get("table") or ""))
+    if drop_table:
+        _drop_run_table(run_id, fallback=mine, protected=None)
+    elif run_id:
+        _ARMED_TABLES.pop(str(run_id), None)
+
+
+def _drop_run_table(run_id: str | None, fallback: dict | None = None,
+                    protected: dict | None = None) -> None:
+    """Delete the autosave table of ``run_id``, when this session can name it.
+
+    ``fallback`` is the pointer that already names it. ``protected`` is a
+    pointer still armed for another run, whose table stays whatever happens.
+    """
+    info = fallback
+    if info is None and run_id:
+        info = _ARMED_TABLES.get(str(run_id))
+    if not info:
+        return
+    path = str(info.get("path") or "")
+    table = str(info.get("table") or "")
+    if protected is not None and _same_table(protected, path, table):
+        return
+    drop_autosave_table(path, table)
+    if run_id:
+        _ARMED_TABLES.pop(str(run_id), None)
+
+
+def _same_table(info: dict, path: str, table: str) -> bool:
+    """Whether ``info`` points at this very table, on this very file."""
+    try:
+        other_path = str(info.get("path") or "")
+        same_file = (other_path and path
+                     and os.path.normcase(other_path) == os.path.normcase(path))
+        return bool(same_file) and str(info.get("table") or "").lower() == table.lower()
+    except (AttributeError, TypeError, ValueError):
+        return True  # cannot tell them apart: keep the table
 
 
 def log_and_clear_stale_pending(current_run_id: str | None = None) -> None:

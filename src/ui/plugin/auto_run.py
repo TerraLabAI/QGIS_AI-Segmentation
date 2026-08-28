@@ -267,7 +267,7 @@ class AutoRunMixin:
         except (RuntimeError, AttributeError):
             pass
 
-    def _probe_imagery_behind_banner(self, layer, grid) -> str | None:
+    def _probe_imagery_behind_banner(self, layer, grid) -> tuple[float, str | None]:
         """The imagery probe, with its wait explained on screen.
 
         The probe renders a window and waits on the answer, so on a slow link
@@ -288,7 +288,7 @@ class AutoRunMixin:
             from qgis.PyQt.QtWidgets import QApplication
             QApplication.processEvents()
         try:
-            return self._online_imagery_probe_message(layer, grid)
+            return self._online_imagery_verdict(layer, grid)
         finally:
             if banner is not None:
                 try:
@@ -569,7 +569,24 @@ class AutoRunMixin:
         # it before any billable work, and warms the provider cache for the
         # first real tile. Fail OPEN: only a positively recognised card stops
         # the run.
-        probe_msg = self._probe_imagery_behind_banner(layer, grid)
+        mupp_floor, probe_msg = self._probe_imagery_behind_banner(layer, grid)
+        if probe_msg is None and mupp_floor > 0:
+            # The source holds no picture at the resolution asked for, but does
+            # at a coarser one. Rebuild the grid there rather than stop: a
+            # coarser run reads real ground, and it bills FEWER tiles than the
+            # number the user was shown, never more.
+            coarser = self._compute_auto_grid(layer, mupp_floor=mupp_floor)
+            if coarser is not None:
+                grid = coarser
+                pixel_w = grid["pixel_w"]
+                pixel_h = grid["pixel_h"]
+                geo_bbox = grid["bbox"]
+                self._note_imagery_backoff()
+                QgsMessageLog.logMessage(
+                    "Auto detection: the layer serves no imagery at the detail "
+                    "asked for; the run falls back to a coarser one",
+                    "AI Segmentation", level=Qgis.MessageLevel.Info,
+                )
         if probe_msg is not None:
             # No detect_blocked telemetry yet: its reason enum is owned by the
             # website registry, and a value has to land there before the plugin
@@ -589,14 +606,18 @@ class AutoRunMixin:
 
         # Both text and exemplar runs tile the full-resolution zone the same way
         # (exemplar crops are stamped per tile by the worker, see _launch).
-        tiles = self._tile_manager.compute_grid(pixel_w, pixel_h)
+        # Uncapped, then culled, then capped: the same order the on-screen
+        # estimate uses, so the number the user read is the number that gates.
+        tiles = self._tile_manager.compute_grid(pixel_w, pixel_h, apply_cap=False)
         if tiles is not None:
             # Cull tiles outside the drawn polygon or off the raster's own
-            # extent: empty ground is never rendered, sent, or billed.
+            # extent: empty ground is never rendered or sent.
             before = len(tiles)
             tiles = self._tiles_in_polygon(
                 tiles, geo_bbox, pixel_w, pixel_h, layer, grid.get("crs"))
-            if len(tiles) != before:
+            if len(tiles) > max_tiles_per_run_cap():
+                tiles = None
+            elif len(tiles) != before:
                 QgsMessageLog.logMessage(
                     f"Auto detection: zone cull kept {len(tiles)} of {before} tiles",
                     "AI Segmentation", level=Qgis.MessageLevel.Info,
@@ -1319,11 +1340,11 @@ class AutoRunMixin:
     def _build_auto_client_meta(self) -> dict:
         """The run's optional per-run provenance + benchmark fields for the
         worker: which client build and policy revision produced the run, the
-        client's map-vs-count read of the prompt, the drawn zone as a GeoJSON
-        geometry in the run CRS, its geodesic area in km2, and the run's ground
-        resolution in meters per pixel. Every value is best-effort; a missing
-        one is simply omitted, so the worker leaves the payload byte-identical
-        to before."""
+        client's map-vs-count read of the prompt, the imagery provider it
+        reads, the drawn zone as a GeoJSON geometry in the run CRS, its
+        geodesic area in km2, and the run's ground resolution in meters per
+        pixel. Every value is best-effort; a missing one is simply omitted, so
+        the worker leaves the payload byte-identical to before."""
         import math
 
         from ...core import detection_policy
@@ -1337,6 +1358,9 @@ class AutoRunMixin:
             "policy_rev": detection_policy.policy_rev(),
             "prompt_mode": prompt_mode,
         }
+        basemap = self._auto_basemap_label()
+        if basemap:
+            meta["basemap"] = basemap
         zone = self._auto_zone_geojson()
         if zone is not None:
             meta["zone_geojson"] = zone
@@ -1357,6 +1381,25 @@ class AutoRunMixin:
                 and native_mupp > 0):
             meta["native_mupp"] = round(float(native_mupp), 4)
         return meta
+
+    def _auto_basemap_label(self) -> str | None:
+        """Short provider label for the imagery this run renders its tiles from.
+
+        Best-effort provenance: any failure returns None and the field is left
+        out of the payload rather than delaying a tile request.
+        """
+        try:
+            from ...core.basemap_label import detect_basemap_label
+
+            layer_id = (getattr(self, "_auto_run_ctx", None) or {}).get("layer_id")
+            layer = QgsProject.instance().mapLayer(layer_id) if layer_id else None
+            if layer is None:
+                layer = self._get_active_raster_layer()
+            if layer is None:
+                return None
+            return detect_basemap_label(layer)
+        except Exception:  # noqa: BLE001 - best-effort provenance field
+            return None
 
     def _billable_zone_layer(self):
         """The raster the billable zone is measured against: the layer of the

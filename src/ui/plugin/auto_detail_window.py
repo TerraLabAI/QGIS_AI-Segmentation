@@ -177,6 +177,7 @@ class AutoDetailWindowMixin:
         from ...core.detection_policy import (
             detail_max_object_tile_frac,
             object_min_px,
+            object_tile_ceiling_m,
         )
         from ...core.tile_manager import TILE_SIZE
 
@@ -190,6 +191,13 @@ class AutoDetailWindowMixin:
         if obj_m > 0 and 0 < frac <= 1:
             floor_m = max(floor_m, obj_m / frac)
         min_px = object_min_px()
+        # The coarse end also stops where the answer is known to die for this
+        # object. The object-size rule alone reads the tier's typical size and
+        # runs far past that point: on a 14 km2 zone asking for buildings it
+        # offered a tile covering 1371 m of ground, and buildings at 454 m come
+        # back at 0.013 recall. Absent for a class nobody has measured, which
+        # leaves that class the travel it has today.
+        ceiling_m = object_tile_ceiling_m(object_class) if object_class else 0.0
         free_cap = self._free_run_tile_cap()
 
         finest = 0
@@ -207,7 +215,10 @@ class AutoDetailWindowMixin:
                 break
             if free_cap is None or tiles <= free_cap:
                 affordable = n
-            if not coarsest and obj_m > 0 and obj_m / ground_mupp >= min_px:
+            over_ceiling = (ceiling_m > 0
+                            and TILE_SIZE * ground_mupp > ceiling_m)
+            if (not coarsest and not over_ceiling
+                    and obj_m > 0 and obj_m / ground_mupp >= min_px):
                 coarsest = n
             if floor_m > 0 and TILE_SIZE * ground_mupp < floor_m:
                 break

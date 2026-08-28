@@ -10,12 +10,16 @@ from __future__ import annotations
 from qgis.core import (
     Qgis,
     QgsCoordinateReferenceSystem,
-    QgsGeometry,
     QgsMessageLog,
     QgsPointXY,
 )
 
-from ...core.live_refine import LiveRefiner, points_dial_fraction
+from ...core.live_refine import (
+    LiveRefiner,
+    plain_outline_geom,
+    points_dial_fraction,
+    refine_review_geom,
+)
 
 # How many run refiners the review keeps alive at once. One covers a whole
 # reslice; the spare room absorbs the Correct step's per-shape overrides, which
@@ -214,9 +218,22 @@ class AutoReviewGeometryMixin:
 
         Every dial behind those controls is constant for a run, so they are all
         resolved once into a core.live_refine.LiveRefiner and reused: this
-        method only picks the right refiner and hands it the object. The
-        refiner carries no plugin state, so the same work can also run off the
-        GUI thread.
+        method only picks the right refiner and hands it the object.
+        """
+        refiner = self._review_refiner_for(base, params, pixel_size)
+        if refiner is None:
+            return None
+        return refiner.refine(base)
+
+    def _review_refiner_for(self, base, params: dict, pixel_size: float):
+        """The refiner that shapes THIS object under ``params``, or None when
+        there is no position to measure the run's ground dials at.
+
+        Split out from the refine itself because the pick reads the project
+        (the ground measure) and the shape does not: the review's off-GUI
+        refine thread takes the refiner from here and runs it on its own
+        thread. A refiner carries no plugin state and is read-only once built,
+        so several threads may share one.
         """
         # The object's own position decides which refiner it gets: a refiner
         # holds ground dials already converted, at the factor measured where it
@@ -255,7 +272,7 @@ class AutoReviewGeometryMixin:
                 self._auto_crs_metres_per_unit(ref[0], ref[1]),
                 self._auto_crs_unit_aspect(ref[0], ref[1]))
             refiners[key] = refiner
-        return refiner.refine(base)
+        return refiner
 
     @staticmethod
     def _review_shape_key(params: dict, pixel_size: float) -> tuple:
@@ -397,7 +414,14 @@ class AutoReviewGeometryMixin:
         The run refiners go with it: they hold the run's pixel size and its
         ground measure, and a rebuild can be the start of a different run. So
         do the parked shape keys, for the same index-collision reason as the
-        current one."""
+        current one.
+
+        The off-GUI refine thread goes FIRST, before the dict it fills is
+        replaced: it holds jobs keyed by the object indices being invalidated,
+        so an answer landing after this point would shape the wrong object."""
+        stop_refine_thread = getattr(self, "_stop_review_refine_thread", None)
+        if stop_refine_thread is not None:
+            stop_refine_thread()
         self._auto_reslice_cache = {"key": None, "geoms": {}, "parked": {}}
         self._review_fid_map = {}
         self._review_live_refiners = {}
@@ -492,13 +516,12 @@ class AutoReviewGeometryMixin:
         that takes this path is byte-comparable with a refined one everywhere
         downstream. Used where a shaped outline is wanted but cannot be had:
         the budgeted rescue export, and a refine that failed or emptied
-        (_review_refined_geom). Returns None when the repair empties it."""
-        from ...core.layer_conventions import repair_polygon, to_multipolygon
-        try:
-            g = to_multipolygon(repair_polygon(base) or QgsGeometry(base))
-        except Exception:  # noqa: BLE001 -- keep the outline as traced
-            g = QgsGeometry(base)
-        return g if (g is not None and not g.isEmpty()) else None
+        (_review_refined_geom). Returns None when the repair empties it.
+
+        The body lives in core.live_refine so the off-GUI refine thread reaches
+        the same one: an object must come out the same shape whichever thread
+        shaped it."""
+        return plain_outline_geom(base)
 
     def _review_refined_geom(self, det_idx: int, base, params: dict,
                              pixel_size: float):
@@ -536,31 +559,36 @@ class AutoReviewGeometryMixin:
         _per_shape = getattr(self, "_shape_params_for_object", None)
         if _per_shape is not None:
             params = _per_shape(det_idx, params)
-        # Guarded: one pathological geometry (self-intersecting, NaN coords)
-        # raising out of the GEOS refine/repair must cost only ITSELF, never
-        # the finalize/reslice chain. The result is cached either way, so a
-        # retried pass does not repeat the failure.
-        try:
-            g = self._refine_geom_for_review(base, params, pixel_size)
-            if g is not None and not g.isEmpty():
-                # Normalize ONCE at cache-fill time (repair + MultiPolygon
-                # coerce), so every later push of this geometry skips both.
-                from ...core.layer_conventions import repair_polygon, to_multipolygon
-                g = to_multipolygon(repair_polygon(g) or g)
-        except Exception as exc:  # noqa: BLE001 -- this object keeps its outline
-            try:
-                QgsMessageLog.logMessage(
-                    f"Auto review: refine failed on object {det_idx}, "
-                    f"kept as traced ({exc})",
-                    "AI Segmentation", level=Qgis.MessageLevel.Warning)
-            except Exception:  # nosec B110
-                pass
-            g = None
-        if g is None or g.isEmpty():
-            g = self._plain_outline_geom(base)
-        result = g if (g is not None and not g.isEmpty()) else None
+        # Guarded inside refine_review_geom: one pathological geometry
+        # (self-intersecting, NaN coords) raising out of the GEOS refine/repair
+        # must cost only ITSELF, never the finalize/reslice chain. The result is
+        # cached either way, so a retried pass does not repeat the failure.
+        # Normalized (repair + MultiPolygon coerce) ONCE at cache-fill time, so
+        # every later push of this geometry skips both.
+        refiner = self._review_refiner_for(base, params, pixel_size)
+        if refiner is None:
+            result = self._plain_outline_geom(base)
+            geoms[det_idx] = result
+            return result
+        result, err = refine_review_geom(refiner, base)
+        if err is not None:
+            self._log_review_refine_failure(det_idx, err)
         geoms[det_idx] = result
         return result
+
+    def _log_review_refine_failure(self, det_idx: int, exc: Exception) -> None:
+        """Say that one object would not shape and kept its traced outline.
+
+        Its own method because the off-GUI refine thread hands its failures
+        back rather than logging them: QgsMessageLog belongs on the GUI thread,
+        and the two paths must say the same thing."""
+        try:
+            QgsMessageLog.logMessage(
+                f"Auto review: refine failed on object {det_idx}, "
+                f"kept as traced ({exc})",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+        except Exception:  # nosec B110
+            pass
 
     def _stitch_shapes_are_reusable(self, pixel_size: float,
                                     objects: list) -> bool:

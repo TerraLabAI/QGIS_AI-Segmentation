@@ -3,20 +3,23 @@ from __future__ import annotations
 
 import math
 
-# Side of a request tile, in pixels. The grid/credit/detail math reads this
-# symbolically (stride = int(TILE_SIZE * (1 - OVERLAP_FRACTION))); credits are
-# per-tile, not per-pixel.
+# Side of a request tile, in pixels. The grid and detail math read this
+# symbolically (stride = int(TILE_SIZE * (1 - OVERLAP_FRACTION))).
+# It is also the model's own input square, so a tile needs no server-side
+# resample.
 # Masks decode at the server-reported size and map by mask.shape, so detections
 # stay geo-exact regardless of this value.
 TILE_SIZE = 1008
 # Tile overlap fraction. Must be wide enough for the merge step to stitch
 # seam-split objects across the strip without paying for redundant inference.
 OVERLAP_FRACTION = 0.20
-# Hard cap on tiles per run (= credits per run). Kept high enough that the
-# object-aware detail walk stays reachable on large zones; memory stays flat
-# (tiles render just-in-time) and the per-run credit estimate is always shown
-# before Detect, so a finer grid stays a conscious choice.
-MAX_TILES = 800
+# Hard cap on tiles per run. Tiles stopped being credits when Automatic moved
+# to per-km2 billing: a run is priced on the surface the user drew, and the
+# tile count only moves how finely that surface is read. So this bounds the
+# two things tiles still cost, our GPU seconds and the user's wait, and
+# nothing else. Memory stays flat (tiles render just-in-time). Client fallback
+# for the server policy's `max_tiles_per_run`.
+MAX_TILES = 2500
 # Target ground footprint per tile (meters). Used to size tiles when the source
 # has no native resolution (WMS); native-resolution sources tile at their own
 # deepest zoom, which is already finer than this.
@@ -27,23 +30,30 @@ DETECTION_TILE_FOOTPRINT_M = 100.0
 SWEET_SPOT_MAX_MUPP_M = 0.45
 # Prompt-less default seed resolution (m/px). Client fallback for the server
 # policy's `zone_seed_mupp`; the object-aware seed refines it per prompt.
-DEFAULT_SEED_MUPP_M = 0.28
+# Matches the value the server serves, so a cold cache reads the same ground
+# as a warm one.
+DEFAULT_SEED_MUPP_M = 0.142
 # Resolution (m/px) below which the imagery is too coarse for reliable
 # detection: the UI shows a "raise detail / zoom in" hint above it.
 QUALITY_FLOOR_MUPP_M = 0.5
 # Kept for backward reference (older callers / docs); the picker uses the
 # sweet-spot band rather than this single target.
 DEFAULT_TARGET_MUPP_M = 0.4
-# Soft tile (credit) preference the auto-picked default tries to stay within;
-# it may be crossed to reach an adequate resolution. Client fallback for the
-# server policy's `soft_tile_budget`.
+# Soft tile preference the auto-picked default used to stay within, back when
+# a tile was a credit. The seed no longer reads it: per-km2 billing means a
+# finer grid costs the user nothing, so a budget in tiles could only trade the
+# result away for a saving nobody banks. Kept as the client fallback for the
+# server policy's `soft_tile_budget`, which is still served, so an older
+# plugin reading it keeps the number it always had.
 DEFAULT_AUTO_TILE_BUDGET = 30
 
-# Hard ceiling on tiles the auto-picked default may propose (the soft budget
-# above may be crossed to reach an adequate resolution, but never past this),
-# so a default run cannot drain a small credit allowance in one click. Client
-# fallback for the server policy's `seed_tile_cap`.
-AUTO_SEED_TILE_CAP = 100
+# Hard ceiling on tiles the auto-picked default may propose. It existed to
+# stop one default run draining a credit allowance; per-km2 billing removed
+# that risk, so what it guards now is the wait and our GPU bill. It sits just
+# under MAX_TILES rather than at it, so the recommended level always leaves
+# the user somewhere finer to drag to. Client fallback for the server policy's
+# `seed_tile_cap`.
+AUTO_SEED_TILE_CAP = 2000
 
 # How far past a source's native resolution a render may go (linear factor on
 # m/px): upsampling adds no pixels but enlarges each object in model space,
@@ -83,13 +93,42 @@ MASK_SCALE_MIN_WIDTH_PX = 12.0
 # _max_useful_detail): the longer zone side renders as this many tiles at the
 # top. The real per-zone ceiling is still MAX_TILES and the native-resolution
 # clamp, both applied dynamically; this is just the static upper bound.
-MAX_DETAIL_LEVEL = 48
+#
+# It has to clear the worst case, not the typical one. A level counts tiles
+# along the LONGER side, so a long thin zone reaches a given ground resolution
+# at a far higher level than a square one of the same area: a 10 km by 1.4 km
+# zone needs level 87 for the ground a square 14 km2 zone reaches at 33. At 48
+# the walk stopped before MAX_TILES did, and the stop was invisible, reading
+# as a resolution the source could not do better than. The walk breaks on the
+# tile cap anyway, so a high bound costs a few extra iterations of arithmetic
+# on elongated zones and nothing at all on square ones.
+MAX_DETAIL_LEVEL = 240
+
+# Structural ceiling on an uncapped grid (compute_grid(apply_cap=False)).
+# It guards memory while the caller culls a bounding-box grid down to the
+# polygon the user drew, and it is deliberately far above any product limit,
+# so the number a user meets is always max_tiles and never this.
+HARD_GRID_LIMIT = 200_000
 
 # Sibling overlap of the 2x2 sub-tiles a saturated tile is re-split into,
-# as a fraction of the parent side ADDED to each half. Wide enough for the
-# merger to stitch an object cut by the sub-seam; kept small so each sub-tile
-# still covers ~a quarter of the parent (the whole point of the re-split).
-SUBDIVIDE_OVERLAP_FRACTION = 0.05
+# as a fraction of the parent side ADDED to each half.
+#
+# It matches OVERLAP_FRACTION, and it has to. The merger decides whether two
+# polygons on a seam are one object from a single ground distance,
+# `seam_min_dim` in auto_review.py, computed as OVERLAP_FRACTION * TILE_SIZE.
+# Tile identity never reaches the merger, so that one distance judges every
+# seam in the run, base and sub-seam alike. At 0.05 a sub-seam strip was a
+# quarter of what the gate assumes: an object cut by it read as two objects
+# that overlap too little to dedup, so the re-split meant to recover objects
+# split them instead, and a narrower quadrant is also a harder upsample of the
+# same ground. One overlap everywhere means the gate is right everywhere.
+#
+# The ladder itself is off by default (`_SUBDIV_MAX_DEPTH` in
+# `workers/auto_detection_worker.py`), so this only decides the shape of a
+# re-split a server dial switched back on. The server's own
+# `saturation.subdivide_overlap_fraction` must agree with this value or the
+# seam gate is wrong again for the sub-seams.
+SUBDIVIDE_OVERLAP_FRACTION = 0.20
 # Never re-split a tile whose side would drop below this (pixels on the run
 # grid): past that the quadrants stop containing meaningfully fewer objects.
 SUBDIVIDE_MIN_PARENT_PX = 256
@@ -130,7 +169,7 @@ def subdivide_quadrants(
 
 
 class TileManager:
-    """Computes tile grids and estimates credits for large images.
+    """Computes tile grids and counts tiles for large images.
 
     Each tile is a (x_offset, y_offset, width, height) tuple in pixel coords.
     """
@@ -165,16 +204,25 @@ class TileManager:
         return self.tile_size + n_extra * stride
 
     def compute_grid(
-        self, image_width: int, image_height: int
+        self, image_width: int, image_height: int, apply_cap: bool = True
     ) -> list[tuple[int, int, int, int]] | None:
         """Compute tile grid for an image.
 
+        ``apply_cap=False`` returns the grid whatever its size, so the caller
+        can cull it against the drawn polygon FIRST and cap what the run will
+        really send. Every zone is a hand-drawn polygon and the grid covers its
+        bounding box, so the two counts are far apart: across 27 archived runs
+        only 26% of the bounding-box grid sat inside the zone. Capping before
+        the cull refused zones whose real run was a fraction of the ceiling.
+        The uncapped path still stops at HARD_GRID_LIMIT, which is a memory
+        guard and not a product limit.
+
         Returns:
             List of (x, y, w, h) tuples, empty when the image has no area, or
-            None if it exceeds max_tiles.
+            None if it exceeds max_tiles (or HARD_GRID_LIMIT when uncapped).
         """
         # A zero/negative dimension has no area to tile: return an empty grid
-        # (0 credits, no run) rather than a degenerate (0, 0, 0, 0) tile.
+        # (no tiles, no run) rather than a degenerate (0, 0, 0, 0) tile.
         if image_width <= 0 or image_height <= 0:
             return []
 
@@ -195,7 +243,7 @@ class TileManager:
         # strip ~3.1x vertically) and its masks come back ragged; a full tile
         # over the same ground reads the strip in true proportions with real
         # context, for cleaner outlines at equal recall. Same tile count, same
-        # credits; the extra overlap with the previous row/column is resolved
+        # tiles; the extra overlap with the previous row/column is resolved
         # by the merger's dedup like any overlap strip. An axis smaller than
         # one tile keeps its single
         # partial tile (there is nothing to align it against).
@@ -217,17 +265,51 @@ class TileManager:
             if y + self.tile_size > image_height >= self.tile_size:
                 y = image_height - self.tile_size
 
-        if len(tiles) > self.max_tiles:
+        if apply_cap and len(tiles) > self.max_tiles:
+            return None
+        if len(tiles) > HARD_GRID_LIMIT:
             return None
 
         return tiles
 
+    def count_grid(self, image_width: int, image_height: int) -> int:
+        """Tiles in the bounding-box grid, counted rather than built.
+
+        Same answer as ``len(compute_grid(w, h, apply_cap=False))``, without
+        the list. The seed walk asks for this at every detail level of every
+        zone, and on a long thin zone the bounding-box grid runs to tens of
+        thousands of tiles that the polygon cull then throws away, so building
+        them to count them was the walk's whole cost.
+
+        compute_grid emits one tile at offset 0 then one per full stride, with
+        the last snapped flush to the edge, so an axis of ``span`` pixels holds
+        ``ceil((span - TILE_SIZE) / stride) + 1`` tiles, and 1 when it fits in
+        one tile.
+        """
+        if image_width <= 0 or image_height <= 0:
+            return 0
+        stride = int(self.tile_size * (1 - self.overlap_fraction))
+        if stride <= 0:
+            return 1
+
+        def per_axis(span: int) -> int:
+            if span <= self.tile_size:
+                return 1
+            return math.ceil((span - self.tile_size) / stride) + 1
+
+        return per_axis(image_width) * per_axis(image_height)
+
     def estimate_credits(self, image_width: int, image_height: int) -> int:
-        """Return number of credits (= tiles) needed, or -1 if exceeds cap."""
-        tiles = self.compute_grid(image_width, image_height)
-        if tiles is None:
-            return -1
-        return len(tiles)
+        """Number of tiles in the bounding-box grid, or -1 past HARD_GRID_LIMIT.
+
+        This counts the grid over the zone's BOUNDING BOX. The run culls it
+        against the drawn polygon and sends fewer, so treat this as an upper
+        bound; `_tiles_in_polygon` owns the count the run really pays, and the
+        per-run cap is applied to THAT count by the caller. Capping here on the
+        bounding box refused, and under-tiled, every long thin zone.
+        """
+        count = self.count_grid(image_width, image_height)
+        return -1 if count > HARD_GRID_LIMIT else count
 
     def extract_tile_crop(self, image, x: int, y: int, w: int, h: int):
         """Extract a tile crop from the full image array.

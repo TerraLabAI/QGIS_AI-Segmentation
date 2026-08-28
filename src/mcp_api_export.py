@@ -21,11 +21,10 @@ from qgis.core import (
     QgsVectorLayer,
 )
 
-from .core.qt_compat import PolygonGeometry, field_type_double, field_type_string
+from .core.qt_compat import PolygonGeometry, field_type_double
 
 # QgsField type args (QGIS 4 rejects raw int, #25/#36): resolved once in
 # qt_compat (QVariant on QGIS 3, QMetaType on QGIS 4).
-_FIELD_TYPE_STRING = field_type_string()
 _FIELD_TYPE_DOUBLE = field_type_double()
 
 
@@ -104,7 +103,6 @@ class SegmentationExportMixin:
             from .core.layer_conventions import (
                 apply_output_conventions,
                 attribute_values_for_fields,
-                geodesic_area_m2,
                 make_area_measurer,
                 make_committed_renderer,
                 repair_polygon,
@@ -184,11 +182,12 @@ class SegmentationExportMixin:
 
             temp_layer = QgsVectorLayer("MultiPolygon", layer_name, "memory")
             temp_layer.setCrs(crs_obj)
-            # Lean per-feature schema (editable label + the geodesic measures);
-            # run-level provenance goes in the layer metadata, not per row.
+            # Lean per-feature schema (the two geodesic measures); run-level
+            # provenance goes in the layer metadata, not per row. No class and
+            # no confidence: this call is handed an outline and nothing else,
+            # and a column that is empty on every row is worse than no column.
             pr = temp_layer.dataProvider()
             pr.addAttributes([
-                QgsField("label", _FIELD_TYPE_STRING),
                 QgsField("area_m2", _FIELD_TYPE_DOUBLE),
                 QgsField("perimeter_m", _FIELD_TYPE_DOUBLE),
             ])
@@ -201,13 +200,23 @@ class SegmentationExportMixin:
             g = to_multipolygon(g) or g
             feature = QgsFeature(temp_layer.fields())
             feature.setGeometry(g)
+            # Both measures come from one ellipsoidal measurer, and both stay
+            # empty when it refuses the CRS. A planar number written under a
+            # column named area_m2 says square metres and means square degrees.
+            area = perimeter = None
             try:
-                perimeter = make_area_measurer(crs_obj).measurePerimeter(g)
+                measurer = make_area_measurer(crs_obj)
+                area = measurer.measureArea(g)
+                perimeter = measurer.measurePerimeter(g)
             except (RuntimeError, AttributeError):
-                perimeter = None
+                from qgis.core import QgsMessageLog
+                QgsMessageLog.logMessage(
+                    "Export: the ellipsoidal measure refused this CRS, so "
+                    "area_m2 and perimeter_m are written empty",
+                    "AI Segmentation", level=Qgis.MessageLevel.Warning,
+                )
             feature.setAttributes([
-                "",
-                round_measure(geodesic_area_m2(g, crs_obj)),
+                round_measure(area),
                 round_measure(perimeter),
             ])
             if not pr.addFeatures([feature]):

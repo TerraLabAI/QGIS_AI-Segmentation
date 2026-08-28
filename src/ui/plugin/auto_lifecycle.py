@@ -134,6 +134,10 @@ class AutoLifecycleMixin:
         # _complete_auto_finalize must not resurrect a review over the reset flow.
         self._auto_finalize_gen += 1
         self._auto_finalize_state = None
+        # Same reason for the review's off-GUI refine thread: it is shaping
+        # objects this path is throwing away, and it must not be left running
+        # against a review that is gone.
+        self._stop_review_refine_thread()
         self._remove_auto_selection_layer()
         self._auto_manual_removed = set()
         # Orphan any install started from the review: a late predictor load
@@ -860,9 +864,8 @@ class AutoLifecycleMixin:
 
         pr = temp_layer.dataProvider()
         pr.addAttributes([
-            QgsField("label", _FIELD_TYPE_STRING),
             QgsField("class", _FIELD_TYPE_STRING),
-            QgsField("score", _FIELD_TYPE_DOUBLE),
+            QgsField("confidence", _FIELD_TYPE_DOUBLE),
             QgsField("area_m2", _FIELD_TYPE_DOUBLE),
             QgsField("perimeter_m", _FIELD_TYPE_DOUBLE),
         ])
@@ -889,9 +892,6 @@ class AutoLifecycleMixin:
             if area_m2 > 0:
                 self._auto_exported_area_m2 += area_m2
             feat.setAttributes([
-                # label stays empty (the user's own annotation column, the
-                # Deepness/SCP norm); the machine fact lives in `class`.
-                "",
                 object_class,
                 round(float(score), 3) if score is not None else None,
                 round_measure(area_m2),
@@ -944,7 +944,8 @@ class AutoLifecycleMixin:
                 self.iface.messageBar().pushWarning(
                     "AI Segmentation",
                     tr("Could not write to {name}. Saved to a separate "
-                       "file instead.").format(name=output_store.GPKG_FILENAME))
+                       "file instead.").format(name=os.path.basename(
+                           result.intended_path or output_store.GPKG_FILENAME)))
             except (RuntimeError, AttributeError):
                 pass
 
@@ -1000,18 +1001,20 @@ class AutoLifecycleMixin:
         # schedules on its own. Same reason the review push dropped its
         # refresh (see _push_review_geoms).
         output_store.add_committed_layer(result_layer, source_name=source_layer_name)
-        # A run reviewed with one colour per object must not save to one flat
-        # colour: objects that touch then read as a single blob, which is the
-        # opposite of what the review just showed. Cosmetic and best-effort,
-        # and no object count refuses it: the renderer wears one symbol whose
-        # colour is computed per feature, so it is the same size at ten objects
-        # and at ten thousand.
-        if getattr(self, "_auto_display_mode", "") == "random":
-            try:
-                from ...core.instance_symbology import paint_instances_apart
-                paint_instances_apart(result_layer)
-            except Exception:  # noqa: BLE001 -- colour never fails an export  # nosec B110
-                pass
+        # The review's display mode stays in the review. A saved layer wears one
+        # colour for its class, which is what every other vectorising tool
+        # writes (Mapflow, SCP and QGIS itself colour per layer or per class;
+        # none of them colours per feature), and what a deliverable handed to
+        # somebody else has to look like. Touching objects still read apart
+        # because the committed symbol carries a solid outline.
+        #
+        # It is also the difference between a map that draws and a map that
+        # does not. Colouring per object needs an expression QGIS evaluates for
+        # every polygon on every repaint, which it caches nothing of: measured
+        # at 142 ms against 56 ms for 2 000 objects, 569 ms against 223 ms for
+        # 8 000, paid again on every pan and every zoom for the life of the
+        # layer. auto_review_display reached the same conclusion for the review
+        # and moved to bucketed categories; the export goes flat.
         # The id, not the layer: the Start page's two recap lines link to the
         # result, and the user may remove it before clicking, so the link is
         # resolved against the project at click time.

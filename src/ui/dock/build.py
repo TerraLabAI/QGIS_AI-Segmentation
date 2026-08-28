@@ -829,6 +829,18 @@ class DockBuildMixin:
         self.undo_button.setStyleSheet(_BTN_GRAY)
         secondary_layout.addWidget(self.undo_button, 1)  # stretch factor 1
 
+        self.clear_selection_button = QPushButton(tr("Clear selection (C)"))
+        self.clear_selection_button.setEnabled(False)
+        self.clear_selection_button.setToolTip(
+            tr("Removes the points and the shape you are working on. "
+               "Saved polygons stay."))
+        self.clear_selection_button.clicked.connect(
+            self._on_clear_selection_clicked)
+        self.clear_selection_button.setVisible(False)
+        self.clear_selection_button.setMinimumHeight(30)
+        self.clear_selection_button.setStyleSheet(_BTN_GRAY)
+        secondary_layout.addWidget(self.clear_selection_button, 1)
+
         self.stop_button = QPushButton(tr("Stop segmentation"))
         self.stop_button.clicked.connect(self._on_stop_clicked)
         self.stop_button.setVisible(False)  # Hidden until segmentation starts

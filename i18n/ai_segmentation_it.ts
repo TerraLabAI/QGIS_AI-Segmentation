@@ -4986,5 +4986,26 @@ sta bloccando l&apos;ambiente AI locale del plugin.</translation>
         <source>the network reported: {error}</source>
         <translation>la rete ha segnalato: {error}</translation>
     </message>
+    <message>
+        <location filename="../src/ui/plugin/manual_predict.py" line="0" />
+        <source>That click selected nothing. Move the points and click again.</source>
+        <translation>Quel clic non ha selezionato nulla. Sposta i punti e fai clic di nuovo.</translation>
+    </message>
+    <message>
+        <source>Clear selection (C)</source>
+        <translation>Deseleziona (C)</translation>
+    </message>
+    <message>
+        <source>Removes the points and the shape you are working on. Saved polygons stay.</source>
+        <translation>Rimuovi i punti e la geometria su cui stai lavorando. I poligoni salvati restano.</translation>
+    </message>
+    <message>
+        <source>Clear the selection in progress</source>
+        <translation>Cancella la selezione in corso</translation>
+    </message>
+    <message>
+        <source>This map source has no sharper picture of this area. The run uses the sharpest one it has, and costs fewer tiles than the estimate.</source>
+        <translation>Questo layer di base non ha un'immagine più nitida di quest'area. L'esecuzione usa quella più nitida disponibile e richiede meno tile rispetto alla stima.</translation>
+    </message>
 </context>
 </TS>

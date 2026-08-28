@@ -7,6 +7,7 @@ plain mixin members: state lives on the plugin instance (self).
 from __future__ import annotations
 
 import math
+import os
 
 from qgis.core import (
     Qgis,
@@ -35,7 +36,6 @@ from ..error_report_dialog import show_error_report
 from ..shortcut_filter import ShortcutFilter
 from .shared import (
     _FIELD_TYPE_DOUBLE,
-    _FIELD_TYPE_STRING,
     SETTINGS_KEY_LAST_MANUAL_SESSION_TS,
     SETTINGS_KEY_TUTORIAL_SHOWN,
     _add_features_fast,
@@ -1022,15 +1022,14 @@ class ManualWorkflowMixin:
             to_multipolygon,
         )
 
-        # Per-feature schema: an editable label, the model's confidence when the
-        # polygon came from one, and both geodesic measures. Same measure columns
-        # as an Automatic export, so the two modes stack in one table without a
-        # hole. Run-level provenance (source raster, date) lives in the layer
-        # metadata instead of being repeated on every row.
+        # Per-feature schema: the model's confidence when the polygon came from
+        # one, and both geodesic measures. Same column names as an Automatic
+        # export, so the two modes stack in one table without a hole. Run-level
+        # provenance (source raster, date) lives in the layer metadata instead
+        # of being repeated on every row.
         pr = temp_layer.dataProvider()
         pr.addAttributes([
-            QgsField("label", _FIELD_TYPE_STRING),
-            QgsField("score", _FIELD_TYPE_DOUBLE),
+            QgsField("confidence", _FIELD_TYPE_DOUBLE),
             QgsField("area_m2", _FIELD_TYPE_DOUBLE),
             QgsField("perimeter_m", _FIELD_TYPE_DOUBLE),
         ])
@@ -1045,9 +1044,9 @@ class ManualWorkflowMixin:
 
         # Add features to temp layer. One measurer for the whole batch (setEllipsoid
         # loads from the SRS DB, so rebuilding it per feature is slow on big runs).
-        # None on the pixel grid: that CRS sits on no ellipsoid, so a geodesic
-        # measure of it answers NaN and the two columns are measured flat, in the
-        # pixels this mode works in.
+        # None on the pixel grid: that CRS sits on no ellipsoid, and a pixel
+        # count written under a column named area_m2 says metres and means
+        # pixels, so both measures stay empty there.
         measurer = None if self._is_non_georeferenced_mode else make_area_measurer(crs)
         features_to_add = []
         for i, polygon_data in enumerate(polygons_to_export):
@@ -1075,12 +1074,13 @@ class ManualWorkflowMixin:
                 # A hand-drawn save carries no model score: NULL, not 0.0.
                 score = polygon_data.get("score")
                 if measurer is None:
-                    area, perimeter = geom.area(), geom.length()
+                    # Pixel mode: an empty cell is an honest unknown, a pixel
+                    # count in a metric column is a wrong number.
+                    area, perimeter = None, None
                 else:
                     area = measurer.measureArea(geom)
                     perimeter = measurer.measurePerimeter(geom)
                 feature.setAttributes([
-                    "",
                     round(float(score), 3) if score is not None else None,
                     round_measure(area),
                     round_measure(perimeter),
@@ -1210,7 +1210,8 @@ class ManualWorkflowMixin:
         if result.used_fallback:
             msg = tr(
                 "Could not write to {name}. Saved to a separate file instead."
-            ).format(name=output_store.GPKG_FILENAME)
+            ).format(name=os.path.basename(
+                result.intended_path or output_store.GPKG_FILENAME))
             self.iface.messageBar().pushMessage(
                 "AI Segmentation", msg,
                 level=Qgis.MessageLevel.Warning, duration=8)
@@ -1404,6 +1405,36 @@ class ManualWorkflowMixin:
                 # The previous tool may have been deleted
                 pass
         self._previous_map_tool = None
+
+    def _on_clear_selection(self) -> None:
+        """Drop the object being traced and start it again from nothing.
+
+        The explicit way out of a selection that ran away. A trim click is
+        deliberately local (core.progressive_merge), so it shaves an edge and
+        can never be the answer to "take all of this back"; this is. It takes
+        the clicks, the markers, the mask and the parts frozen when a click
+        moved to another crop, and it leaves the saved polygons and the crop
+        encoding alone, so the next click on the same ground costs nothing.
+        """
+        if not self.map_tool or not self.map_tool.isActive():
+            return
+        # A detection opened for editing has already left saved_polygons, so
+        # dropping its geometry here would take it out of the project with
+        # nothing holding it. Close it back to pending instead, the same exit
+        # Esc uses, and clear nothing.
+        if self._refine_edit_session_active():
+            self._close_active_edit_to_pending()
+            return
+        discard = getattr(self, "_discard_pending_manual_click", None)
+        if discard is not None:
+            discard()
+        self._clear_active_mask_without_saving()
+        self._frozen_sessions = []
+        self._active_crop_points_positive = []
+        self._active_crop_points_negative = []
+        refresh = getattr(self, "_refresh_ai_add_keep_button", None)
+        if refresh is not None:
+            refresh()
 
     def _on_stop_segmentation(self):
         """Exit segmentation mode without saving."""

@@ -117,16 +117,20 @@ class AutoRunTerminalMixin:
         # uncharged-tile one below: these were charged, the model returned them,
         # and a client-side guard threw them away. On a large-parcel prompt that
         # is where a tile-shaped hole in the middle of a field comes from.
-        blob_n = int(getattr(self, "_auto_blob_dropped", 0) or 0)
-        if blob_n:
+        # The tile's ground side rides along, because it is what decides how
+        # big an object has to be to reach the guard at all: the same three
+        # drops mean nothing on a 500 m tile and a lot on a 90 m one.
+        armed_n, blob_n, tile_m = self._auto_blob_guard_stats()
+        if blob_n or armed_n:
             hard_n, span_n, shape_n = getattr(
                 self, "_auto_blob_split", (0, 0, 0))
             try:
                 QgsMessageLog.logMessage(
-                    f"Auto detection: whole-tile guard dropped {blob_n} mask(s) "
+                    f"Auto detection: whole-tile guard armed on {armed_n} "
+                    f"mask(s) of {self._auto_raw_count} and dropped {blob_n} "
                     f"({hard_n} over the hard coverage cap, {span_n} spanning "
-                    f"the tile, {shape_n} not compact enough). Count mode only; "
-                    f"these were charged.",
+                    f"the tile, {shape_n} not compact enough); tile side "
+                    f"{tile_m:.0f} units. Count mode only; these were charged.",
                     "AI Segmentation", level=Qgis.MessageLevel.Info,
                 )
             except (RuntimeError, AttributeError):
@@ -164,17 +168,17 @@ class AutoRunTerminalMixin:
         # provider having a bad moment.
         unavail_n = int(getattr(self, "_auto_unavailable_tiles", 0) or 0)
         # Tiles the degenerate prefilter proved objectless (all no-data, or too
-        # little ground left to hold anything). Same family as blank_n, no
-        # request and no charge, but it used to reach no user-visible surface at
-        # all: the quote counts them, the bill does not, and nothing said so.
+        # little ground left to hold anything). Same family as blank_n: no
+        # request goes out for them. The run still pays for the surface of the
+        # zone they sit in, so this line counts them and says nothing about the
+        # bill.
         prefilt_n = int(getattr(self, "_auto_prefiltered_tiles", 0) or 0)
         if blank_n or holes_n or unavail_n or prefilt_n:
             QgsMessageLog.logMessage(
                 f"Auto detection: {blank_n} blank tile(s) skipped, "
                 f"{prefilt_n} empty tile(s) settled without a request, "
                 f"{holes_n} render hole(s), "
-                f"{unavail_n} tile(s) with no imagery at this detail. "
-                f"None of these were charged.",
+                f"{unavail_n} tile(s) with no imagery at this detail.",
                 "AI Segmentation", level=Qgis.MessageLevel.Info,
             )
 
@@ -393,6 +397,8 @@ class AutoRunTerminalMixin:
                     had_exemplar=self._auto_exemplar_store.count() > 0,
                 )
                 if completed_terminal:
+                    blob_armed, blob_dropped, tile_m = (
+                        self._auto_blob_guard_stats())
                     telemetry_run_events.track_auto_detect_completed(
                         run_id=self._auto_run_id or "",
                         duration_ms=self._auto_duration_ms(),
@@ -404,6 +410,9 @@ class AutoRunTerminalMixin:
                         stop_reason="completed",
                         warming_ms=self._auto_warming_wait_ms(),
                         merge_mode_final="separate" if self._auto_merge_separate else "map",
+                        blob_armed=blob_armed,
+                        blob_dropped=blob_dropped,
+                        tile_ground_m=tile_m,
                     )
         except Exception:
             pass  # nosec B110

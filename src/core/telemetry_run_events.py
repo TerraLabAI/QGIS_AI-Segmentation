@@ -185,12 +185,25 @@ def track_auto_detect_completed(run_id: str, duration_ms: int, tiles_done: int,
                                 p95_tile_ms: int | None = None,
                                 stop_reason: str = "completed",
                                 warming_ms: int = 0,
-                                merge_mode_final: str = "separate") -> None:
+                                merge_mode_final: str = "separate",
+                                blob_armed: int = 0,
+                                blob_dropped: int = 0,
+                                tile_ground_m: int = 0) -> None:
     """warming_ms is the wall time the run spent in the server waiting room
     (cold start / queue) as perceived by the user; 0 = the run never waited.
     Per-tile latency lives server-side keyed by run_id, so no client percentiles.
     merge_mode_final is the count-vs-map grouping the run finished on
-    ("separate"/"map")."""
+    ("separate"/"map").
+
+    blob_armed / blob_dropped / tile_ground_m are the whole-tile saturation
+    guard. It throws away masks the user paid for, and until now the only trace
+    of that was a line in the local QGIS log, so how often it fires in the field
+    could not be asked at all: it had to be replayed offline. The three travel
+    together because none of them can be read alone. The drops are a rate, so
+    they need the armed count as a denominator, and both only mean something
+    against the tile's ground side, which is what decides how big an object has
+    to be to reach the guard.
+    """
     track(ev.AUTO_DETECT_COMPLETED, {
         "run_id": run_id,
         "duration_ms": duration_ms,
@@ -204,6 +217,9 @@ def track_auto_detect_completed(run_id: str, duration_ms: int, tiles_done: int,
         "stop_reason": stop_reason,
         "warming_ms": warming_ms,
         "merge_mode_final": merge_mode_final,
+        "blob_armed": int(blob_armed),
+        "blob_dropped": int(blob_dropped),
+        "tile_ground_m": int(tile_ground_m),
     })
 
 

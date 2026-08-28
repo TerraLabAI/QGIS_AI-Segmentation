@@ -891,6 +891,11 @@ class AutoResultsMixin:
         # Invalidate any in-flight cooperative finalize refine / reslice.
         self._auto_finalize_gen += 1
         self._auto_finalize_state = None
+        # The review's off-GUI refine thread rides that same chain: it holds
+        # geometry from the object set this reset abandons, so it goes here too.
+        # This is the path unload and the mode teardown reach it by, through
+        # _stop_auto_detection.
+        self._stop_review_refine_thread()
         # Invalidate any in-flight background preview-cache build.
         self._auto_preview_build_gen += 1
         self._auto_preview_build_state = None

@@ -436,6 +436,7 @@ class DockAboutMixin:
             _row(keys(del_key, ctrl_backspace_key),
                  tr("Delete the active object")),
             _row(keys(enter_key), tr("Export polygon to a layer")),
+            _row(keys("C"), tr("Clear the selection in progress")),
             _row(keys(esc_key),
                  tr("Clear the selection, or stop the segmentation")),
 

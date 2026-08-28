@@ -161,15 +161,34 @@ _BILLED_DRAIN_STOP_REASONS = ("user", "exhausted")
 _MAX_MASKS_PER_TILE = 200
 # Saturation trigger: a truncated tile rarely lands EXACTLY on the ceiling,
 # because the model fills all its slots and then its own score filtering
-# drops a few, so the trigger sits below the cap with margin. Anything at
-# or above it is treated as truncated for both the re-split ladder and the
-# review dense hint. Client fallback; the run value is server-overridable
-# (seed.saturation.cap_trigger_frac), resolved per run in __init__.
-_MASK_CAP_TRIGGER_FRAC = 0.80
-# Saturated-tile re-split recursion ceiling. Depth 1 quarters the object count
-# per inference; depth 2 covers extreme dense scenes. Past that the quadrants
-# are too small/interpolated to add signal.
-_SUBDIV_MAX_DEPTH = 2
+# drops a few, so the trigger sits just below the cap. Anything at or above it
+# is treated as truncated. With the re-split ladder retired (see
+# _SUBDIV_MAX_DEPTH) the only thing it still marks is the review's dense-tile
+# log line, so it is set tight: it has to catch a tile that really did run out
+# of slots, not every tile that happened to be busy. Client fallback; the run
+# value is server-overridable (seed.saturation.cap_trigger_frac), resolved per
+# run in __init__.
+_MASK_CAP_TRIGGER_FRAC = 0.95
+# Saturated-tile re-split recursion ceiling, and the switch that retires the
+# ladder: 0 means a tile is never re-split.
+#
+# The ladder answered a question the tiling no longer asks. It assumes a dense
+# tile came back truncated, so re-reading it as four quadrants recovers what
+# the cap swallowed. Two things stop that from being true. A tile is now sized
+# to the object it is looking for rather than to a budget, so its object count
+# stays well under the cap and truncation is close to unobservable. And a
+# quadrant does not read finer ground: it asks the source for more pixels
+# across the same metres, which on any source the run grid already reads at or
+# near its own resolution is enlargement, not detail. So the quadrant makes no
+# detection the parent could not, and the extra outlines it draws land on
+# ground that holds no object.
+#
+# The plumbing stays, because it is the only thing that can be switched back
+# on from the server (seed.saturation.subdiv_max_depth) if a class ever does
+# saturate. The lever for a class that returns too much per tile is that
+# class's target ground resolution, which is served and reaches every
+# installed version at once.
+_SUBDIV_MAX_DEPTH = 0
 # The re-split tail is free, but it is not free of TIME: it runs after the paid
 # grid, on the same machine, and a dense zone can queue more quadrants than the
 # grid had tiles. It gets this share of what the paid grid itself took, and then
@@ -188,6 +207,22 @@ _MAX_TILE_COVERAGE = 0.55
 # tightly-framed real building leaves streets/margins, so >80% of a tile is
 # texture, not an object. Between 0.55 and 0.80 a compactness check decides.
 _HARD_TILE_COVERAGE = 0.80
+# Whether a mask over the hard cap is still judged on its SHAPE rather than
+# dropped on the coverage number alone. The cap was written when one tile
+# covered several hundred metres of ground, where nothing real came near it;
+# the tile's ground side is a served value and it has moved, and at 143 m a
+# hard cap of 0.80 is a 128 m square, which a distribution shed reaches. On
+# with the escape, such a mask meets the same span test and compactness check
+# the 0.55-0.80 band meets, so a tile-shaped blob and a ragged texture fill are
+# still dropped and only a solid near-rectangular object gets through.
+# Measured over 619087 masks from 261 count-mode runs and sweep cells, tile
+# ground 35 m to 2130 m: 1438 masks are over the cap and 1424 of them (99.0%)
+# bound the tile in both directions, so the span test drops them anyway. The
+# escape changes the answer for 14. Object counts and the score against IGN
+# references were identical on all three scenes it was A/B'd on. It is here to
+# take the shape-blind drop out of the code, not to move today's numbers.
+# Client fallback; server-overridable (seed.saturation.hard_cover_shape_escape).
+_HARD_COVER_SHAPE_ESCAPE = True
 # Share of its oriented bounding box a large mask must fill for that
 # compactness check to keep it as a real solid object. Client fallback; the run
 # value is server-overridable (seed.saturation.compact_min_fill).
@@ -706,6 +741,8 @@ class AutoDetectionWorker(QThread):
         self._resplit_dropped = 0
         self._max_tile_coverage = _dp.max_tile_coverage(_MAX_TILE_COVERAGE)
         self._hard_tile_coverage = _dp.hard_tile_coverage(_HARD_TILE_COVERAGE)
+        self._hard_cover_shape_escape = _dp.hard_cover_shape_escape(
+            _HARD_COVER_SHAPE_ESCAPE)
         self._subdiv_overlap = _dp.subdivide_overlap_fraction(
             SUBDIVIDE_OVERLAP_FRACTION)
         self._subdiv_min_parent_px = _dp.subdivide_min_parent_px(
@@ -884,6 +921,10 @@ class AutoDetectionWorker(QThread):
         # hard_tile_coverage, tile_span_fraction, compact_min_fill), so what a
         # retune needs is the count it moved. Written under _stat_lock.
         self.masks_dropped_whole_tile = 0
+        # Masks that reached the guard's ladder at all, kept or cut. The drop
+        # counts alone cannot be read: they are a rate, and this is the
+        # denominator. Written under _stat_lock.
+        self.masks_whole_tile_armed = 0
         self.masks_dropped_hard_cover = 0
         self.masks_dropped_tile_span = 0
         self.masks_dropped_not_compact = 0
@@ -2125,8 +2166,8 @@ class AutoDetectionWorker(QThread):
         so the payload stays byte-identical to before; old servers ignore any
         unknown field.
 
-        - plugin_version / policy_rev / prompt_mode ride every submission (which
-          client and policy produced the run).
+        - plugin_version / policy_rev / prompt_mode / basemap ride every
+          submission (which client, policy and imagery produced the run).
         - zone_geojson, zone_wkt, zone_km2 and native_mupp are the same for
           the whole run, so they ride the FIRST request the run submits,
           whatever its tile index (a packed scan block counts).
@@ -2137,7 +2178,7 @@ class AutoDetectionWorker(QThread):
         if not meta:
             return
         tile_idx = submission.get("tile_index")
-        for key in ("plugin_version", "policy_rev", "prompt_mode"):
+        for key in ("plugin_version", "policy_rev", "prompt_mode", "basemap"):
             val = meta.get(key)
             if val is not None:
                 submission[key] = val
@@ -4010,6 +4051,8 @@ class AutoDetectionWorker(QThread):
             # counted them, so the progress readout would otherwise wait on
             # tiles that will never answer.
             return -self._drop_unsent_quadrants(pending)
+        from ..core.tile_manager import TILE_SIZE
+
         added = 0
         while self._pending_subtiles:
             spec, depth, parent_idx = self._pending_subtiles.pop()
@@ -4018,7 +4061,16 @@ class AutoDetectionWorker(QThread):
             self._tile_depth[idx] = depth
             self._parent_of[idx] = parent_idx
             _tx, _ty, tw, th = spec
-            self._tile_outsize[idx] = (tw * 2, th * 2)
+            # Render the quadrant at twice its grid rect, but never past the
+            # model's own input square. A 2x render of a 705 px rect is 1410 px
+            # that the service resizes to 1008 before it looks at anything, so
+            # every pixel past TILE_SIZE is wire cost and render time for a
+            # picture the model never sees. A paired probe over 52 tiles found
+            # the resize extracts everything those pixels hold (mask counts
+            # p 0.57), so capping here changes the answer by nothing and stops
+            # shipping it. A quadrant whose 2x still fits is left alone.
+            self._tile_outsize[idx] = (min(tw * 2, TILE_SIZE),
+                                       min(th * 2, TILE_SIZE))
             pending.append((idx, spec))
             added += 1
         return added
@@ -4378,6 +4430,7 @@ class AutoDetectionWorker(QThread):
         # reach this and += would lose counts. The guard drops a mask the user
         # PAID for and left no trace at all, so a legitimate parcel that fills
         # its tile vanished into a tile-shaped hole with nothing to read.
+        n_blob_armed = 0
         n_blob_hard = 0
         n_blob_span = 0
         n_blob_shape = 0
@@ -4441,7 +4494,12 @@ class AutoDetectionWorker(QThread):
             # Raw-collect mode keeps every fragment (gates OFF): the client
             # applies them later if it re-merges as SEPARATE.
             if self._merge_separate and not self._collect_raw and coverage > self._max_tile_coverage:
-                if coverage > self._hard_tile_coverage:
+                # How many masks even REACH the ladder. Without it the drop
+                # counts below say nothing: three drops out of forty thousand
+                # masks and three out of forty read the same.
+                n_blob_armed += 1
+                if (coverage > self._hard_tile_coverage
+                        and not self._hard_cover_shape_escape):
                     n_blob_hard += 1
                     continue
                 # A mask the TILE bounds is not an object: the grid drew its
@@ -4585,6 +4643,7 @@ class AutoDetectionWorker(QThread):
             self.raw_detections_total += len(out)
             self.masks_dropped_whole_tile += (
                 n_blob_hard + n_blob_span + n_blob_shape)
+            self.masks_whole_tile_armed += n_blob_armed
             self.masks_dropped_hard_cover += n_blob_hard
             self.masks_dropped_tile_span += n_blob_span
             self.masks_dropped_not_compact += n_blob_shape

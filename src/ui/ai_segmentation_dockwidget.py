@@ -135,6 +135,7 @@ class AISegmentationDockWidget(
     settings_clicked = pyqtSignal()
     export_layer_requested = pyqtSignal()
     stop_segmentation_requested = pyqtSignal()
+    clear_selection_requested = pyqtSignal()
     pairing_requested = pyqtSignal(str)        # one-click connect: emits the minted pairing code
     pairing_cancel_requested = pyqtSignal(str)  # user cancelled the browser handoff (emits the code)
     # simplify, smooth, expand, fill_holes, right_angles

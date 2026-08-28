@@ -302,3 +302,63 @@ class LiveRefiner:
             envelope=self._envelope,
             unit_aspect=self._unit_aspect,
         )
+
+
+# repair_polygon / to_multipolygon, bound once. Both the review's own pump and
+# the off-GUI refine thread call the two functions below tens of thousands of
+# times per pass, and QGIS wraps every import statement in its own hook.
+_NORMALIZE_TOOLS: tuple | None = None
+
+
+def _refine_normalize_tools() -> tuple:
+    """(repair_polygon, to_multipolygon), resolved on first use.
+
+    Not a module-level import: that would pull the layer conventions in for
+    anyone who only wanted the refiner.
+    """
+    global _NORMALIZE_TOOLS
+    if _NORMALIZE_TOOLS is None:
+        from .layer_conventions import repair_polygon, to_multipolygon
+
+        _NORMALIZE_TOOLS = (repair_polygon, to_multipolygon)
+    return _NORMALIZE_TOOLS
+
+
+def plain_outline_geom(base: QgsGeometry | None) -> QgsGeometry | None:
+    """``base`` repaired and coerced to MultiPolygon, with no shape control
+    applied: the object exactly as the run traced it. None when the repair
+    leaves nothing.
+
+    No Qt, no project and no plugin state, so a worker thread may call it.
+    """
+    repair_polygon, to_multipolygon = _refine_normalize_tools()
+    try:
+        g = to_multipolygon(repair_polygon(base) or QgsGeometry(base))
+    except Exception:  # noqa: BLE001 -- keep the outline as traced
+        g = QgsGeometry(base)
+    return g if (g is not None and not g.isEmpty()) else None
+
+
+def refine_review_geom(refiner: LiveRefiner,
+                       base: QgsGeometry | None) -> tuple:
+    """One object through ``refiner``, then repaired and MultiPolygon-coerced.
+
+    Returns ``(geometry, error)``. The geometry falls back to the traced
+    outline when the refine fails or empties, and is None only when even the
+    repair leaves nothing: shaping is cosmetic, so it must never lose a paid
+    detection. ``error`` is the exception the refine raised, handed back for
+    the caller to log on the GUI thread rather than logged here.
+
+    The one implementation both the review's own pump and the off-GUI refine
+    thread call, so an object comes out the same shape whichever ran it.
+    """
+    repair_polygon, to_multipolygon = _refine_normalize_tools()
+    try:
+        g = refiner.refine(base)
+        if g is not None and not g.isEmpty():
+            g = to_multipolygon(repair_polygon(g) or g)
+    except Exception as exc:  # noqa: BLE001 -- this object keeps its outline
+        return plain_outline_geom(base), exc
+    if g is None or g.isEmpty():
+        g = plain_outline_geom(base)
+    return (g if (g is not None and not g.isEmpty()) else None), None

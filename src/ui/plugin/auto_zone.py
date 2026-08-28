@@ -925,13 +925,21 @@ class AutoZoneMixin:
         # both come from it. The grid is NOT always square (a non-square zone
         # gives n x m), so the detail label must show the real shape, not the
         # slider value squared, or it contradicts the credit count.
-        tiles_list = self._tile_manager.compute_grid(pixel_w, pixel_h)
+        # Build the grid WITHOUT the per-run cap, cull it, then cap. The grid
+        # covers the zone's bounding box and the run sends only the tiles the
+        # drawn polygon touches, so capping first refused zones whose real run
+        # was a fraction of the ceiling: across 27 archived runs the polygon
+        # kept 26% of the bounding-box grid, and a road zone kept 10%.
+        tiles_list = self._tile_manager.compute_grid(
+            pixel_w, pixel_h, apply_cap=False)
         if tiles_list is not None:
             # Count only tiles inside the drawn polygon and over the raster's
-            # own extent, so "N credits" matches what the run actually bills.
+            # own extent, so the estimate matches what the run actually sends.
             tiles_list = self._tiles_in_polygon(
                 tiles_list, grid["bbox"], pixel_w, pixel_h, layer,
                 grid.get("crs"))
+            if len(tiles_list) > max_tiles_per_run_cap():
+                tiles_list = None
         credit_count = len(tiles_list) if tiles_list is not None else -1
         # credit_count == -1 means > MAX_TILES
         self._auto_est_tiles = credit_count  # cached for detail_changed telemetry
@@ -970,14 +978,28 @@ class AutoZoneMixin:
                     # through a fixed wide window, so while its tile clears
                     # that floor the coarse view is the setting it asks for and
                     # "raise the precision" would be advice to break the run.
-                    from ...core.detection_policy import gsd_warn_max_mupp
+                    from ...core.detection_policy import (
+                        gsd_warn_max_mupp,
+                        object_tile_ceiling_m,
+                    )
                     from ...core.tile_manager import TILE_SIZE
-                    floor_m = self._detail_window_profile(
-                        self._resolved_auto_object_class())[1]
-                    wide_view = (
-                        floor_m > 0 and TILE_SIZE * ground_mupp >= floor_m)
+                    object_class = self._resolved_auto_object_class()
+                    floor_m = self._detail_window_profile(object_class)[1]
+                    tile_ground_m = TILE_SIZE * ground_mupp
+                    wide_view = floor_m > 0 and tile_ground_m >= floor_m
+                    # When the server names the largest tile this object is
+                    # known to work at, that is the honest line to warn on, and
+                    # it beats one m/px cutoff shared by every object. The
+                    # cutoff cannot be both right for a 2 m solar panel and for
+                    # a 150 m parcel; the ceiling is per object because the
+                    # measurement was. Without one, the generic cutoff stands,
+                    # which is the behaviour before this existed.
+                    ceiling_m = (object_tile_ceiling_m(object_class)
+                                 if object_class else 0.0)
+                    too_coarse = (tile_ground_m > ceiling_m if ceiling_m > 0
+                                  else ground_mupp >= gsd_warn_max_mupp(0.5))
                     self.dock_widget.set_auto_detail_gsd_warning(
-                        ground_mupp >= gsd_warn_max_mupp(0.5) and not wide_view)
+                        too_coarse and not wide_view)
                     # Object-aware slider guidance: same debounced chokepoint,
                     # so it tracks drags, prompt commits and zone redraws.
                     self._push_detail_feedback(layer, zone_in_layer, ground_mupp)
@@ -1023,7 +1045,9 @@ class AutoZoneMixin:
         """Draw the tile grid inside the drawn zone as a canvas rubber band.
 
         Follows the detail slider live, so the user sees how the zone will
-        be split (n tiles = n credits). Display simplification: the real
+        be split. It is not a price: Automatic bills the surface drawn, so
+        a finer grid changes what the run reads and never what it costs.
+        Display simplification: the real
         tiles overlap by OVERLAP_FRACTION, which reads on screen as a
         blurry double grid. The preview shows clean equal cells instead:
         same row and column counts, honest cost, readable layout. A rubber
@@ -1094,6 +1118,21 @@ class AutoZoneMixin:
             if not is_rect_zone:
                 engine = QgsGeometry.createGeometryEngine(poly.constGet())
                 engine.prepareGeometry()
+            # On an axis under one tile the grid bbox is deliberately WIDER
+            # than the drawn zone (see _grid_for_detail: the run reads that
+            # axis through a full tile of real ground instead of a band the
+            # service would stretch). The preview draws the drawn zone, not the
+            # render window, so a rectangle zone clips to its own rectangle
+            # whenever the grid spills past it. A polygon zone already clips to
+            # its shape below, which is inside that rectangle.
+            zone_rect = None
+            if is_rect_zone:
+                try:
+                    zr = self._reproject_zone_to_run_crs(self._auto_zone, layer)
+                    if zr is not None and (zr.xMaximum() < maxx or zr.yMinimum() > miny):
+                        zone_rect = QgsGeometry.fromRect(zr)
+                except (RuntimeError, AttributeError, TypeError):
+                    zone_rect = None
             step_x = (maxx - minx) / cols
             step_y = (maxy - miny) / rows
             cells = []
@@ -1108,6 +1147,10 @@ class AutoZoneMixin:
                             cell = cell.intersection(poly)  # clip to the shape
                             if cell.isEmpty():
                                 continue
+                    elif zone_rect is not None:
+                        cell = cell.intersection(zone_rect)
+                        if cell.isEmpty():
+                            continue
                     cells.append(cell)
             if not cells:
                 return

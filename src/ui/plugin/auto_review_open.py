@@ -165,6 +165,7 @@ class AutoReviewOpenMixin:
             visible_n = len(visible)
             start_pct = int(round((self._auto_confidence or 0.0) * 100))
             if self._auto_tel_stop_reason in (None, "completed"):
+                blob_armed, blob_dropped, tile_m = self._auto_blob_guard_stats()
                 telemetry_run_events.track_auto_detect_completed(
                     run_id=self._auto_run_id or "",
                     duration_ms=self._auto_duration_ms(),
@@ -176,6 +177,9 @@ class AutoReviewOpenMixin:
                     stop_reason="completed",
                     warming_ms=self._auto_warming_wait_ms(),
                     merge_mode_final="separate" if self._auto_merge_separate else "map",
+                    blob_armed=blob_armed,
+                    blob_dropped=blob_dropped,
+                    tile_ground_m=tile_m,
                 )
             telemetry_run_events.track_review_opened(
                 run_id=self._auto_run_id or "",

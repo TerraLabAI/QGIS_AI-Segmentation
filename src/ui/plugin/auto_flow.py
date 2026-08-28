@@ -866,6 +866,47 @@ class AutoFlowMixin:
         except (ValueError, TypeError):
             return 0.0
 
+    def _served_source_floor(
+        self, layer, zone_in_layer, mupp: float, allowance: float
+    ) -> float:
+        """Resolution floor (run-CRS units per pixel) the server sets for THIS
+        source, or 0.0 when it names none. 0.0 is the whole shipped table, so
+        by default this changes nothing.
+
+        A tile pyramid declares zoom levels, not imagery. A basemap commonly
+        declares a level deeper than it holds pictures for, and asking for that
+        level does not return a soft enlargement: it returns whatever the
+        service sends when it has nothing, which the run then reads as ground.
+        The declared depth is therefore not safe to treat as the source's real
+        resolution, and only the server can say what a given source really
+        holds.
+
+        The served number is ground metres per pixel while the grid counts run
+        units, so it is converted through the same ellipsoidal measurement the
+        seed uses, taken at the resolution in hand. Any failure returns 0.0 and
+        leaves the declared clamp alone.
+        """
+        from ...core.source_resolution import source_floor_mupp_m
+
+        if mupp <= 0 or allowance <= 0:
+            return 0.0
+        try:
+            source = layer.source() or ""
+        except (RuntimeError, AttributeError):
+            return 0.0
+        floor_m = source_floor_mupp_m(source)
+        if floor_m <= 0:
+            return 0.0
+        metres = self._mupp_to_meters(layer, zone_in_layer, mupp)
+        if metres <= 0:
+            return 0.0
+        # metres / mupp is the ground metres one run unit spans here, so the
+        # served ground figure divides straight back into run units.
+        metres_per_unit = metres / mupp
+        if metres_per_unit <= 0:
+            return 0.0
+        return (floor_m / metres_per_unit) / allowance
+
     def _layer_units_to_run_units(self, layer, zone_in_run) -> tuple[float, float]:
         """How many run-CRS units one layer-CRS unit spans, along x and along y.
 
@@ -899,7 +940,8 @@ class AutoFlowMixin:
                 ZeroDivisionError):
             return 1.0, 1.0
 
-    def _grid_for_detail(self, layer, zone_in_layer, detail_n: int):
+    def _grid_for_detail(self, layer, zone_in_layer, detail_n: int,
+                         mupp_floor: float = 0.0):
         """Pixel grid for one detail level. Single source of truth for the
         detail-slider math, shared by `_compute_auto_grid` (the real run),
         `_max_useful_detail` (the slider cap) and the m/px hint.
@@ -914,17 +956,21 @@ class AutoFlowMixin:
 
         ``zone_in_layer`` is the zone already reprojected to the run CRS.
 
+        ``mupp_floor`` is a resolution the render must not go finer than, in
+        the same run-CRS units as the returned ``mupp``. 0.0, the default,
+        changes nothing. The pre-run imagery probe sets it when it has MEASURED
+        that the source holds no picture at the resolution asked for but does
+        at a coarser one, which no served table can know: the same basemap
+        stops at different depths over different countries.
+
         Returns ``(pixel_w, pixel_h, mupp, tile_count)`` where ``mupp`` is the
         rendered ground resolution in run-CRS units per pixel (identical on
         both axes) and ``tile_count`` is the credit cost (``-1`` when the grid
         exceeds MAX_TILES). Returns None when the zone has no extent or the
         layer cannot be read.
         """
-        from ...core.tile_manager import (
-            NATIVE_OVERSAMPLE_MAX,
-            OVERLAP_FRACTION,
-            TILE_SIZE,
-        )
+        from ...core.source_resolution import oversample_allowance
+        from ...core.tile_manager import OVERLAP_FRACTION, TILE_SIZE
 
         longer_side = max(zone_in_layer.width(), zone_in_layer.height())
         if longer_side <= 0:
@@ -943,21 +989,24 @@ class AutoFlowMixin:
         stride = int(TILE_SIZE * (1.0 - OVERLAP_FRACTION))
         target_px = TILE_SIZE + (max(1, detail_n) - 1) * stride
         mupp = longer_side / target_px
-        # Both clamps allow up to NATIVE_OVERSAMPLE_MAX past the source's
-        # native resolution: upsampling adds no pixels, but a finer grid
-        # enlarges small objects inside the model's fixed processing window.
-        # Past the clamp it is pure interpolation, so the clamp holds there.
+        # Both clamps allow the render to go a bounded distance past the
+        # source's native resolution: upsampling adds no pixels, but a finer
+        # grid enlarges small objects inside the model's fixed processing
+        # window. How far is worth going depends on the source, so the
+        # allowance is a server dial with the shipped constant as its fallback
+        # (`core.source_resolution.oversample_allowance`).
         # Both clamps read the source, which reports in layer units, while mupp
         # counts run units. The two are the same unit unless the run moved, so
         # a run that did not move keeps exactly the arithmetic it always had.
         # Where they differ, the coarser of the source's two axes sets the
         # clamp: the render is one resolution on both axes now, and billing
         # tiles to interpolate the coarse axis is what the clamp exists to stop.
+        allowance = oversample_allowance()
         to_run_x, to_run_y = self._layer_units_to_run_units(layer, zone_in_layer)
         if not use_online and ext.width() > 0 and ext.height() > 0:
             native_mupp = max(ext.width() / layer_w * to_run_x,
                               ext.height() / layer_h * to_run_y)
-            mupp = max(mupp, native_mupp / NATIVE_OVERSAMPLE_MAX)
+            mupp = max(mupp, native_mupp / allowance)
         elif use_online:
             # Online XYZ basemap: clamp near its deepest-zoom native resolution
             # so a finer detail level cannot burn unbounded credits on ever
@@ -965,10 +1014,30 @@ class AutoFlowMixin:
             online_mupp = self._online_native_mupp(layer)
             if online_mupp > 0:
                 native_mupp = online_mupp * max(to_run_x, to_run_y)
-                mupp = max(mupp, native_mupp / NATIVE_OVERSAMPLE_MAX)
+                mupp = max(mupp, native_mupp / allowance)
+            mupp = max(mupp, self._served_source_floor(
+                layer, zone_in_layer, mupp, allowance))
+
+        # Last, and above every other clamp: a floor the probe measured on this
+        # source over this ground beats anything declared or served about it.
+        if mupp_floor > 0:
+            mupp = max(mupp, float(mupp_floor))
 
         pixel_w = max(1, int(zone_in_layer.width() / mupp))
         pixel_h = max(1, int(zone_in_layer.height() / mupp))
+        # An axis under one tile is the ONE case compute_grid cannot edge-align
+        # (there is no neighbouring full tile to snap against), so every tile of
+        # such a zone goes out as a band and the service stretches it to its
+        # fixed square: a 200 m strip read through a 590 m tile is a 3x vertical
+        # distortion of every object in the run, and it is all of the run, never
+        # a few tiles at the rim. Give that axis the missing ground instead.
+        # The pixels come from the layer like any other tile pixels, the tile
+        # COUNT is unchanged (an axis under one tile already counted as one),
+        # and the run is billed on the drawn zone, so this costs nothing. The
+        # extra ground is discarded downstream anyway: every detection is
+        # clipped to the drawn polygon before it reaches the merger.
+        pixel_w = max(pixel_w, TILE_SIZE)
+        pixel_h = max(pixel_h, TILE_SIZE)
         # Do NOT snap up to clean tile boundaries: snapping grew the grid past
         # the drawn zone, so the preview and the tiles spilled into whatever lay
         # outside the selection (e.g. desert). Tile the zone exactly instead;
@@ -1020,6 +1089,9 @@ class AutoFlowMixin:
             if sized is None:
                 break
             _pw, _ph, mupp, tiles = sized
+            if tiles != -1:
+                tiles = self._tiles_after_cull_confirmed(
+                    layer, zone_in_layer, n, tiles, max_tiles)
             if tiles == -1 or tiles > max_tiles:
                 break  # grids only grow with n; nothing finer will fit
             if prev_mupp is not None and mupp >= prev_mupp:
@@ -1067,44 +1139,73 @@ class AutoFlowMixin:
     def _default_detail_for_zone(self, layer, zone_in_layer) -> int:
         """Cheapest detail level whose ground resolution reaches the seed target.
 
-        Walks detail levels coarse -> fine and returns the first level reaching
-        the seed resolution within the soft tile budget. Past that budget it
-        returns the cheapest level still inside the sweet-spot band (the credit
-        cost is displayed live and Detect is the user's confirmation), and never
-        spends past the hard seed cap. Falls back to the cheapest in-budget
-        level when even the slider maximum stays coarser. Always >= 1, so a
-        fresh zone never sits at a too-coarse 1x1 grid when a finer level is the
-        better default. The object-aware seed refines this per prompt.
+        Walks detail levels coarse -> fine and returns the first one reaching
+        the prompt-less seed resolution. When the tile cap or the source's own
+        native resolution stops the walk first, the answer is the FINEST level
+        the walk reached, never a coarser one. The object-aware seed refines
+        this per prompt.
         """
-        from ...core.detection_policy import (
-            soft_tile_budget,
-            sweet_spot_max_mupp,
-            zone_seed_mupp,
-        )
+        from ...core.detection_policy import zone_seed_mupp
 
-        seed_mupp = zone_seed_mupp()
+        return self._finest_level_reaching(
+            layer, zone_in_layer, zone_seed_mupp())
+
+    def _finest_level_reaching(
+        self, layer, zone_in_layer, target_mupp: float, floor_m: float = 0.0,
+    ) -> int:
+        """Cheapest detail level reaching ``target_mupp``, else the finest one
+        the walk could reach. The single seed walk, shared by the prompt-less
+        default and by every object-aware pick, so the two can never disagree.
+
+        The walk runs coarse -> fine and stops on the first of four things: the
+        target reached (the answer), the seed's tile cap, the point where the
+        grid stops getting finer because the source has no more pixels to give,
+        or ``floor_m``, the smallest tile ground side the named object is known
+        to detect at (``detection_policy.object_tile_floor_m``, 0.0 = none).
+        Some objects are read through a fixed wide window, so a tile under that
+        width is padding rather than context and the answer degrades however
+        sharp the pixels are; the floor OUTRANKS the target for that reason.
+
+        There is no fallback ladder and no tile budget, and both absences are
+        the point. A budget in tiles used to buy the user a smaller bill; per
+        km2 billing means a finer grid is free to them, so a budget can now
+        only trade the result away for nothing. And the ladder it fed was worse
+        than the walk it rescued: when the cap cut the walk short it dropped
+        back to the finest level inside the soft budget, which on a large zone
+        was several levels COARSER than the cap itself allowed. That made the
+        seed non-monotonic in zone size, so a 14 km2 zone was read at 0.88 m/px
+        where a 9 km2 zone of the same ground was read at 0.40, and every run
+        past about 30 tiles landed in the same coarse band whatever it was
+        looking for. Keeping the finest level the walk reached removes the
+        cliff by construction: a bigger zone can never come back coarser than a
+        smaller one asking for the same object.
+
+        Always >= 1.
+        """
+        from ...core.tile_manager import TILE_SIZE
+
+        cap = self._max_useful_detail(layer, zone_in_layer)
         tile_cap = self._seed_tile_cap_for_plan()
-        soft_budget = soft_tile_budget()
-        sweet_max = sweet_spot_max_mupp()
-        best_within_budget = 1
-        for n in range(1, self._max_useful_detail(layer, zone_in_layer) + 1):
+        best = 1
+        for n in range(1, cap + 1):
             sized = self._grid_for_detail(layer, zone_in_layer, n)
             if sized is None:
                 break
             _pw, _ph, mupp, tiles = sized
-            if tiles == -1:
-                break
-            if tiles > tile_cap:
-                break  # the default never spends past the hard seed cap
+            if tiles != -1:
+                tiles = self._tiles_after_cull_confirmed(
+                    layer, zone_in_layer, n, tiles, tile_cap)
+            if tiles == -1 or tiles > tile_cap:
+                break  # tiles grow with n: no finer level fits either
             ground_mupp = self._mupp_to_meters(layer, zone_in_layer, mupp)
-            if tiles > soft_budget:
-                if 0 < ground_mupp <= sweet_max:
-                    return n  # cheapest ADEQUATE level beyond the soft budget
+            if ground_mupp <= 0:
                 continue
-            best_within_budget = n
-            if 0 < ground_mupp <= seed_mupp:
-                return n  # cheapest level reaching the seed target
-        return best_within_budget
+            if floor_m > 0 and TILE_SIZE * ground_mupp < floor_m:
+                break  # tiles shrink with n: no finer level clears the floor
+            best = n
+            if ground_mupp <= target_mupp:
+                return n
+        return best
 
     def _object_detail_profile(self, object_class: str) -> tuple[float, float]:
         """(typical ground size m, target ground resolution m/px) for the
@@ -1147,68 +1248,17 @@ class AutoFlowMixin:
     ) -> int:
         """Cheapest detail level whose ground resolution reaches ``target_mupp``.
 
-        The shared coarse -> fine walk behind `_auto_detail_for_object` (blob
-        tier target) and the async run-plan re-seed (server target), so the two
-        paths pick levels identically. ``obj_m`` is the object's typical ground
-        size, used only for the resolvable fallback.
+        The entry point behind `_auto_detail_for_object` (blob tier target) and
+        the async run-plan re-seed (server target), so the two paths pick
+        levels identically. ``obj_m`` is the object's typical ground size; it
+        no longer changes the pick and is kept because both callers read it
+        from the same profile and the run plan may want it back.
 
-        ``floor_m`` is the smallest tile ground side the object is known to
-        detect at (``detection_policy.object_tile_floor_m``, 0.0 = none) and it
-        OUTRANKS the target. Some objects are read through a fixed wide window,
-        so a tile under that width is padding rather than context and the answer
-        degrades however sharp the pixels are. The target only says "fine
-        enough", which on some zone sizes is first reached one level BELOW the
-        floor; taking it there would make the plugin recommend the setting the
-        floor exists to forbid, and the slider band, which must contain the
-        recommendation, would follow it down.
-
-        When no level inside the seed's tile cap reaches the target, the pick
-        is the FINEST of three floors, so a named object never seeds coarser
-        than the same zone with no prompt at all: the finest level inside the
-        soft tile budget, the cheapest level inside the adequate-quality band
-        (the zone default crosses the soft budget for this too), and the
-        cheapest level where the object still spans the minimum pixels. Each is
-        collected only on levels that clear ``floor_m``, so the fallback cannot
-        reintroduce what the walk stopped at. Always >= 1.
+        The walk itself is `_finest_level_reaching`, shared with the
+        prompt-less default. Always >= 1.
         """
-        from ...core.detection_policy import (
-            object_min_px,
-            soft_tile_budget,
-            sweet_spot_max_mupp,
-        )
-        from ...core.tile_manager import TILE_SIZE
-
-        cap = self._max_useful_detail(layer, zone_in_layer)
-        min_px = object_min_px()
-        tile_cap = self._seed_tile_cap_for_plan()
-        soft_budget = soft_tile_budget()
-        sweet_max = sweet_spot_max_mupp()
-        resolvable_n = 0
-        adequate_n = 0
-        finest_in_budget = 1
-        for n in range(1, cap + 1):
-            sized = self._grid_for_detail(layer, zone_in_layer, n)
-            if sized is None:
-                break
-            _pw, _ph, mupp, tiles = sized
-            if tiles == -1:
-                break
-            if tiles > tile_cap:
-                break  # tiles grow with n: the seed never spends past the cap
-            ground_mupp = self._mupp_to_meters(layer, zone_in_layer, mupp)
-            if ground_mupp <= 0:
-                continue
-            if floor_m > 0 and TILE_SIZE * ground_mupp < floor_m:
-                break  # tiles shrink with n: no finer level clears the floor
-            if ground_mupp <= target_mupp:
-                return n
-            if tiles <= soft_budget:
-                finest_in_budget = n
-            if not adequate_n and ground_mupp <= sweet_max:
-                adequate_n = n
-            if not resolvable_n and obj_m / ground_mupp >= min_px:
-                resolvable_n = n
-        return max(1, finest_in_budget, adequate_n, resolvable_n)
+        return self._finest_level_reaching(
+            layer, zone_in_layer, target_mupp, floor_m)
 
     def _current_auto_object_class(self) -> str:
         """The object class currently entered in the Automatic prompt box."""
@@ -1843,7 +1893,7 @@ class AutoFlowMixin:
         except (RuntimeError, AttributeError, ValueError):
             return 0.0
 
-    def _compute_auto_grid(self, layer) -> dict | None:
+    def _compute_auto_grid(self, layer, mupp_floor: float = 0.0) -> dict | None:
         """Compute the pixel grid for one automatic-detection run.
 
         Returns a dict with keys:
@@ -1857,6 +1907,11 @@ class AutoFlowMixin:
             online   (bool) -- True when the map renderer path must be used
                                (always True once a zone is drawn, regardless of
                                layer type; False only for the no-zone local path)
+
+        ``mupp_floor`` (run-CRS units per pixel, 0.0 = none) is passed
+        straight to `_grid_for_detail`: a resolution the render must not go
+        finer than, which the pre-run imagery probe sets after MEASURING that
+        the source holds no picture at the one asked for.
 
         Returns None when a grid cannot be computed (e.g. no zone for an online layer).
 
@@ -1891,7 +1946,8 @@ class AutoFlowMixin:
             # _grid_for_detail so the slider cap and the m/px hint share it.
             zone_in_layer = self._reproject_zone_to_run_crs(self._auto_zone, layer)
             detail_n = self._get_auto_detail_level()
-            sized = self._grid_for_detail(layer, zone_in_layer, detail_n)
+            sized = self._grid_for_detail(
+                layer, zone_in_layer, detail_n, mupp_floor=mupp_floor)
             if sized is None:
                 return None
             pixel_w, pixel_h, mupp, _tiles = sized

@@ -66,20 +66,25 @@ INVALID_INPUT_CODE = "INVALID_INPUT"
 # the recovery is to send the same pixels as PNG, which every server reads.
 INVALID_REQUEST_CODE = "INVALID_REQUEST"
 
+# The click was answered, and the answer holds nothing: the points contradict
+# each other, or a remove point erased the object. A result, not a fault.
+EMPTY_RESULT_CODE = "EMPTY_RESULT"
+
 # The service refuses a body carrying more points than this. A long correction
 # session must not push its whole history over the wire.
 MAX_REFINE_POINTS = 64
 
 
-# What the caller has to do about a refusal. Three answers, because they need
-# three different sentences: top up, sign in, or try again.
+# What the caller has to do about a refusal. Four answers, because they need
+# four different sentences: top up, sign in, move the points, or try again.
 REFUSAL_CREDITS = "CREDITS"
 REFUSAL_SIGN_IN = "SIGN_IN"
+REFUSAL_EMPTY = "EMPTY"
 REFUSAL_OTHER = "OTHER"
 
 
 def click_refusal_class(code: str) -> str:
-    """Which of the three answers a refusal code deserves.
+    """Which of the four answers a refusal code deserves.
 
     The code sets live in ``error_policy``, where the server can add to them,
     so a code we start sending tomorrow reaches the right sentence without a
@@ -88,6 +93,10 @@ def click_refusal_class(code: str) -> str:
     named = (code or "").strip().upper()
     if not named:
         return REFUSAL_OTHER
+    # Aimed, not broken: the user moves a point and clicks again. Answered
+    # before the dial sets, which carry account-level refusals only.
+    if named == EMPTY_RESULT_CODE:
+        return REFUSAL_EMPTY
     try:
         from .error_policy import EXHAUSTED_CODES, RUN_FATAL_CODES
 
@@ -114,7 +123,8 @@ class RefineRefusedError(SamWorkerError):
         self.code = code
 
     def refusal_class(self) -> str:
-        """One of ``REFUSAL_CREDITS``, ``REFUSAL_SIGN_IN``, ``REFUSAL_OTHER``."""
+        """One of ``REFUSAL_CREDITS``, ``REFUSAL_SIGN_IN``, ``REFUSAL_EMPTY``
+        or ``REFUSAL_OTHER``."""
         return click_refusal_class(self.code)
 
 

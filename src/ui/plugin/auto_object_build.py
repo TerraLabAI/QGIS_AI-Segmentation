@@ -32,15 +32,14 @@ class AutoObjectBuildMixin:
             getattr(worker, "tiles_render_failed", 0) or 0)
         self._auto_unavailable_tiles = int(
             getattr(worker, "tiles_unavailable", 0) or 0)
-        # Tiles the degenerate prefilter settled as empty with no request. They
-        # are quoted to the user before the run like every other grid tile and
-        # then never charged, so leaving them out of the run's own account was
-        # the one drop the user could not see anywhere.
+        # Tiles the degenerate prefilter settled as empty with no request. Their
+        # ground is inside the drawn zone, so the run pays for it like any
+        # other, and this counter only says why they carry no detection.
         self._auto_prefiltered_tiles = int(
             getattr(worker, "tiles_prefiltered", 0) or 0)
         # Tiles the scan gate settled as empty off a downsampled scan. Kept
-        # apart from every counter above because these WERE charged, so they
-        # can never join the "none of these were charged" line.
+        # apart from every counter above because these went through a request,
+        # so they belong to the run's own tile account.
         self._auto_gate_skipped_tiles = int(
             getattr(worker, "tiles_gate_skipped", 0) or 0)
         # Masks the whole-tile blob guard dropped, with the per-test split. A
@@ -49,6 +48,11 @@ class AutoObjectBuildMixin:
         # objects here, and this is the only number that says so.
         self._auto_blob_dropped = int(
             getattr(worker, "masks_dropped_whole_tile", 0) or 0)
+        # The denominator: masks that reached the guard's ladder at all. A drop
+        # count on its own is unreadable, and reading it wrong is what a run
+        # with a bad tile size looks like from the outside.
+        self._auto_blob_armed = int(
+            getattr(worker, "masks_whole_tile_armed", 0) or 0)
         self._auto_blob_kept_map = int(
             getattr(worker, "masks_whole_tile_kept_map", 0) or 0)
         self._auto_blob_map_lowscore = int(
@@ -76,6 +80,23 @@ class AutoObjectBuildMixin:
             getattr(worker, "tiles_capped_final", 0) or 0)
         self._auto_subdiv_tiles = int(
             getattr(worker, "tiles_subdivided", 0) or 0)
+
+    def _auto_blob_guard_stats(self) -> tuple[int, int, int]:
+        """(masks the whole-tile guard armed on, masks it dropped, tile ground
+        side) for the finished run, rounded to whole units for telemetry.
+
+        One helper for both completion paths so the zero-result run and the
+        run that opened a review report the same three numbers. A guard that
+        ate a run shows up as a high armed count on a small tile side, and that
+        reading needs all three.
+        """
+        armed = int(getattr(self, "_auto_blob_armed", 0) or 0)
+        dropped = int(getattr(self, "_auto_blob_dropped", 0) or 0)
+        area = float(getattr(self, "_auto_tile_ground_area", 0.0) or 0.0)
+        if area <= 0.0 and self._auto_gsd > 0:
+            from ...core.tile_manager import TILE_SIZE
+            area = (TILE_SIZE * self._auto_gsd) ** 2
+        return armed, dropped, int(round(area ** 0.5)) if area > 0.0 else 0
 
     def _auto_refine_pixel_size(self) -> float:
         """Ground units per DETECTION pixel, for px<->ground conversion in the

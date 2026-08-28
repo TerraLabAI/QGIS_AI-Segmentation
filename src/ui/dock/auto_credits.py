@@ -243,9 +243,8 @@ class DockAutoCreditsMixin:
             except (RuntimeError, AttributeError):
                 pass
             return
-        from .ui_refresh import format_km2_surface
         try:
-            label.setText(tr("{n} km²").format(n=format_km2_surface(km2)))
+            label.setText(self._auto_cost_row_text(km2))
             label.setToolTip(tr(
                 "Automatic is counted by surface. Precision changes how finely "
                 "the zone is scanned, never the price. A run never costs more "
@@ -259,6 +258,32 @@ class DockAutoCreditsMixin:
         else:
             self.set_auto_km2_block(None)
         self._update_auto_detect_enabled()
+
+    def _auto_cost_row_text(self, km2: float) -> str:
+        """The Precision header's right-hand figure: the surface, and how long
+        the run takes when that is long enough to be worth saying.
+
+        The two belong on one row because they answer the same question and
+        pull opposite ways. Precision never moves the price, which the tooltip
+        has always said; what it does move is the wait, and until now nothing
+        on screen said so. A user raising the slider could see the bill stay
+        flat and had no way to learn the run had gone from one minute to
+        twenty until it was running.
+
+        Deliberately blunt and prefixed with a tilde: it is a band from a
+        typical run to a slow one, and a run that lands outside it has to read
+        as an estimate that missed, not as a promise broken. Under the served
+        floor it renders nothing at all, so a short run keeps a row with one
+        figure on it.
+        """
+        from ...core.run_eta import friendly_run_eta
+        from .ui_refresh import format_km2_surface
+
+        surface = tr("{n} km²").format(n=format_km2_surface(km2))
+        # -1 is the over-the-cap sentinel and None is "not estimated yet";
+        # friendly_run_eta answers "" to both, and to anything malformed.
+        eta = friendly_run_eta(getattr(self, "_auto_est_credits", None))
+        return f"{surface} · ~{eta}" if eta else surface
 
     def set_auto_km2_block(self, zone_km2: float | None,
                            left_km2: float = 0.0) -> None:
@@ -369,6 +394,14 @@ class DockAutoCreditsMixin:
             self.auto_credit_cost_label.setStyleSheet(scale_qss_font_px(
                 "color: palette(text); font-size: 11px;"))
             self._auto_zone_too_large = False
+            # The surface reaches the row first and the tile count lands here,
+            # so the duration can only be written once both are known. Same
+            # turn of the event loop, so nothing is repainted in between and
+            # the row never shows the previous zone's estimate.
+            km2 = getattr(self, "_auto_zone_km2", None)
+            if km2 is not None and km2 > 0:
+                self.auto_credit_cost_label.setText(
+                    self._auto_cost_row_text(km2))
             self.auto_credit_cost_label.setVisible(
                 bool(self.auto_credit_cost_label.text()))
             self._update_auto_detect_enabled()

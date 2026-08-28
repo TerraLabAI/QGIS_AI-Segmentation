@@ -227,16 +227,6 @@ _PRESET_L10N: dict[str, dict] = {
         "建築屋面",
     ),
     "driveway": _l("Zufahrt", "Accesso carrabile", "Oprit", "Podjazd", "Jalan masuk", "進入路", "车道", "車道"),
-    "taxiway": _l(
-        "Rollbahn",
-        "Via di rullaggio",
-        "Taxibaan",
-        "Droga kołowania",
-        "Jalur taxi",
-        "誘導路",
-        "滑行道",
-        "滑行道",
-    ),
     "water_tower": _l(
         "Wasserturm",
         "Torre piezometrica",
@@ -349,7 +339,6 @@ _CATEGORIES: list[dict] = [
             _p("runway", "runway", "Runway", "Piste", "Pista", "Pista"),
             _p("dock", "dock", "Dock", "Quai", "Muelle", "Doca"),
             _p("driveway", "driveway", "Driveway", "Allée carrossable", "Acceso vehicular", "Acesso de garagem"),
-            _p("taxiway", "taxiway", "Taxiway", "Voie de circulation", "Calle de rodaje", "Pista de táxi"),
         ],
     ),
     _cat(

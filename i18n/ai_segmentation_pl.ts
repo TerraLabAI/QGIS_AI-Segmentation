@@ -4774,5 +4774,26 @@ blokują lokalne środowisko AI wtyczki.</translation>
         <source>the network reported: {error}</source>
         <translation>sieć zgłosiła: {error}</translation>
     </message>
+    <message>
+        <location filename="../src/ui/plugin/manual_predict.py" line="0" />
+        <source>That click selected nothing. Move the points and click again.</source>
+        <translation>To kliknięcie niczego nie wybrało. Przesuń punkty i kliknij ponownie.</translation>
+    </message>
+    <message>
+        <source>Clear selection (C)</source>
+        <translation>Wyczyść zaznaczenie (C)</translation>
+    </message>
+    <message>
+        <source>Removes the points and the shape you are working on. Saved polygons stay.</source>
+        <translation>Usuń punkty i kształt, nad którym pracujesz. Zapisane poligony pozostają.</translation>
+    </message>
+    <message>
+        <source>Clear the selection in progress</source>
+        <translation>Wyczyść tworzone zaznaczenie</translation>
+    </message>
+    <message>
+        <source>This map source has no sharper picture of this area. The run uses the sharpest one it has, and costs fewer tiles than the estimate.</source>
+        <translation>To źródło mapy nie ma bardziej szczegółowego obrazu tego obszaru. Zadanie korzysta z najbardziej szczegółowego dostępnego obrazu i kosztuje mniej kafelków niż szacowano.</translation>
+    </message>
 </context>
 </TS>

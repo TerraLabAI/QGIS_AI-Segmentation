@@ -472,6 +472,8 @@ class DockStateMixin:
             self.undo_button.setEnabled(has_points or can_undo_saved)
             # Stop discards the manual session; in a refine handoff that would
             # bypass the return to review, so hide it (Back to review is the exit).
+            self.clear_selection_button.setVisible(secondary_visible)
+            self.clear_selection_button.setEnabled(has_points)
             self.stop_button.setVisible(not self._refine_handoff)
             self.stop_button.setEnabled(True)
 
@@ -496,6 +498,7 @@ class DockStateMixin:
             self.save_mask_button.setVisible(False)
             self.export_button.setVisible(False)
             self.undo_button.setVisible(False)
+            self.clear_selection_button.setVisible(False)
             self.stop_button.setVisible(False)
             self.secondary_buttons_widget.setVisible(False)
             self.batch_info_widget.setVisible(False)
@@ -618,6 +621,8 @@ class DockStateMixin:
         # Undo enabled if: has points OR has saved masks
         can_undo_saved = self._saved_polygon_count > 0
         self.undo_button.setEnabled((has_points or can_undo_saved) and self._segmentation_active)
+        self.clear_selection_button.setEnabled(
+            has_points and self._segmentation_active)
         self.save_mask_button.setEnabled(has_points)
 
         if self._segmentation_active:

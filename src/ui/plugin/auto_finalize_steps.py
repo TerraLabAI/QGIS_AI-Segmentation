@@ -26,6 +26,12 @@ from .shared import _AUTO_PUMP_BUDGET_S
 # keep their traced outline and the run goes on.
 _ALIGN_PHASE_BUDGET_S = 10.0
 
+# How long the pump waits before asking the off-GUI refine thread again, once
+# it has nothing else to do. A zero timer here would spin the GUI thread on an
+# empty outbox and take the interpreter lock off the thread doing the shaping;
+# a wait about the length of one drawn frame costs the user nothing.
+_AWAIT_REFINE_POLL_MS = 15
+
 
 class AutoFinalizeStepsMixin:
     """Time-sliced finalize and reslice, yielding to the event loop between slices."""
@@ -490,8 +496,45 @@ class AutoFinalizeStepsMixin:
         if size_gate_on and measurer is None:
             measurer = self._make_auto_area_measurer()
             state["measurer"] = measurer
+        # Settle the cache's shape key BEFORE the loop, so the key the offload
+        # stamps its jobs with is the one _review_refined_geom will fill under.
+        # Without this the first refine settles it mid-walk and every job handed
+        # over before that carries a stamp the drain then refuses.
+        cache = self._auto_reslice_cache
+        shape_key = self._review_shape_key(params, pixel_size)
+        if cache.get("key") != shape_key:
+            self._adopt_reslice_shape_key(cache, shape_key)
+        cached_geoms = cache["geoms"]
+        # Objects handed to the off-GUI refine thread, waiting for their shape.
+        awaiting = state.setdefault("awaiting", [])
+        offload = self._review_refine_offload_for(state, filter_pending, awaiting)
+        # Take back whatever the thread finished since the last slice, then
+        # collect the ones that are ready. Both are dict work, so they cost the
+        # event loop nothing next to the shaping they replace. Unconditional:
+        # a thread left running by an earlier, denser pass still owes answers
+        # this one can use, and draining is what keeps its outbox from growing.
+        self._drain_review_refine_results(shape_key)
+        if awaiting:
+            # A thread that has stopped (teardown raced this pass, or it hit an
+            # error) owes answers that will never come, so its objects are
+            # shaped here instead. A pass that never finishes would leave the
+            # review showing the shapes from before the control moved, for good.
+            alive = self._review_refine_thread_alive()
+            still_waiting = []
+            for det_idx, score, manual in awaiting:
+                if det_idx in cached_geoms:
+                    g = cached_geoms[det_idx]
+                elif alive:
+                    still_waiting.append((det_idx, score, manual))
+                    continue
+                else:
+                    g = self._review_shape_now(det_idx, params, pixel_size)
+                self._accept_review_shape(
+                    state, det_idx, g, score, manual, size_gate_on, measurer)
+            awaiting[:] = still_waiting
         while filter_pending:
-            det_idx, (base, score, area) = filter_pending.pop()
+            row = filter_pending.pop()
+            det_idx, (base, score, area) = row
             try:
                 base_ok = base is not None and not base.isEmpty()
                 # Hand-drawn / split objects skip the confidence + size gates
@@ -502,26 +545,33 @@ class AutoFinalizeStepsMixin:
                 if det_idx not in removed and base_ok and passes:
                     # Cached per object + shape key: a filter-only reslice
                     # (Confidence / Min / Max size) is pure dict lookups here.
-                    g = self._review_refined_geom(det_idx, base, params, pixel_size)
-                    if g is None:
-                        # An object that passed every filter and came back with
-                        # no shape leaves the map and the export. Count it: a
-                        # total that quietly disagrees with the map is the one
-                        # thing the review cannot explain.
-                        state["refine_dropped"] = int(
-                            state.get("refine_dropped", 0) or 0) + 1
-                    elif (manual or not size_gate_on
-                            or self._passes_size_filters(
-                                self._object_area_m2(g, measurer), params)):
-                        visible.append(g)
-                        visible_scores.append(score)
-                        visible_ids.append(self._object_fid_for(det_idx))
-                        visible_order.append(det_idx)
+                    if det_idx in cached_geoms:
+                        self._accept_review_shape(
+                            state, det_idx, cached_geoms[det_idx], score,
+                            manual, size_gate_on, measurer)
+                    elif offload is not None and self._review_refine_queue_full():
+                        # The refine thread has all the work it can hold. Put
+                        # this one back and come round again: shaping it here
+                        # instead would put the GUI thread in the interpreter
+                        # lock's queue behind the very thread it handed the work
+                        # to, and BOTH would run slower for it.
+                        filter_pending.append(row)
+                        break
+                    elif offload is not None and self._offload_review_refine(
+                            offload, det_idx, base, params, pixel_size,
+                            shape_key):
+                        awaiting.append((det_idx, score, manual))
+                    else:
+                        g = self._review_refined_geom(
+                            det_idx, base, params, pixel_size)
+                        self._accept_review_shape(
+                            state, det_idx, g, score, manual, size_gate_on,
+                            measurer)
             except Exception as exc:  # noqa: BLE001 -- drop this object only
                 self._log_finalize_drop(state, "filter", det_idx, exc)
             if _t.monotonic() >= deadline:
                 break
-        if filter_pending:
+        if filter_pending or awaiting:
             # Progressive apply (reslice only): every ~250 ms, write the geoms
             # refined SO FAR onto the layer (diff-only, objects not yet
             # processed keep their old shape). A shape-settings change then
@@ -541,7 +591,15 @@ class AutoFinalizeStepsMixin:
                         ids=visible_ids,
                         stamp=("acc", (self._auto_reslice_cache or {}).get("key")),
                         partial=True)
-            QTimer.singleShot(0, self._step_auto_finalize_refine)
+            # Straight back for more work, but with a breath whenever the next
+            # turn would have nothing to do but ask the refine thread again: a
+            # zero timer would spin the GUI thread on an outbox that fills at
+            # the thread's pace, and every turn of that spin takes the
+            # interpreter lock off the thread doing the shaping.
+            more_now = bool(filter_pending) and not self._review_refine_queue_full()
+            QTimer.singleShot(
+                0 if more_now else _AWAIT_REFINE_POLL_MS,
+                self._step_auto_finalize_refine)
             return
         vis_scores = state.get("visible_scores", [])
         vis_ids = state.get("visible_ids", [])

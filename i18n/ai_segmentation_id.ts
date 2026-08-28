@@ -4711,5 +4711,26 @@ memblokir lingkungan AI lokal plugin.</translation>
         <source>the network reported: {error}</source>
         <translation>jaringan melaporkan: {error}</translation>
     </message>
+    <message>
+        <location filename="../src/ui/plugin/manual_predict.py" line="0" />
+        <source>That click selected nothing. Move the points and click again.</source>
+        <translation>Klik itu tidak memilih apa pun. Pindahkan titik-titik dan klik lagi.</translation>
+    </message>
+    <message>
+        <source>Clear selection (C)</source>
+        <translation>Hapus pilihan (C)</translation>
+    </message>
+    <message>
+        <source>Removes the points and the shape you are working on. Saved polygons stay.</source>
+        <translation>Hapus titik dan bentuk yang sedang Anda kerjakan. Poligon tersimpan tetap ada.</translation>
+    </message>
+    <message>
+        <source>Clear the selection in progress</source>
+        <translation>Hapus seleksi yang sedang berlangsung</translation>
+    </message>
+    <message>
+        <source>This map source has no sharper picture of this area. The run uses the sharpest one it has, and costs fewer tiles than the estimate.</source>
+        <translation>Sumber peta ini tidak memiliki gambar yang lebih tajam untuk area ini. Proses menggunakan gambar paling tajam yang tersedia, dan menghabiskan lebih sedikit tile daripada perkiraan.</translation>
+    </message>
 </context>
 </TS>

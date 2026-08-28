@@ -5010,5 +5010,26 @@ bloque l&apos;environnement IA local du plugin.</translation>
         <source>the network reported: {error}</source>
         <translation>le réseau a signalé : {error}</translation>
     </message>
+    <message>
+        <location filename="../src/ui/plugin/manual_predict.py" line="0" />
+        <source>That click selected nothing. Move the points and click again.</source>
+        <translation>Ce clic n’a rien sélectionné. Déplacez les points et cliquez à nouveau.</translation>
+    </message>
+    <message>
+        <source>Clear selection (C)</source>
+        <translation>Effacer la sélection (C)</translation>
+    </message>
+    <message>
+        <source>Removes the points and the shape you are working on. Saved polygons stay.</source>
+        <translation>Supprime les points et la forme en cours. Les polygones enregistrés sont conservés.</translation>
+    </message>
+    <message>
+        <source>Clear the selection in progress</source>
+        <translation>Effacer la sélection en cours</translation>
+    </message>
+    <message>
+        <source>This map source has no sharper picture of this area. The run uses the sharpest one it has, and costs fewer tiles than the estimate.</source>
+        <translation>Cette source cartographique ne propose pas d’image plus détaillée de cette zone. L’exécution utilise la plus détaillée disponible et coûte moins de tuiles que l’estimation.</translation>
+    </message>
 </context>
 </TS>

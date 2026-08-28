@@ -94,6 +94,12 @@ class WriteResult(NamedTuple):
     layer: QgsVectorLayer
     used_fallback: bool
     error_message: str
+    #: The shared file the run was meant for. It is NOT always GPKG_FILENAME:
+    #: a project past the table ceiling is writing into a rolled-over file, and
+    #: naming the wrong one in the fallback warning sends the user to look at a
+    #: file that is not the one that refused them. Defaulted so no existing
+    #: caller has to change.
+    intended_path: str = ""
 
 
 _HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -368,8 +374,14 @@ def _output_directory(source_layer) -> str:
 
 
 def project_gpkg_path(source_layer) -> str:
-    """Full path of the per-project GeoPackage all runs accumulate into."""
-    return os.path.join(_output_directory(source_layer), GPKG_FILENAME)
+    """Full path of the per-project GeoPackage all runs accumulate into.
+
+    Rolls over to a next numbered file once this one holds too many tables, so
+    the click never pays for years of runs: see ``output_gpkg_rollover``.
+    """
+    from .output_gpkg_rollover import next_output_gpkg
+
+    return next_output_gpkg(_output_directory(source_layer), GPKG_FILENAME)
 
 
 def _ground_metre_transform(memory_layer):
@@ -419,10 +431,31 @@ def _write_gpkg(memory_layer, path: str, table: str, overwrite_file: bool,
 
 
 def _load_table(path: str, table: str, display_name: str) -> QgsVectorLayer | None:
+    """Open a table that was written a moment ago, and make it read its rows.
+
+    The reload is not defensive, it is the difference between a layer that
+    draws and a blank one. The writer still holds the file, so a read handle
+    opened right behind it sees the table in the header and none of the rows
+    that are still only in the journal: featureCount() answers the full count,
+    getFeatures() yields nothing, and the user gets an empty map after a run
+    they paid for. reloadData drops that half-built handle and opens a fresh
+    one.
+
+    It used to work by accident. Storing the style and the metadata into the
+    file ran on the same click, right after this, and those writes flushed the
+    journal as a side effect. The moment they moved off the click the accident
+    stopped happening, so the flush is asked for here, where it belongs.
+    """
     try:
         layer = QgsVectorLayer(f"{path}|layername={table}", display_name, "ogr")
-        if layer.isValid():
-            return layer
+        if not layer.isValid():
+            return None
+        try:
+            layer.dataProvider().reloadData()
+            layer.updateExtents()
+        except (RuntimeError, AttributeError):  # nosec B110
+            pass
+        return layer
     except Exception:  # nosec B110
         pass
     return None
@@ -447,7 +480,7 @@ def write_run_table(memory_layer, *, prompt: str, source_layer, fallback_stem: s
     if not error_message:
         layer = _load_table(gpkg_path, table, friendly)
         if layer is not None:
-            return WriteResult(gpkg_path, table, layer, False, "")
+            return WriteResult(gpkg_path, table, layer, False, "", gpkg_path)
         error_message = "saved table could not be reloaded"
     QgsMessageLog.logMessage(
         f"Shared GeoPackage write failed ({error_message}), falling back to a per-run file",
@@ -469,7 +502,7 @@ def write_run_table(memory_layer, *, prompt: str, source_layer, fallback_stem: s
         if not fallback_error:
             layer = _load_table(fallback_path, table, friendly)
             if layer is not None:
-                return WriteResult(fallback_path, table, layer, True, error_message)
+                return WriteResult(fallback_path, table, layer, True, error_message, gpkg_path)
             fallback_error = "saved file could not be reloaded"
         QgsMessageLog.logMessage(
             f"Fallback export failed in this folder ({fallback_error}), trying the next one",

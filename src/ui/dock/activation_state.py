@@ -382,5 +382,8 @@ class DockActivationMixin:
     def _on_export_clicked(self):
         self.export_layer_requested.emit()
 
+    def _on_clear_selection_clicked(self):
+        self.clear_selection_requested.emit()
+
     def _on_stop_clicked(self):
         self.stop_segmentation_requested.emit()

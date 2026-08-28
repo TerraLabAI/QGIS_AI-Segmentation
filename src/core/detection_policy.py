@@ -612,6 +612,35 @@ def object_tile_floor_m(prompt: str, policy: dict | None = None) -> float:
     return 0.0
 
 
+def object_tile_ceiling_m(prompt: str, policy: dict | None = None) -> float:
+    """Largest tile ground side (metres) worth offering for this object, or
+    0.0 when the server names none.
+
+    The mirror of ``object_tile_floor_m``, read off the SAME seed tier, and it
+    bounds the COARSE end of the Precision slider. Without it that end is set
+    by the object-size rule alone (``object_min_px``), which uses the tier's
+    typical size and so runs far past the point where the object stops being
+    found at all. A user whose run is slow drags exactly that way, so the
+    coarse end has to stop somewhere real.
+
+    It is per tier and absent means no ceiling, so a class nobody has measured
+    keeps the travel it has today. 0.0 is the shipped fallback for the same
+    reason.
+    """
+    seed = seed_policy(policy)
+    entry: object = seed.get("default_object")
+    tiers = seed.get("object_tiers")
+    if isinstance(tiers, list):
+        tier = first_entry_match(normalize_prompt(prompt), tiers)
+        if tier is not None:
+            entry = tier
+    if isinstance(entry, dict):
+        val = entry.get("max_tile_ground_m")
+        if _is_finite_policy_value(val) and val > 0:
+            return float(val)
+    return 0.0
+
+
 def mask_scale_policy(policy: dict | None = None) -> dict:
     """The seed.mask_scale sub-policy (coarse mask-grid routing table).
 
@@ -860,7 +889,15 @@ def detail_max_object_tile_frac(policy: dict | None = None) -> float:
 
 
 def sweet_spot_max_mupp(policy: dict | None = None) -> float:
-    """Coarse edge (m/px) of the adequate-quality band."""
+    """Coarse edge (m/px) of the adequate-quality band.
+
+    Nothing reads it any more. It served the seed's old fallback ladder, which
+    was removed: the seed now walks to the object's own target and keeps the
+    finest level it reaches, so a second, coarser notion of "good enough" has
+    no job. Kept because the server still serves the key and an older plugin
+    still reads it. Do not build on it without a measurement: the band it
+    names is coarse enough that small objects stop being found.
+    """
     return _seed_float("sweet_spot_max_mupp", SWEET_SPOT_MAX_MUPP_M, policy)
 
 
@@ -1336,6 +1373,26 @@ def tile_span_fraction(fallback: float, policy: dict | None = None) -> float:
     in (0, 1] is honoured."""
     val = _sat_float("tile_span_fraction", fallback, policy)
     return val if 0.0 < val <= 1.0 else fallback
+
+
+def hard_cover_shape_escape(fallback: bool, policy: dict | None = None) -> bool:
+    """Whether a mask over ``hard_tile_coverage`` may still be judged on its
+    shape instead of being dropped on the coverage number alone.
+
+    The hard cap is the only arm of the whole-tile guard that never looks at
+    what it is throwing away, and what it can reach depends entirely on the
+    tile's ground side, which is itself served and has moved. With the escape
+    on, such a mask meets the SAME two shape tests the 0.55-0.80 band already
+    meets: the span test still drops a mask that bounds the tile in both
+    directions, and the compactness check still drops a ragged texture fill.
+    Only a solid, near-rectangular mask that stops short of one tile side gets
+    through.
+
+    Fallback: caller-passed. Anything but a real bool falls back, so a
+    malformed served value can never silently disarm the guard.
+    """
+    val = saturation_policy(policy).get("hard_cover_shape_escape")
+    return val if isinstance(val, bool) else bool(fallback)
 
 
 def min_keep_px(fallback: float, policy: dict | None = None) -> float:
@@ -2119,6 +2176,39 @@ def unavailable_dominant_frac(fallback: float, policy: dict | None = None) -> fl
     val = gate_unavailable_policy(policy).get("dominant_frac")
     if _is_finite_policy_value(val) and 0.0 < val <= 1.0:
         return float(val)
+    return fallback
+
+
+def unavailable_agreement_min(fallback: float, policy: dict | None = None) -> float:
+    """Agreement below which a render and its coarser twin are read as
+    different ground, which is what confirms a placeholder card.
+
+    A correlation, so only a value in [-1, 1] is honoured. Fallback: client
+    constant. Raising it towards 1 confirms more cards and refuses more real
+    ground; lowering it towards -1 turns the confirmation off and restores the
+    single-picture verdict."""
+    val = gate_unavailable_policy(policy).get("agreement_min")
+    if _is_finite_policy_value(val) and -1.0 <= val <= 1.0:
+        return float(val)
+    return fallback
+
+
+def unavailable_agreement_sample_px(fallback: int, policy: dict | None = None) -> int:
+    """Side of the square both renders are reduced to before the agreement is
+    measured. Fallback: client constant; only 8 to 256 is honoured."""
+    val = gate_unavailable_policy(policy).get("agreement_sample_px")
+    if _is_finite_policy_value(val) and 8 <= val <= 256:
+        return int(val)
+    return fallback
+
+
+def unavailable_backoff_steps(fallback: int, policy: dict | None = None) -> int:
+    """How many coarser levels a run may fall back to when the source holds no
+    picture at the one it asked for. Fallback: client constant; 0 refuses the
+    run instead of falling back, which is what shipped before."""
+    val = gate_unavailable_policy(policy).get("backoff_steps")
+    if _is_finite_policy_value(val) and 0 <= val <= 8:
+        return int(val)
     return fallback
 
 

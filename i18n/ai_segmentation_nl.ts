@@ -4773,5 +4773,26 @@ blokkeert de lokale AI-omgeving van de plugin.</translation>
         <source>the network reported: {error}</source>
         <translation>het netwerk meldde: {error}</translation>
     </message>
+    <message>
+        <location filename="../src/ui/plugin/manual_predict.py" line="0" />
+        <source>That click selected nothing. Move the points and click again.</source>
+        <translation>Met die klik is niets geselecteerd. Verplaats de punten en klik opnieuw.</translation>
+    </message>
+    <message>
+        <source>Clear selection (C)</source>
+        <translation>Selectie wissen (C)</translation>
+    </message>
+    <message>
+        <source>Removes the points and the shape you are working on. Saved polygons stay.</source>
+        <translation>Verwijdert de punten en de vorm waaraan u werkt. Opgeslagen polygonen blijven behouden.</translation>
+    </message>
+    <message>
+        <source>Clear the selection in progress</source>
+        <translation>Wis de selectie die wordt getekend</translation>
+    </message>
+    <message>
+        <source>This map source has no sharper picture of this area. The run uses the sharpest one it has, and costs fewer tiles than the estimate.</source>
+        <translation>Deze kaartbron heeft geen scherper beeld van dit gebied. De detectietaak gebruikt het scherpste beschikbare beeld en kost minder tegels dan geschat.</translation>
+    </message>
 </context>
 </TS>

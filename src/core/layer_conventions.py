@@ -100,9 +100,8 @@ RUN_CRS_SCALE_TOLERANCE = 0.02
 # purpose: the file travels to whoever the deliverable is for, and the layer
 # metadata written beside it is English too.
 EXPORT_FIELD_ALIASES = {
-    "label": "Label",
     "class": "Class",
-    "score": "Confidence",
+    "confidence": "Confidence",
     "area_m2": "Area (m²)",
     "perimeter_m": "Perimeter (m)",
 }
@@ -941,6 +940,89 @@ def _log_convention_failure(step: str, err: Exception) -> None:
         pass
 
 
+def _layer_still_writable(layer) -> bool:
+    """Whether a deferred file write may still touch this layer.
+
+    A layer removed from the project between the click and the next turn has
+    its C++ half deleted, and writing through the dead wrapper is a crash.
+    """
+    try:
+        from qgis.PyQt import sip
+
+        if sip.isdeleted(layer) is True:
+            return False
+    except Exception:  # noqa: BLE001 -- no sip means no verdict from it  # nosec B110
+        pass
+    try:
+        return bool(layer.isValid())
+    except (RuntimeError, AttributeError):
+        return False
+
+
+def _write_conventions_into_the_file(layer, metadata: bool, style: bool) -> None:
+    """The two GeoPackage writes, run now. Never raises."""
+    if not _layer_still_writable(layer):
+        return
+    if metadata:
+        try:
+            save_metadata = getattr(layer, "saveDefaultMetadata", None)
+            if save_metadata is not None:
+                save_metadata()
+        except Exception as err:  # noqa: BLE001 -- a read-only output keeps the in-memory copy
+            _log_convention_failure("saving the metadata into the file", err)
+    if style:
+        try:
+            layer.saveStyleToDatabase(layer.name(), "AI Segmentation", True, "")
+        except Exception as err:  # noqa: BLE001 -- style persistence never blocks an export
+            _log_convention_failure("saving the style into the file", err)
+
+
+def persist_layer_to_file_later(layer, *, metadata: bool = False,
+                                style: bool = False) -> None:
+    """Write the metadata and the style INTO the layer's file one turn later.
+
+    Both are SQLite writes into a GeoPackage the project keeps appending runs
+    to, and on a grown file they cost about 0.8 s together, spent between the
+    user's Export click and their layer appearing. Nothing on screen reads
+    either one: the renderer and the metadata object are already set on the
+    layer in memory, so one event-loop turn of delay is invisible.
+
+    The timer is parented to the layer, so a layer destroyed before it fires
+    takes the pending write with it. Off the GUI thread there is no event loop
+    to fire in, so the write happens straight away as it always did.
+    """
+    if layer is None or not (metadata or style):
+        return
+
+    def _write() -> None:
+        _write_conventions_into_the_file(layer, metadata, style)
+        # These writes touch the file the layer is reading. Ask for the frame
+        # back so nothing on screen is left showing what the layer looked like
+        # before them.
+        try:
+            layer.triggerRepaint()
+        except (RuntimeError, AttributeError):  # nosec B110
+            pass
+
+    try:
+        from qgis.core import QgsApplication
+        from qgis.PyQt.QtCore import QThread
+
+        app = QgsApplication.instance()
+        on_gui_thread = app is None or QThread.currentThread() == app.thread()
+    except (RuntimeError, AttributeError):
+        on_gui_thread = True
+    if not on_gui_thread:
+        _write()
+        return
+    try:
+        from .qt_compat import safe_single_shot
+
+        safe_single_shot(0, layer, _write)
+    except Exception:  # noqa: BLE001 -- no timer means write it now
+        _write()
+
+
 def apply_output_conventions(
     layer: QgsVectorLayer,
     source_raster_name: str,
@@ -1001,19 +1083,10 @@ def apply_output_conventions(
         # Never blocks the export, but never silent either: a delivered file
         # that lost its provenance has to leave a trace somewhere.
         _log_convention_failure("provenance metadata", err)
-    try:
-        # setMetadata() only fills the in-memory layer property, which dies with
-        # the QGIS session. Write it down as well so the provenance is still
-        # there when the file is opened on its own, outside this project.
-        save_metadata = getattr(layer, "saveDefaultMetadata", None)
-        if save_metadata is not None:
-            save_metadata()
-    except Exception as err:  # noqa: BLE001 -- a read-only output keeps the in-memory copy
-        _log_convention_failure("saving the metadata into the file", err)
-    try:
-        layer.saveStyleToDatabase(layer.name(), "AI Segmentation", True, "")
-    except Exception as err:  # noqa: BLE001 -- style persistence never blocks an export
-        _log_convention_failure("saving the style into the file", err)
+    # setMetadata() and setRenderer() only fill the in-memory layer, which dies
+    # with the QGIS session, so both are written into the file as well. That
+    # part waits one event-loop turn: see persist_layer_to_file_later.
+    persist_layer_to_file_later(layer, metadata=True, style=True)
 
 
 def attribute_values_for_fields(fields, geom: QgsGeometry, crs, raster_name: str, timestamp: str) -> list:
@@ -1039,7 +1112,7 @@ def attribute_values_for_fields(fields, geom: QgsGeometry, crs, raster_name: str
             values.append(timestamp)
         elif name == "label":
             values.append("")
-        # "class"/"score" are per-detection facts of an Automatic run; a
+        # "class"/"confidence" are per-detection facts of an Automatic run; a
         # manually appended polygon has neither, so they stay NULL (honest
         # unknown) via the fallthrough below.
         else:  # fid and any user-added column: let the provider default it

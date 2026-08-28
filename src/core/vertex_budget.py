@@ -495,3 +495,201 @@ def simplify_to_budget(
     except Exception:  # noqa: BLE001 -- validity check is best-effort  # nosec B110
         return geom
     return result
+
+
+# The fewest sides the de-staircase pass may leave a ROUND outline. Twice the
+# budget's own floor, because the pre-pass is not the pass that decides a point
+# count: it has to hand the budget something to choose from. Callers pass the
+# served floor; this is the client fallback.
+DEFAULT_MIN_ROUND_SIDES = 16
+
+
+def round_chord_share(min_round_sides: int) -> float:
+    """How far a run may leave its own chord, as a share of that chord's length.
+
+    On a regular N-gon an edge's sagitta over its chord length is exactly
+    tan(pi / 2N) / 2, and that ratio holds at every size. So bounding the ratio
+    at N sides is the same statement as "never take a round outline below N
+    sides", whatever the object measures in pixels, which a flat pixel bound
+    cannot say: a crown of ten pixels' radius leaves its own chord by less than
+    one pixel and a flat bound waves it through as a staircase.
+    """
+    sides = max(4, int(min_round_sides))
+    return math.tan(math.pi / (2.0 * sides)) / 2.0
+
+
+# How even the two sides have to be before a run counts as a staircase rather
+# than an arc. A staircase's chord runs through the middle of its steps, so its
+# two sides are equal and the ratio is 1. An arc bulges one way and only the
+# grid noise reaches the other side, and that noise cannot pass half a step
+# while the bulge that matters is over half a step. Half separates them.
+_EVEN_STRADDLE = 0.5
+
+# The longest chord, in grid steps, still allowed the one-step floor below.
+# Erasing a sagitta of one step off a chord of c steps erases curvature of
+# radius up to c * c / 8 steps, so at four the floor can only reach a radius of
+# two steps: a round feature four pixels across, which is under what the mask
+# itself can hold. Past four steps a departure of one step can be real shape,
+# and only the chord share decides.
+_FLOOR_MAX_CHORD_STEPS = 4.0
+
+
+def _dp_mark_keeps(seq: list, start: int, end: int, tolerance: float,
+                   chord_share: float, grid_step: float, keep: list) -> None:
+    """Douglas-Peucker between two anchors, marking the points it keeps.
+
+    Three bounds decide one edge. ``chord_share`` of its own chord, which says
+    how round the outline may end up whatever it measures. One ``grid_step`` on
+    a run that is a staircase and nothing else: at most four steps of chord,
+    walking no further than |dx| + |dy|, and reaching either side of the chord.
+    That floor is needed because the chord share of a run a few pixels long is
+    under one step, which no staircase can meet, so on its own it would split a
+    short staircase for ever. And the caller's flat ``tolerance``, over all.
+    """
+    stack = [(start, end)]
+    while stack:
+        i, j = stack.pop()
+        if j <= i + 1:
+            continue
+        ax, ay = seq[i]
+        bx, by = seq[j]
+        dx, dy = bx - ax, by - ay
+        norm = math.hypot(dx, dy)
+        worst, at = 0.0, -1
+        high = low = 0.0
+        walked = 0.0
+        last_x, last_y = ax, ay
+        for k in range(i + 1, j):
+            px, py = seq[k]
+            walked += math.hypot(px - last_x, py - last_y)
+            last_x, last_y = px, py
+            if norm > 0.0:
+                side = ((px - ax) * dy - (py - ay) * dx) / norm
+                d = abs(side)
+                high = max(high, side)
+                low = min(low, side)
+            else:
+                d = math.hypot(px - ax, py - ay)
+            if d > worst:
+                worst, at = d, k
+        walked += math.hypot(bx - last_x, by - last_y)
+        if norm > 0.0:
+            limit = chord_share * norm
+            small, large = min(high, -low), max(high, -low)
+            # A staircase never turns back: it is monotone along both axes and
+            # every segment of it is axis-aligned, so the ground it walks is
+            # EXACTLY |dx| + |dy|, and only such a run is. The test is equality
+            # and not an upper bound: a run of near-diagonal segments walks LESS
+            # than |dx| + |dy| and an upper bound waved it through, flattening
+            # real detail that happens to sit off the pixel grid.
+            if (grid_step > 0.0
+                    and norm <= _FLOOR_MAX_CHORD_STEPS * grid_step
+                    and abs(walked - (abs(dx) + abs(dy))) <= 1e-9 * max(1.0, walked)
+                    and large > 0.0
+                    and small >= _EVEN_STRADDLE * large):
+                limit = max(limit, grid_step)
+            limit = min(tolerance, limit)
+        else:
+            limit = 0.0
+        if worst > limit and at > 0:
+            keep[at] = True
+            stack.append((i, at))
+            stack.append((at, j))
+
+
+def outline_grid_step(ring: list) -> float:
+    """The grid a ring was traced on: the shortest step between two of its
+    points. A mask outline runs along pixel edges, so its shortest step IS one
+    pixel, in whatever units the ring carries. 0 when there is nothing to read.
+    """
+    step = 0.0
+    for a, b in zip(ring, ring[1:]):
+        d = math.hypot(b.x() - a.x(), b.y() - a.y())
+        if d > 0.0 and (step == 0.0 or d < step):
+            step = d
+    return step
+
+
+def _destaircase_ring(ring: list, tolerance: float, chord_share: float,
+                      grid_step: float) -> list:
+    """One closed ring with its straight runs flattened and its arcs kept."""
+    if grid_step <= 0.0:
+        grid_step = outline_grid_step(ring)
+    pts = [(p.x(), p.y()) for p in ring]
+    if len(pts) > 1 and pts[0] == pts[-1]:
+        pts = pts[:-1]
+    n = len(pts)
+    if n <= MIN_RING_VERTICES:
+        return ring
+    seq = pts + [pts[0]]
+    # Two anchors, not one: Douglas-Peucker on a closed ring anchored at a
+    # single point can only cut what that point already sees.
+    far = max(range(1, n),
+              key=lambda k: math.hypot(seq[k][0] - seq[0][0],
+                                       seq[k][1] - seq[0][1]))
+    keep = [False] * (n + 1)
+    keep[0] = keep[far] = keep[n] = True
+    _dp_mark_keeps(seq, 0, far, tolerance, chord_share, grid_step, keep)
+    _dp_mark_keeps(seq, far, n, tolerance, chord_share, grid_step, keep)
+    kept = [k for k in range(n + 1) if keep[k]]
+    if len(kept) >= len(seq):
+        return ring
+    from qgis.core import QgsPointXY
+
+    return [QgsPointXY(seq[k][0], seq[k][1]) for k in kept]
+
+
+def destaircase_outline(geom: Any, tolerance: float,
+                        min_round_sides: int = DEFAULT_MIN_ROUND_SIDES,
+                        grid_step: float = 0.0) -> Any:
+    """Flatten the pixel staircase on the STRAIGHT runs of an outline, and
+    leave the curved ones alone.
+
+    Douglas-Peucker at a flat tolerance cannot tell a staircase from an arc:
+    both are a run of points near a chord, so a tolerance high enough to take a
+    one-pixel step off a wall also takes a tree crown down to a hexagon. What
+    separates them is how the departure from the chord scales. A staircase is
+    bounded by its own step whatever the run's length, an arc's grows with the
+    square of it, so each run here is judged against a share of its OWN chord
+    (see round_chord_share) as well as against ``tolerance``, and a curved run
+    is split until it carries ``min_round_sides``. Best-effort like the rest of
+    the refine tail: the input comes back unchanged on any failure.
+    """
+    if geom is None or tolerance <= 0:
+        return geom
+    chord_share = round_chord_share(min_round_sides)
+    try:
+        if geom.isEmpty():
+            return geom
+        multi = bool(geom.isMultipart())
+        polys = geom.asMultiPolygon() if multi else [geom.asPolygon()]
+    except Exception:  # noqa: BLE001 -- not a polygon we can read  # nosec B110
+        return geom
+    if not polys or not any(polys):
+        return geom
+    want_type = geom.type()
+    out_polys: list = []
+    changed = False
+    for poly in polys:
+        rings = []
+        for ring in poly:
+            flat = _destaircase_ring(ring, tolerance, chord_share,
+                                     grid_step)
+            if len(flat) != len(ring):
+                changed = True
+            rings.append(flat)
+        out_polys.extend(_thinned_part_rings(rings, poly, want_type))
+    if not changed or not out_polys:
+        return geom
+    try:
+        result = _polygon_from_parts(out_polys, multi)
+        if result is None or result.isEmpty():
+            return geom
+        if not result.isGeosValid():
+            parts = _polygonal_parts_xy(result.makeValid(), want_type)
+            if not parts:
+                return geom
+            result = _polygon_from_parts(parts, multi)
+    except Exception:  # noqa: BLE001 -- rebuild or repair failed  # nosec B110
+        return geom
+    return result if result is not None and not result.isEmpty() else geom

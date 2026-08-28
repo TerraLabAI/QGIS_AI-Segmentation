@@ -46,6 +46,7 @@ from .plugin.auto_detail_window import AutoDetailWindowMixin
 from .plugin.auto_exemplar_grouping import AutoExemplarGroupingMixin
 from .plugin.auto_finalize_steps import AutoFinalizeStepsMixin
 from .plugin.auto_flow import AutoFlowMixin
+from .plugin.auto_grid_fill import AutoGridFillMixin
 from .plugin.auto_imagery_guard import AutoImageryGuardMixin
 from .plugin.auto_lifecycle import AutoLifecycleMixin
 from .plugin.auto_object_build import AutoObjectBuildMixin
@@ -53,6 +54,7 @@ from .plugin.auto_results import AutoResultsMixin
 from .plugin.auto_review import AutoReviewMixin
 from .plugin.auto_review_display import AutoReviewDisplayMixin
 from .plugin.auto_review_geometry import AutoReviewGeometryMixin
+from .plugin.auto_review_offload import AutoReviewOffloadMixin
 from .plugin.auto_review_open import AutoReviewOpenMixin
 from .plugin.auto_review_params import AutoReviewParamsMixin
 from .plugin.auto_run import AutoRunMixin
@@ -90,6 +92,7 @@ class AISegmentationPlugin(
     AutoFlowMixin,
     AutoCreditsWatchMixin,
     AutoDetailWindowMixin,
+    AutoGridFillMixin,
     AutoCorrectMixin,
     LocalAiWarmMixin,
     LocalAiInstallLockMixin,
@@ -111,6 +114,7 @@ class AISegmentationPlugin(
     AutoObjectBuildMixin,
     AutoReviewParamsMixin,
     AutoReviewGeometryMixin,
+    AutoReviewOffloadMixin,
     AutoFinalizeStepsMixin,
     AutoReviewOpenMixin,
     AutoReviewMixin,
@@ -565,6 +569,15 @@ class AISegmentationPlugin(
         # worker starts until the finalize takes it back. The GUI thread only
         # writes the objects it hands over, on a coalesced repaint tick.
         self._auto_stitcher = None  # LiveStitchThread | None
+        # The review's Shape controls describe the whole set, so moving one
+        # re-shapes every object of the run. That work goes to this thread
+        # instead of the thread that draws the map (see
+        # plugin/auto_review_offload.py). None until a review is dense
+        # enough to be worth one.
+        self._review_refine_thread = None  # ReviewRefineThread | None
+        # det_id -> the shape key it was handed over under.
+        self._review_refine_inflight: dict = {}
+        self._review_refine_stamp = None
         self._auto_repaint_timer = None  # QTimer | None (coalesced live write)
         # The live preview paces itself on the canvas, not on a clock: a refresh
         # asked for while the previous one is still drawing KILLS it and starts
@@ -1240,6 +1253,7 @@ class AISegmentationPlugin(
                     (self.dock_widget.export_layer_requested, self._on_export_layer),
                     (self.dock_widget.undo_requested, self._on_undo),
                     (self.dock_widget.stop_segmentation_requested, self._on_stop_segmentation),
+                    (self.dock_widget.clear_selection_requested, self._on_clear_selection),
                     (self.dock_widget.refine_settings_changed, self._on_refine_settings_changed),
                     (self.dock_widget.size_filter_changed, self._on_size_filter_changed),
                     (self.dock_widget.fill_holes_size_changed,
@@ -1716,6 +1730,7 @@ class AISegmentationPlugin(
         self.dock_widget.export_layer_requested.connect(self._on_export_layer)
         self.dock_widget.undo_requested.connect(self._on_undo)
         self.dock_widget.stop_segmentation_requested.connect(self._on_stop_segmentation)
+        self.dock_widget.clear_selection_requested.connect(self._on_clear_selection)
         self.dock_widget.refine_settings_changed.connect(self._on_refine_settings_changed)
         self.dock_widget.size_filter_changed.connect(self._on_size_filter_changed)
         self.dock_widget.fill_holes_size_changed.connect(

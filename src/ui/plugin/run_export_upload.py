@@ -34,10 +34,14 @@ from ...core.qt_compat import geometry_op_succeeded, silent_task_flags
 from .run_zone_clip import ZONE_WKT_CRS_AUTHID
 
 # Geometry ceiling for the uploaded FeatureCollection. Above this the summary
-# row is still sent, just without the geometry. It mirrors the cap on the
-# receiving side, so it is a server dial (network.max_geojson_bytes) read in
-# queue_run_export_upload; this is the client fallback.
-_MAX_GEOJSON_BYTES = 20_000_000
+# row is still sent, just without the geometry, and it says so (see
+# _summary_without_geometry). The receiving side refuses a collection past its
+# own ceiling, so this is set TO that ceiling and not under it: every byte of
+# the gap is geometry we threw away for a run the service would have taken.
+# It has to move with that side, so it is a server dial
+# (network.max_geojson_bytes) read in queue_run_export_upload; this is the
+# client fallback.
+_MAX_GEOJSON_BYTES = 25_000_000
 
 # Ceiling on the WKB the GUI thread collects. GeoJSON text of the same
 # coordinates is never much smaller than the binary, so a set past this is
@@ -45,7 +49,7 @@ _MAX_GEOJSON_BYTES = 20_000_000
 # both cheaper and surer than extrapolating from a sample, and it spares the
 # task thread a dense run's conversion that was always going to be discarded.
 # Server dial (network.max_wkb_bytes) too, so the pair moves together.
-_MAX_WKB_BYTES = 24_000_000
+_MAX_WKB_BYTES = 30_000_000
 
 # What the FeatureCollection wrapper adds around the joined features.
 _COLLECTION_OVERHEAD = len('{"type":"FeatureCollection","features":[]}')
@@ -166,6 +170,39 @@ def _feature_json(geom, score, precision: int) -> str | None:
     return '{"type":"Feature","geometry":' + geometry + ',"properties":{' + props + "}}"
 
 
+def _summary_without_geometry(summary: dict, dropped: int, stage: str) -> dict:
+    """The summary as it travels when the geometry did not fit, saying so.
+
+    A run whose geometry was dropped cannot be replayed, and a row carrying
+    only the summary is the same row a run with nothing to export writes. So
+    the omission is stated rather than left to be inferred: without these keys
+    the only run nobody can look at again is also the only one nobody can tell
+    apart. Additive and optional, like every other key here.
+    """
+    marked = dict(summary)
+    marked["geometry_omitted"] = True
+    marked["geometry_omitted_count"] = int(dropped)
+    marked["geometry_omitted_stage"] = str(stage)
+    return marked
+
+
+def _log_geometry_omitted(dropped: int, stage: str, limit: int) -> None:
+    """Say in the log that a run went up without its shapes, and how many.
+
+    The upload swallows every failure by design, so this is the one place a
+    dropped set leaves a trace on the user's machine. Never raises."""
+    try:
+        from qgis.core import Qgis, QgsMessageLog
+
+        QgsMessageLog.logMessage(
+            f"Run summary sent without its geometry: {dropped} objects are "
+            f"past the {limit} byte {stage} ceiling, so this run cannot be "
+            f"replayed from the summary.",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning)
+    except Exception:  # noqa: BLE001 -- a log line never costs the upload
+        pass  # nosec B110
+
+
 def encode_run_export_body(summary: dict, geometry_rows: list, precision: int,
                            max_geojson_bytes: int = _MAX_GEOJSON_BYTES) -> bytes:
     """The POST body: the summary, plus the FeatureCollection when it fits.
@@ -173,11 +210,22 @@ def encode_run_export_body(summary: dict, geometry_rows: list, precision: int,
     Task-thread only. The cap is measured as the text grows, never by
     serializing the finished collection to read its length, so a run past it
     stops converting instead of building a payload nobody will read.
+
+    A set that does not fit is dropped, as it always was, but the summary then
+    carries the omission and its object count instead of leaving silently.
     """
+    if not geometry_rows:
+        return json.dumps(summary, separators=(",", ":")).encode("utf-8")
     head = json.dumps(summary, separators=(",", ":"))
-    if not geometry_rows or not head.endswith("}"):
+    if not head.endswith("}"):
         return head.encode("utf-8")
     from qgis.core import QgsGeometry
+
+    def dropped_body() -> bytes:
+        _log_geometry_omitted(len(geometry_rows), "GeoJSON", max_geojson_bytes)
+        marked = _summary_without_geometry(
+            summary, len(geometry_rows), "geojson")
+        return json.dumps(marked, separators=(",", ":")).encode("utf-8")
 
     pieces: list[str] = []
     budget = max_geojson_bytes - _COLLECTION_OVERHEAD
@@ -192,10 +240,10 @@ def encode_run_export_body(summary: dict, geometry_rows: list, precision: int,
             continue
         budget -= len(piece) + 1  # the joining comma
         if budget < 0:
-            return head.encode("utf-8")
+            return dropped_body()
         pieces.append(piece)
     if not pieces:
-        return head.encode("utf-8")
+        return dropped_body()
     opening = head[:-1] + ',"geojson":{"type":"FeatureCollection","features":['
     return (opening + ",".join(pieces) + "]}}").encode("utf-8")
 
@@ -490,8 +538,13 @@ def queue_run_export_upload(
             return
         from ...core.detection_policy import max_geojson_bytes, max_wkb_bytes
 
-        rows = geometry_rows_for_upload(
-            refined, refined_scores, max_wkb_bytes(_MAX_WKB_BYTES))
+        wkb_ceiling = max_wkb_bytes(_MAX_WKB_BYTES)
+        rows = geometry_rows_for_upload(refined, refined_scores, wkb_ceiling)
+        if refined and not rows:
+            # The binary ceiling dropped the whole set before any conversion.
+            # Same omission as the GeoJSON one, stated on the same keys.
+            _log_geometry_omitted(len(refined), "WKB", wkb_ceiling)
+            summary = _summary_without_geometry(summary, len(refined), "wkb")
         task = _RunExportUploadTask(
             summary, rows, json_precision(review.get("crs")), auth,
             max_geojson_bytes(_MAX_GEOJSON_BYTES))

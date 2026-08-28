@@ -736,23 +736,31 @@ class ManualPredictMixin:
             error_str = str(e)
             refusal = _click_refusal_answer(e)
             if refusal and not self._headless:
-                # An empty balance or a session that signed out. The far side
-                # already says what to do about it, and neither is a fault to
-                # report, so the sentence goes to the message bar instead of a
-                # dialog offering to mail us about the user's own account.
+                # An empty balance, a session that signed out, or a click that
+                # selected nothing. The far side already says what to do about
+                # it, and none of them is a fault to report, so the sentence
+                # goes to the message bar instead of a dialog offering to mail
+                # us about the user's own account or their own aim.
                 QgsMessageLog.logMessage(
                     f"Click refused ({refusal})", "AI Segmentation",
                     level=Qgis.MessageLevel.Warning)
                 try:
                     from ...core import telemetry_errors
+                    # Its own code: an empty answer is the user aiming again,
+                    # and counting it as a refusal read as a blocked customer.
                     telemetry_errors.track_plugin_error(
-                        stage="segment", error_code="predict_refused",
+                        stage="segment",
+                        error_code=("predict_empty_result"
+                                    if refusal == "EMPTY" else "predict_refused"),
                         message=error_str)
                 except Exception:
                     pass  # nosec B110
                 try:
                     if refusal == "SIGN_IN":
                         line = tr("Session expired. Sign in again to continue.")
+                    elif refusal == "EMPTY":
+                        line = tr("That click selected nothing. Move the "
+                                  "points and click again.")
                     else:
                         line = tr("You saved your cloud objects for this "
                                   "month. Switch to your own computer to keep "
@@ -1690,7 +1698,15 @@ class ManualPredictMixin:
                     pass
         tolerance = self._manual_simplify_tolerance(combined, transform_info)
         if tolerance > 0:
-            r = combined.simplify(tolerance)
+            # De-staircase the STRAIGHT runs only. A plain simplify at the same
+            # tolerance cannot tell a one-pixel step from a crown's lobe and
+            # takes both, which is what brought a tree back as a hexagon.
+            from ...core.detection_policy import vertex_budget_settings
+            from ...core.vertex_budget import destaircase_outline
+            r = destaircase_outline(
+                combined, tolerance,
+                2 * int(vertex_budget_settings()["min_vertices"]),
+                self._crop_pixel_size_units(transform_info))
             if r is not None and not r.isEmpty():
                 combined = r
         # The point budget: cut the traced outline down to the number of points

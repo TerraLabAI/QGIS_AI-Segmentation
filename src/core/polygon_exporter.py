@@ -27,7 +27,6 @@ from qgis.PyQt.QtCore import QMetaObject, QObject, pyqtSlot  # noqa: E402
 
 from .merger import IncrementalMerger  # noqa: E402,F401
 from .polygon_packing import pack_disjoint_crops  # noqa: E402
-from .qt_compat import field_type_string  # noqa: E402
 
 
 def mask_to_polygons_rasterio(
@@ -2471,8 +2470,8 @@ def export_geometries_to_file(
 
     Additive export helper used by the Library's direct Export (and reusable by
     any caller that already has final geometries). Keeps the export layer
-    conventions: lean per-feature schema (editable ``label`` + the geodesic
-    ``area_m2`` and ``perimeter_m``), geometries repaired with makeValid before
+    conventions: lean per-feature schema (the geodesic ``area_m2`` and
+    ``perimeter_m``), geometries repaired with makeValid before
     save (repair, never silently drop). For GPKG the run-level provenance metadata and the style
     are stored INTO the file; the other drivers cannot embed a style, so they
     skip it. GeoJSON and KML are always written in EPSG:4326 (both formats
@@ -2514,7 +2513,6 @@ def export_geometries_to_file(
     from qgis.core import (
         QgsCoordinateReferenceSystem,
         QgsCoordinateTransform,
-        QgsField,
         QgsProject,
         QgsVectorFileWriter,
         QgsVectorLayer,
@@ -2541,9 +2539,6 @@ def export_geometries_to_file(
     # a relative path before anything touches the disk.
     output_path = os.path.abspath(output_path)
 
-    # Field-type enums: Qt6/PyQt6 (QGIS 4) scoped QMetaType vs Qt5 QVariant.
-    field_str = field_type_string()
-
     stem = os.path.splitext(os.path.basename(output_path))[0]
     name = layer_name or stem or "detections"
 
@@ -2552,8 +2547,9 @@ def export_geometries_to_file(
         return None
     temp_layer.setCrs(crs)
     pr = temp_layer.dataProvider()
+    # Measures only. This helper is handed finished geometries and nothing
+    # else, so a class or a confidence column would be empty on every row.
     if not pr.addAttributes([
-        QgsField("label", field_str),
         # Declared width and decimals, because a Shapefile writes each number
         # to what its column header says and a column that declares nothing
         # arrives as whole metres. See layer_conventions.measure_field.
@@ -2589,9 +2585,13 @@ def export_geometries_to_file(
                 area = measurer.measureArea(geom)
                 perimeter = measurer.measurePerimeter(geom)
             except (RuntimeError, AttributeError):
-                area, perimeter = geom.area(), geom.length()
-        feat.setAttributes(
-            ["", round_measure(area), round_measure(perimeter)])
+                # Same rule as the branch above: a measurer that refuses one
+                # shape leaves that row empty. Falling back to the planar
+                # number here wrote degrees under a column named metres, and
+                # only for the handful of rows that failed, which is the kind
+                # of wrong a reader has no way to spot.
+                area, perimeter = None, None
+        feat.setAttributes([round_measure(area), round_measure(perimeter)])
         feats.append(feat)
     # What reaches the file, not what the caller handed in. A geometry no
     # repair can save is dropped here, and a caller counting its own input
