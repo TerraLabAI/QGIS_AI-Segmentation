@@ -4781,8 +4781,8 @@ Libere espaço em disco ou defina a variável de ambiente AI_SEGMENTATION_CACHE_
         <translation>Erro de SSL; tentando novamente {package} (certificados do sistema)... ({done}/{total})</translation>
     </message>
     <message>
-        <source>The AI engine needs roughly 4 GB free during installation.</source>
-        <translation>O mecanismo de IA precisa de aproximadamente 4 GB livres durante a instalação.</translation>
+        <source>The AI engine needs roughly {gb} GB free during installation.</source>
+        <translation>O mecanismo de IA precisa de aproximadamente {gb} GB de espaço livre durante a instalação.</translation>
     </message>
     <message>
         <source>The environment installs under: {location}</source>

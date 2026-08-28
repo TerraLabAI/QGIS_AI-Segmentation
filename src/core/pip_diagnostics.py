@@ -350,7 +350,7 @@ def is_index_forbidden_error(output: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Disk-full errors (can happen mid-install, after the 4 GB preflight passed)
+# Disk-full errors (can happen mid-install, after the preflight passed)
 # ---------------------------------------------------------------------------
 
 _DISK_FULL_PATTERNS = [
@@ -374,7 +374,7 @@ _DISK_FULL_CODE_RE = re.compile(r"(?:errno|os error|winerror)\s+(?:28|112)\b")
 def is_disk_full(output: str) -> bool:
     """Detect out-of-disk errors during install.
 
-    A 4 GB preflight runs before install, but torch + CUDA wheels can still
+    The preflight runs before install, but torch + CUDA wheels can still
     exhaust the disk mid-extract. Must be checked BEFORE is_antivirus_error:
     a failed write from a full disk also surfaces as a permission/access
     error on Windows, which the antivirus classifier would misattribute.
@@ -385,12 +385,30 @@ def is_disk_full(output: str) -> bool:
     return any(p in lower for p in classifier_markers("disk_full", _DISK_FULL_PATTERNS))
 
 
+def _min_free_gb_full_display() -> str:
+    """The live free-space requirement, as a plain number for the disk-full message.
+
+    Reads the resolver from venv_manager, imported lazily at call time so this
+    module keeps no module-level import of it (venv_manager imports this module,
+    and a top-level import back would cycle). Falls back to the shipped figure
+    on any failure: this helper runs while the user is already stuck on a
+    failed install, and must never raise or block the message it is part of.
+    """
+    try:
+        from .venv_manager import resolved_min_free_gb_full
+
+        return f"{resolved_min_free_gb_full():.0f}"
+    except Exception:  # noqa: BLE001 -- a stale figure beats a broken message here
+        return "4"
+
+
 def get_disk_full_help(cache_dir: str = "") -> str:
     """Actionable help for a disk-full install failure."""
     location = cache_dir or "~/.qgis_ai_segmentation"
     return (
         tr("Installation failed: your disk ran out of space.") + "\n\n"
-        + tr("The AI engine needs roughly 4 GB free during installation.") + "\n"
+        + tr("The AI engine needs roughly {gb} GB free during installation.").format(
+            gb=_min_free_gb_full_display()) + "\n"
         + tr("Please try:") + "\n"
         + tr("  1. Free up disk space (empty the trash, remove large unused files)") + "\n"
         + tr("  2. The environment is installed under: {location}").format(

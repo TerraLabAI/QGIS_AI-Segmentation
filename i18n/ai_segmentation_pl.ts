@@ -4545,8 +4545,8 @@ Zwolnij miejsce na dysku albo ustaw zmienną środowiskową AI_SEGMENTATION_CACH
         <translation>Błąd SSL, ponawianie {package} (certyfikaty systemowe)... ({done}/{total})</translation>
     </message>
     <message>
-        <source>The AI engine needs roughly 4 GB free during installation.</source>
-        <translation>Silnik AI potrzebuje około 4 GB wolnego miejsca podczas instalacji.</translation>
+        <source>The AI engine needs roughly {gb} GB free during installation.</source>
+        <translation>Silnik AI potrzebuje około {gb} GB wolnego miejsca na dysku podczas instalacji.</translation>
     </message>
     <message>
         <source>The environment installs under: {location}</source>

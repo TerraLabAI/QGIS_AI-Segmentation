@@ -4779,8 +4779,8 @@ Geben Sie Speicherplatz frei oder setzen Sie die Umgebungsvariable AI_SEGMENTATI
         <translation>SSL-Fehler, neuer Versuch für {package} (Systemzertifikate)... ({done}/{total})</translation>
     </message>
     <message>
-        <source>The AI engine needs roughly 4 GB free during installation.</source>
-        <translation>Die AI-Engine benötigt während der Installation etwa 4 GB freien Speicherplatz.</translation>
+        <source>The AI engine needs roughly {gb} GB free during installation.</source>
+        <translation>Die KI-Engine benötigt während der Installation ungefähr {gb} GB freien Speicherplatz.</translation>
     </message>
     <message>
         <source>The environment installs under: {location}</source>

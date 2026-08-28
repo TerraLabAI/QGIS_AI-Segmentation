@@ -4544,8 +4544,8 @@ Maak schijfruimte vrij of stel de omgevingsvariabele AI_SEGMENTATION_CACHE_DIR i
         <translation>SSL-fout, nieuwe poging voor {package} (systeemcertificaten)... ({done}/{total})</translation>
     </message>
     <message>
-        <source>The AI engine needs roughly 4 GB free during installation.</source>
-        <translation>De AI-engine heeft tijdens de installatie ongeveer 4 GB vrije ruimte nodig.</translation>
+        <source>The AI engine needs roughly {gb} GB free during installation.</source>
+        <translation>De AI-engine heeft tijdens de installatie ongeveer {gb} GB vrije schijfruimte nodig.</translation>
     </message>
     <message>
         <source>The environment installs under: {location}</source>

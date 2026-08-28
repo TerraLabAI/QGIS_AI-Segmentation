@@ -4543,8 +4543,8 @@ Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR environment variable to
         <translation>SSLエラー、{package}を再試行中（システム証明書）...（{done}/{total}）</translation>
     </message>
     <message>
-        <source>The AI engine needs roughly 4 GB free during installation.</source>
-        <translation>AIエンジンのインストール中は約4 GBの空き容量が必要です。</translation>
+        <source>The AI engine needs roughly {gb} GB free during installation.</source>
+        <translation>インストール中、AIエンジンには約{gb} GBの空き容量が必要です。</translation>
     </message>
     <message>
         <source>The environment installs under: {location}</source>

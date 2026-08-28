@@ -48,12 +48,76 @@ def _qgis_install_roots() -> list[str]:
     return roots
 
 
+# Prefixes that belong to the whole machine rather than to QGIS. On most Linux
+# builds QGIS_PREFIX_PATH is /usr, and taking /usr/bin out of a child's PATH
+# would leave it without ordinary commands.
+_SHARED_PREFIXES = frozenset({
+    "/", "/usr", "/usr/local", "/opt", "/opt/local", "/opt/homebrew",
+})
+
+
+def _qgis_only_roots(roots: list[str]) -> list[str]:
+    """The roots above that are QGIS's alone, so PATH entries under them can go."""
+    own = []
+    for root in roots:
+        try:
+            resolved = os.path.realpath(root)
+        except (OSError, ValueError):
+            continue
+        trimmed = resolved.rstrip("\\/")
+        if trimmed in _SHARED_PREFIXES:
+            continue
+        # A bare drive letter or the filesystem root would swallow every entry.
+        if len(trimmed) <= 2:
+            continue
+        own.append(resolved)
+    return own
+
+
+def _strip_qgis_from_path(env: dict) -> None:
+    """Take QGIS's own directories out of PATH for a child process.
+
+    PYTHONHOME goes above, which is right: the downloaded interpreter must not
+    read QGIS's standard library. But QGIS ships a python of its own and its
+    bin directory sits at the front of PATH, so a build step that resolves a
+    bare ``python`` or ``python3`` still reaches QGIS's interpreter, now
+    started without the variable it needs. It dies on its first import saying
+    there is no module named encodings, and the install stops with an error
+    that names neither this plugin nor the real cause.
+
+    Only a directory that belongs to QGIS alone is dropped, and PATH is left
+    untouched when that would empty it.
+    """
+    path = env.get("PATH", "")
+    if not path:
+        return
+    own = _qgis_only_roots(_qgis_install_roots())
+    if not own:
+        return
+    kept = [entry for entry in path.split(os.pathsep)
+            if entry and not any(_sits_inside(entry, root) for root in own)]
+    if kept:
+        env["PATH"] = os.pathsep.join(kept)
+
+
 def get_clean_env_for_venv() -> dict:
     """Get a clean environment for running venv subprocesses."""
     env = os.environ.copy()
     qgis_roots = _qgis_install_roots()
     vars_to_remove = [
         "PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV",
+        # The two names that override sys.executable. Python reads them on
+        # every platform, not only macOS, and the launcher QGIS ships on
+        # Windows exports the first one pointing at its own interpreter. Left
+        # in, a child reads its prefix from THAT executable's folder, finds no
+        # pyvenv.cfg beside it, and stops believing it is in a virtual
+        # environment at all: sys.prefix and sys.base_prefix become equal.
+        # An installer then puts every package next to the interpreter it was
+        # told to skip, reports success, and the environment the plugin later
+        # reads is empty. A build step launched from that same value starts
+        # QGIS's interpreter with PYTHONHOME already gone, and it dies before
+        # its first import.
+        "PYTHONEXECUTABLE", "__PYVENV_LAUNCHER__",
         # Where pip puts what it installs. A machine-wide PIP_USER=1, which
         # managed IT sets so nothing lands outside the account, makes every
         # install in a venv stop at "Can not perform a '--user' install". The
@@ -74,6 +138,7 @@ def get_clean_env_for_venv() -> dict:
     ]
     for var in vars_to_remove:
         env.pop(var, None)
+    _strip_qgis_from_path(env)
     # Every variable that REPLACES the trust store rather than adding to it.
     # A dangling one (left by an uninstalled Python distro or a rotated
     # corporate bundle) makes uv emit warnings an error classifier reads as a

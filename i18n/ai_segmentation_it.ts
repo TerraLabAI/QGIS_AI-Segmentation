@@ -4757,8 +4757,8 @@ eri spazio su disco oppure imposti la variabile d&apos;ambiente AI_SEGMENTATION_
         <translation>Errore SSL, nuovo tentativo per {package} (certificati di sistema)... ({done}/{total})</translation>
     </message>
     <message>
-        <source>The AI engine needs roughly 4 GB free during installation.</source>
-        <translation>Il motore AI richiede circa 4 GB di spazio libero durante l&apos;installazione.</translation>
+        <source>The AI engine needs roughly {gb} GB free during installation.</source>
+        <translation>Il motore AI richiede circa {gb} GB di spazio libero durante l'installazione.</translation>
     </message>
     <message>
         <source>The environment installs under: {location}</source>

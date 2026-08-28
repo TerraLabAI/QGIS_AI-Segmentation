@@ -89,12 +89,20 @@ def track_install_started(entry: str = "background") -> None:
 def track_install_completed(duration_ms: int | None = None,
                             python_minor: int | None = None,
                             retry_count: int | None = None,
-                            entry: str = "background") -> None:
+                            entry: str = "background",
+                            local_model_ready: bool | None = None) -> None:
+    """local_model_ready separates a whole install from a half one.
+
+    An install can verify and still leave the on-device packages out, which
+    leaves Automatic working and Semi-Auto dead. Without this flag both land
+    here as the same completion. None means the caller could not tell.
+    """
     track(ev.INSTALL_COMPLETED, {
         "duration_ms": duration_ms,
         "python_minor": python_minor,
         "retry_count": retry_count,
         "entry": entry,
+        "local_model_ready": None if local_model_ready is None else bool(local_model_ready),
     })
 
 

@@ -4482,8 +4482,8 @@ Kosongkan ruang disk, atau tetapkan variabel lingkungan AI_SEGMENTATION_CACHE_DI
         <translation>Kesalahan SSL, mencoba lagi {package} (sertifikat sistem)... ({done}/{total})</translation>
     </message>
     <message>
-        <source>The AI engine needs roughly 4 GB free during installation.</source>
-        <translation>Mesin AI memerlukan sekitar 4 GB ruang kosong selama pemasangan.</translation>
+        <source>The AI engine needs roughly {gb} GB free during installation.</source>
+        <translation>Mesin AI membutuhkan sekitar {gb} GB ruang kosong selama instalasi.</translation>
     </message>
     <message>
         <source>The environment installs under: {location}</source>

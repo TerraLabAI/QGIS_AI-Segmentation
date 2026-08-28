@@ -1826,22 +1826,22 @@ class EnvSetupMixin:
                 error_title = tr("Missing System Component")
                 error_msg = get_vcpp_help()
                 error_code = "dll_init_error"
-            elif any(p in msg_lower for p in [
-                "access is denied", "winerror 5", "winerror 225",
-                "permission denied", "blocked",
-                "cannot write to install",
-                "cannot open the device or file",
-            ]):
-                error_title = tr("Installation Blocked")
-                error_msg = f"{error_msg}\n\n{_get_change_path_instructions()}"
-                error_code = "installation_blocked"
             elif is_antivirus_error(msg_lower):
-                # Localized "access denied" and antivirus-quarantine wordings the
-                # English "blocked" branch above misses (uv surfaces the raw OS
-                # message in the system language). Antivirus/exclusion guidance.
+                # Access-denied codes, virus-infected codes and the localized OS
+                # wordings (uv surfaces the raw OS message in the system
+                # language). Checked BEFORE the change-path branch below: moving
+                # the install folder does nothing about a scanner that follows
+                # the files, so this has to win whenever it matches.
                 error_title = tr("Blocked by Antivirus or Security Software")
                 error_msg = get_pip_antivirus_help(PLUGIN_CACHE_DIR)
                 error_code = "antivirus_blocked"
+            elif "cannot write to install" in msg_lower:
+                # The only permission wording left to this branch: the installer
+                # could not write the target folder at all. Every other token
+                # that used to sit here is matched by is_antivirus_error above.
+                error_title = tr("Installation Blocked")
+                error_msg = f"{error_msg}\n\n{_get_change_path_instructions()}"
+                error_code = "installation_blocked"
             elif is_proxy_auth_error(msg_lower):
                 # HTTP 407 behind a corporate proxy: distinct from a generic
                 # network failure - the fix is credentials in QGIS proxy settings.
@@ -1874,7 +1874,10 @@ class EnvSetupMixin:
                 )
                 error_code = "network_connection_problem"
             elif is_unable_to_create_process(msg_lower):
-                # Broken Python launcher shim (Windows): rebuilding the venv fixes it.
+                # Broken Python launcher shim (Windows): rebuilding the venv
+                # fixes it. The message sends the user to Reinstall
+                # Dependencies, so the marker has to be set here too, or the
+                # retry reuses the same broken shim.
                 error_title = tr("Installation Failed")
                 error_msg = "{}\n\n{}".format(
                     error_msg,
@@ -1885,6 +1888,7 @@ class EnvSetupMixin:
                     ),
                 )
                 error_code = "broken_pip_shim"
+                mark_venv_for_rebuild()
             elif is_rename_or_record_error(msg_lower):
                 # dist-info rename/RECORD error mid torch upgrade (Windows): a
                 # stale, partially-written package. A clean rebuild resolves it.
@@ -1964,6 +1968,17 @@ class EnvSetupMixin:
         if not self.dock_widget:
             return
         if is_valid:
+            # Probe the model BEFORE the event, not after it. An install that
+            # finishes without the local model packages is half an install:
+            # Automatic runs, Semi-Auto and the AI fix do not. Counted as a
+            # clean completion, that case cannot be told apart from a whole
+            # one, so the flag has to be read while the event is still open.
+            model_ok = True
+            try:
+                from ...core.venv_manager import local_model_ready
+                model_ok, _why = local_model_ready()
+            except Exception:  # noqa: BLE001 -- never block on the probe
+                pass  # nosec B110
             # The install only counts as completed once the venv VERIFIES:
             # firing at deps-install success counted broken-torch installs
             # (DLL blocked) as completed and understated install_failed.
@@ -1978,6 +1993,7 @@ class EnvSetupMixin:
                         python_minor=sys.version_info.minor,
                         retry_count=getattr(self, "_install_attempt", 0),
                         entry=self._install_entry_kind(),
+                        local_model_ready=model_ok,
                     )
                     self._install_t0 = 0.0
                 _clear_install_attempts()
@@ -1988,12 +2004,6 @@ class EnvSetupMixin:
             # Automatic is a cloud mode and runs without them. Saying
             # "Dependencies ready" there would promise a Manual mode that
             # cannot start, so name what is short instead.
-            model_ok = True
-            try:
-                from ...core.venv_manager import local_model_ready
-                model_ok, _why = local_model_ready()
-            except Exception:  # noqa: BLE001 -- never block on the probe
-                pass  # nosec B110
             if model_ok:
                 self.dock_widget.set_dependency_status(
                     True, "✓ " + tr("AI ready"))

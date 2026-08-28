@@ -4781,8 +4781,8 @@ Libérez de l&apos;espace disque ou définissez la variable d&apos;environnement
         <translation>Erreur SSL, nouvelle tentative pour {package} (certificats système)... ({done}/{total})</translation>
     </message>
     <message>
-        <source>The AI engine needs roughly 4 GB free during installation.</source>
-        <translation>Le moteur IA nécessite environ 4 Go d&apos;espace libre pendant l&apos;installation.</translation>
+        <source>The AI engine needs roughly {gb} GB free during installation.</source>
+        <translation>Le moteur d’IA a besoin d’environ {gb} GB d’espace libre pendant l’installation.</translation>
     </message>
     <message>
         <source>The environment installs under: {location}</source>

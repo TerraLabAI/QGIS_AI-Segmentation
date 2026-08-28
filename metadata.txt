@@ -3,7 +3,7 @@ name=AI Segmentation by TerraLab
 description=AI segmentation for QGIS: detect and extract building footprints, trees, vegetation or any object from your raster, then refine & export as vector polygons
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
-version=2.5.1
+version=2.5.2
 author=Yvann and Lilien from TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
@@ -29,6 +29,16 @@ about=
     • Multilingual: English, French, Portuguese, Spanish, German, Italian, Dutch, Polish, Indonesian, Japanese, Chinese
 
 changelog=
+    2.5.2
+    - Installing works on Windows machines where it used to end with the AI missing: the packages now land where the plugin looks for them
+    - An install that puts nothing in place stops reporting success, so you find out at once instead of at your first click
+    - A download that stalls is picked up again instead of ending the whole install
+    - The install needs less free disk space, because it no longer keeps every downloaded file until the end
+    - It stops refusing to install a part you already have
+    - When your antivirus blocks the install, you are told that, instead of being sent to move a folder
+    - The disk space message names the space actually required
+    - Behind a company network that re-signs its traffic, the second attempt now uses your machine's own certificates whichever installer is running
+    - The environment is built again when only its last step is refused, instead of giving up
     2.5.1
     - Installing on Windows works where it used to stop: a path with a space in it, a file QGIS itself holds open, and a package that has to be built
     - A package left broken is repaired on its own, instead of sending you to reinstall the one thing that was never the problem

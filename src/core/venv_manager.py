@@ -27,6 +27,9 @@ from .pip_diagnostics import (
     get_app_control_help as _get_app_control_help,
 )
 from .pip_diagnostics import (
+    get_corrupt_venv_help as _get_corrupt_venv_help,
+)
+from .pip_diagnostics import (
     get_crash_help as _get_crash_help,
 )
 from .pip_diagnostics import (
@@ -352,7 +355,28 @@ def packages_skipped_for_disk_space() -> set[str]:
     # not a full disk, so it must not silently strip Manual mode.
     if free_gb < 0.001 or free_gb >= resolved_min_free_gb_full():
         return set()
-    return set(MANUAL_ONLY_PACKAGES)
+    return set(MANUAL_ONLY_PACKAGES) - _manual_packages_already_installed()
+
+
+def _manual_packages_already_installed() -> set[str]:
+    """Manual-only packages this environment already holds.
+
+    A package that is already on the disk needs no room, so a short volume
+    must not drop it and then report the mode unavailable. Empty when there is
+    no environment yet, which leaves a first install deciding on free space
+    alone.
+    """
+    try:
+        site_packages = get_venv_site_packages()
+        if not os.path.isdir(site_packages):
+            return set()
+        installed = _installed_dist_names(site_packages)
+    except OSError:
+        return set()
+    return {
+        name for name in MANUAL_ONLY_PACKAGES
+        if _normalize_dist_name(name) in installed
+    }
 
 
 def resolved_packages() -> list[tuple[str, str]]:
@@ -1377,6 +1401,12 @@ def _venv_is_functional(venv_dir: str = None) -> bool:
     system Python installation found for path ...; run `uv venv`") and the
     whole install fails. Require both a valid venv marker AND a working
     interpreter so a broken venv is detected and recreated. (#64)
+
+    The interpreter must also answer for this directory. Python computes its
+    prefix from the executable the environment points it at, so a launcher
+    variable can make the venv interpreter resolve the base install instead:
+    packages then land beside the base Python while every step reports
+    success. Only asking the interpreter which prefix it holds catches that.
     """
     if venv_dir is None:
         venv_dir = VENV_DIR
@@ -1390,15 +1420,32 @@ def _venv_is_functional(venv_dir: str = None) -> bool:
         return False
     try:
         result = subprocess.run(  # nosec B603
-            [python_path, "-c", "pass"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            [python_path, "-c", "import sys; sys.stdout.write(sys.prefix)"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
             env=_get_clean_env_for_venv(),
             **_get_subprocess_kwargs(),
         )
-        return result.returncode == 0
-    except (OSError, subprocess.SubprocessError) as e:
+        if result.returncode != 0:
+            return False
+        reported_prefix = (result.stdout or "").strip()
+        if not reported_prefix:
+            _log("Venv interpreter reported no prefix, will recreate",
+                 Qgis.MessageLevel.Warning)
+            return False
+        # realpath and normcase on both sides: a short path, a symlink or a
+        # trailing separator names the same directory, not a broken venv.
+        if (os.path.normcase(os.path.realpath(reported_prefix))
+                != os.path.normcase(os.path.realpath(venv_dir))):
+            _log(
+                f"Venv interpreter answers for another prefix ({reported_prefix}), "
+                "will recreate", Qgis.MessageLevel.Warning)
+            return False
+        return True
+    except (OSError, ValueError, subprocess.SubprocessError) as e:
         _log(f"Existing venv interpreter is not runnable, will recreate: {e}",
              Qgis.MessageLevel.Warning)
         return False
@@ -1594,6 +1641,138 @@ def _ensurepip_missing_help(error_text: str) -> str:
     )
 
 
+def _uv_binary_is_unusable(error_text: str, returncode: int | None = None) -> bool:
+    """True when the uv executable itself could not run, not when it refused a venv.
+
+    uv answers an interpreter it cannot use, or a directory it cannot build in,
+    with an ordinary non-zero exit and a message. That says nothing about its
+    ability to install packages, so the binary is worth keeping. A crashed
+    process, a loader failure or a launcher that cannot start says the file is
+    broken, and only then does deleting it help: the next run fetches a fresh
+    copy.
+    """
+    if returncode is not None and _is_windows_process_crash(returncode):
+        return True
+    text = error_text or ""
+    lowered = text.lower()
+    return (
+        _is_dll_init_error(text)
+        or _is_unable_to_create_process(text)
+        or "exec format error" in lowered
+        or "is not recognized as an internal or external command" in lowered
+    )
+
+
+def _drop_uv(reason: str) -> None:
+    """Delete the uv binary and forget it, so the next run downloads a fresh one."""
+    global _uv_available, _uv_path
+    _log(f"Removing the uv binary ({reason})", Qgis.MessageLevel.Warning)
+    remove_uv()
+    _uv_available = False
+    _uv_path = None
+
+
+# Markers that place a venv failure in the pip step the stdlib venv module runs
+# for itself, with --default-pip, once the tree is already in place.
+_PIP_BOOTSTRAP_MARKERS = ("ensurepip", "--default-pip", "_setup_pip", "install_pip")
+
+
+def _venv_failed_on_pip_bootstrap(error_text: str) -> bool:
+    """True when python -m venv built the tree and only its pip step failed.
+
+    A locked-down or roaming profile can refuse that last step while the
+    environment around it is sound, which is worth a second attempt without it.
+    """
+    lowered = (error_text or "").lower()
+    return any(marker in lowered for marker in _PIP_BOOTSTRAP_MARKERS)
+
+
+def _venv_failure_is_blocked(error_text: str) -> bool:
+    """True when the OS, a scanner or a policy refused access to the venv path.
+
+    A second attempt takes the same path and meets the same refusal, so these
+    failures keep their message instead of being retried.
+    """
+    text = error_text or ""
+    if "errno 13" in text.lower():
+        return True
+    return _is_antivirus_error(text)
+
+
+def _bootstrap_pip_in_venv(
+    venv_dir: str,
+    env: dict,
+    subprocess_kwargs: dict,
+    cancel_check: Callable[[], bool] | None,
+) -> tuple[bool, bool]:
+    """Put pip into a venv built with --without-pip. Returns (installed, cancelled).
+
+    uv comes first because it needs nothing from the environment it is filling,
+    then ensurepip, which is the step that just refused and may still work once
+    the venv owns the interpreter.
+    """
+    python_in_venv = get_venv_python_path(venv_dir)
+
+    if _uv_available and _uv_path and not _uv_would_choke_on(python_in_venv):
+        uv_cmd = [_uv_path, "pip", "install", "pip",
+                  "--python", _win_short_path(python_in_venv)]
+        try:
+            uv_result = _run_with_cancel(uv_cmd, 180, env, subprocess_kwargs, cancel_check)
+            if cancel_check and cancel_check():
+                return False, True
+            if uv_result.returncode == 0:
+                _log("pip bootstrapped with uv", Qgis.MessageLevel.Success)
+                return True, False
+            err = uv_result.stderr or uv_result.stdout or ""
+            _log(f"uv could not bootstrap pip: {err[:200]}", Qgis.MessageLevel.Warning)
+        except Exception as e:
+            _log(f"uv pip bootstrap exception: {e}", Qgis.MessageLevel.Warning)
+
+    ensurepip_cmd = [python_in_venv, "-m", "ensurepip", "--upgrade"]
+    try:
+        ep_result = _run_with_cancel(ensurepip_cmd, 120, env, subprocess_kwargs, cancel_check)
+        if cancel_check and cancel_check():
+            return False, True
+        if ep_result.returncode == 0:
+            _log("pip bootstrapped via ensurepip", Qgis.MessageLevel.Success)
+            return True, False
+        err = ep_result.stderr or ep_result.stdout or ""
+        _log(f"ensurepip failed: {err[:200]}", Qgis.MessageLevel.Warning)
+    except Exception as e:
+        _log(f"ensurepip exception: {e}", Qgis.MessageLevel.Warning)
+    return False, False
+
+
+def _retry_venv_without_pip(
+    system_python: str,
+    venv_dir: str,
+    env: dict,
+    subprocess_kwargs: dict,
+    cancel_check: Callable[[], bool] | None,
+) -> str:
+    """Build the venv again with --without-pip, then add pip. Returns ok, cancelled or failed."""
+    _cleanup_partial_venv(venv_dir)
+    _log("Retrying venv creation with --without-pip...", Qgis.MessageLevel.Warning)
+    nopip_cmd = [system_python, "-m", "venv", "--without-pip", venv_dir]
+    try:
+        result = _run_with_cancel(nopip_cmd, 300, env, subprocess_kwargs, cancel_check)
+        if cancel_check and cancel_check():
+            return "cancelled"
+        if result.returncode != 0:
+            err = result.stderr or result.stdout or ""
+            _log(f"Retry --without-pip failed: {err[:200]}", Qgis.MessageLevel.Warning)
+            return "failed"
+    except Exception as e:
+        _log(f"Retry --without-pip exception: {e}", Qgis.MessageLevel.Warning)
+        return "failed"
+
+    installed, cancelled = _bootstrap_pip_in_venv(
+        venv_dir, env, subprocess_kwargs, cancel_check)
+    if cancelled:
+        return "cancelled"
+    return "ok" if installed else "failed"
+
+
 def create_venv(
     venv_dir: str = None,
     progress_callback: Callable[[int, str], None] | None = None,
@@ -1613,8 +1792,6 @@ def create_venv(
     # Use clean env to prevent QGIS PYTHONPATH/PYTHONHOME from leaking
     # into the standalone Python subprocess (issue #131)
     env = _get_clean_env_for_venv()
-
-    global _uv_available, _uv_path
 
     # Try uv venv creation first (faster, no ensurepip needed)
     if _uv_available and _uv_path:
@@ -1640,17 +1817,19 @@ def create_venv(
             error_msg = result.stderr or result.stdout or ""
             _log(f"uv venv creation failed: {error_msg[:200]}", Qgis.MessageLevel.Warning)
             _cleanup_partial_venv(venv_dir)
-            # Fall through to standard venv creation
-            remove_uv()
-            _uv_available = False
-            _uv_path = None
+            # Fall through to standard venv creation, keeping uv. It may still
+            # be the only way to put pip, or the packages themselves, into the
+            # environment python -m venv builds.
+            if _uv_binary_is_unusable(error_msg, result.returncode):
+                _drop_uv("it could not run")
             _log("Falling back to python -m venv", Qgis.MessageLevel.Warning)
         except Exception as e:
             _log(f"uv venv exception: {e}, falling back to python -m venv", Qgis.MessageLevel.Warning)
             _cleanup_partial_venv(venv_dir)
-            remove_uv()
-            _uv_available = False
-            _uv_path = None
+            # An OSError here means the process never started: the file is
+            # missing, unreadable or not executable.
+            if isinstance(e, OSError) or _uv_binary_is_unusable(str(e)):
+                _drop_uv("it could not be started")
 
     # Standard venv creation with python -m venv
     cmd = [system_python, "-m", "venv", venv_dir]
@@ -1714,8 +1893,28 @@ def create_venv(
         # whose apt command sits past a short cut, so name the package
         # ourselves and keep more of the raw text for everything else.
         if "ensurepip is not available" in error_msg.lower():
-            return False, _ensurepip_missing_help(error_msg)
-        return False, f"Failed to create venv: {error_msg[:600]}"
+            failure_message = _ensurepip_missing_help(error_msg)
+        else:
+            failure_message = f"Failed to create venv: {error_msg[:600]}"
+
+        # The tree itself can be sound when only the pip step was refused, so
+        # build it again without pip and add pip afterwards. An access refusal
+        # is not retried: the second attempt meets the same wall.
+        if (_venv_failed_on_pip_bootstrap(error_msg)
+                and not _venv_failure_is_blocked(error_msg)):
+            outcome = _retry_venv_without_pip(
+                system_python, venv_dir, env, subprocess_kwargs, cancel_check)
+            if outcome == "cancelled":
+                _cleanup_partial_venv(venv_dir)
+                return False, "Installation cancelled"
+            if outcome == "ok":
+                _log("Virtual environment created without the built-in pip step",
+                     Qgis.MessageLevel.Success)
+                if progress_callback:
+                    progress_callback(20, tr("Virtual environment created"))
+                return True, "Virtual environment created"
+            _cleanup_partial_venv(venv_dir)
+        return False, failure_message
 
     except subprocess.TimeoutExpired:
         _log("Venv creation timed out, retrying with --without-pip...", Qgis.MessageLevel.Warning)
@@ -2598,6 +2797,74 @@ def _run_pip_install(
             pass  # nosec B110
 
 
+def _retry_install_with_backoff(
+    reason: str,
+    cmd: list[str],
+    timeout: int,
+    env: dict,
+    subprocess_kwargs: dict,
+    package_name: str,
+    package_index: int,
+    total_packages: int,
+    progress_start: int,
+    progress_end: int,
+    progress_callback: Callable[[int, str], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
+) -> tuple[bool, _PipResult | None]:
+    """Re-run one install command a bounded number of times, with backoff.
+
+    Returns (cancelled, result). The result is None only when every attempt
+    timed out. The attempt count and the backoff are server dials, so a bad
+    network day for a whole region can be waited out without a release.
+
+    A stalled download raises TimeoutExpired inside an attempt. That is a
+    failed attempt here, never a way out of the ladder, so the ceiling on
+    attempts holds whatever mix of stalls and errors the machine hits.
+    """
+    attempts = install_config.network_retry_attempts(NETWORK_RETRY_ATTEMPTS)
+    result: _PipResult | None = None
+    for attempt in range(1, attempts + 1):
+        wait = install_config.network_retry_backoff_s(
+            attempt, NETWORK_RETRY_BACKOFF_S)
+        _log(
+            f"{reason}, retrying in {wait}s (attempt {attempt}/{attempts})...",
+            Qgis.MessageLevel.Warning
+        )
+        if progress_callback:
+            progress_callback(
+                progress_start,
+                tr("Network error, retry {attempt}/{total} in {wait}s...").format(
+                    attempt=attempt, total=attempts, wait=wait)
+            )
+        if _sleep_unless_cancelled(wait, cancel_check):
+            return True, result
+        try:
+            result = _run_pip_install(
+                cmd=cmd,
+                timeout=timeout,
+                env=env,
+                subprocess_kwargs=subprocess_kwargs,
+                package_name=package_name,
+                package_index=package_index,
+                total_packages=total_packages,
+                progress_start=progress_start,
+                progress_end=progress_end,
+                progress_callback=progress_callback,
+                cancel_check=cancel_check,
+            )
+        except subprocess.TimeoutExpired:
+            _log(
+                f"{package_name} stalled again on attempt {attempt}/{attempts}",
+                Qgis.MessageLevel.Warning
+            )
+            continue
+        if result.returncode == -1 and "cancelled" in (result.stderr or "").lower():
+            return True, result
+        if result.returncode == 0:
+            break
+    return False, result
+
+
 def install_dependencies(
     venv_dir: str = None,
     progress_callback: Callable[[int, str], None] | None = None,
@@ -2799,6 +3066,7 @@ def install_dependencies(
             install_failed = False
             install_error_msg = ""
             last_returncode = None
+            base_cmd = None
 
             try:
                 # Build install command (uv or pip depending on availability)
@@ -2989,6 +3257,53 @@ def install_dependencies(
                             if result.returncode == 0:
                                 env = ssl_env
                                 learned_ssl_env = ssl_env
+                        else:
+                            # pip, on the machines that could not get the
+                            # faster installer in the first place. pip already
+                            # trusts the platform store, so what makes this
+                            # retry different is the bundle, which also carries
+                            # the per-user and intermediate stores the platform
+                            # verifier does not read, plus the cleared
+                            # inherited overrides. --cert replaces the roots
+                            # pip trusts; verification stays on.
+                            os_bundle, n_certs = windows_trust_store_bundle(
+                                PLUGIN_CACHE_DIR)
+                            if os_bundle:
+                                ssl_env, _dropped = (
+                                    env_without_ca_bundle_overrides(env))
+                                ssl_env["SSL_CERT_FILE"] = os_bundle
+                                _log(
+                                    "SSL error detected, retrying with the "
+                                    "machine's own certificates "
+                                    f"({n_certs} read from the Windows store)...",
+                                    Qgis.MessageLevel.Warning
+                                )
+                                if progress_callback:
+                                    progress_callback(
+                                        pkg_start,
+                                        tr(
+                                            "SSL error, retrying {package} (system certs)... "
+                                            "({done}/{total})"
+                                        ).format(
+                                            package=package_name, done=i + 1,
+                                            total=total_packages)
+                                    )
+                                result = _run_pip_install(
+                                    cmd=base_cmd + ["--cert", os_bundle],
+                                    timeout=pkg_timeout,
+                                    env=ssl_env,
+                                    subprocess_kwargs=subprocess_kwargs,
+                                    package_name=package_name,
+                                    package_index=i,
+                                    total_packages=total_packages,
+                                    progress_start=pkg_start,
+                                    progress_end=pkg_end,
+                                    progress_callback=progress_callback,
+                                    cancel_check=cancel_check,
+                                )
+                                if result.returncode == 0:
+                                    env = ssl_env
+                                    learned_ssl_env = ssl_env
 
                         # If still failing, only disable TLS verification when
                         # the user has explicitly opted in. Otherwise surface the
@@ -3000,8 +3315,7 @@ def install_dependencies(
                                 "certificates, so the certificate signing these downloads "
                                 "is not installed here. Not disabling TLS verification "
                                 "(secure default): ask IT to install the network's root "
-                                "certificate, or set TerraLab/allow_insecure_install to opt "
-                                "in to an unverified install at your own risk.",
+                                "certificate.",
                                 Qgis.MessageLevel.Warning
                             )
                         elif result.returncode != 0:
@@ -3086,39 +3400,24 @@ def install_dependencies(
                     if (_is_network_error(error_output)
                             and not _is_antivirus_error(error_output)
                             and not _is_index_forbidden_error(error_output)):
-                        _attempts = install_config.network_retry_attempts(
-                            NETWORK_RETRY_ATTEMPTS)
-                        for attempt in range(1, _attempts + 1):
-                            wait = install_config.network_retry_backoff_s(
-                                attempt, NETWORK_RETRY_BACKOFF_S)
-                            _log(
-                                f"Network error detected, retrying in {wait}s "
-                                f"(attempt {attempt}/{_attempts})...",
-                                Qgis.MessageLevel.Warning
-                            )
-                            if progress_callback:
-                                progress_callback(
-                                    pkg_start,
-                                    tr("Network error, retry {attempt}/{total} in {wait}s...").format(
-                                        attempt=attempt, total=_attempts, wait=wait)
-                                )
-                            if _sleep_unless_cancelled(wait, cancel_check):
-                                return False, "Installation cancelled"
-                            result = _run_pip_install(
-                                cmd=base_cmd,
-                                timeout=pkg_timeout,
-                                env=env,
-                                subprocess_kwargs=subprocess_kwargs,
-                                package_name=package_name,
-                                package_index=i,
-                                total_packages=total_packages,
-                                progress_start=pkg_start,
-                                progress_end=pkg_end,
-                                progress_callback=progress_callback,
-                                cancel_check=cancel_check,
-                            )
-                            if result.returncode == 0:
-                                break
+                        cancelled, retried = _retry_install_with_backoff(
+                            reason="Network error detected",
+                            cmd=base_cmd,
+                            timeout=pkg_timeout,
+                            env=env,
+                            subprocess_kwargs=subprocess_kwargs,
+                            package_name=package_name,
+                            package_index=i,
+                            total_packages=total_packages,
+                            progress_start=pkg_start,
+                            progress_end=pkg_end,
+                            progress_callback=progress_callback,
+                            cancel_check=cancel_check,
+                        )
+                        if cancelled:
+                            return False, "Installation cancelled"
+                        if retried is not None:
+                            result = retried
 
                 # If "no matching distribution" for torch, retry with --no-cache-dir
                 if result.returncode != 0 and package_name in ("torch", "torchvision"):
@@ -3214,6 +3513,39 @@ def install_dependencies(
                 _log(f"Installation of {package_spec} timed out", Qgis.MessageLevel.Critical)
                 install_failed = True
                 install_error_msg = f"Installation of {package_name} timed out"
+                # The install timeouts are idle timers, not wall clocks, so a
+                # timeout says the download stalled rather than that the
+                # machine is slow. A stall is what the network ladder is for,
+                # so it gets the same bounded retry instead of ending the whole
+                # install on one bad minute.
+                if base_cmd is not None:
+                    cancelled, retried = _retry_install_with_backoff(
+                        reason="Download stalled",
+                        cmd=base_cmd,
+                        timeout=pkg_timeout,
+                        env=env,
+                        subprocess_kwargs=subprocess_kwargs,
+                        package_name=package_name,
+                        package_index=i,
+                        total_packages=total_packages,
+                        progress_start=pkg_start,
+                        progress_end=pkg_end,
+                        progress_callback=progress_callback,
+                        cancel_check=cancel_check,
+                    )
+                    if cancelled:
+                        return False, "Installation cancelled"
+                    if retried is not None and retried.returncode == 0:
+                        _log(f"✓ Successfully installed {package_spec}", Qgis.MessageLevel.Success)
+                        if progress_callback:
+                            progress_callback(
+                                pkg_end, tr("✓ {package} installed").format(package=package_name))
+                        install_failed = False
+                        install_error_msg = ""
+                    elif retried is not None:
+                        install_error_msg = _scrub_credentials(
+                            retried.stderr or retried.stdout or install_error_msg)
+                        last_returncode = retried.returncode
             except Exception as e:
                 _log(f"Exception during installation of {package_spec}: {str(e)}", Qgis.MessageLevel.Critical)
                 install_failed = True
@@ -3434,9 +3766,36 @@ def install_dependencies(
                 # (env_setup.py) match keywords against this returned string.
                 return False, f"Failed to install {package_name}: {install_error_msg[-400:]}"
 
+            # This package is in. Drop the wheels it downloaded before the next
+            # one starts: until they go, the cache and the installed copy hold
+            # the same bytes twice, and that overlap is what the disk preflight
+            # has to budget for. Where the environment hardlinks out of the
+            # cache, removing the cache entry drops a directory entry only and
+            # the installed files stay.
+            _clear_installer_caches()
+
         # Post-install numpy version safety net:
         # Check and force-downgrade if needed.
         _repin_numpy(venv_dir)
+
+        # Everything below reports success, so prove first that what the run
+        # installed is in the environment the plugin will import from. Packages
+        # left out on purpose, and packages recorded as degraded, are not
+        # expected here; setuptools is not an install health signal.
+        landed_expected = [
+            name for name, _spec in packages
+            if name != "setuptools" and name not in degraded_packages
+        ]
+        misplaced = _packages_missing_from_venv(venv_dir, landed_expected)
+        if misplaced:
+            missing = ", ".join(misplaced)
+            _log(
+                f"Installed but absent from the environment: {missing}",
+                Qgis.MessageLevel.Critical)
+            # Named in the log, not in the window: the user's answer is the
+            # same rebuild every damaged environment gets, and the package
+            # list only means something to whoever reads the report.
+            return False, _get_corrupt_venv_help()
 
         if degraded_packages:
             short = ", ".join(degraded_packages)
@@ -4487,6 +4846,19 @@ def _create_venv_and_install(
         if not success:
             return False, msg
 
+        # Created is not the same as usable. Ask the fresh interpreter which
+        # prefix it holds before anything installs into it, so an environment
+        # that resolves the base Python is caught here instead of much later,
+        # when the plugin cannot import what the installer called a success.
+        if not _venv_is_functional():
+            # The precise reason goes to the log, where a bug report picks it
+            # up. What the user is shown is the wording every other damaged
+            # environment already uses, because the answer is the same one.
+            _log("The new environment does not report itself as one; rebuilding "
+                 "on the next attempt.", Qgis.MessageLevel.Critical)
+            _cleanup_partial_venv(VENV_DIR)
+            return False, _get_corrupt_venv_help()
+
         if cancel_check and cancel_check():
             return False, "Installation cancelled"
 
@@ -4553,6 +4925,30 @@ def _installed_dist_names(site_packages: str) -> set:
         for entry in os.listdir(site_packages)
         if entry.endswith(".dist-info")
     }
+
+
+def _packages_missing_from_venv(venv_dir: str, package_names: list[str]) -> list[str]:
+    """Names among package_names that pip cannot account for inside the venv.
+
+    The installer is handed the venv interpreter, but that interpreter can
+    resolve a different prefix and install everything beside the base Python
+    while each step still reports success. The only answer that settles it is
+    the directory the plugin imports from. Never raises: a site-packages that
+    cannot be listed counts as everything missing, which is a broken
+    environment either way, and any other surprise skips the check rather
+    than turning a working install into a failure.
+    """
+    try:
+        site_packages = get_venv_site_packages(venv_dir)
+        dist_names = _installed_dist_names(site_packages)
+    except OSError as e:
+        _log(f"Cannot read the environment site-packages: {e}", Qgis.MessageLevel.Warning)
+        return list(package_names)
+    except Exception as e:
+        _log(f"Package placement check skipped: {e}", Qgis.MessageLevel.Warning)
+        return []
+    return [name for name in package_names
+            if _normalize_dist_name(name) not in dist_names]
 
 
 def _quick_check_packages(venv_dir: str = None) -> tuple[bool, str]:

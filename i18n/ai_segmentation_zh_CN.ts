@@ -4777,8 +4777,8 @@ Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR environment variable to
         <translation>SSL 错误，正在使用系统证书重试 {package}……（{done}/{total}）</translation>
     </message>
     <message>
-        <source>The AI engine needs roughly 4 GB free during installation.</source>
-        <translation>安装期间 AI 引擎需要大约 4 GB 可用空间。</translation>
+        <source>The AI engine needs roughly {gb} GB free during installation.</source>
+        <translation>AI 引擎安装期间需要大约 {gb} GB 的可用磁盘空间。</translation>
     </message>
     <message>
         <source>The environment installs under: {location}</source>
