@@ -20,10 +20,17 @@ through one door.
 """
 from __future__ import annotations
 
+import time
+
 from qgis.core import Qgis, QgsMessageLog
 from qgis.PyQt.QtWidgets import QMessageBox
 
 from ...core.i18n import tr
+
+# How long the "on-device AI is unavailable" notice keeps a later click quiet.
+# Past it the click says the same thing again, because the only other answer a
+# click on that path has is nothing at all.
+_UNAVAILABLE_NOTICE_QUIET_S = 12.0
 
 
 class LocalAiInstallLockMixin:
@@ -88,15 +95,22 @@ class LocalAiInstallLockMixin:
                 self._release_local_ai_install()
 
     def _warn_local_ai_unavailable_once(self) -> None:
-        """Say the on-device AI is out, at most once per session.
+        """Say the on-device AI is out, and say it again once the notice is gone.
 
         Reached when the user keeps clicking polygons after the model failed.
         A message bar rather than a modal: the review is still fully usable on
         the Manual method, so this reports, it does not interrupt.
+
+        Quiet for a short window rather than for the whole session. Both
+        callers return straight after this, so a flag that was never cleared
+        again turned every later click on the AI method into a button that did
+        nothing and said nothing.
         """
-        if getattr(self, "_local_ai_unavailable_warned", False):
+        now = time.monotonic()
+        said_at = getattr(self, "_local_ai_unavailable_warned_at", None)
+        if said_at is not None and (now - said_at) < _UNAVAILABLE_NOTICE_QUIET_S:
             return
-        self._local_ai_unavailable_warned = True
+        self._local_ai_unavailable_warned_at = now
         try:
             self.iface.messageBar().pushWarning(
                 "AI Segmentation",

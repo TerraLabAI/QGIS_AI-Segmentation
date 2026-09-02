@@ -78,6 +78,8 @@ class DockAutoPromptBoxMixin:
         # refresh_prompt_suggestions) and silent once the word is settled.
         self.refresh_prompt_suggestions(text)
         self._update_auto_detect_enabled()
+        # The line under Detect follows the word: no object, no duration.
+        self.refresh_auto_run_estimate()
         # Re-seed the object-aware detail default once the typed object settles.
         self._auto_prompt_debounce_timer.start(500)
 
@@ -133,7 +135,7 @@ class DockAutoPromptBoxMixin:
             from ...core.detection_policy import prompt_suggests_canopy
             self._auto_prompt_canopy = bool(text) and prompt_suggests_canopy(text)
             self._refresh_auto_exemplar_explainer(
-                armed=self._auto_exemplar_line_busy())
+                slot_taken=self._auto_exemplar_line_busy())
         except Exception:  # noqa: BLE001
             pass  # nosec B110
         if text:

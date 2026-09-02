@@ -9,6 +9,7 @@ from __future__ import annotations
 from qgis.PyQt.QtCore import Qt
 
 from ...core.activation_manager import (
+    has_tos_accepted,
     has_tos_locked,
     lock_tos,
     set_tos_accepted,
@@ -66,18 +67,38 @@ class DockActivationMixin:
                 self._footer_credits_label.setText("")
         self._update_full_ui()
 
-    def set_activation_message(self, text: str, is_error: bool = False):
+    def set_activation_message(self, text: str, is_error: bool = False,
+                               kind: str | None = None):
         """Public alias used by the plugin's pairing handlers."""
-        self._show_activation_message(text, is_error)
+        self._show_activation_message(text, is_error, kind)
 
-    def _show_activation_message(self, text: str, is_error: bool = False):
-        """Display a message in the activation section, framed per the
-        message taxonomy (error = accent-red text on a red-tinted card,
-        success = a lime-tinted card with plain text)."""
+    def _show_activation_message(self, text: str, is_error: bool = False,
+                                 kind: str | None = None):
+        """Display a message in the activation section, framed per the message
+        taxonomy.
+
+        ``kind`` names the frame outright ("info", "warning", "neutral",
+        "error", "success"). Without it the line falls back to the old
+        two-way read, which paints every non-error lime, including a wait and
+        a blocker that are neither a success nor a failure.
+        """
         self.activation_message_label.setText(text)
-        kind = "error" if is_error else "success"
+        if not kind:
+            kind = "error" if is_error else "success"
         self.activation_message_label.setStyleSheet(_msg_label_qss(kind))
         self.activation_message_label.setVisible(True)
+
+    def _consent_flags(self) -> tuple[bool, bool]:
+        """(terms sealed, terms ticked) for the refresh pass in progress.
+
+        Both answers come from QgsSettings, and one full refresh asks for them
+        from three different mixins. The pass reads them once and every reader
+        takes them from here.
+        """
+        cached = getattr(self, "_consent_flags_cache", None)
+        if cached is not None:
+            return cached
+        return (has_tos_locked(), has_tos_accepted())
 
     def _update_full_ui(self):
         """Refresh the whole dock for the current signed-in state + mode.
@@ -87,6 +108,15 @@ class DockActivationMixin:
         single login page. Only once activated does the mode switch appear and
         the per-mode paths run.
         """
+        self._consent_flags_cache = (has_tos_locked(), has_tos_accepted())
+        try:
+            self._update_full_ui_body()
+        finally:
+            self._consent_flags_cache = None
+
+    def _update_full_ui_body(self):
+        """The refresh itself. Split from _update_full_ui so the consent read
+        is held for the whole pass and released however it ends."""
         activated = self._plugin_activated
         self._refresh_mode_switch_visibility()
         if not activated:
@@ -198,7 +228,7 @@ class DockActivationMixin:
         _tos = getattr(self, "tos_container", None)
         if _tos is not None:
             try:
-                _tos.setVisible(not blocked and not has_tos_locked())
+                _tos.setVisible(not blocked and not self._consent_flags()[0])
             except (RuntimeError, AttributeError):
                 pass
 
@@ -271,6 +301,23 @@ class DockActivationMixin:
         # the on-device AI. Automatic's lighter one never comes through here.
         self._manual_install_wants_model = True
         self.install_requested.emit()
+
+    def show_install_waiting_notice(self, message: str) -> None:
+        """Say why a clicked Install has not started yet.
+
+        Same line as set_dependency_status, minus the button: the install is
+        queued behind a busy local AI, so Install stays down (a second click
+        would start a second wait) and only the status line moves.
+        """
+        try:
+            self.setup_status_label.setText(message)
+            self.setup_status_label.setToolTip("")
+            self.setup_status_label.setStyleSheet(
+                "font-weight: bold; color: palette(text);")
+            self.setup_status_label.setVisible(True)
+            self.setup_group.setVisible(True)
+        except (RuntimeError, AttributeError):
+            pass
 
     def _toggle_cancel_button(self):
         """Kept for the toggle still wired in dock/build.py.

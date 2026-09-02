@@ -22,7 +22,6 @@ from qgis.core import (
 from ...core.error_policy import REPORTABLE_ERROR_CLASSES
 from ...core.i18n import tr
 from .shared import (
-    _FIELD_TYPE_DOUBLE,
     _FIELD_TYPE_STRING,
     _add_features_fast,
     _apply_fast_render,
@@ -124,8 +123,16 @@ class AutoLifecycleMixin:
                 self._collect_manual_refine_into_review()
             else:
                 self._abandon_fix_session_for_discard()
-        except Exception:  # nosec B110 -- teardown must never propagate
-            pass
+        except Exception as exc:  # noqa: BLE001 -- teardown must never propagate
+            # Hand edits that did not fold in are missing from the autosave
+            # below: the user loses work they made by hand.
+            try:
+                from ...core.telemetry_errors import track_plugin_error
+                track_plugin_error(stage="segment",
+                                   error_code="review_fold_edits_failed",
+                                   message=type(exc).__name__)
+            except Exception:  # noqa: BLE001  # nosec B110
+                pass
         self._autosave_pending_auto_review(exit_path)
         self._auto_review = None
         # Supersede any in-flight cooperative finalize/reslice (same gen-bump +
@@ -162,9 +169,13 @@ class AutoLifecycleMixin:
 
     def _autosave_billed_results(self, merged_ided: list) -> None:
         """Persist the merged scored set to disk the moment the merger is read
-        at finalize, BEFORE the sweep/build/filter/review tail runs on it. A
-        billed run then always has a recoverable artifact on disk, whatever
-        happens to the (main-thread, geometry-heavy) tail after this point.
+        at finalize, alongside the sweep/build/filter/review tail. A billed run
+        then always has a recoverable artifact on disk, whatever happens to the
+        (main-thread, geometry-heavy) tail after this point.
+
+        The write goes to a thread (auto_autosave_offload) on WKB copies, so
+        the wait between the last tile and the review no longer carries it. It
+        falls back to the blocking write below when no thread can be started.
 
         Best-effort by contract: a failed write logs and changes nothing, so
         the autosave can never break finalize. Once the write confirms, the
@@ -173,6 +184,8 @@ class AutoLifecycleMixin:
         """
         if self._auto_headless_run:
             return  # headless exports synchronously right after this point
+        if self._start_billed_autosave(merged_ided):
+            return
         try:
             from ...core import run_autosave
             ctx = self._auto_run_ctx or {}
@@ -217,6 +230,12 @@ class AutoLifecycleMixin:
         if self.dock_widget:
             try:
                 self.dock_widget.set_auto_tile_progress(completed, total)
+                if total > 0 and completed >= total:
+                    # Nothing more is coming off the wire, so the answered
+                    # count has nothing left to say. Hand the bar to the
+                    # assembly, which on a large zone is the longer half.
+                    self.dock_widget.note_auto_tiles_all_answered()
+                    self._push_auto_assemble_progress()
             except (RuntimeError, AttributeError):
                 pass
 
@@ -348,12 +367,15 @@ class AutoLifecycleMixin:
         self._auto_tel_stop_reason = "error"
         try:
             from ...core import telemetry_errors, telemetry_run_events
+            from .auto_client_profile import client_profile_props, snapshot_worker_profile
+            snapshot_worker_profile(self, self._auto_worker)
             telemetry_run_events.track_auto_detect_failed(
                 run_id=self._auto_run_id or "",
                 error_class=error_class,
                 tiles_done=getattr(self._auto_worker, "tiles_succeeded", 0),
                 duration_ms=self._auto_duration_ms(),
                 warming_ms=self._auto_warming_wait_ms(),
+                client_profile=client_profile_props(self),
             )
             # Pro-path failures that are OUR fault (server/timeout/unknown, not
             # a user NETWORK/AUTH/CANCELLED) also emit a plugin_error so the
@@ -367,6 +389,11 @@ class AutoLifecycleMixin:
                 )
         except Exception:
             pass  # nosec B110
+        try:
+            from ...core.run_log_capture import send_run_log
+            send_run_log("failed")
+        except Exception:  # noqa: BLE001
+            pass  # nosec B110
         worker = self._auto_worker
         # A terminal signal fires from inside the worker's run loop, which may
         # not have returned yet: dropping the last ref to a still-running QThread
@@ -377,12 +404,14 @@ class AutoLifecycleMixin:
         self._drop_auto_tile_bridge()
         self._capture_auto_mask_gsd(worker)
         tiles_succeeded = getattr(worker, "tiles_succeeded", 0)
-        if tiles_succeeded > 0 and not self._auto_headless_run:
+        if tiles_succeeded > 0:
             # Billed partials survive ANY terminal error (auth, a non-retryable
             # tile code, an offline abort mid-run): route them into the review so
             # nothing already charged is dropped, mirroring the credits-exhausted,
             # user-cancel and auth paths. Only the account panel below stays
-            # auth-specific.
+            # auth-specific. Headless too: _finalize_auto_results routes such a
+            # run to _finalize_headless_run, and the credits-exhausted and
+            # cancel paths already export its partials.
             self._finalize_auto_results(tiles_succeeded)
             # Opening the review swaps the dock status banner to idle, wiping the
             # error line. Re-post it to the message bar (AUTH pushes its own
@@ -573,6 +602,27 @@ class AutoLifecycleMixin:
         self._last_auto_result = {"status": "credits_exhausted", "credits_remaining": remaining}
         self._finalize_auto_results(tiles_succeeded)
 
+    def _salvage_headless_timeout(self) -> dict | None:
+        """Wind a timed-out headless run down softly and give back what it
+        billed, or None when nothing came back inside the grace window.
+
+        Same route and same window a caller's own Cancel gets: both leave
+        billed tiles behind, and the hard teardown keeps none of them.
+        """
+        import time as _t
+
+        from qgis.PyQt.QtCore import QEventLoop, QTimer
+
+        from .auto_run import _HEADLESS_CANCEL_GRACE_MS, _HEADLESS_CANCEL_POLL_MS
+
+        self._on_auto_cancel_clicked()
+        deadline = _t.monotonic() + _HEADLESS_CANCEL_GRACE_MS / 1000.0
+        while self._last_auto_result is None and _t.monotonic() < deadline:
+            wait = QEventLoop()
+            QTimer.singleShot(_HEADLESS_CANCEL_POLL_MS, wait.quit)
+            wait.exec()
+        return self._last_auto_result
+
     def _on_auto_cancelled(self, reason: str = "user", worker=None) -> None:
         """Wind down a stopped run and salvage its billed partials into the
         review. ``reason`` "user" is a real cancel (the worker's cancelled
@@ -596,12 +646,22 @@ class AutoLifecycleMixin:
             # the thread. Harvesting now would finalize an EMPTY merger and
             # post a stale "No detection in this zone." over the reset flow,
             # dropping any billed partials silently. Just release the refs.
+            #
+            # The hard stop leaves the worker reference in place ON PURPOSE, so
+            # unload can join the thread. This branch is where that reference
+            # goes, and it may still be the last one on a QThread that has not
+            # wound down: park it first, exactly as the normal path below does,
+            # or garbage collection takes QGIS with it.
+            if worker is not None and worker.isRunning():
+                park_orphaned_worker(worker)
             self._auto_worker = None
             self._drop_auto_tile_bridge()
             return
         # The cancelled signal fires from the worker's run loop, which may still
         # be winding down: park a strong ref before dropping ours so a live
         # QThread is never garbage-collected (which aborts QGIS).
+        from .auto_client_profile import client_profile_props, snapshot_worker_profile
+        snapshot_worker_profile(self, worker)
         if worker is not None and worker.isRunning():
             park_orphaned_worker(worker)
         self._auto_worker = None
@@ -651,6 +711,7 @@ class AutoLifecycleMixin:
                     tiles_done=tiles_succeeded,
                     duration_ms=self._auto_duration_ms(),
                     warming_ms=warming_ms,
+                    client_profile=client_profile_props(self),
                 )
             else:
                 telemetry_run_events.track_auto_detect_cancelled(
@@ -662,8 +723,14 @@ class AutoLifecycleMixin:
                     warming_ms=warming_ms,
                     backend_stalled=backend_stalled,
                     submit_retries=submit_retries,
+                    client_profile=client_profile_props(self),
                 )
         except Exception:
+            pass  # nosec B110
+        try:
+            from ...core.run_log_capture import send_run_log
+            send_run_log("stalled" if stalled else "cancelled")
+        except Exception:  # noqa: BLE001
             pass  # nosec B110
         self._auto_tel_stop_reason = "stalled" if stalled else "cancelled"
         # Read the balance again, as the completed and out-of-credits ends both
@@ -705,7 +772,11 @@ class AutoLifecycleMixin:
         # Fold the stop cause back over whatever finalize recorded, keeping its
         # layer/instance facts: the caller needs BOTH.
         merged = self._last_auto_result
-        if isinstance(merged, dict) and merged.get("status") == "completed":
+        if isinstance(merged, dict) and merged:
+            # Whatever status finalize recorded, the facts beside it are the
+            # run's: layer_name, instances, tiles_processed. Replacing the dict
+            # threw those away for every non-completed finalize (a
+            # zero-detection cancel, for one), and the caller needs both.
             merged["status"] = stop_status
         else:
             self._last_auto_result = {"status": stop_status}
@@ -803,6 +874,7 @@ class AutoLifecycleMixin:
         prompt_label: str,
         scores: list | None = None,
         confidence_applied: float | None = None,
+        det_ids: list | None = None,
     ) -> str | None:
         """Write deduplicated geometries into the project GeoPackage as a new
         table and add it to the AI Segmentation group.
@@ -816,6 +888,10 @@ class AutoLifecycleMixin:
         repeated per row. ``scores`` is parallel to ``deduped_geoms`` (None,
         or None entries, when unknown, e.g. after a Manual-refine dissolve).
 
+        ``det_ids`` is parallel to ``deduped_geoms`` and carries the stable id
+        each object had in the review, so two exports of one run can be
+        compared row by row. Without it the row position stands in.
+
         ``confidence_applied`` is the cutoff that really filtered this set,
         which the rescue save drops when it falls back to the full found set.
         None keeps the run's current value, so every other caller is unchanged.
@@ -825,18 +901,20 @@ class AutoLifecycleMixin:
         left on ``_auto_export_feature_count`` and ``_auto_export_failure``,
         because the caller reports both and the return carries neither.
         """
-        from datetime import datetime
-
         from ...core import output_store
+        from ...core.basemap_label import online_basemap_credit
         from ...core.layer_conventions import (
             apply_output_conventions,
             make_area_measurer,
             make_class_categorized_renderer,
             make_committed_renderer,
+            measure_field,
             repair_polygon,
             round_measure,
             to_multipolygon,
         )
+        from ...core.output_metadata import output_timestamp_iso
+        from ...core.polygon_exporter import count_overlapping_pairs
 
         # Cleared up front so a failed write can never leave the Start page
         # linking to the PREVIOUS run's layer.
@@ -863,17 +941,25 @@ class AutoLifecycleMixin:
         temp_layer.setCrs(crs)
 
         pr = temp_layer.dataProvider()
+        # The five columns every export path writes, in the same order. The
+        # measures declare their decimals, because a Shapefile round trip
+        # writes each number to what the column header says and a column that
+        # declares none arrives as whole metres.
         pr.addAttributes([
+            QgsField("det_id", _FIELD_TYPE_STRING),
             QgsField("class", _FIELD_TYPE_STRING),
-            QgsField("confidence", _FIELD_TYPE_DOUBLE),
-            QgsField("area_m2", _FIELD_TYPE_DOUBLE),
-            QgsField("perimeter_m", _FIELD_TYPE_DOUBLE),
+            measure_field("confidence", decimals=3),
+            measure_field("area_m2"),
+            measure_field("perimeter_m"),
         ])
         temp_layer.updateFields()
 
         object_class = (prompt_label or "").strip()
         if scores is not None and len(scores) != len(deduped_geoms):
             scores = None  # misaligned parallel list: honest NULLs over mislabels
+        if det_ids is not None and len(det_ids) != len(deduped_geoms):
+            det_ids = None
+        written_geoms = []
 
         # One measurer for the whole batch: setEllipsoid loads from the SRS DB, so
         # rebuilding it per feature cost seconds on a big run.
@@ -892,12 +978,14 @@ class AutoLifecycleMixin:
             if area_m2 > 0:
                 self._auto_exported_area_m2 += area_m2
             feat.setAttributes([
-                object_class,
+                str(det_ids[index] if det_ids is not None else index),
+                object_class or None,
                 round(float(score), 3) if score is not None else None,
                 round_measure(area_m2),
                 round_measure(measurer.measurePerimeter(geom)),
             ])
             features_to_add.append(feat)
+            written_geoms.append(geom)
 
         if not features_to_add:
             self._auto_export_failure = "no_shapes"
@@ -974,14 +1062,29 @@ class AutoLifecycleMixin:
             plugin_version = self._read_plugin_version()
         except (RuntimeError, AttributeError):
             plugin_version = ""
+        # The imagery credit, so a delivered file names what it was read off.
+        basemap_label = ""
+        try:
+            if source_layer is not None:
+                basemap_label = online_basemap_credit(source_layer)
+        except (RuntimeError, AttributeError):
+            basemap_label = ""
+        source_authid = ""
+        try:
+            source_authid = str(crs.authid() or "")
+        except (RuntimeError, AttributeError):
+            source_authid = ""
         apply_output_conventions(
             result_layer, source_layer_name,
             prompt=prompt_label,
             detail=(self._auto_run_ctx or {}).get("detail"),
             confidence=(confidence_applied if confidence_applied is not None
                         else self._auto_confidence),
-            created_iso=datetime.now().astimezone().isoformat(timespec="seconds"),
+            created_iso=output_timestamp_iso(),
             plugin_version=plugin_version,
+            basemap_label=basemap_label,
+            source_crs_authid=source_authid,
+            overlapping_pairs=count_overlapping_pairs(written_geoms),
         )
         # Hand the map over from the live layer to the saved one in ONE swap.
         # Without this the canvas shows its half-drawn picture while the saved
@@ -1029,10 +1132,12 @@ class AutoLifecycleMixin:
         # (a full render pass), which on a dense result stacked onto the export
         # cost. The layer is already in the project, so a later event-loop turn
         # captures it just as well; it is local-only and best-effort either way.
-        from qgis.PyQt.QtCore import QTimer
+        from ...core.qt_compat import safe_single_shot
         _hist_count = len(features_to_add)
-        QTimer.singleShot(0, lambda: self._record_detection_history(
-            prompt_label, layer_name, _hist_count, crs, result_layer))
+        safe_single_shot(
+            0, self.dock_widget or self.iface.mainWindow(),
+            lambda: self._record_detection_history(
+                prompt_label, layer_name, _hist_count, crs, result_layer))
 
         QgsMessageLog.logMessage(
             f"Auto detection: saved {len(features_to_add)} polygon(s) to {result.gpkg_path} "

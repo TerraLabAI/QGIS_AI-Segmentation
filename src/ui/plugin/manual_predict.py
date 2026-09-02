@@ -42,6 +42,11 @@ from ..canvas_palette import (
     PENDING_STROKE,
 )
 from ..error_report_dialog import show_error_report
+from .manual_measure_cache import (
+    narrow_dimension,
+    rollback_click_quietly,
+    session_area_measurer,
+)
 
 # The ground size of a crop pixel could not be measured, so the Fill holes
 # cutoff is unknown. Its own value because None already means "no cutoff, fill
@@ -148,7 +153,8 @@ class ManualPredictMixin:
             self.map_tool.remove_last_marker()
         self._sweep_stale_refine_canvas()
 
-    @slot_guard(stage="segment")
+    @slot_guard(stage="segment", user_message=tr(
+        "That click could not be handled. Please try again."))
     def _on_positive_click(self, point):
         """Handle left-click: add positive point (select this element).
 
@@ -161,9 +167,11 @@ class ManualPredictMixin:
         # following the cursor comes off the map before anything else runs.
         # Its answer is taken first, because clearing the ghost drops it, and
         # a click landing on the ghost asks the service what the ghost already
-        # asked. Read and cleared in _run_prediction; a click that never gets
-        # there leaves it for the next one to overwrite on this line.
-        self._hover_click_answer = self._take_hover_preview_answer()
+        # asked. Held in a local until this click is past every way back: an
+        # answer pinned on the instance by a click that turned back would be
+        # read by a later click on other ground.
+        held_hover_answer = self._take_hover_preview_answer()
+        self._hover_click_answer = None
         self._stop_hover_preview("click")
         if self._refine_click_is_stale():
             self._drop_stale_refine_click()
@@ -271,6 +279,10 @@ class ManualPredictMixin:
         # falls through to the normal Manual predict and refines the whole
         # shape with the object as prior, exactly like base Manual.
 
+        # Past every way back, so the ghost's answer can be pinned where
+        # _run_prediction reads it.
+        self._hover_click_answer = held_hover_answer
+
         # --- Fast path: the crop is already encoded, so predict synchronously
         # (predict is a fast decoder round-trip). This is also the path the
         # replayed click lands on once the encode has committed the new crop.
@@ -284,7 +296,7 @@ class ManualPredictMixin:
         self._active_crop_points_positive.append((raster_pt.x(), raster_pt.y()))
 
         QgsMessageLog.logMessage(
-            f"POSITIVE POINT at ({raster_pt.x():.6f}, {raster_pt.y():.6f})",
+            "Keep click registered",
             "AI Segmentation",
             level=Qgis.MessageLevel.Info
         )
@@ -306,7 +318,7 @@ class ManualPredictMixin:
             # The point and its marker are on screen already. An error on its
             # way to the slot guard would leave them there, and every later
             # predict would carry a point that produced nothing.
-            self._rollback_failed_click("positive", point)
+            rollback_click_quietly(self, "positive", point)
             raise
         finally:
             self._end_click_wait_started_here()
@@ -339,7 +351,8 @@ class ManualPredictMixin:
             )
             return
 
-    @slot_guard(stage="segment")
+    @slot_guard(stage="segment", user_message=tr(
+        "That click could not be handled. Please try again."))
     def _on_negative_click(self, point):
         """Handle right-click: add negative point (exclude this area).
 
@@ -416,11 +429,15 @@ class ManualPredictMixin:
         if not self._is_point_in_raster_extent(raster_pt):
             if self.map_tool:
                 self.map_tool.remove_last_marker()
+            # The session's own raster, never the combo: the combo can have
+            # moved on to another layer, and naming that one told the user the
+            # click missed a raster they were not working in.
             layer_name = ""
-            dock = self.dock_widget
-            sel = dock.layer_combo.currentLayer() if dock is not None else None
-            if sel:
-                layer_name = sel.name()
+            try:
+                if self._current_layer is not None:
+                    layer_name = self._current_layer.name()
+            except RuntimeError:
+                layer_name = ""
             self.iface.messageBar().pushMessage(
                 "AI Segmentation",
                 tr("Click is outside the '{layer}' raster. To segment another raster, stop the current segmentation first.").format(layer=layer_name),  # noqa: E501
@@ -467,7 +484,7 @@ class ManualPredictMixin:
         self._active_crop_points_negative.append((raster_pt.x(), raster_pt.y()))
 
         QgsMessageLog.logMessage(
-            f"NEGATIVE POINT at ({raster_pt.x():.6f}, {raster_pt.y():.6f})",
+            "Remove click registered",
             "AI Segmentation",
             level=Qgis.MessageLevel.Info
         )
@@ -486,7 +503,7 @@ class ManualPredictMixin:
         except Exception:
             # Same reason as the keep click: the point is committed before the
             # predict, so an error must take it back down on its way out.
-            self._rollback_failed_click("negative", point)
+            rollback_click_quietly(self, "negative", point)
             raise
         finally:
             self._end_click_wait_started_here()
@@ -598,7 +615,12 @@ class ManualPredictMixin:
                 minx, miny, maxx, maxy, img_width, img_height)
 
             def crop_pixel_of(px, py):
-                return rio_transform.rowcol(img_clip_transform, px, py)
+                # A point on the right or bottom bound divides out to exactly
+                # the pixel count and would index one past the last row or
+                # column. Same clamp as crop_pixel_of_point.
+                row, col = rio_transform.rowcol(img_clip_transform, px, py)
+                return (min(max(int(row), 0), img_height - 1),
+                        min(max(int(col), 0), img_width - 1))
         else:
             from ...core.crop_window import crop_pixel_of_point
 
@@ -714,8 +736,14 @@ class ManualPredictMixin:
                 masks, scores, low_res_masks = reused
                 # The network answered this, as a preview. The ledger hangs the
                 # object's charge on a network answer, so it is noted here
-                # exactly as the predictor notes one of its own.
+                # exactly as the predictor notes one of its own, and the
+                # predictor's own record is set with it: the score hint reads
+                # that record to decide whether a score means anything.
                 self._note_manual_cloud_answer()
+                try:
+                    self.predictor.last_answer_was_remote = True
+                except (RuntimeError, AttributeError):
+                    pass  # nosec B110 -- a hint must never cost the click
             else:
                 masks, scores, low_res_masks = self.predictor.predict(
                     point_coords=point_coords,
@@ -974,7 +1002,11 @@ class ManualPredictMixin:
         crs_value = None
         try:
             if self._current_layer and self._current_layer.crs().isValid():
-                crs_value = self._current_layer.crs().authid()
+                layer_crs = self._current_layer.crs()
+                # A custom or WKT-only CRS answers "" here, and an empty string
+                # reads downstream as "no CRS": the polygons then land on
+                # EPSG:4326, thousands of km from the imagery.
+                crs_value = layer_crs.authid() or layer_crs.toWkt()
         except RuntimeError:
             pass
 
@@ -1301,8 +1333,11 @@ class ManualPredictMixin:
             return True
         if self._correct_wait_showing() or self._remote_click_wait_showing():
             return False
-        if not self._click_answer_travels():
-            return False
+        # An on-device predict holds the GUI thread for as long as a travelling
+        # answer does, and an arrow cursor over a map that will not move reads
+        # as a crash either way. Only the panel line stays remote-only: it
+        # names a wait on the network, which is not what this one is.
+        travels = self._click_answer_travels()
         self._remote_click_wait_active = True
         self._remote_click_wait_cursor = False
         if not self._headless:
@@ -1311,7 +1346,8 @@ class ManualPredictMixin:
                 self._remote_click_wait_cursor = True
             except (RuntimeError, AttributeError):
                 self._remote_click_wait_cursor = False
-        self._arm_remote_click_note()
+        if travels:
+            self._arm_remote_click_note()
         self._apply_mask_band_style()
         return True
 
@@ -1465,11 +1501,7 @@ class ManualPredictMixin:
 
         if REFINE_SIMPLIFY_MAX_NARROW_FRACTION <= 0:
             return tolerance
-        try:
-            _pt, _area, _angle, width, height = geom.orientedMinimumBoundingBox()
-            narrow = min(float(width), float(height))
-        except Exception:  # noqa: BLE001 -- unmeasurable, keep the flat value  # nosec B110
-            return tolerance
+        narrow = narrow_dimension(self, geom)
         if narrow <= 0:
             return tolerance
         return min(tolerance, REFINE_SIMPLIFY_MAX_NARROW_FRACTION * narrow)
@@ -1546,9 +1578,11 @@ class ManualPredictMixin:
         except Exception:  # noqa: BLE001 -- an unusable CRS means no conversion
             return None
         try:
-            from ...core.layer_conventions import make_area_measurer
+            measurer = session_area_measurer(self, crs)
+            if measurer is None:
+                return None
             step = 0.001 if geographic else 1.0
-            metres = float(make_area_measurer(crs).measureLine(
+            metres = float(measurer.measureLine(
                 QgsPointXY(ref_x, ref_y), QgsPointXY(ref_x + step, ref_y)))
             return metres / step if metres > 0 else None
         except Exception:  # noqa: BLE001 -- never block a refine on a measure
@@ -1851,16 +1885,15 @@ class ManualPredictMixin:
             from qgis.core import QgsRectangle
 
             from ...core.hole_size import hole_pixels
-            from ...core.layer_conventions import make_area_measurer
             minx, maxx, miny, maxy = (float(v) for v in info["bbox"])
             rows, cols = int(info["img_shape"][0]), int(info["img_shape"][1])
             if rows <= 0 or cols <= 0:
                 return FILL_HOLES_CAP_UNKNOWN
             rect = QgsGeometry.fromRect(QgsRectangle(minx, miny, maxx, maxy))
             ground_m2 = 0.0
-            if self._current_layer is not None and self._current_layer.crs().isValid():
-                ground_m2 = float(
-                    make_area_measurer(self._current_layer.crs()).measureArea(rect))
+            measurer = session_area_measurer(self)
+            if measurer is not None:
+                ground_m2 = float(measurer.measureArea(rect))
             if ground_m2 <= 0:
                 ground_m2 = float(rect.area())
             if ground_m2 <= 0:
@@ -1880,10 +1913,15 @@ class ManualPredictMixin:
         lose. ``info`` names the crop window, as in _fill_holes_pixel_cap."""
         if not self._refine_fill_holes:
             return False, None
+        window = info if info is not None else self.current_transform_info
+        max_m2 = float(getattr(self, "_refine_fill_holes_max_m2", 0.0) or 0.0)
+        memo = getattr(self, "_fill_holes_args_memo", None)
+        if memo is not None and memo[0] is window and memo[1] == max_m2:
+            return memo[2]
         cap = self._fill_holes_pixel_cap(info)
-        if cap is FILL_HOLES_CAP_UNKNOWN:
-            return False, None
-        return True, cap
+        answer = (False, None) if cap is FILL_HOLES_CAP_UNKNOWN else (True, cap)
+        self._fill_holes_args_memo = (window, max_m2, answer)
+        return answer
 
     def _filter_geometry_parts_by_size(self, geom):
         """Drop polygon parts outside the user's Min/Max size window (true
@@ -1904,13 +1942,7 @@ class ManualPredictMixin:
         max_a = float(getattr(self, "_refine_max_size_m2", 0.0) or 0.0)
         if (min_a <= 0 and max_a <= 0) or geom is None or geom.isEmpty():
             return geom
-        measurer = None
-        try:
-            from ...core.layer_conventions import make_area_measurer
-            if self._current_layer is not None and self._current_layer.crs().isValid():
-                measurer = make_area_measurer(self._current_layer.crs())
-        except (RuntimeError, AttributeError):
-            measurer = None
+        measurer = session_area_measurer(self)
         parts = (geom.asGeometryCollection() if geom.isMultipart()
                  else [geom])
         kept = []
@@ -2080,6 +2112,10 @@ class ManualPredictMixin:
             # speculative read can never swallow Ctrl+Z.
             if getattr(self, "_pending_manual_click", None) is not None:
                 self._discard_pending_manual_click()
+            else:
+                # Nothing to take back until the read lands. Silence here reads
+                # as a dead Undo key, so the panel names the wait.
+                self._set_manual_encoding_note(True, phase="encode")
             return
         self._manual_undos_session = getattr(self, "_manual_undos_session", 0) + 1
         # Refine edit session, geometry sub-state (open object, no editing
@@ -2245,7 +2281,8 @@ class ManualPredictMixin:
         self._display_frozen_composite_with_extra(session.polygon)
 
         pos_count, neg_count = self.prompts.point_count
-        self.dock_widget.set_point_count(pos_count, neg_count)
+        if self.dock_widget:
+            self.dock_widget.set_point_count(pos_count, neg_count)
         # Same rule as a reopened polygon: the shape is back on the map, and
         # the point count it came back with must not decide Save.
         self._keep_save_alive_for_display_polygon()
@@ -2302,6 +2339,10 @@ class ManualPredictMixin:
         if not self._handoff_remove_entry_feature(last_polygon):
             self._rebuild_handoff_layers()
 
+        # This object is now the one being refined, exactly as a handoff
+        # re-open marks it (see manual_handoff._open_saved_polygon_for_edit).
+        self._is_refining_saved_object = True
+
         # Clear current state first
         self.prompts.clear()
         self._mask_state_history = []
@@ -2309,6 +2350,9 @@ class ManualPredictMixin:
         self._unfrozen_display_polygon = None
         self._active_crop_points_positive = []
         self._active_crop_points_negative = []
+        # The seed the previous object left behind belongs to that object: kept,
+        # it feeds the next click of THIS one a prior from another shape.
+        self.current_low_res_mask = None
         if self.map_tool:
             self.map_tool.clear_markers()
 
@@ -2484,6 +2528,9 @@ class ManualPredictMixin:
         self.current_score = 0.0
         self.current_transform_info = None
         self.current_low_res_mask = None
+        # A ghost answer belongs to the click that was about to use it, so it
+        # never crosses into another session.
+        self._hover_click_answer = None
         # The last click coordinate feeds Progressive Merge; a fresh session
         # starts with none so the first click of a new object is never bounded.
         self._last_click_point = None

@@ -1794,6 +1794,18 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
         <translation>加载您自己的影像</translation>
     </message>
     <message>
+        <source>Your imagery is hidden</source>
+        <translation>您的影像已隐藏</translation>
+    </message>
+    <message>
+        <source>It is unchecked in the Layers panel.</source>
+        <translation>它在图层面板中未勾选。</translation>
+    </message>
+    <message>
+        <source>Show it on the map</source>
+        <translation>在地图上显示</translation>
+    </message>
+    <message>
         <source>Lower the Min size filter to show objects first.</source>
         <translation>请先降低最小尺寸筛选以显示对象。</translation>
     </message>
@@ -2434,6 +2446,10 @@ Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) b
     <message>
         <source>How sure the AI is about each object. Lower shows more, higher keeps only the sure ones.</source>
         <translation>AI 对每个对象的把握程度。数值越低显示越多，数值越高仅保留把握较大的对象。</translation>
+    </message>
+    <message>
+        <source>Closed forest: the AI takes it as one cover and does not separate its trees. For the forest as one area, re-run with "forest".</source>
+        <translation>郁闭森林：AI 会将其作为一整片林冠处理，不会区分单株树木。如需将森林作为一个整体区域，请使用 “forest” 重新运行。</translation>
     </message>
     <message>
         <source>Identify new shape</source>
@@ -5064,6 +5080,856 @@ is blocking the plugin&apos;s local AI environment.</source>
     <message>
         <source>Open it yourself</source>
         <translation>自行打开</translation>
+    </message>
+    <message>
+        <source>Personal, non-commercial use. A paid plan adds commercial use for one person.</source>
+        <translation>个人非商业用途。付费方案支持一人的商业用途。</translation>
+    </message>
+    <message>
+        <source>Finishing the current AI task, then the install starts.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Right angles is off: this QGIS does not carry the shapely geometry library it needs. Every other shape control still works.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Unavailable: this QGIS does not carry the shapely geometry library that squares the walls. A QGIS installed with its full package set carries it.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Report copied: paste it into your email</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Sign in to reopen, export or run this detection again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Check for Updates</source>
+        <translation>检查更新</translation>
+    </message>
+    <message>
+        <source>More from TerraLab...</source>
+        <translation>TerraLab 的更多内容...</translation>
+    </message>
+    <message>
+        <source>BEFORE</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>AFTER</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>(more than {n} min left)</source>
+        <translation>（剩余超过 {n} 分钟）</translation>
+    </message>
+    <message>
+        <source>(retry {done}/{total})</source>
+        <translation>（重试 {done}/{total}）</translation>
+    </message>
+    <message>
+        <source>0 shown - raise the Max size filter to reveal them</source>
+        <translation>显示 0 个 - 提高最大尺寸筛选以显示它们</translation>
+    </message>
+    <message>
+        <source>1 charged</source>
+        <translation>已扣费 1 次</translation>
+    </message>
+    <message>
+        <source>1 cloud detection</source>
+        <translation>1 次云端检测</translation>
+    </message>
+    <message>
+        <source>2. Send to support</source>
+        <translation>2. 发送给支持团队</translation>
+    </message>
+    <message>
+        <source>200 km² of Automatic a month, on zones of any size.</source>
+        <translation>每月 200 km² 的 Automatic，区域大小不限。</translation>
+    </message>
+    <message>
+        <source>200 km² of Automatic every month, on zones of any size</source>
+        <translation>每月 200 km² 的 Automatic，区域大小不限</translation>
+    </message>
+    <message>
+        <source>500 cloud objects every month in Semi-Auto</source>
+        <translation>Semi-Auto 中每月 500 个云端对象</translation>
+    </message>
+    <message>
+        <source>A firewall or proxy may be blocking the download. Check your network settings in QGIS (Settings &gt; Options &gt; Network).</source>
+        <translation>防火墙或代理可能正在阻止下载。请检查 QGIS 中的网络设置（设置 &gt; 选项 &gt; 网络）。</translation>
+    </message>
+    <message>
+        <source>Account settings</source>
+        <translation>账户设置</translation>
+    </message>
+    <message>
+        <source>Added to the project: {0}.</source>
+        <translation>已添加到项目：{0}。</translation>
+    </message>
+    <message>
+        <source>Advanced settings - name the object first</source>
+        <translation>高级设置 - 请先为对象命名</translation>
+    </message>
+    <message>
+        <source>All dependencies installed</source>
+        <translation>所有依赖项均已安装</translation>
+    </message>
+    <message>
+        <source>Another QGIS window is downloading the AI model. Wait for it to finish, then try again.</source>
+        <translation>另一个 QGIS 窗口正在下载 AI 模型。请等待其完成后再试。</translation>
+    </message>
+    <message>
+        <source>Another QGIS window is installing the AI components.</source>
+        <translation>另一个 QGIS 窗口正在安装 AI 组件。</translation>
+    </message>
+    <message>
+        <source>Building the shapes</source>
+        <translation>正在生成形状</translation>
+    </message>
+    <message>
+        <source>Cancelled before the model was asked for. Nothing was spent.</source>
+        <translation>在请求模型之前已取消，未产生任何消费。</translation>
+    </message>
+    <message>
+        <source>Cancelled before the point was sent. Nothing was spent.</source>
+        <translation>在发送该点之前已取消，未产生任何消费。</translation>
+    </message>
+    <message>
+        <source>Cancelled before the zone was sent. Nothing was spent.</source>
+        <translation>在发送该区域之前已取消，未产生任何消费。</translation>
+    </message>
+    <message>
+        <source>Cancelled while the model was loading. Nothing was spent.</source>
+        <translation>在模型加载期间已取消，未产生任何消费。</translation>
+    </message>
+    <message>
+        <source>Cancelled. Kept the {0} object(s) already found, from the {1} tile(s) processed before the stop. The zone was charged when the run started, so the stop does not lower the bill. Added to the project: {2}.</source>
+        <translation>已取消。停止前处理的 {1} 个瓦片中已找到的 {0} 个对象已保留。区域在运行开始时即已扣费，停止不会降低费用。已添加到项目：{2}。</translation>
+    </message>
+    <message>
+        <source>Cancelled. The AI service had processed {0} tile(s) before the stop, and nothing was added to the project. Open the AI Segmentation panel and look for a run waiting for review before starting another one. Run '{1}' to see what is left on the plan.</source>
+        <translation>已取消。AI 服务在停止前处理了 {0} 个瓦片，未向项目添加任何内容。开始新的运行之前，请在 AI Segmentation 面板中查找等待审核的运行。运行“{1}”可查看套餐剩余额度。</translation>
+    </message>
+    <message>
+        <source>Cannot restart the download: {error}</source>
+        <translation>无法重新开始下载：{error}</translation>
+    </message>
+    <message>
+        <source>Charged</source>
+        <translation>已扣费</translation>
+    </message>
+    <message>
+        <source>Check disk space and folder permissions, then try again.</source>
+        <translation>请检查磁盘空间和文件夹权限，然后重试。</translation>
+    </message>
+    <message>
+        <source>Checking the {size} MB download...</source>
+        <translation>正在检查 {size} MB 的下载...</translation>
+    </message>
+    <message>
+        <source>Click on the map to outline your zone.</source>
+        <translation>在地图上点击以描绘您的区域。</translation>
+    </message>
+    <message>
+        <source>Click the object first. Save polygon keeps it in your session; Export writes all kept polygons to a layer.</source>
+        <translation>请先点击对象。“保存多边形”会将其保留在当前会话中；“导出”会将所有已保留的多边形写入图层。</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>关闭</translation>
+    </message>
+    <message>
+        <source>Cloud detections</source>
+        <translation>云端检测</translation>
+    </message>
+    <message>
+        <source>Connecting to download server...</source>
+        <translation>正在连接下载服务器...</translation>
+    </message>
+    <message>
+        <source>Could not reach TerraLab. Your runs are still there.</source>
+        <translation>无法连接到 TerraLab。您的运行记录仍然保留。</translation>
+    </message>
+    <message>
+        <source>Could not reach TerraLab. Your saved runs are still there.</source>
+        <translation>无法连接到 TerraLab。您已保存的运行记录仍然保留。</translation>
+    </message>
+    <message>
+        <source>Could not remove this run. Try again later.</source>
+        <translation>无法移除此运行记录，请稍后重试。</translation>
+    </message>
+    <message>
+        <source>Date</source>
+        <translation>日期</translation>
+    </message>
+    <message>
+        <source>Delete run</source>
+        <translation>删除运行记录</translation>
+    </message>
+    <message>
+        <source>Dense area {current}/{total} · no extra cost</source>
+        <translation>密集区域 {current}/{total} · 不额外收费</translation>
+    </message>
+    <message>
+        <source>Download failed after {attempts} attempts: {reason}</source>
+        <translation>尝试 {attempts} 次后下载仍失败：{reason}</translation>
+    </message>
+    <message>
+        <source>Download started...</source>
+        <translation>下载已开始...</translation>
+    </message>
+    <message>
+        <source>Downloading Python {version}...</source>
+        <translation>正在下载 Python {version}...</translation>
+    </message>
+    <message>
+        <source>Downloading {package} ({size})... {elapsed}</source>
+        <translation>正在下载 {package}（{size}）... {elapsed}</translation>
+    </message>
+    <message>
+        <source>Downloading {package}... {elapsed}</source>
+        <translation>正在下载 {package}... {elapsed}</translation>
+    </message>
+    <message>
+        <source>Downloading: {done} / {total} MB ({speed} MB/s, {eta})</source>
+        <translation>正在下载：{done} / {total} MB（{speed} MB/s，{eta}）</translation>
+    </message>
+    <message>
+        <source>Downloading: {done} MB ({speed} MB/s)</source>
+        <translation>正在下载：{done} MB（{speed} MB/s）</translation>
+    </message>
+    <message>
+        <source>Draw a zone, name one kind of object, get all of them in one run. Runs on our servers and uses your cloud objects.</source>
+        <translation>绘制一个区域，为一种对象命名，一次运行即可全部找到。在我们的服务器上运行，并使用您的云端对象额度。</translation>
+    </message>
+    <message>
+        <source>Drop points closer than this distance to a straight edge (0 = off).</source>
+        <translation>丢弃与直边距离小于此值的点（0 = 关闭）。</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;about {n} minutes to install&lt;/b&gt;</source>
+        <translation>所有内容都保留在本机 {dot} &lt;b&gt;安装约需 {n} 分钟&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;{gb} GB and about {n} minutes to install&lt;/b&gt;</source>
+        <translation>所有内容都保留在本机 {dot} &lt;b&gt;{gb} GB，安装约需 {n} 分钟&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Export</source>
+        <translation>导出</translation>
+    </message>
+    <message>
+        <source>Exported</source>
+        <translation>已导出</translation>
+    </message>
+    <message>
+        <source>Extracting Python...</source>
+        <translation>正在解压 Python...</translation>
+    </message>
+    <message>
+        <source>Failed</source>
+        <translation>失败</translation>
+    </message>
+    <message>
+        <source>Found nothing</source>
+        <translation>未找到任何内容</translation>
+    </message>
+    <message>
+        <source>Found {0} object(s) across {1} processed tile(s). Run '{2}' to read what is left on the plan: the run is charged for the surface of its zone, so the tile count is not the cost.</source>
+        <translation>在处理的 {1} 个瓦片中找到 {0} 个对象。运行“{2}”可查看套餐剩余额度：本次运行按区域面积计费，瓦片数量与费用无关。</translation>
+    </message>
+    <message>
+        <source>Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR environment variable to a directory on a larger drive, then restart QGIS.</source>
+        <translation>请释放磁盘空间，或将 AI_SEGMENTATION_CACHE_DIR 环境变量设置为容量更大的磁盘上的目录，然后重启 QGIS。</translation>
+    </message>
+    <message>
+        <source>GeoJSON and KML are written in EPSG:4326. Shapefile shortens field names to 10 characters.</source>
+        <translation>GeoJSON 和 KML 以 EPSG:4326 写入。Shapefile 会将字段名缩短为 10 个字符。</translation>
+    </message>
+    <message>
+        <source>It downloads first, and takes about {n} minutes.</source>
+        <translation>需先下载，大约需要 {n} 分钟。</translation>
+    </message>
+    <message>
+        <source>It downloads first.</source>
+        <translation>需先下载。</translation>
+    </message>
+    <message>
+        <source>It downloads first: {gb} GB and about {n} minutes.</source>
+        <translation>需先下载：{gb} GB，大约需要 {n} 分钟。</translation>
+    </message>
+    <message>
+        <source>It started {minutes} minutes ago.</source>
+        <translation>已于 {minutes} 分钟前开始。</translation>
+    </message>
+    <message>
+        <source>Keep clicking around the zone, at least 3 points.</source>
+        <translation>请继续在区域周围点击，至少需要 3 个点。</translation>
+    </message>
+    <message>
+        <source>Layer is off screen</source>
+        <translation>图层不在屏幕范围内</translation>
+    </message>
+    <message>
+        <source>Loading your runs...</source>
+        <translation>正在加载您的运行记录...</translation>
+    </message>
+    <message>
+        <source>Local AI files</source>
+        <translation>本地 AI 文件</translation>
+    </message>
+    <message>
+        <source>Looking at ({0}, {1}) on {2}.</source>
+        <translation>正在查看 {2} 上的 ({0}, {1})。</translation>
+    </message>
+    <message>
+        <source>Looking for '{0}' on {1}.</source>
+        <translation>正在 {1} 上查找“{0}”。</translation>
+    </message>
+    <message>
+        <source>Model download failed: {reason}. Retrying will not help. Update the plugin, or ask your IT administrator whether the download is being filtered.</source>
+        <translation>模型下载失败：{reason}。重试无济于事。请更新插件，或询问您的 IT 管理员下载是否被过滤。</translation>
+    </message>
+    <message>
+        <source>Model downloaded.</source>
+        <translation>模型已下载。</translation>
+    </message>
+    <message>
+        <source>No internet connection. Check your connection and try again.</source>
+        <translation>没有网络连接。请检查连接后重试。</translation>
+    </message>
+    <message>
+        <source>No run matches that search.</source>
+        <translation>没有与该搜索匹配的运行记录。</translation>
+    </message>
+    <message>
+        <source>No run matches that search. Load older runs to look further back.</source>
+        <translation>没有与该搜索匹配的运行记录。加载更早的运行记录以查看更久之前的内容。</translation>
+    </message>
+    <message>
+        <source>No runs yet. Your Automatic runs appear here, ready to reuse, restore or export.</source>
+        <translation>还没有运行记录。您的 Automatic 运行记录会显示在这里，可随时重用、恢复或导出。</translation>
+    </message>
+    <message>
+        <source>Not enough free disk space to download the AI model: {free} MB available, at least {needed} MB is required.</source>
+        <translation>磁盘空间不足，无法下载 AI 模型：可用 {free} MB，至少需要 {needed} MB。</translation>
+    </message>
+    <message>
+        <source>Nothing to export yet. Click an object and save it first.</source>
+        <translation>目前没有可导出的内容。请先点击一个对象并保存。</translation>
+    </message>
+    <message>
+        <source>Objects</source>
+        <translation>对象</translation>
+    </message>
+    <message>
+        <source>Outlined one object, score {0}.</source>
+        <translation>已勾勒 1 个对象，得分 {0}。</translation>
+    </message>
+    <message>
+        <source>Partial file ({size} MB) saved, it will resume on the next try.</source>
+        <translation>已保存部分文件（{size} MB），下次尝试时将继续下载。</translation>
+    </message>
+    <message>
+        <source>Points the map back at this run, ready to detect the same object again. Nothing is spent until you do.</source>
+        <translation>将地图定位回此次运行，可再次检测同一对象。在您实际操作之前不会产生任何消费。</translation>
+    </message>
+    <message>
+        <source>Preparing installation...</source>
+        <translation>正在准备安装...</translation>
+    </message>
+    <message>
+        <source>Preparing the imagery for the AI...</source>
+        <translation>正在为 AI 准备影像...</translation>
+    </message>
+    <message>
+        <source>Pro gives you 200 km² of Automatic a month, so you keep working.</source>
+        <translation>Pro 为您提供每月 200 km² 的 Automatic 额度，让您持续工作。</translation>
+    </message>
+    <message>
+        <source>Pro gives you 500 cloud objects a month in Semi-Auto.</source>
+        <translation>Pro 为您提供 Semi-Auto 中每月 500 个云端对象。</translation>
+    </message>
+    <message>
+        <source>Pro raises the month to 200 km² of Automatic.</source>
+        <translation>Pro 会将每月的 Automatic 额度提升至 200 km²。</translation>
+    </message>
+    <message>
+        <source>Pro: 500 cloud objects a month in Semi-Auto with Cloud AI, and 200 km² of Automatic. Same AI, same free clicks and corrections, every machine you work on.</source>
+        <translation>Pro：Semi-Auto 中使用 Cloud AI 每月 500 个云端对象，另加每月 200 km² 的 Automatic。相同的 AI，相同的免费点击和修正，适用于您使用的每一台机器。</translation>
+    </message>
+    <message>
+        <source>Python {version} installed</source>
+        <translation>Python {version} 已安装</translation>
+    </message>
+    <message>
+        <source>QGIS would not open this layer for editing, so the manual tools could not start.</source>
+        <translation>QGIS 无法打开此图层进行编辑，因此手动工具无法启动。</translation>
+    </message>
+    <message>
+        <source>Raise the Max size filter to show objects first.</source>
+        <translation>请先提高最大尺寸筛选以显示对象。</translation>
+    </message>
+    <message>
+        <source>Remove this run from your history? Its detections stay stored, but it will not be listed here any more.</source>
+        <translation>是否从历史记录中移除此运行？其检测结果仍会保留，但此处将不再显示。</translation>
+    </message>
+    <message>
+        <source>Reshaping the objects...</source>
+        <translation>正在重塑对象...</translation>
+    </message>
+    <message>
+        <source>Resolution</source>
+        <translation>分辨率</translation>
+    </message>
+    <message>
+        <source>Restored</source>
+        <translation>已恢复</translation>
+    </message>
+    <message>
+        <source>Resuming download...</source>
+        <translation>正在继续下载...</translation>
+    </message>
+    <message>
+        <source>Retry {done}/{total} in {seconds}s...</source>
+        <translation>{seconds} 秒后重试 {done}/{total}...</translation>
+    </message>
+    <message>
+        <source>Run again</source>
+        <translation>再次运行</translation>
+    </message>
+    <message>
+        <source>Save all {found}</source>
+        <translation>保存全部 {found} 个</translation>
+    </message>
+    <message>
+        <source>Save the hidden objects too?</source>
+        <translation>是否同时保存隐藏的对象？</translation>
+    </message>
+    <message>
+        <source>Save the {visible} shown</source>
+        <translation>保存已显示的 {visible} 个</translation>
+    </message>
+    <message>
+        <source>Saved on this computer</source>
+        <translation>已保存在本机</translation>
+    </message>
+    <message>
+        <source>Saved to {folder}. Save the project to keep your results beside it.</source>
+        <translation>已保存到 {folder}。保存项目可将结果与项目文件放在一起。</translation>
+    </message>
+    <message>
+        <source>Session expired. Open the AI Segmentation panel and sign in again.</source>
+        <translation>会话已过期。请打开 AI Segmentation 面板并重新登录。</translation>
+    </message>
+    <message>
+        <source>Shared borders is off above {cap} shapes. This result has {count}.</source>
+        <translation>超过 {cap} 个形状时“共享边界”会自动关闭。此结果有 {count} 个。</translation>
+    </message>
+    <message>
+        <source>Shared borders needs a position for the shapes and this result carries none.</source>
+        <translation>“共享边界”需要形状的位置信息，而此结果不包含任何位置信息。</translation>
+    </message>
+    <message>
+        <source>Sign in</source>
+        <translation>登录</translation>
+    </message>
+    <message>
+        <source>Sign in to keep detections here.</source>
+        <translation>登录后即可将检测结果保留在这里。</translation>
+    </message>
+    <message>
+        <source>Sign in to reopen, export or run this zone again.</source>
+        <translation>登录后即可重新打开、导出或再次运行此区域。</translation>
+    </message>
+    <message>
+        <source>Sign in to see every run on your account.</source>
+        <translation>登录后即可查看您账户下的所有运行记录。</translation>
+    </message>
+    <message>
+        <source>Sign in to see your past runs.</source>
+        <translation>登录后即可查看您以往的运行记录。</translation>
+    </message>
+    <message>
+        <source>Star a run or an object to keep it here.</source>
+        <translation>为运行记录或对象加星标，即可将其保留在这里。</translation>
+    </message>
+    <message>
+        <source>Starred objects</source>
+        <translation>已加星标的对象</translation>
+    </message>
+    <message>
+        <source>State: {0}. Ready: {1}.</source>
+        <translation>状态：{0}。就绪：{1}。</translation>
+    </message>
+    <message>
+        <source>Status</source>
+        <translation>状态</translation>
+    </message>
+    <message>
+        <source>Stop</source>
+        <translation>停止</translation>
+    </message>
+    <message>
+        <source>Stop reshaping here. The outlines already redrawn are kept.</source>
+        <translation>在此停止重塑，已重新绘制的轮廓将被保留。</translation>
+    </message>
+    <message>
+        <source>Takes this run out of your history. Its detections stay stored.</source>
+        <translation>将此运行记录移出您的历史记录，其检测结果仍会保留。</translation>
+    </message>
+    <message>
+        <source>That click could not be handled. Please try again.</source>
+        <translation>无法处理该次点击，请重试。</translation>
+    </message>
+    <message>
+        <source>That shape was not added. Adjust it with a click and try again.</source>
+        <translation>该形状未被添加。请点击调整后重试。</translation>
+    </message>
+    <message>
+        <source>The AI engine cannot load on Windows</source>
+        <translation>AI 引擎无法在 Windows 上加载</translation>
+    </message>
+    <message>
+        <source>The AI is still loading. This session starts on its own as soon as it is ready.</source>
+        <translation>AI 仍在加载中。准备就绪后，本次会话会自动开始。</translation>
+    </message>
+    <message>
+        <source>The AI service answers this in one go, so the progress bar stays still and QGIS stays busy. This can take several minutes. Do not start it again. The zone is charged when the run starts; Cancel stops the run and keeps what was found.</source>
+        <translation>AI 服务会一次性完成处理，因此进度条会保持静止，QGIS 也会处于忙碌状态。这可能需要几分钟。请勿再次启动。区域会在运行开始时计费；“取消”会停止运行并保留已找到的结果。</translation>
+    </message>
+    <message>
+        <source>The AI service is waking up. Holding your spot...</source>
+        <translation>AI 服务正在唤醒中，正在为您保留位置...</translation>
+    </message>
+    <message>
+        <source>The local AI did not stop in time, so the install was not started. Close and reopen QGIS, then try again.</source>
+        <translation>本地 AI 未能及时停止，因此安装未开始。请关闭并重新打开 QGIS，然后重试。</translation>
+    </message>
+    <message>
+        <source>The model file arrived complete twice and did not match its checksum either time. Something between this computer and the download is altering the file, usually a proxy or a security appliance. Ask your IT administrator to let the download through untouched.</source>
+        <translation>模型文件两次都完整送达，但两次的校验和都不匹配。本机与下载源之间的某个环节改动了文件，通常是代理或安全设备所致。请让您的 IT 管理员放行该下载，不做任何改动。</translation>
+    </message>
+    <message>
+        <source>The model is not loaded yet. Waiting up to {0} seconds for it.</source>
+        <translation>模型尚未加载完成，最多等待 {0} 秒。</translation>
+    </message>
+    <message>
+        <source>The object was outlined but saving it failed: {0}. The outline is still returned as POLYGON_WKT.</source>
+        <translation>对象已勾勒完成，但保存失败：{0}。轮廓仍以 POLYGON_WKT 形式返回。</translation>
+    </message>
+    <message>
+        <source>The plugin requires Visual C++ Redistributables to run the local AI engine.
+
+Please download and install:
+https://aka.ms/vs/17/release/vc_redist.x64.exe
+
+After installation, restart QGIS and try again.</source>
+        <translation>本插件运行本地 AI 引擎需要 Visual C++ Redistributables。
+
+请下载并安装：
+https://aka.ms/vs/17/release/vc_redist.x64.exe
+
+安装完成后，请重启 QGIS 并重试。</translation>
+    </message>
+    <message>
+        <source>The run finished but added no layer to the project. Look in the AI Segmentation panel: results waiting for review live there.</source>
+        <translation>运行已完成，但未向项目添加图层。请查看 AI Segmentation 面板：等待审核的结果都在那里。</translation>
+    </message>
+    <message>
+        <source>This raster is outside the current map view, so clicks would land on nothing.</source>
+        <translation>此栅格位于当前地图视图范围之外，因此点击不会有任何反应。</translation>
+    </message>
+    <message>
+        <source>This run found nothing. Add the object yourself below, or use "Re-run the whole zone" with another word or a smaller zone.</source>
+        <translation>此次运行未找到任何内容。您可以在下方自行添加对象，或使用其他词语或更小的区域执行“重新运行整个区域”。</translation>
+    </message>
+    <message>
+        <source>Today</source>
+        <translation>今天</translation>
+    </message>
+    <message>
+        <source>Undated</source>
+        <translation>无日期</translation>
+    </message>
+    <message>
+        <source>Undo every correction of this round at once. The count is in the label, so you can see what goes. It asks once first.</source>
+        <translation>一次性撤销本轮的所有修正。数量会显示在标签中，您可以看到将要撤销的内容。系统会先确认一次。</translation>
+    </message>
+    <message>
+        <source>Undo every correction? Confirm</source>
+        <translation>撤销所有修正？确认</translation>
+    </message>
+    <message>
+        <source>Unknown error. Try again, or use Cloud AI instead.</source>
+        <translation>未知错误。请重试，或改用 Cloud AI。</translation>
+    </message>
+    <message>
+        <source>Verifying Python installation...</source>
+        <translation>正在验证 Python 安装...</translation>
+    </message>
+    <message>
+        <source>Wait for it to finish, then try again.</source>
+        <translation>请等待其完成后再试。</translation>
+    </message>
+    <message>
+        <source>Yesterday</source>
+        <translation>昨天</translation>
+    </message>
+    <message>
+        <source>Your {n} free cloud detections are used up</source>
+        <translation>您的 {n} 次免费云端检测已用完</translation>
+    </message>
+    <message>
+        <source>Zone</source>
+        <translation>区域</translation>
+    </message>
+    <message>
+        <source>Zone too large - draw a smaller zone</source>
+        <translation>区域过大 - 请绘制更小的区域</translation>
+    </message>
+    <message>
+        <source>Zone too large. Draw a zone of {max} tiles or fewer.</source>
+        <translation>区域过大。请绘制不超过 {max} 个瓦片的区域。</translation>
+    </message>
+    <message>
+        <source>Zoom to the layer first?</source>
+        <translation>是否先缩放到该图层？</translation>
+    </message>
+    <message>
+        <source>the AI engine</source>
+        <translation>AI 引擎</translation>
+    </message>
+    <message>
+        <source>the AI model</source>
+        <translation>AI 模型</translation>
+    </message>
+    <message>
+        <source>the model file has been removed from that address</source>
+        <translation>模型文件已从该地址移除</translation>
+    </message>
+    <message>
+        <source>the model file is not at that address</source>
+        <translation>该地址上没有模型文件</translation>
+    </message>
+    <message>
+        <source>the server refused access to the model file</source>
+        <translation>服务器拒绝访问模型文件</translation>
+    </message>
+    <message>
+        <source>{hidden} objects are hidden by the filters. Finish asks before it leaves them out.</source>
+        <translation>{hidden} 个对象因筛选条件被隐藏。“完成”会在排除它们之前先询问。</translation>
+    </message>
+    <message>
+        <source>{hidden} of the {found} objects found are hidden by the Confidence cutoff. They are not on screen, and Finish leaves them out.</source>
+        <translation>在找到的 {found} 个对象中，有 {hidden} 个因置信度阈值被隐藏，未显示在屏幕上，“完成”也会将其排除在外。</translation>
+    </message>
+    <message>
+        <source>{n} charged</source>
+        <translation>已扣费 {n} 次</translation>
+    </message>
+    <message>
+        <source>{n} cloud detections</source>
+        <translation>{n} 次云端检测</translation>
+    </message>
+    <message>
+        <source>{n} free cloud detections left, back on {date}.</source>
+        <translation>还剩 {n} 次免费云端检测，将于 {date} 恢复。</translation>
+    </message>
+    <message>
+        <source>{n} free cloud detections left.</source>
+        <translation>还剩 {n} 次免费云端检测。</translation>
+    </message>
+    <message>
+        <source>{n} ha</source>
+        <translation>{n} ha</translation>
+    </message>
+    <message>
+        <source>{n} km2</source>
+        <translation>{n} km2</translation>
+    </message>
+    <message>
+        <source>{package} installed</source>
+        <translation>{package} 已安装</translation>
+    </message>
+    <message>
+        <source>{used} of {cap} computers in use.</source>
+        <translation>已使用 {cap} 台电脑中的 {used} 台。</translation>
+    </message>
+    <message>
+        <source>~{minutes}m {seconds}s left</source>
+        <translation>剩余约 {minutes} 分 {seconds} 秒</translation>
+    </message>
+    <message>
+        <source>~{seconds}s left</source>
+        <translation>剩余约 {seconds} 秒</translation>
+    </message>
+    <message>
+        <source>Save the {visible} polygons shown as a layer.</source>
+        <translation>将显示的 {visible} 个多边形保存为图层。</translation>
+    </message>
+    <message>
+        <source>About a minute left</source>
+        <translation>还剩约1分钟</translation>
+    </message>
+    <message>
+        <source>About {m} min left</source>
+        <translation>还剩约{m}分钟</translation>
+    </message>
+    <message>
+        <source>Dense area · no extra cost</source>
+        <translation>密集区域 · 无额外费用</translation>
+    </message>
+    <message>
+        <source>Less than a minute left</source>
+        <translation>剩余不到1分钟</translation>
+    </message>
+    <message>
+        <source>about {m} min</source>
+        <translation>约{m}分钟</translation>
+    </message>
+    <message>
+        <source>under a minute</source>
+        <translation>不到1分钟</translation>
+    </message>
+    <message>
+        <source>{current} of {total} tiles</source>
+        <translation>{current}/{total} 个瓦片</translation>
+    </message>
+    <message>
+        <source>{done} of {total} km²</source>
+        <translation>{done}/{total} km²</translation>
+    </message>
+    <message>
+        <source>{km2} km² · {eta}</source>
+        <translation>{km2} km² · {eta}</translation>
+    </message>
+    <message>
+        <source>{pct}% done</source>
+        <translation>已完成 {pct}%</translation>
+    </message>
+    <message>
+        <source>Free includes one example per run, and this run has it.</source>
+        <translation>免费套餐每次运行包含一个示例，本次运行已经用上了。</translation>
+    </message>
+    <message>
+        <source>Or run it with this one example.</source>
+        <translation>或使用这一个示例运行。</translation>
+    </message>
+    <message>
+        <source>Pro takes up to {max} examples per run, look-alikes to exclude included, so the AI finds exactly what you mean.</source>
+        <translation>Pro 每次运行最多支持 {max} 个示例，包括要排除的相似对象，让 AI 精准找到您想要的对象。</translation>
+    </message>
+    <message>
+        <source>The AI finds every object that looks like your example. Free includes one example per run.</source>
+        <translation>AI 会找出所有与您的示例相似的对象。免费套餐每次运行包含一个示例。</translation>
+    </message>
+    <message>
+        <source>The AI finds every object that looks like your examples - you can draw up to {max}.</source>
+        <translation>AI 会找出所有与您的示例相似的对象，最多可绘制 {max} 个。</translation>
+    </message>
+    <message>
+        <source>The AI finds every object that looks like your examples.</source>
+        <translation>AI 会找出所有与您的示例相似的对象。</translation>
+    </message>
+    <message>
+        <source>Need more this month? Write to us and we set up a plan that fits your volume.</source>
+        <translation>本月需要更多额度？联系我们，我们将为您的用量制定合适的方案。</translation>
+    </message>
+    <message>
+        <source>{left} of {cap} Semi-Auto objects left this month</source>
+        <translation>本月剩余 {left}/{cap} 个 Semi-Auto 对象</translation>
+    </message>
+    <message>
+        <source>Copy email</source>
+        <translation>复制邮箱</translation>
+    </message>
+    <message>
+        <source>Custom needs? Write to us: {email}</source>
+        <translation>有定制需求？请联系我们：{email}</translation>
+    </message>
+    <message>
+        <source>Automatic is unavailable right now.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Describe what to find, show what it looks like, or do both. Both together is the most accurate.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Detect objects ({n} km² · {eta})</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Detect objects ({n} km²)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Draw a smaller zone</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Each tile covers a lot of ground at this precision. Raise the precision in Advanced settings for sharper detections.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Exclude {n}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Reference {n}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Semi-Auto still works until it comes back.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Semi-Auto still works, and Automatic comes back on {date}.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Size of each object</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The AI drops objects that look like this.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The AI looks for more objects like this.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Try again in a few minutes. Your zone and your settings are kept.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Type what to find, or draw an example of it.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>What you asked for</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>You used your Automatic surface for this month.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>and / or</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Building the shapes on this computer - still working, everything already found is kept...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>After an Automatic run, its technical log lines are sent too.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 </TS>

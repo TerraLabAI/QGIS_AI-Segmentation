@@ -38,6 +38,8 @@ from ...core.review_defaults import (
 from ...core.server_dials import dial_copy
 from .correct_gesture_art import CorrectGestureArt
 from .correct_method_default import correct_ai_method_enabled, correct_default_method
+from .correct_summary_row import build_correction_summary_row
+from .font_scale import scale_px_length
 from .guidance import BLUE_TINT, HINT_REVIEW_RIGHT_CLICK_DELETE, DismissibleHint
 from .styles import (
     _BTN_GHOST,
@@ -242,16 +244,17 @@ class DockAutoCorrectBuildMixin:
         # the dock's own line, no new count plumbing.
         #
         # It says what happened and the two things that can be done about it,
-        # both on this screen: the Add card right below, and Exit at the foot
-        # of the review. It used to name Confidence, a control that lives on a
-        # step this entry never opens, and to stop there.
+        # both on this screen: the Add card right below, and the re-run link at
+        # the foot of the review. It used to name Confidence, a control that
+        # lives on a step this entry never opens, and then Exit, which leaves
+        # the review instead of running the zone again.
         #
         # Served copy: this is what a user reads after paying for a run that
         # gave them nothing, so the advice has to be fixable the same day.
         self.auto_correct_zero_line = QLabel(_msg_text("neutral", dial_copy(
             "correct.zero_detection",
-            tr("This run found nothing. Add the object yourself below, or press "
-               "Exit and run again with another word or a smaller zone."))))
+            tr("This run found nothing. Add the object yourself below, or use "
+               '"Re-run the whole zone" with another word or a smaller zone.'))))
         self.auto_correct_zero_line.setWordWrap(True)
         self.auto_correct_zero_line.setStyleSheet(_msg_label_qss("neutral"))
         self.auto_correct_zero_line.setVisible(False)
@@ -460,7 +463,7 @@ class DockAutoCorrectBuildMixin:
         lbl.setToolTip(tooltip)
         widget.setSuffix(suffix)
         widget.setMinimumWidth(62)
-        widget.setMaximumWidth(78)
+        widget.setMaximumWidth(scale_px_length(78))
         widget.setToolTip(tooltip)
         row.addWidget(lbl)
         row.addStretch(1)
@@ -603,21 +606,24 @@ class DockAutoCorrectBuildMixin:
         self._auto_shape_only_expanded = False
         self._apply_shape_only_mode(self._correct_method)
 
-        for widget, control in (
-            (self.auto_shape_only_points, "shape_only_points"),
-            (self.auto_shape_only_simplify, "shape_only_simplify"),
-            (self.auto_shape_only_clean, "shape_only_trim_spikes"),
-            (self.auto_shape_only_expand, "shape_only_grow_shrink"),
+        # Each control travels with the review param it writes, so the
+        # telemetry reports the value of the control that MOVED. Without the
+        # key it reported the Points value whichever dial the user touched.
+        for widget, control, param in (
+            (self.auto_shape_only_points, "shape_only_points", "points_pct"),
+            (self.auto_shape_only_simplify, "shape_only_simplify", "simplify_px"),
+            (self.auto_shape_only_clean, "shape_only_trim_spikes", "open_px"),
+            (self.auto_shape_only_expand, "shape_only_grow_shrink", "expand_px"),
         ):
             widget.valueChanged.connect(
-                lambda _v, c=control: self._emit_shape_only_changed(c, _v))
-        for widget, control in (
-            (self.auto_shape_only_smooth, "shape_only_round_corners"),
-            (self.auto_shape_only_fill, "shape_only_fill_holes"),
-            (self.auto_shape_only_ortho, "shape_only_right_angles"),
+                lambda _v, c=control, k=param: self._emit_shape_only_changed(c, k))
+        for widget, control, param in (
+            (self.auto_shape_only_smooth, "shape_only_round_corners", "smooth"),
+            (self.auto_shape_only_fill, "shape_only_fill_holes", "fill_holes"),
+            (self.auto_shape_only_ortho, "shape_only_right_angles", "ortho"),
         ):
             widget.stateChanged.connect(
-                lambda s, c=control: self._emit_shape_only_changed(c, s))
+                lambda _s, c=control, k=param: self._emit_shape_only_changed(c, k))
         # This polygon's own Right angles refuses on the same terms as the
         # shared one: ticking it is what tests the geometry library behind it.
         self.auto_shape_only_ortho.stateChanged.connect(
@@ -633,7 +639,7 @@ class DockAutoCorrectBuildMixin:
         self.auto_add_lane_card = self._branch_card("autoAddLaneCard")
         _col = self.auto_add_lane_card.layout()
         _head, _, self.auto_add_lane_title = self._branch_head(
-            "＋", tr("Add a missing polygon"))
+            "+", tr("Add a missing polygon"))
         _col.addWidget(_head)
         # What the method costs and where it runs, one muted line. It is the
         # second thing that differs between AI and Manual at rest, and the one
@@ -683,7 +689,7 @@ class DockAutoCorrectBuildMixin:
         _col.addWidget(self.auto_add_lane_action_row)
 
         self.auto_add_lane_btn = _action_tile(
-            "＋", tr("Point at it on the map"), tr(
+            "+", tr("Point at it on the map"), tr(
                 "Add an object the AI missed. In AI, point at it and the "
                 "model outlines it for one cloud detection; in Manual, draw "
                 "its corners for free."))
@@ -715,39 +721,16 @@ class DockAutoCorrectBuildMixin:
 
     def _build_correct_summary_row(self, lay) -> None:
         """Persistent journal summary: "N corrections this round · Undo last ·
-        Clear all". Hidden while the journal is empty (set_correction_summary)."""
-        self.auto_correct_summary_row = QWidget()
-        _sum_row = QHBoxLayout(self.auto_correct_summary_row)
-        _sum_row.setContentsMargins(0, 0, 0, 0)
-        _sum_row.setSpacing(2)
-        self.auto_correct_summary_label = QLabel("")
-        self.auto_correct_summary_label.setStyleSheet(
-            "font-size: 11px; color: rgba(128,128,128,0.95);"
-            " background: transparent; border: none;")
-        self.auto_correct_undo_btn = QPushButton(tr("Undo last"))
-        self.auto_correct_undo_btn.setStyleSheet(_BTN_LINK_MUTED)
-        self.auto_correct_undo_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.auto_correct_undo_btn.clicked.connect(
-            self.auto_correction_undo_requested.emit)
-        self.auto_correct_clear_btn = QPushButton(tr("Clear all"))
-        self.auto_correct_clear_btn.setStyleSheet(_BTN_LINK_MUTED)
-        self.auto_correct_clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.auto_correct_clear_btn.setToolTip(tr(
-            "Undo every correction of this round at once. The count is in the "
-            "label, so you can see what goes."))
-        self.auto_correct_clear_btn.clicked.connect(
-            self.auto_correction_clear_requested.emit)
-        _sum_row.addWidget(self.auto_correct_summary_label)
-        for _w in (self.auto_correct_undo_btn, self.auto_correct_clear_btn):
-            _dot = QLabel("·")
-            _dot.setStyleSheet(
-                "font-size: 11px; color: rgba(128,128,128,0.9);"
-                " background: transparent; border: none;")
-            _sum_row.addWidget(_dot)
-            _sum_row.addWidget(_w)
-        _sum_row.addStretch(1)
-        self.auto_correct_summary_row.setVisible(False)
-        lay.addWidget(self.auto_correct_summary_row)
+        Clear all", built in correct_summary_row.py with the confirm that Clear
+        all asks. Hidden while the journal is empty (set_correction_summary)."""
+        build_correction_summary_row(self, lay)
+
+    def _on_correct_clear_clicked(self) -> None:
+        """First click asks, second one clears. Undo last beside it stays a
+        single click: it takes back one edit, and this takes back the round."""
+        guard = getattr(self, "_correct_clear_confirm", None)
+        if guard is None or guard.clicked():
+            self.auto_correction_clear_requested.emit()
 
     def _build_reshape_install_banner(self, lay) -> None:
         """The setup banner for the local AI, shown while a first-time install

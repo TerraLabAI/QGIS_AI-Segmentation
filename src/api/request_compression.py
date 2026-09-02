@@ -63,7 +63,8 @@ def gzip_requests_allowed() -> bool:
 
     Wrapped so a broken dial read costs the compression, never the request:
     anything that goes wrong here sends the body plain, which every server
-    reads.
+    reads. The dial itself is fail-closed, so a client that has never heard
+    from a server sends what every server reads.
     """
     if _gzip_refused:
         return False
@@ -97,8 +98,7 @@ def packed_request_body(body: bytes) -> tuple[bytes, bool]:
     return packed, True
 
 
-def answer_refused_the_body(answer, http_status: int | None = None,
-                            body_was_json: bool | None = None) -> bool:
+def answer_refused_the_body(http_status: int | None) -> bool:
     """Whether this answer says the server could not read the body it was sent.
 
     Read only about a request that went out compressed, and only to decide
@@ -106,9 +106,7 @@ def answer_refused_the_body(answer, http_status: int | None = None,
     could not open with a 400, and a body it opened but disagreed with
     (a missing field, a bad value) with a 422, so the status alone separates
     the two. A 400 never follows a charge on that service, which is what makes
-    the plain re-send safe. The 400 carries a JSON body of its own, so the
-    shape of the answer says nothing here; ``body_was_json`` is kept for the
-    callers that already pass it.
+    the plain re-send safe. The 400 carries a JSON body of its own, so neither
+    the answer nor its shape says anything here: the status decides.
     """
-    del answer, body_was_json  # See _BODY_REFUSED_STATUS: the status decides.
     return http_status == _BODY_REFUSED_STATUS

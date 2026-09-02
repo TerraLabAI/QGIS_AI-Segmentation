@@ -64,6 +64,11 @@ class BeforeAfterSlider(QWidget):
         # card instead of swallowing the gesture as a drag.
         self._handle_grab_only = handle_grab_only
         self._show_badges = show_badges
+        # Resolved once, here, rather than in the paint path: these two are
+        # drawn text the user reads, so they have to travel with the other
+        # translations, and paint must stay a plain attribute read.
+        self._badge_before_text = tr("BEFORE")
+        self._badge_after_text = tr("AFTER")
         # Optional "Example" pill: marks a curated demo so the user reads the
         # before/after as a sample, not the exact result they will get.
         self._example_badge = example_badge or None
@@ -360,10 +365,11 @@ class BeforeAfterSlider(QWidget):
 
             # --- badges ------------------------------------------------------
             if self._show_badges:
-                self._draw_badge(painter, "BEFORE", y=8, bg=_BADGE_BG_BEFORE, x=8)
+                self._draw_badge(painter, self._badge_before_text, y=8,
+                                 bg=_BADGE_BG_BEFORE, x=8)
                 self._draw_badge(
                     painter,
-                    "AFTER",
+                    self._badge_after_text,
                     y=8,
                     bg=_BADGE_BG_AFTER,
                     right=rect.width() - 8,

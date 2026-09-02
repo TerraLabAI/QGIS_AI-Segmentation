@@ -1,5 +1,5 @@
-"""The Automatic Detail slider: its object gate, its seeding and cap, the
-free-plan premium gate and the hint line under it.
+"""The Automatic Detail slider: its object gate, its seeding and cap and the
+hint line under it.
 
 The control is labelled "Precision" on screen. Every identifier here stays
 ``detail`` (widget names, the MCP API and the telemetry keys are bound to it),
@@ -11,10 +11,6 @@ split out so agents and humans work on one concern per file. Methods
 are plain mixin members: widgets/signals live on the dock instance.
 """
 from __future__ import annotations
-
-from qgis.PyQt.QtWidgets import (
-    QGraphicsOpacityEffect,
-)
 
 from ...core.i18n import tr
 from ...core.server_dials import dial_copy
@@ -48,8 +44,7 @@ def _detail_hint_copy(state: str, fallback: str, obj: str = "") -> str:
 
 class DockAutoDetailLevelMixin:
     """The Automatic Detail slider: its Advanced settings fold, its object
-    gate, its seeding and cap, the free-plan premium gate and the hint line
-    under it."""
+    gate, its seeding and cap and the hint line under it."""
 
     def _refresh_auto_advanced_header(self) -> None:
         """Chevron + title on the fold's head (text swap only).
@@ -85,7 +80,8 @@ class DockAutoDetailLevelMixin:
         if open_ == getattr(self, "_auto_advanced_open", False):
             return
         try:
-            self.auto_advanced_body.setVisible(open_)
+            self.auto_advanced_body.setVisible(
+                open_ and self._auto_detail_object_known())
             self.auto_advanced_toggle_btn.setStyleSheet(
                 _SECTION_TOGGLE_OPEN_QSS if open_ else _SECTION_TOGGLE_QSS)
         except (RuntimeError, AttributeError):
@@ -94,46 +90,48 @@ class DockAutoDetailLevelMixin:
         self._refresh_auto_advanced_header()
         self.auto_advanced_toggled.emit(open_)
 
-    def is_auto_advanced_open(self) -> bool:
-        """Whether the user has opened the Advanced settings fold."""
-        return bool(getattr(self, "_auto_advanced_open", False))
+    def _auto_detail_object_known(self) -> bool:
+        """Whether the prompt has named the object yet.
+
+        The prompt alone, not a drawn example: the run needs the word, and the
+        screen reads top to bottom, so every step under the prompt waits for it.
+        """
+        return bool(getattr(self, "_auto_detail_has_object", False))
 
     def _apply_auto_detail_gate(self, has_object: bool) -> None:
-        """Grey the Precision controls until the object is defined (typed
-        prompt or drawn example). The slider's default is object-aware, so an
-        adjustment made BEFORE the object was named was thrown away by the
-        prompt-commit re-seed: gating the control makes the order explicit.
-        Disabling the container blocks every child, and the opacity dim makes
-        the gate unmistakable (a same-color disabled slider read as broken);
-        the slider QSS adds a grey :disabled track on top so no brand blue
-        survives the dim. The programmatic seed still lands (setValue works
-        while disabled). The one-line hint explains the greyed state instead
-        of leaving a dead control unexplained."""
+        """Hold the Precision controls back until the prompt names the object.
+
+        The slider's default is object-aware, so an adjustment made BEFORE the
+        object was named was thrown away by the prompt-commit re-seed. Head and
+        body both go: the head greys out and stops answering the mouse, the
+        body stays hidden. A head that still opened, onto a body that was not
+        there, was the one control on this screen that did nothing when
+        clicked. The programmatic seed still lands on the hidden slider.
+        """
+        has_object = bool(has_object)
+        if getattr(self, "_auto_detail_has_object", None) is has_object:
+            return
+        self._auto_detail_has_object = has_object
         try:
-            # The fold's BODY, never the whole row: the head has to stay
-            # clickable (a user may open it to look at the tiles before they
-            # have named anything), and the surface, the envelope wall and the
-            # cloud disclosure under it must never be dimmed.
+            # The fold's BODY, never the whole row: the surface, the envelope
+            # wall and the cloud disclosure under it stay on screen.
             card = self.auto_advanced_body
-            if card.isEnabled() == has_object:
-                return
             card.setEnabled(has_object)
-            if has_object:
-                card.setGraphicsEffect(None)
-                # Route through the shared refresher so a capped slider keeps
-                # its capped wording (free-plan upsell or zone advice).
-                self._refresh_auto_detail_hint()
-            else:
-                dim = QGraphicsOpacityEffect(card)
-                dim.setOpacity(0.45)
-                card.setGraphicsEffect(dim)
-                self.auto_detail_hint.setStyleSheet(scale_qss_font_px(
-                    "font-size: 10px; color: palette(text);"))
-                self.auto_detail_hint.setText(tr(
-                    "Name the object (or draw an example) first - Precision "
-                    "then tunes itself to it."))
+            card.setVisible(
+                has_object and bool(getattr(self, "_auto_advanced_open", False)))
+            # The head is dead until the object is named, and looks it. A head
+            # that opens onto a hidden body is a control that answers nothing.
+            self.auto_advanced_toggle_btn.setEnabled(has_object)
         except (RuntimeError, AttributeError):
             pass
+        self._refresh_auto_advanced_header()
+        if has_object:
+            try:
+                # Route through the shared refresher so a capped slider keeps
+                # its capped wording.
+                self._refresh_auto_detail_hint()
+            except (RuntimeError, AttributeError):
+                pass
 
     def _on_auto_detail_changed(self, value: int) -> None:
         # The slider now shows plain Coarse/Fine ends; the only numeric feedback
@@ -193,24 +191,50 @@ class DockAutoDetailLevelMixin:
         """Show the detail slider whenever a zone is drawn; hidden while no zone is set."""
         self.auto_detail_row.setVisible(visible)
 
-    def set_auto_detail_gsd_warning(self, coarse: bool) -> None:
-        """Show the boxed amber warning when the chosen detail leaves the imagery
-        too coarse for the cloud model (effective ground resolution >= ~0.5 m/px, where
-        detection quality drops sharply). The detail seed now auto-raises past
-        the soft tile budget, so this fires only when the USER dragged detail
-        down (fix: raise it back) or the zone is so large even the slider max
-        stays coarse (fix: a smaller zone; "raise detail" would be a dead end).
-        The neutral hint hides while the warning shows so the two never stack."""
+    def set_auto_detail_gsd_warning(
+        self, coarse: bool, can_improve: bool | None = None
+    ) -> None:
+        """Show the boxed amber warning when the imagery is read coarser than
+        the object asks for AND the Precision slider can still fix it.
+
+        It says one thing and it names one control: raise the precision. When
+        the cursor is already at the top there is nothing to say, so nothing is
+        said. The sentence that used to appear there asked the user to redo the
+        zone they had just drawn, over a run that comes back fine, and a
+        warning whose only move is to undo work is not a warning, it is a
+        reproach. Automatic has no zone size limit and must not imply one.
+
+        The sentence names the TILE, never the zone: what blurs a detection is
+        the ground one tile covers. It never mentions zooming either, because
+        the canvas scale moves what a click reads in Semi-Auto and nothing at
+        all here, where the grid is cut from the zone and the Precision level.
+        The neutral hint hides while the warning shows so the two never stack.
+        """
+        s = self.auto_detail_slider
+        # Whether raising the cursor still helps is a question about the ground
+        # the TOP of the travel reads, and the caller is the one that can size
+        # a grid, so it answers it. Without an answer, the cursor's own
+        # position is the fallback it always was.
+        raise_helps = (bool(can_improve) if can_improve is not None
+                       else s.value() < s.maximum())
+        coarse = bool(coarse) and raise_helps
         if coarse:
-            s = self.auto_detail_slider
             self.auto_detail_warning_label.setText(
-                tr("This area is large for this precision. Raise the precision or zoom"
-                   " in for sharper detections.")
-                if s.value() < s.maximum() else
-                tr("This zone is too large for sharp detections, even at full"
-                   " precision. Draw a smaller zone for the best results."))
+                tr("Each tile covers a lot of ground at this precision. Raise"
+                   " the precision in Advanced settings for sharper"
+                   " detections."))
+        was_on = bool(getattr(self, "_auto_gsd_warning_on", False))
+        self._auto_gsd_warning_on = coarse
         self.auto_detail_warning.setVisible(coarse)
         self.auto_detail_hint.setVisible(not coarse)
+        if coarse and not was_on and self._auto_detail_object_known():
+            # The control the sentence names sits inside a fold most runs never
+            # open, so a warning that arrives while it is shut points at
+            # nothing. Opening it also puts the tile grid on the canvas, which
+            # is the picture of the problem. Only on the way IN, so a user who
+            # shuts it again is left alone. The flag is written before the call
+            # because opening re-enters this method through the estimate.
+            self.set_auto_advanced_open(True)
 
     def set_auto_detail_range(
         self, lo: int, hi: int, object_bound: bool = False
@@ -255,17 +279,6 @@ class DockAutoDetailLevelMixin:
             pass
         self._refresh_auto_detail_hint()
 
-    def _on_detail_cap_upgrade_link(self, _href: str = "") -> None:
-        """Upgrade link inside the detail hint: same dashboard URL as every
-        other upsell surface, its own telemetry source."""
-        from ..external_links import open_external_url
-        try:
-            from ...core import telemetry_session_events
-            telemetry_session_events.track_pro_upsell_clicked(source="detail_cap")
-        except Exception:
-            pass  # nosec B110
-        open_external_url(self._build_upgrade_url("plugin_detail_cap"), parent=self)
-
     def set_auto_detail_feedback(self, state: str | None, object_word: str) -> None:
         """Live verdict for the CURRENT slider level against the named object
         and the drawn zone, computed by the plugin at the credit-estimate
@@ -274,9 +287,21 @@ class DockAutoDetailLevelMixin:
         _refresh_auto_detail_hint, which owns the priority order."""
         word = (object_word or "").strip()
         if len(word) > 24:
-            word = word[:24] + "..."
+            word = word[:24] + "\u2026"
         self._auto_detail_feedback = (state, word) if state else None
         self._refresh_auto_detail_hint()
+
+    def _set_detail_hint_style(self, qss: str) -> None:
+        """Write the hint's stylesheet only when it actually changes: the hint
+        refreshes on every tick of a slider drag, and a QSS write forces a
+        re-polish each time."""
+        if getattr(self, "_auto_detail_hint_qss", None) == qss:
+            return
+        self._auto_detail_hint_qss = qss
+        try:
+            self.auto_detail_hint.setStyleSheet(qss)
+        except (RuntimeError, AttributeError):
+            pass
 
     def _refresh_auto_detail_hint(self) -> None:
         """Swap the muted line under the detail slider by state: the
@@ -294,7 +319,7 @@ class DockAutoDetailLevelMixin:
         if getattr(self, "_auto_detail_single_level", False):
             word = feedback[1] if feedback else ""
             obj = f'"{word}"' if word else tr("your object")
-            self.auto_detail_hint.setStyleSheet(_plain_hint)
+            self._set_detail_hint_style(_plain_hint)
             self.auto_detail_hint.setText(_detail_hint_copy(
                 "single", tr(
                     "One precision level fits {obj} in a zone this size - draw"
@@ -308,7 +333,7 @@ class DockAutoDetailLevelMixin:
             # send them to spend credits on the fragmenting they just avoided.
             word = feedback[1] if feedback else ""
             obj = f'"{word}"' if word else tr("your object")
-            self.auto_detail_hint.setStyleSheet(_plain_hint)
+            self._set_detail_hint_style(_plain_hint)
             self.auto_detail_hint.setText(_detail_hint_copy(
                 "objcap",
                 tr("As fine as {obj} benefits from - finer splits them into"
@@ -320,7 +345,7 @@ class DockAutoDetailLevelMixin:
             state, word = feedback
             obj = f'"{word}"' if word else tr("your object")
             if state == "coarse":
-                self.auto_detail_hint.setStyleSheet(_msg_label_qss("warning"))
+                self._set_detail_hint_style(_msg_label_qss("warning"))
                 self.auto_detail_hint.setText(_msg_text("warning", _detail_hint_copy(
                     "coarse", tr(
                         "At this precision {obj} is too small to spot - raise the"
@@ -329,38 +354,40 @@ class DockAutoDetailLevelMixin:
                 # Quality fact only (large objects can fragment past this
                 # point); never a nudge about credits - the cost line above
                 # already says the price, guidance stays informational.
-                self.auto_detail_hint.setStyleSheet(_msg_label_qss("warning"))
+                self._set_detail_hint_style(_msg_label_qss("warning"))
                 self.auto_detail_hint.setText(_msg_text("warning", _detail_hint_copy(
                     "over", tr(
                         "Very fine for {obj} - large ones may come back split"
                         " in parts."), obj)))
             elif state == "above":
-                self.auto_detail_hint.setStyleSheet(_plain_hint)
+                self._set_detail_hint_style(_plain_hint)
                 self.auto_detail_hint.setText(_detail_hint_copy(
                     "above", tr(
                         "Sharper than {obj} usually needs - catches the smallest"
                         " ones."), obj))
             elif state == "helps":
-                self.auto_detail_hint.setStyleSheet(_plain_hint)
+                self._set_detail_hint_style(_plain_hint)
                 self.auto_detail_hint.setText(_detail_hint_copy(
                     "helps",
                     tr("More precision keeps helping {obj} in this zone."), obj))
             elif state == "below":
-                self.auto_detail_hint.setStyleSheet(_plain_hint)
+                self._set_detail_hint_style(_plain_hint)
                 self.auto_detail_hint.setText(_detail_hint_copy(
                     "below",
                     tr("Small {obj} may be missed at this level."), obj))
             else:  # recommended
-                self.auto_detail_hint.setStyleSheet(_plain_hint)
-                self.auto_detail_hint.setText("✓ " + _detail_hint_copy(
-                    "recommended",
-                    tr("Right level for {obj} in this zone."), obj))
+                self._set_detail_hint_style(_msg_label_qss("success"))
+                self.auto_detail_hint.setText(_msg_text(
+                    "success",
+                    _detail_hint_copy(
+                        "recommended",
+                        tr("Right level for {obj} in this zone."), obj)))
             return
         if capped:
-            self.auto_detail_hint.setStyleSheet(_plain_hint)
+            self._set_detail_hint_style(_plain_hint)
             self.auto_detail_hint.setText(_detail_hint_copy("capped", tr(
                 "Max precision for this zone - draw a larger zone to go finer.")))
         else:
-            self.auto_detail_hint.setStyleSheet(_plain_hint)
+            self._set_detail_hint_style(_plain_hint)
             self.auto_detail_hint.setText(_detail_hint_copy(
                 "default", tr("More precision finds smaller objects.")))

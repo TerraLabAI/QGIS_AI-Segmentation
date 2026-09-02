@@ -153,7 +153,12 @@ def free_run_tile_cap(total: int | None, fraction: float) -> int:
     decision is NOT here: it is a tier read the caller makes before calling
     this (see ``credit_snapshot``).
     """
-    resolved_total = int(total) if total else _default_monthly_allowance()
+    try:
+        resolved_total = int(total) if total else _default_monthly_allowance()
+    except (TypeError, ValueError):
+        # Older servers have sent this as a string, and one that is not a
+        # number at all must not take the gate down with it.
+        resolved_total = _default_monthly_allowance()
     return max(1, int(round(resolved_total * fraction)))
 
 

@@ -24,8 +24,10 @@ feature. That keeps the offline value of the copy without its risk, and no
 signature or key is needed for it.
 
 The copy holds only values the server already serves to any client that asks,
-so it adds no secret to disk. No expiry either: a stale configuration is far
-better than none, and the timestamp is stored so a caller can weigh its age.
+so it adds no secret to disk. It does expire, but late: a stale configuration
+is far better than none, so the file is read for weeks and refused only past
+the point where the fleet has moved on without it. The timestamp is stored
+either way, so a caller can weigh the age of what it got.
 
 Pure Python with no Qt at import time, so the controller, the dock, the
 headless path and the dial readers can all reach it. Every function is
@@ -51,6 +53,11 @@ _MAX_BYTES = 2 * 1024 * 1024
 # Stamped on every file this module writes. A payload without it was not
 # written here as the mirror of a live fetch, so it is not read back at all.
 _FILE_SOURCE = "live_fetch"
+
+# How long a copy left on disk may still speak for the server. Past this the
+# fleet has had many deploys and the file is likelier to be wrong than useful,
+# so it is refused and the shipped defaults stand until a fetch lands.
+_MAX_DISK_AGE_S = 21 * 24 * 60 * 60
 
 # Where the configuration in force came from. Only LIVE is allowed to disable a
 # feature; see the module docstring.
@@ -142,20 +149,39 @@ def save_config(config: dict) -> bool:
     return True
 
 
+# Features whose shipped default is OFF, and which only exist where a server
+# answers. A copy on disk saying yes would keep offering one for good after the
+# server withdrew it, and would turn one on for a machine that has never
+# reached a server at all, so the answer for these has to come from this
+# session's own fetch. Kept here and not on each reader, because it is the file
+# that cannot be trusted, not the switch.
+_FAIL_CLOSED_FEATURES = frozenset({
+    "crop_webp",
+    "gzip_request_bodies",
+    "hover_preview",
+    "hover_preview_click_reuse",
+    "manual_cloud_route",
+    "map_hypothesis_nms",
+})
+
+
 def _without_kill_switches(config: dict) -> dict:
-    """A copy of ``config`` that cannot turn any part of the plugin off.
+    """A copy of ``config`` that cannot turn any part of the plugin off, nor
+    turn a fail-closed feature on.
 
     Applied to everything read back from disk. The file is not authenticated,
     so it may retune but never disable: every switch that would say no is
     dropped, and the shipped default (on) stands until a live fetch says
-    otherwise.
+    otherwise. The fail-closed features go the other way and are dropped whole
+    (see ``_FAIL_CLOSED_FEATURES``).
     """
     out = dict(config)
     if out.get("automatic_mode_enabled") is not True:
         out.pop("automatic_mode_enabled", None)
     features = out.get("features")
     if isinstance(features, dict):
-        kept = {name: on for name, on in features.items() if on is True}
+        kept = {name: on for name, on in features.items()
+                if on is True and name not in _FAIL_CLOSED_FEATURES}
         if len(kept) != len(features):
             out["features"] = kept
     elif features is not None:
@@ -202,8 +228,8 @@ def load_config() -> tuple[dict, float | None]:
     caller gets can only retune.
 
     Returns ``({}, None)`` when there is nothing usable on disk: absent file,
-    unreadable directory, corrupt JSON, a file this module did not write, or an
-    unexpected shape.
+    unreadable directory, corrupt JSON, a file this module did not write, an
+    unexpected shape, or a copy older than ``_MAX_DISK_AGE_S``.
     """
     path = config_cache_path()
     try:
@@ -221,6 +247,8 @@ def load_config() -> tuple[dict, float | None]:
     fetched_at = data.get("fetched_at")
     if not isinstance(fetched_at, (int, float)) or isinstance(fetched_at, bool):
         fetched_at = None
+    elif time.time() - float(fetched_at) > _MAX_DISK_AGE_S:
+        return {}, None
     return _without_code_execution_dials(_without_kill_switches(config)), fetched_at
 
 

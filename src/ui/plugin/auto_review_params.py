@@ -38,6 +38,7 @@ from ...core.review_defaults import (
 from ...core.review_defaults import (
     min_size_noise_floor_m2 as _min_size_noise_floor_m2,
 )
+from ...core.shape_policy_dials import auto_review_points_pct_default
 
 
 def _plan_vertex_spacing_m(review: dict) -> float:
@@ -66,7 +67,13 @@ class AutoReviewParamsMixin:
         ``_auto_review_preset_overrides`` is the one seam a programmatic caller
         writes: the API sets it for the length of one headless run and clears it
         after, so a caller-supplied shape reaches the finalize without anything
-        replacing this method at runtime."""
+        replacing this method at runtime.
+
+        The built dict is memoised against everything it is built from (the run,
+        the prompt, the resolution and the caller overrides), because the review
+        rebuilds a params snapshot on every widget tick and none of those inputs
+        move between two ticks. A copy goes out each time so a caller that edits
+        its preset cannot reach the memo."""
         from ...core.review_presets import review_preset_for
         prompt = str((self._auto_run_ctx or {}).get("prompt") or "")
         # Meters per RETURNED-mask pixel: the run's meter GSD scaled by the
@@ -76,6 +83,16 @@ class AutoReviewParamsMixin:
         mask_gsd = getattr(self, "_auto_mask_gsd", 0.0)
         if gsd_m > 0 and mask_gsd > 0 and self._auto_gsd > 0:
             gsd_m *= mask_gsd / self._auto_gsd
+        overrides = getattr(self, "_auto_review_preset_overrides", None)
+        memo_key = (
+            str(getattr(self, "_auto_run_id", "") or ""),
+            prompt,
+            round(float(gsd_m), 6),
+            repr(sorted(overrides.items())) if isinstance(overrides, dict) else "",
+        )
+        memo = getattr(self, "_auto_review_preset_memo", None)
+        if memo is not None and memo[0] == memo_key:
+            return dict(memo[1])
         # Prefer the server run plan's review block when it was fetched for this
         # run's prompt; else the blob/generic prompt-shaped preset.
         plan = self._active_run_plan(prompt)
@@ -84,7 +101,9 @@ class AutoReviewParamsMixin:
             preset = self._review_preset_from_plan(plan.get("review"), gsd_m)
         if preset is None:
             preset = review_preset_for(prompt, gsd_m)
-        return self._with_review_preset_overrides(preset)
+        built = self._with_review_preset_overrides(preset)
+        self._auto_review_preset_memo = (memo_key, dict(built))
+        return built
 
     def _with_review_preset_overrides(self, preset: dict) -> dict:
         """Merge the caller's per-run shape overrides onto a preset dict.
@@ -202,33 +221,45 @@ class AutoReviewParamsMixin:
             # fresh run is the class density alone. A programmatic run may put
             # its own share in the preset, which is why this reads it back.
             "points_pct": int(preset.get(
-                "points_pct", _AUTO_REVIEW_POINTS_PCT_DEFAULT)),
+                "points_pct",
+                auto_review_points_pct_default(_AUTO_REVIEW_POINTS_PCT_DEFAULT))),
         }
 
     def _widget_review_params(self) -> dict:
         """Current review filter/refine params read from the dock widgets (a
         reslice snapshot). Confidence comes from _auto_confidence (the confidence
-        handler keeps it in sync)."""
+        handler keeps it in sync).
+
+        Every widget is read into a local first and the dict is written in one
+        block at the end. A dock torn down mid-read used to leave the snapshot
+        half on the widgets and half on the preset, which is a state no reslice
+        ever ran with."""
         params = self._fresh_review_params()
         d = self.dock_widget
         if d is None:
             return params
         try:
-            params["conf"] = self._auto_confidence
-            params["min_a"] = d.get_auto_min_size()
-            params["max_a"] = d.get_auto_max_size()
-            params["fill_max_m2"] = d.get_auto_fill_holes_max()
-            params["snap_boundaries"] = d.get_auto_boundary_snap()
+            conf = self._auto_confidence
+            min_a = d.get_auto_min_size()
+            max_a = d.get_auto_max_size()
+            fill_max = d.get_auto_fill_holes_max()
+            snap = d.get_auto_boundary_snap()
             simplify, smooth, expand, fill, clean, ortho = d.get_auto_refine_params()
-            params["simplify_px"] = simplify
-            params["points_pct"] = d.get_auto_points_pct()
-            params["smooth"] = smooth
-            params["expand_px"] = expand
-            params["fill_holes"] = fill
-            params["open_px"] = clean
-            params["ortho"] = ortho
+            points_pct = d.get_auto_points_pct()
         except (RuntimeError, AttributeError):
-            pass
+            return params
+        params["conf"] = conf
+        params["min_a"] = min_a
+        params["max_a"] = max_a
+        params["fill_max_m2"] = fill_max
+        params["snap_boundaries"] = snap
+        params["simplify_px"] = simplify
+        params["points_pct"] = points_pct
+        params["smooth"] = smooth
+        params["expand_px"] = expand
+        params["fill_holes"] = fill
+        params["open_px"] = clean
+        params["ortho"] = ortho
         return params
 
     def _object_is_manual(self, det_idx: int) -> bool:
@@ -295,10 +326,19 @@ class AutoReviewParamsMixin:
         two objects ranks by convention, leaving the one-object review exactly
         as it was.
         """
-        scores = [s for (_g, s, _a) in self._auto_objects]
-        if len(scores) < 2:
+        if len(self._auto_objects) < 2:
             return True
-        return (max(scores) - min(scores)) > 0.005
+        # One pass that stops on the first pair far enough apart, and no list
+        # copy of every score: every hand edit and every undo asks this.
+        lo = hi = None
+        for (_g, s, _a) in self._auto_objects:
+            if lo is None or s < lo:
+                lo = s
+            if hi is None or s > hi:
+                hi = s
+            if (hi - lo) > 0.005:
+                return True
+        return False
 
     def _review_start_confidence(self) -> float:
         """Starting review cutoff. The default (0.30) unless either

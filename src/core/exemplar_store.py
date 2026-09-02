@@ -7,8 +7,11 @@ labels for the lifetime of one Automatic run; it is cleared when the zone is
 redrawn or the run resets. Main thread only, no Qt widgets, no persistence.
 
 Visual prompting plateaus the gain after a few exemplars, so the store caps
-insertions PER LABEL: at most EXEMPLAR_MAX_POSITIVE positive examples and at
-most EXEMPLAR_MAX_EXCLUDE exclude examples (the two are counted independently).
+insertions PER LABEL (at most EXEMPLAR_MAX_POSITIVE positive examples and at
+most EXEMPLAR_MAX_EXCLUDE exclude examples) and IN TOTAL (EXEMPLAR_MAX_TOTAL
+across both labels). The free plan has its own, smaller ceilings: the store
+reads its ``free_tier`` flag, set by the plugin from the account, so an extra
+example on the free plan is refused here whatever surface asked for it.
 """
 from __future__ import annotations
 
@@ -17,20 +20,27 @@ from dataclasses import dataclass
 from qgis.core import QgsGeometry, QgsRectangle
 from qgis.PyQt.QtGui import QImage
 
-# Hard per-label ceilings: at most 3 positive and at most 2 exclude examples.
-# Client fallbacks for the server policy's `exemplar.max_positive` /
-# `exemplar.max_exclude`, read through the resolvers below.
-EXEMPLAR_MAX_POSITIVE = 3
+# Hard per-label ceilings: at most 4 positive and at most 2 exclude examples,
+# and at most EXEMPLAR_MAX_TOTAL of both together. The model gains nothing
+# past a handful of examples, so the total is the real ceiling and the
+# per-label caps only keep one kind from crowding out the other. Client
+# fallbacks for the server policy's `exemplar.max_positive`, `max_exclude`
+# and `max_total`, read through the resolvers below.
+EXEMPLAR_MAX_POSITIVE = 4
 EXEMPLAR_MAX_EXCLUDE = 2
+EXEMPLAR_MAX_TOTAL = 5
+# The free plan: one positive example per run and no exclude. Client
+# fallbacks for `exemplar.max_positive_free` / `exemplar.max_exclude_free`.
+EXEMPLAR_MAX_POSITIVE_FREE = 1
+EXEMPLAR_MAX_EXCLUDE_FREE = 0
 # REGION markers (review correction boxes) have their own ceiling, separate
 # from the object-exemplar caps above: they are never pasted (no band space)
 # and a request sends at most 8 exemplars anyway, so correction gestures must
 # not eat the user's chip slots, and chips must not silently evict recorded
 # corrections.
 EXEMPLAR_MAX_REGION = 8
-# Total ceiling (both labels at their cap). Kept for callers that only need the
-# combined count; the real gate is the per-label cap above.
-EXEMPLAR_MAX = EXEMPLAR_MAX_POSITIVE + EXEMPLAR_MAX_EXCLUDE
+# Kept for callers that only need the combined count.
+EXEMPLAR_MAX = EXEMPLAR_MAX_TOTAL
 LABEL_POSITIVE = 1
 LABEL_EXCLUDE = 0
 
@@ -46,14 +56,24 @@ def _policy_cap(getter_name: str, fallback: int) -> int:
         return fallback
 
 
-def max_positive() -> int:
-    """How many positive examples this run may hold."""
+def max_positive(free_tier: bool = False) -> int:
+    """How many positive examples this run may hold, on the plan given."""
+    if free_tier:
+        return _policy_cap("exemplar_max_positive_free", EXEMPLAR_MAX_POSITIVE_FREE)
     return _policy_cap("exemplar_max_positive", EXEMPLAR_MAX_POSITIVE)
 
 
-def max_exclude() -> int:
-    """How many exclude examples this run may hold."""
+def max_exclude(free_tier: bool = False) -> int:
+    """How many exclude examples this run may hold, on the plan given."""
+    if free_tier:
+        return _policy_cap("exemplar_max_exclude_free", EXEMPLAR_MAX_EXCLUDE_FREE)
     return _policy_cap("exemplar_max_exclude", EXEMPLAR_MAX_EXCLUDE)
+
+
+def max_total() -> int:
+    """How many object examples, both labels together, a paid run may hold.
+    Also the number the free plan's offer quotes."""
+    return _policy_cap("exemplar_max_total", EXEMPLAR_MAX_TOTAL)
 
 
 def max_region() -> int:
@@ -107,6 +127,10 @@ class ExemplarStore:
     def __init__(self) -> None:
         self._exemplars: dict[str, Exemplar] = {}
         self._seq = 0
+        # The plan the ceilings apply to. False until the plugin learns the
+        # account is on the free plan (a paid account, or one not read yet,
+        # gets the full ceilings; the run itself is gated elsewhere).
+        self.free_tier: bool = False
 
     def add(
         self,
@@ -170,14 +194,30 @@ class ExemplarStore:
         capped independently; REGION markers have their own separate ceiling
         (EXEMPLAR_MAX_REGION, checked in add) so correction gestures and chips
         never compete for slots."""
+        free = self.free_tier
+        if not free and self.positives() + self.excludes() >= max_total():
+            return True
         if label == LABEL_POSITIVE:
-            return self.positives() >= max_positive()
-        return self.excludes() >= max_exclude()
+            return self.positives() >= max_positive(free)
+        return self.excludes() >= max_exclude(free)
 
     def is_full(self) -> bool:
         """True only when BOTH labels are at their cap (nothing more can be
         added at all). Per-label gating uses is_full_for."""
         return self.is_full_for(LABEL_POSITIVE) and self.is_full_for(LABEL_EXCLUDE)
+
+    def is_full_on_free_only(self, label: int) -> bool:
+        """True when the free plan refuses this label but a paid plan would
+        still take it: the moment to offer Pro rather than a plain refusal."""
+        if not self.free_tier:
+            return False
+        if not self.is_full_for(label):
+            return False
+        if self.positives() + self.excludes() >= max_total():
+            return False
+        if label == LABEL_POSITIVE:
+            return self.positives() < max_positive(False)
+        return self.excludes() < max_exclude(False)
 
     def list(self) -> list[Exemplar]:
         """Return exemplars in insertion order."""

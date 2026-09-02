@@ -66,6 +66,11 @@ INVALID_INPUT_CODE = "INVALID_INPUT"
 # the recovery is to send the same pixels as PNG, which every server reads.
 INVALID_REQUEST_CODE = "INVALID_REQUEST"
 
+# How many times one click may be sent again after its first answer came back
+# unusable. Each retry is a full round trip the user waits through, and the
+# three recoveries below could line up on one click.
+_CLICK_RETRIES_MAX = 2
+
 # The click was answered, and the answer holds nothing: the points contradict
 # each other, or a remove point erased the object. A result, not a fault.
 EMPTY_RESULT_CODE = "EMPTY_RESULT"
@@ -242,7 +247,8 @@ _CROP_TOKEN_MEMORY = 8
 class CloudSamPredictor:
     """The click path's predictor, answered by the remote refine route."""
 
-    def __init__(self, client=None, auth=None, on_remote_answer=None) -> None:
+    def __init__(self, client=None, auth=None, on_remote_answer=None,
+                 session_id: str | None = None) -> None:
         """``auth`` is either the headers themselves or something that returns
         them. Hand over the callable whenever the session can outlive one key:
         a dict is read once and never again, so a key that rotates mid-session
@@ -250,10 +256,15 @@ class CloudSamPredictor:
 
         ``on_remote_answer`` fires once per click the network really answered,
         same contract as ``CloudFirstPredictor``. A billed lane hangs its charge
-        on it, so a click that raised on its way must never fire it."""
+        on it, so a click that raised on its way must never fire it.
+
+        ``session_id`` is the billing session's own id, set here or later with
+        ``set_session_id``: the object it saves is often minted after this
+        predictor is built."""
         self._client = client
         self._auth = auth
         self._on_remote_answer = on_remote_answer
+        self.session_id: str | None = session_id
         # Which client the cancellable-signature answer was resolved for. It
         # cannot change for a given object, and asking costs more than the
         # answer on a path that runs up to three times per click.
@@ -315,6 +326,12 @@ class CloudSamPredictor:
         change or the session ends, so a caller can tell whether the answer it
         is waiting for still belongs to anything."""
         return self._generation
+
+    def set_session_id(self, session_id: str | None) -> None:
+        """Name the billing session every click and crop upload should carry
+        from now on. Called once the object's ledger has minted its id, which
+        can be after this predictor was built."""
+        self.session_id = session_id
 
     def reset_image(self) -> None:
         self._generation += 1
@@ -512,6 +529,14 @@ class CloudSamPredictor:
              f"in {int((time.monotonic() - started) * 1000)} ms")
         return made
 
+    def _billing_fields(self) -> dict:
+        """The account-side fields every click and crop upload carries: the
+        billing session's id, so the account's own history can group the
+        clicks of one object, and the plugin version that sent them."""
+        from .request_context import plugin_version
+
+        return {"session_id": self.session_id, "plugin_version": plugin_version()}
+
     def _register_crop(self, crop: np.ndarray) -> None:
         """Hand the pixels over now, so the click carries only its points.
 
@@ -523,7 +548,7 @@ class CloudSamPredictor:
         key = self._crop_key
         payload, form = self._encoded_crop(crop)
         body = {"crop": payload, "crop_format": form,
-                "crop_shape": list(crop.shape)}
+                "crop_shape": list(crop.shape), **self._billing_fields()}
         try:
             # The hand-over is the one upload whose whole duration is the wire,
             # so it is where the session learns how fast this link sends.
@@ -544,7 +569,7 @@ class CloudSamPredictor:
                 self._crop_body = None
                 payload, form = self._encoded_crop(crop)
                 body = {"crop": payload, "crop_format": form,
-                        "crop_shape": list(crop.shape)}
+                        "crop_shape": list(crop.shape), **self._billing_fields()}
                 sent_at = time.monotonic()
                 answer = self._resolve_client().submit_refine_register(
                     body, self._resolve_auth())
@@ -588,25 +613,42 @@ class CloudSamPredictor:
 
         started = time.monotonic()
         generation = self._generation
-        answer = self._post(self._build_body(
-            point_coords, point_labels, mask_input, multimask_output,
-            send_crop=self._held_crop_token() is None, name_seed=True), generation)
-        self._refuse_late_answer(generation)
+        # Every retry below is another round trip the user sits through, and
+        # three of them in a row turn one click into a wait nobody can explain.
+        # Two, then the refusal is handed on: past that the far side is not
+        # having a bad moment, and what it says is worth more than a third try.
+        retries_left = _CLICK_RETRIES_MAX
+        seed = mask_input
 
-        if answer.get("code") in (CROP_EXPIRED_CODE, SEED_EXPIRED_CODE):
+        def resend_if_expired(answer: dict) -> dict:
             # A name the far side no longer honours. Nothing the user did, and
             # nothing they should read: send the thing itself and try once more.
             # A lost crop costs the picture, a lost seed only the logits.
+            nonlocal retries_left
+            if retries_left <= 0 or answer.get("code") not in (
+                    CROP_EXPIRED_CODE, SEED_EXPIRED_CODE):
+                return answer
+            retries_left -= 1
             crop_gone = answer.get("code") == CROP_EXPIRED_CODE
             if crop_gone:
                 self._drop_crop_token()
             self._forget_seed()
             answer = self._post(self._build_body(
-                point_coords, point_labels, mask_input, multimask_output,
+                point_coords, point_labels, seed, multimask_output,
                 send_crop=crop_gone, name_seed=False), generation)
             self._refuse_late_answer(generation)
+            return answer
 
-        if mask_input is not None and answer.get("code") == INVALID_INPUT_CODE:
+        answer = self._post(self._build_body(
+            point_coords, point_labels, seed, multimask_output,
+            send_crop=self._held_crop_token() is None, name_seed=True), generation)
+        self._refuse_late_answer(generation)
+        answer = resend_if_expired(answer)
+
+        if (retries_left > 0 and seed is not None
+                and answer.get("code") == INVALID_INPUT_CODE):
+            retries_left -= 1
+            seed = None
             # The seed itself is what the far side would not read, and the only
             # seed a caller can get wrong is one it built by hand: the models
             # behind this route work in different low-resolution sides, and a
@@ -625,10 +667,16 @@ class CloudSamPredictor:
                 send_crop=self._held_crop_token() is None, name_seed=False),
                 generation)
             self._refuse_late_answer(generation)
+            # The retry above quotes the token, and with several machines
+            # behind one address it can land where the crop is not: the
+            # first check ran before this answer existed, so it runs again.
+            answer = resend_if_expired(answer)
 
-        if (answer.get("code") == INVALID_REQUEST_CODE
+        if (retries_left > 0
+                and answer.get("code") == INVALID_REQUEST_CODE
                 and self._crop_body is not None
                 and self._crop_body[1] == "webp"):
+            retries_left -= 1
             # The far side could not read the body, and the one negotiable
             # thing in it is the webp form of the crop: a server behind this
             # route may predate the format. Repack the same pixels as PNG and
@@ -641,7 +689,7 @@ class CloudSamPredictor:
             self._drop_crop_token()
             self._forget_seed()
             answer = self._post(self._build_body(
-                point_coords, point_labels, mask_input, multimask_output,
+                point_coords, point_labels, seed, multimask_output,
                 send_crop=True, name_seed=False), generation)
             self._refuse_late_answer(generation)
 
@@ -727,6 +775,7 @@ class CloudSamPredictor:
             "mask_input": None,
             "mask_input_shape": None,
             "multimask_output": bool(multimask_output),
+            **self._billing_fields(),
         }
         if send_crop and crop is not None:
             body["crop"], body["crop_format"] = self._encoded_crop(crop)

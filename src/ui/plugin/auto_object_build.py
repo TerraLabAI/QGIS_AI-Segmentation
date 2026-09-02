@@ -290,7 +290,8 @@ class AutoObjectBuildMixin:
             QgsMessageLog.logMessage(
                 f"Auto detection: footprint alignment kept "
                 f"{sweep.aligned_count} shape(s), reverted "
-                f"{sweep.reverted_count}, skipped {sweep.skipped_count}, "
+                f"{sweep.reverted_count} ({sweep.simplified_count} of them "
+                f"simplified), skipped {sweep.skipped_count}, "
                 f"{sweep.circle_count} circle(s)",
                 "AI Segmentation", level=Qgis.MessageLevel.Info)
         except Exception:  # noqa: BLE001 -- a lost log line changes nothing  # nosec B110

@@ -38,6 +38,8 @@ noticed would never be noticed.
 """
 from __future__ import annotations
 
+import threading
+
 from qgis.core import QgsNetworkAccessManager
 from qgis.PyQt.QtCore import QByteArray, QEvent, QEventLoop, QObject, QTimer, QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
@@ -93,9 +95,12 @@ _WAIT_GUARD_MS = 5_000
 # request nobody is waiting for any more.
 _CANCEL_POLL_MS = 100
 
-# Set from anywhere, read by the poll. A plain flag rather than a gesture,
-# because a gesture is exactly what the wait cannot see.
-_cancel_requested = False
+# Moved from anywhere, read by the poll. A counter rather than a flag, because
+# a flag has to be cleared by someone: cleared on entry it loses a cancel raised
+# between two clicks, and left standing it ends the next click as well. A wait
+# captures this number when it starts and ends as soon as it has moved.
+_cancel_lock = threading.Lock()
+_cancel_generation = 0
 
 
 def cancel_click_wait() -> None:
@@ -106,15 +111,39 @@ def cancel_click_wait() -> None:
     owns the click ends, its generation moves, and ``cancel_check`` sees that
     on its next poll.
     """
-    global _cancel_requested
-    _cancel_requested = True
+    global _cancel_generation
+    with _cancel_lock:
+        _cancel_generation += 1
+
+
+def _click_wait_generation() -> int:
+    """The number a wait in progress is measured against. One read of an int,
+    so no lock: only the move above needs one."""
+    return _cancel_generation
+
+
+def _transport_ceiling_ms() -> int:
+    """The longest wait the shared network manager can actually honour.
+
+    A click goes out on the QGIS-wide manager, which ends a reply at the
+    QGIS network timeout whatever this module asks for. A wait past that one
+    is a wait that never happens, so it bounds the served dial as much as the
+    ceiling above does, and it moves with the user's own setting rather than
+    being frozen here.
+    """
+    try:
+        value = int(QgsNetworkAccessManager.timeout())
+    except Exception:  # noqa: BLE001 -- an unreadable setting keeps the ceiling
+        return _CLICK_WAIT_CEILING_MS
+    return value if value >= _CLICK_WAIT_FLOOR_MS else _CLICK_WAIT_CEILING_MS
 
 
 def click_wait_max_ms() -> int:
     """The longest one click may hold the window, in milliseconds.
 
     Read per click off the served network policy, bounded by the floor and
-    ceiling above. Never raises and never networks: a click path calls it.
+    ceiling above and by what the transport can honour. Never raises and never
+    networks: a click path calls it.
     """
     try:
         from ..core.detection_policy import network_policy
@@ -122,10 +151,10 @@ def click_wait_max_ms() -> int:
         value = network_policy().get("click_wait_max_ms")
         if (isinstance(value, (int, float)) and not isinstance(value, bool)
                 and _CLICK_WAIT_FLOOR_MS <= value <= _CLICK_WAIT_CEILING_MS):
-            return int(value)
+            return min(int(value), _transport_ceiling_ms())
     except Exception:  # noqa: BLE001 -- a dial must never break a click  # nosec B110
         pass
-    return _CLICK_WAIT_MAX_MS
+    return min(_CLICK_WAIT_MAX_MS, _transport_ceiling_ms())
 
 
 def click_input_hold_ms() -> int:
@@ -323,8 +352,10 @@ def post_and_keep_painting(
     on the request. The caller owns that decision, because it is also the one
     that has to send the plain body again if a server cannot read this form.
     """
-    global _cancel_requested
-    _cancel_requested = False
+    # The wait is measured against the generation it starts on: a cancel raised
+    # before this line belonged to an earlier wait and never ends this one, and
+    # one raised after it always does.
+    started_generation = _click_wait_generation()
     wait_ms = min(int(timeout_ms), click_wait_max_ms())
     try:
         manager = QgsNetworkAccessManager.instance()
@@ -366,7 +397,8 @@ def post_and_keep_painting(
 
     def _poll_owner() -> None:
         try:
-            if _cancel_requested or (cancel_check is not None and cancel_check()):
+            if (_click_wait_generation() != started_generation
+                    or (cancel_check is not None and cancel_check())):
                 state["cancelled"] = True
                 loop.quit()
         except Exception:  # noqa: BLE001 -- an unreadable owner is not a cancel  # nosec B110
@@ -416,10 +448,16 @@ def post_and_keep_painting(
             status = reply.attribute(
                 resolve_qt_enum(QNetworkRequest, "Attribute",
                                 "HttpStatusCodeAttribute"))
-            status = int(status) if status is not None else None
         except Exception:  # noqa: BLE001 -- an unreadable reply is not an answer
             _end(reply, guard, watch)
             raise ClickPostAbandoned() from None
+        try:
+            status = int(status) if status is not None else None
+        except (TypeError, ValueError):
+            # Qt can hand back an attribute int() chokes on. An unreadable
+            # status is not an unreadable answer: the body still stands, and
+            # throwing the click away here would cost the user the credit.
+            status = None
         _end(reply, guard, watch)
         return raw, status, error
     finally:

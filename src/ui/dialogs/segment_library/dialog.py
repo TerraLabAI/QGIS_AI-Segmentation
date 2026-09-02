@@ -1,44 +1,40 @@
-"""Segment library: a visual gallery of cloud-model object prompts with before/after
-previews. Mirrors AI Edit's prompt-library dialog (one sidebar: the user's own
-detections on top, curated templates below, searchable card grid + detail
-popup), trimmed to what segmentation needs.
+"""Segment library: the window that holds both halves of "what do I detect".
 
-Picking a card returns the preset's **English token** (the literal cloud-model
+Left of the grid, a rail: the curated object catalogue (Popular, then one row
+per category) and, at the foot, the user's own work (Recent, Favorites).
+Picking a template card returns its **English token** (the literal cloud-model
 prompt), which the dock drops into the prompt box. Labels are localized;
 tokens are not.
 
+This file owns the window and the catalogue side: the size, the search box,
+the card grid and how it reflows, and the template detail popup. The two other
+halves are mixins:
+
+- ``rail.py`` (LibraryRailMixin): the navigation rail and its counts.
+- ``history.py`` (LibraryHistoryMixin): the user's runs, their states, their
+  thumbnails, their stars and their removal.
+- ``run_actions.py`` (LibraryRunActionsMixin): restore, re-run and export for
+  one stored run, each on a background thread behind one wait window.
+
 Performance: the catalogue is read from a non-blocking cache (the network
 prefetch is the plugin's job), and demo images load lazily per visible card so
-the first paint never waits on the whole grid.
+the first paint never waits on the whole grid. Nothing in ``__init__`` touches
+the network, so the window always opens instantly.
 
-The old top-level [ Detect | History ] switch is gone: there is ONE place for
-past work. "Recent" lists every cloud run (server-side, warm-started from a
-local cache, falling back to the signed-out local recents), with one-click
-prompt reuse plus restore-to-review, direct export and favorites. Every
-detection the user has made is kept here (there is no delete); runs are the
-user's own segmentation history to reuse, restore or export at any time.
-The local fallback renders from core/detection_history.py
-(zone thumbnail + extent + exported layer name recorded at Finish): clicking
-a recent card reuses the prompt AND restores the map (zoom back to the zone,
-re-activate the exported layer when it is still in the project).
-All history network calls run on QThread workers; when the
-history endpoints are not deployed yet the tabs degrade to their empty states
-(no error spam). The dialog tolerates plugin=None: history actions that need
-the plugin (Restore / Export) are disabled with a tooltip.
+The dialog tolerates plugin=None and a signed-out account: the template side
+stays fully usable, and the history side says which of those two it is instead
+of showing an empty list.
 """
 from __future__ import annotations
 
-from qgis.core import Qgis
 from qgis.PyQt.QtCore import QEvent, QPoint, QTimer
 from qgis.PyQt.QtGui import QGuiApplication
 from qgis.PyQt.QtWidgets import (
-    QApplication,
     QDialog,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -48,7 +44,6 @@ from qgis.PyQt.QtWidgets import (
 from ....core import detection_history
 from ....core import qt_compat as QtC
 from ....core.i18n import tr
-from ....core.logging_utils import log
 from ....core.presets import run_history_cache, segment_history
 from ....core.presets.segmentation_presets import pick_label, preset_matches_query
 from ....core.presets.segmentation_presets_client import (
@@ -56,14 +51,12 @@ from ....core.presets.segmentation_presets_client import (
     cached_or_offline_catalog,
 )
 from ....core.presets.template_favorites import (
-    favorite_template_ids,
     is_favorite_template,
     toggle_favorite_template,
 )
 from ....core.qt_compat import safe_disconnect
-from ...plugin.shared import park_orphaned_worker
 from ...template_demo_loader import TemplateDemoLoader
-from .cards import _PresetCard, _RecentCard, _RunCard
+from .cards import _PresetCard
 from .common import (
     _EMPTY_GLYPH,
     _EMPTY_MSG,
@@ -74,23 +67,13 @@ from .common import (
     _RAIL_POPULAR_TARGET,
     _SEARCH_QSS,
     _fmt_count,
-    _project_layer_reading,
-    _run_key,
 )
-from .detail import (
-    _ExportRunDialog,
-    _PresetDetailDialog,
-    _RunDetailDialog,
-    _RunProgressDialog,
-)
+from .detail import _PresetDetailDialog
+from .history import LibraryHistoryMixin
 from .rail import LibraryRailMixin
-from .recent_local import merge_local_recents, recent_view, restore_recent_on_map
-from .workers import (
-    _HistoryFetchWorker,
-    _RunFavoriteWorker,
-    _RunFetchWorker,
-    _RunZoneFetchWorker,
-)
+from .recent_local import restore_recent_on_map
+from .run_actions import LibraryRunActionsMixin
+from .run_card import _RunCard
 
 # The grid follows the dialog width instead of pinning a column count: three
 # columns squeeze on a narrow dialog and over-stretch on a wide one. The bounds
@@ -106,7 +89,8 @@ _GRID_COLS_DEFAULT = 3
 _EVENT_RESIZE = QtC.resolve_qt_enum(QEvent, "Type", "Resize")
 
 
-class SegmentLibraryDialog(LibraryRailMixin, QDialog):
+class SegmentLibraryDialog(LibraryRailMixin, LibraryHistoryMixin,
+                           LibraryRunActionsMixin, QDialog):
     """The gallery. ``get_selected_prompt()`` returns the chosen English token.
 
     The catalogue and the recent list are read non-blocking (cache / QSettings):
@@ -157,6 +141,9 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
         # re-places the same cards instead of rebuilding (and refetching) them.
         self._cols = _GRID_COLS_DEFAULT
         self._grid_widgets: list = []
+        # Set when the grid is laid out as (day header, cards) blocks, so
+        # a width change re-places the same widgets under the same headers.
+        self._grid_sections: list | None = None
         self._grid_span_all = False
         # What the grid currently paints, when it paints run history. Compared
         # against a fresh sync so an unchanged page costs nothing.
@@ -184,6 +171,13 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
         self._hist_synced: set = set()
         self._hist_inflight: set = set()
         self._hist_fail_logged: set = set()
+        # Stars flipped in this window, run key -> wanted state. A page that
+        # lands after a flip carries the server's older answer, and replacing
+        # the list with it un-starred a run the user had just starred.
+        self._fav_overrides: dict[str, bool] = {}
+        # Views whose last sync did not come back. Kept apart from the log-once
+        # set so the empty state can tell a failed read from a new account.
+        self._hist_failed: set = set()
         self._hist_pages_loaded = 0
         # Two registries: run key -> card follows favorite toggles, archived
         # tile id -> card routes the loaded images back to the right preview.
@@ -204,7 +198,8 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
         # as long as the actions one visit takes, a handful.
         self._live_workers: list[tuple] = []
         self._pending_action: tuple | None = None
-        self._detail_dlg: _RunDetailDialog | None = None
+        # The run detail popup while it is open (history.py owns it).
+        self._detail_dlg = None
         self._tabs_tracked: set = set()
         self._hist_loader = TemplateDemoLoader(self)
         self._hist_loader.loaded.connect(self._on_thumb_loaded)
@@ -303,6 +298,11 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
         self._hist_older_btn = QPushButton(tr("Load older runs"))
         self._hist_older_btn.setStyleSheet(_GHOST_BTN_QSS)
         self._hist_older_btn.setCursor(QtC.PointingHandCursor)
+        # A QPushButton inside a QDialog volunteers as the default button, and
+        # the search box has the focus: without this, Return over a search
+        # result fires whichever button was built first instead of doing
+        # nothing. No button in this window is the one Return should press.
+        self._hist_older_btn.setAutoDefault(False)
         self._hist_older_btn.setVisible(False)
         self._hist_older_btn.clicked.connect(self._load_older_runs)
         content.addWidget(self._hist_older_btn, 0, QtC.AlignCenter)
@@ -322,11 +322,17 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
 
     def _refresh_library_chrome(self) -> None:
         """Re-read everything the rail and the paging button show. Called after
-        any change to the history lists or the favorites."""
+        any change to the history lists or the favorites, and after a sync ends
+        either way: the paging button reads the in-flight state, so a failed
+        page that skipped this left it saying it was still loading."""
         self._refresh_rail_counts()
         view = _RAIL_HISTORY_VIEWS.get(self._active_key)
         self._hist_older_btn.setVisible(
             view is not None and bool(self._hist_has_more.get(view)))
+        loading = view is not None and view in self._hist_inflight
+        self._hist_older_btn.setEnabled(not loading)
+        self._hist_older_btn.setText(
+            tr("Loading...") if loading else tr("Load older runs"))
 
     def _track_tab_opened(self, tab: str) -> None:
         if tab in self._tabs_tracked:
@@ -343,32 +349,50 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
     def _select_tab(self, key: str) -> None:
         self._active_key = key
         self._set_rail_active(key)
-        self._rebuild_current_grid()
+        # The sync starts BEFORE the first paint: the grid reads the in-flight
+        # set to tell "still loading" from "nothing here yet", and the worker's
+        # answer is queued, so it cannot land before the grid is built.
         view = _RAIL_HISTORY_VIEWS.get(key)
         if view is not None:
             self._track_tab_opened("history")
             self._sync_history_view(view)
+        self._rebuild_current_grid()
         self._refresh_library_chrome()
 
     def _rebuild_current_grid(self) -> None:
+        """Paint whichever view the rail is on, searched or not.
+
+        A history view keeps its own search: the box filters the runs by their
+        prompt, and the view still owns its loading, failed and signed-out
+        states, so a search never turns one of them into a bare empty grid.
+        """
+        view = _RAIL_HISTORY_VIEWS.get(self._active_key)
+        if view is not None:
+            self._rebuild_history_grid(view)
+            return
         if self._query:
             self._rebuild_grid(
                 self._search_matches(self._query),
                 tr("No object matches that search."), "⌕")
             return
-        view = _RAIL_HISTORY_VIEWS.get(self._active_key)
-        if view is not None:
-            self._rebuild_history_grid(view)
-        else:
-            self._rebuild_grid(
-                self._presets_for_tab(self._active_key),
-                tr("Nothing in this category yet."))
+        presets = self._presets_for_tab(self._active_key)
+        if not presets and self._active_key != _RAIL_POPULAR_TARGET:
+            # An unknown key (a catalogue that lost a category between two
+            # opens) used to paint "Nothing in this category yet." under an
+            # unlit rail, which reads as the window losing its place. Go back
+            # to the row that always has something on it.
+            self._select_tab(_RAIL_POPULAR_TARGET)
+            return
+        self._rebuild_grid(presets, tr("Nothing in this category yet."))
 
     def _apply_search(self) -> None:
         self._query = self._search.text().strip().lower()
-        # Search results are their own view, so no rail row is "you are here"
-        # while one is showing; clearing the box lights the row back up.
-        self._set_rail_active(None if self._query else self._active_key)
+        # A search over the catalogue is its own view, so no rail row is "you
+        # are here" while one is showing. A search inside a history view is a
+        # filter ON that view, so the row it belongs to stays lit.
+        in_history = _RAIL_HISTORY_VIEWS.get(self._active_key) is not None
+        self._set_rail_active(
+            self._active_key if in_history or not self._query else None)
         self._rebuild_current_grid()
 
     def _search_matches(self, query: str) -> list[dict]:
@@ -401,6 +425,7 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
         self._thumb_cards.clear()
         self._run_cards.clear()
         self._grid_widgets = []
+        self._grid_sections = None
         self._grid_span_all = False
         self._grid_signature = None
 
@@ -417,21 +442,54 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
             return _GRID_COLS_DEFAULT
         if width <= 0:
             return _GRID_COLS_DEFAULT
-        step = _CARD_MIN_W + _GRID_SPACING
+        # The card floor grows with the UI font, so the column count has to
+        # read the scaled width or the grid packs cards tighter than they are.
+        from ...dock.font_scale import scale_px_length
+        step = scale_px_length(_CARD_MIN_W) + _GRID_SPACING
         return max(_GRID_COLS_MIN, min(_GRID_COLS_MAX, (width + _GRID_SPACING) // step))
 
     def _place_grid(self, widgets: list, span_all: bool = False) -> None:
         """Own the grid's contents, then lay them out at the current width."""
         self._grid_widgets = list(widgets)
+        self._grid_sections = None
         self._grid_span_all = bool(span_all)
-        # Cards are built when their tab is picked, long after the window was,
-        # so the pass the window made over itself never saw them.
+        self._settle_grid_widgets()
+        self._apply_grid_positions()
+        self._update_count_label(0 if span_all else len(self._grid_widgets))
+
+    def _place_grouped_grid(self, sections: list) -> None:
+        """Lay the grid out as (header, cards) blocks instead of one flat run.
+
+        The run history reads as a diary, not as a wall: a full-width header
+        opens each day and its cards flow under it. The sections are kept, not
+        just their positions, so a width change re-places the same widgets
+        rather than rebuilding cards and refetching their imagery.
+        """
+        self._grid_sections = [(header, list(cards)) for header, cards in sections]
+        self._grid_widgets = []
+        for header, cards in self._grid_sections:
+            self._grid_widgets.append(header)
+            self._grid_widgets.extend(cards)
+        self._grid_span_all = False
+        self._settle_grid_widgets()
+        self._apply_grid_positions()
+        self._update_count_label(
+            sum(len(cards) for _h, cards in self._grid_sections))
+
+    def _settle_grid_widgets(self) -> None:
+        """Grow the new widgets to the user's text size and let each one
+        re-measure whatever it pins by hand.
+
+        Cards are built when their tab is picked, long after the window was, so
+        the pass the window made over itself never saw them.
+        """
         from ...dock.font_scale import apply_font_scale_to_tree
 
         for widget in self._grid_widgets:
             apply_font_scale_to_tree(widget)
-        self._apply_grid_positions()
-        self._update_count_label(0 if span_all else len(self._grid_widgets))
+            settle = getattr(widget, "on_font_scale_applied", None)
+            if settle is not None:
+                settle()
 
     def _update_count_label(self, count: int) -> None:
         label = getattr(self, "_count_label", None)
@@ -463,6 +521,15 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
                 # The hero empty state is the one thing that owns the height:
                 # it centres itself inside its own row.
                 self._grid.setRowStretch(0, 1)
+        elif self._grid_sections is not None:
+            row = 0
+            for header, cards in self._grid_sections:
+                self._grid.addWidget(header, row, 0, 1, cols)
+                row += 1
+                for idx, card in enumerate(cards):
+                    self._grid.addWidget(card, row + idx // cols, idx % cols)
+                row += (len(cards) + cols - 1) // cols
+            self._grid.setRowStretch(row, 1)
         else:
             for idx, widget in enumerate(self._grid_widgets):
                 self._grid.addWidget(widget, idx // cols, idx % cols)
@@ -495,8 +562,13 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
             self._reflow_if_needed()
         return super().eventFilter(obj, event)
 
-    def _empty_label(self, text: str, glyph: str = "◇") -> None:
-        """Hero empty state: one glyph, one sentence, centered, nothing else."""
+    def _empty_label(self, text: str, glyph: str = "◇",
+                     action: tuple | None = None) -> None:
+        """Hero empty state: one glyph, one sentence, centered.
+
+        ``action`` is an optional (label, callback) pair, for the states where
+        the sentence names something the user can do from here.
+        """
         host = QWidget(self._grid_host)
         outer = QHBoxLayout(host)
         outer.setContentsMargins(20, 40, 20, 40)
@@ -519,6 +591,18 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
         msg.setAlignment(QtC.AlignCenter)
         msg.setStyleSheet(_EMPTY_MSG)
         inner.addWidget(msg)
+        if action is not None:
+            label, callback = action
+            btn = QPushButton(label, inner_host)
+            btn.setStyleSheet(_GHOST_BTN_QSS)
+            btn.setAutoDefault(False)
+            btn.setCursor(QtC.PointingHandCursor)
+            btn.clicked.connect(callback)
+            row = QHBoxLayout()
+            row.addStretch()
+            row.addWidget(btn)
+            row.addStretch()
+            inner.addLayout(row)
         inner.addStretch()
         # Centered, not stretched: an HBox grows its child to the full cell
         # height unless an alignment is set, which pushes the glyph to the top
@@ -538,19 +622,6 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
             self._cards_by_id[preset["id"]] = card
         return cards
 
-    def _build_run_cards(self, runs: list[dict], view: str) -> list:
-        cards = []
-        for run in runs:
-            card = _RunCard(run, view, parent=self._grid_host)
-            card.opened.connect(self._open_run_detail)
-            card.star_toggled.connect(self._toggle_favorite)
-            cards.append(card)
-            self._run_cards.append((run, card))
-            # Registered up front, not when the images are requested: an
-            # off-screen card still has to follow a favorite toggle.
-            self._hist_cards[_run_key(run)] = card
-        return cards
-
     def _rebuild_grid(self, presets: list[dict], empty_text: str,
                       empty_glyph: str = "◇") -> None:
         """Paint the card grid, or the empty state the CALLER names.
@@ -567,79 +638,6 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
         # Kick lazy loading for whatever is visible now + once layout settles.
         QTimer.singleShot(0, self._load_visible_cards)
         QTimer.singleShot(80, self._load_visible_cards)
-
-    def _history_grid_signature(self, view: str) -> tuple:
-        """Everything a history card reads. Two equal signatures paint the
-        same grid, so the rebuild that follows a sync can be skipped."""
-        runs = self._hist_runs.get(view) or []
-        presets = (tuple(p.get("id", "") for p in self._favorite_template_presets())
-                   if view == "favorites" else ())
-        return (view, presets, tuple(
-            (_run_key(r), bool(r.get("is_favorite")), r.get("objects"),
-             r.get("tiles"), r.get("preview_request_id")) for r in runs))
-
-    def _rebuild_history_grid(self, view: str) -> None:
-        # The dialog opens on the cached page, then a background sync answers
-        # with what is almost always the same page. Rebuilding then throws away
-        # a dozen live cards and their decoded images only to build the same
-        # ones back, which on a slow machine is the longest stall of the open.
-        signature = self._history_grid_signature(view)
-        if signature == self._grid_signature and self._grid_widgets:
-            # Same runs, kept cards. Hand them the fresh payload so nothing on
-            # the card keeps reading the copy that came off the disk cache.
-            fresh = {_run_key(r): r for r in (self._hist_runs.get(view) or [])}
-            self._run_cards = [
-                (fresh.get(_run_key(run), run), card)
-                for run, card in self._run_cards]
-            for run, card in self._run_cards:
-                card.adopt_run(run)
-            return
-        self._clear_grid()
-        self._grid_signature = signature
-        runs = self._hist_runs.get(view) or []
-        cards: list = []
-        if view == "favorites":
-            # One tab, both kinds of star: the objects the user keeps around,
-            # then the detections they kept. Objects come first because they are
-            # what a new run starts from.
-            cards.extend(self._build_preset_cards(self._favorite_template_presets()))
-        if not runs and not cards:
-            if view == "all" and self._local_recent_entries():
-                # Signed-out / endpoint-less fallback: the local run history
-                # still gives one-click restore of past detections.
-                self._rebuild_recent_local_grid()
-                return
-            if view == "favorites":
-                self._empty_label(
-                    tr("Star a detection or an object to keep it here."), "★")
-            else:
-                self._empty_label(
-                    tr("Nothing here yet. Your automatic detections will "
-                       "land here, ready to reuse, restore or export."))
-            return
-        cards.extend(self._build_run_cards(runs, view))
-        self._place_grid(cards)
-        QTimer.singleShot(0, self._load_visible_cards)
-        QTimer.singleShot(80, self._load_visible_cards)
-
-    def _favorite_template_presets(self) -> list[dict]:
-        """Starred templates, most recently starred first."""
-        return [self._by_id[i] for i in favorite_template_ids() if i in self._by_id]
-
-    def _local_recent_entries(self) -> list[dict]:
-        """The Recent tab's local feed (see recent_local.merge_local_recents)."""
-        return merge_local_recents(self._history_local, self._recent_local)
-
-    def _rebuild_recent_local_grid(self) -> None:
-        cards = []
-        for entry in self._local_recent_entries():
-            card = _RecentCard(recent_view(entry, self._by_token), self._grid_host,
-                               view_only=self._view_only)
-            card.activated.connect(self._on_recent_activated)
-            card.rerun_requested.connect(self._on_recent_rerun)
-            card.reuse_prompt_requested.connect(self._on_recent_reuse_prompt)
-            cards.append(card)
-        self._place_grid(cards)
 
     # ---- demo image routing ---------------------------------------------
 
@@ -682,200 +680,6 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
         if card is not None and which in ("before", "after"):
             card.mark_missing(which)
 
-    # ---- history sync ------------------------------------------------------
-
-    def _history_client(self):
-        if self._client is None:
-            from ....api.terralab_client import TerraLabClient
-            self._client = TerraLabClient()
-        return self._client
-
-    def _sync_history_view(self, view: str, before: str | None = None) -> None:
-        """Refresh one view from the server, off the GUI thread. Silently a
-        no-op when not signed in or when a sync is already in flight."""
-        if not self._auth:
-            return
-        if before is None and view in self._hist_synced:
-            return
-        if view in self._hist_inflight:
-            return
-        self._hist_inflight.add(view)
-        worker = _HistoryFetchWorker(
-            self._history_client(), self._auth, view, before)
-        worker.page_fetched.connect(self._on_history_page)
-        worker.failed.connect(self._on_history_failed)
-        self._track_live_worker(worker, "page_fetched", "failed")
-        park_orphaned_worker(worker)
-        worker.start()
-
-    def _load_older_runs(self) -> None:
-        view = _RAIL_HISTORY_VIEWS.get(self._active_key)
-        if view is None:
-            return
-        runs = self._hist_runs.get(view) or []
-        if not runs:
-            return
-        oldest = runs[-1].get("started_at") or runs[-1].get("created_at")
-        if not oldest:
-            return
-        self._sync_history_view(view, before=str(oldest))
-
-    def _displayed_view(self) -> str | None:
-        return _RAIL_HISTORY_VIEWS.get(self._active_key) if not self._query else None
-
-    def _on_history_page(self, view: str, runs: list, has_more: bool,
-                         first: bool) -> None:
-        self._hist_inflight.discard(view)
-        self._hist_synced.add(view)
-        if first:
-            self._hist_runs[view] = runs
-            if view == "all":
-                run_history_cache.save_runs(runs)
-                try:
-                    from ....core import telemetry_session_events
-                    telemetry_session_events.track_history_synced(len(runs))
-                except Exception:
-                    pass  # nosec B110
-        else:
-            known = {_run_key(r) for r in self._hist_runs[view]}
-            self._hist_runs[view].extend(
-                r for r in runs if _run_key(r) not in known)
-            self._hist_pages_loaded += 1
-            try:
-                from ....core import telemetry_session_events
-                telemetry_session_events.track_history_page_loaded(self._hist_pages_loaded)
-            except Exception:
-                pass  # nosec B110
-        self._hist_has_more[view] = has_more
-        if view == self._displayed_view():
-            self._rebuild_history_grid(view)
-        self._refresh_library_chrome()
-
-    def _on_history_failed(self, view: str, code: str) -> None:
-        """A failed sync (including the endpoints not deployed yet) degrades to
-        the cached/empty state - one quiet log line per view, no error spam."""
-        self._hist_inflight.discard(view)
-        self._hist_synced.add(view)
-        if view not in self._hist_fail_logged:
-            self._hist_fail_logged.add(view)
-            log(f"Run history unavailable ({view}): {code}",
-                Qgis.MessageLevel.Info)
-        if view == self._displayed_view():
-            self._rebuild_history_grid(view)
-
-    # ---- thumbnails --------------------------------------------------------
-
-    def _card_thumb_width(self) -> int:
-        """Width to ask the server for, in real pixels of the preview band.
-
-        The stored tile is a full 1024 px capture and the band it lands in is
-        about 320 px wide, so the card would spend a megabyte and a half to
-        paint a thumbnail. One width for every screen: a card scaled down from
-        512 reads sharp everywhere, and picking a smaller step off the device
-        pixel ratio only made the same run look softer on some displays. 512 is
-        a width the image route accepts; anything else it snaps, so this cannot
-        ask for a size that does not exist.
-        """
-        return 512
-
-    def _artifact_url(self, request_id: str, which: str,
-                      width: int | None = None) -> str:
-        """Authorized artifact URL for one stored tile (streamed, no redirect,
-        so the auth header never leaves our server). The id comes from the
-        server, so it is percent-encoded: a raw "?", "#" or "&" in it would
-        rewrite the query and fetch the wrong artifact.
-
-        ``width`` asks for a downscaled copy. An older server ignores the
-        parameter and answers with the full artifact, which still paints.
-        """
-        from urllib.parse import quote
-
-        url = "{}/api/ai-segmentation/image/{}?type={}&stream=1".format(
-            self._base, quote(str(request_id), safe=""), quote(str(which), safe=""))
-        if width:
-            url += f"&w={int(width)}"
-        return url
-
-    def _request_run_thumb(self, run: dict, card: _RunCard) -> None:
-        """Fetch both halves of a run's comparison: the imagery as it was sent
-        and the same tile with the masks painted on.
-
-        The archived input is strictly more available than the overlay: a tile
-        that found nothing has an input and no preview, so the input is what
-        keeps the card readable.
-        """
-        rid = str(run.get("preview_request_id") or "")
-        if not rid:
-            card.mark_missing("input")
-            card.mark_missing("preview")
-            return
-        width = self._card_thumb_width()
-        urls: dict[str, tuple[str, dict | None]] = {
-            "input": (self._artifact_url(rid, "input", width), self._auth or None),
-        }
-        signed = run.get("preview_url") or ""
-        if self._auth:
-            # Our own route can be asked for a card-sized copy; the signed URL
-            # the payload carries can only ever hand back the full tile.
-            urls["preview"] = (
-                self._artifact_url(rid, "preview", width), self._auth)
-        elif signed and signed.startswith(("http://", "https://")):
-            # Signed-URL fallback: the signature is the auth, no headers.
-            urls["preview"] = (signed, None)
-        else:
-            urls["preview"] = (self._artifact_url(rid, "preview", width), None)
-        self._thumb_cards[rid] = card
-        card.request_artifacts(self._hist_loader, urls, variant=str(width))
-
-    def _on_thumb_loaded(self, pid: str, which: str, pixmap) -> None:
-        if which not in ("input", "preview"):
-            return
-        card = self._thumb_cards.get(pid)
-        if card is not None:
-            try:
-                card.set_image(which, pixmap)
-            except RuntimeError:
-                pass  # card torn down while the fetch was in flight
-
-    def _on_thumb_failed(self, pid: str, which: str) -> None:
-        if which not in ("input", "preview"):
-            return
-        card = self._thumb_cards.get(pid)
-        if card is not None:
-            try:
-                card.mark_missing(which)
-            except RuntimeError:
-                pass
-
-    # ---- run actions -------------------------------------------------------
-
-    def _open_run_detail(self, run: dict) -> None:
-        if self._detail_open or self._hist_busy:
-            return
-        self._detail_open = True
-        try:
-            dlg = _RunDetailDialog(run, self)
-            self._detail_dlg = dlg
-            dlg.exec()
-        finally:
-            self._detail_dlg = None
-            self._detail_open = False
-
-    def _toggle_favorite(self, run: dict, is_favorite: bool) -> None:
-        """Optimistic star: flip locally at once, sync in the background,
-        revert on error (AI Edit's _GenerationFavoriteWorker pattern)."""
-        run_id = run.get("run_id")
-        if not run_id or not self._auth:
-            return
-        run["is_favorite"] = is_favorite
-        self._apply_favorite_ui(run, is_favorite)
-        worker = _RunFavoriteWorker(
-            self._history_client(), self._auth, str(run_id), is_favorite)
-        worker.done.connect(self._on_favorite_done)
-        self._track_live_worker(worker, "done")
-        park_orphaned_worker(worker)
-        worker.start()
-
     def _toggle_template_favorite(self, preset: dict, _checked: bool) -> None:
         """Star a template. Local only: templates are a client-side catalogue,
         so there is no server row to flip and nothing to sync."""
@@ -888,371 +692,6 @@ class SegmentLibraryDialog(LibraryRailMixin, QDialog):
             # Same Qt6 rule as the run star: never destroy the emitting card
             # from inside its own signal.
             QtC.safe_single_shot(0, self, self._rebuild_current_grid)
-
-    def _apply_favorite_ui(self, run: dict, is_favorite: bool) -> None:
-        key = _run_key(run)
-        favs = self._hist_runs.get("favorites")
-        if favs is not None and "favorites" in self._hist_synced:
-            if is_favorite and all(_run_key(r) != key for r in favs):
-                favs.insert(0, run)
-            elif not is_favorite:
-                self._hist_runs["favorites"] = [
-                    r for r in favs if _run_key(r) != key]
-        for view_runs in self._hist_runs.values():
-            for r in view_runs:
-                if _run_key(r) == key:
-                    r["is_favorite"] = is_favorite
-        if self._displayed_view() == "favorites":
-            # Deferred: this runs from the star's own click handler, and the
-            # rebuild destroys the card that emitted it. Tearing a widget down
-            # inside its own signal aborts QGIS on Qt6.
-            QtC.safe_single_shot(
-                0, self, lambda: self._rebuild_history_grid("favorites"))
-        else:
-            card = self._hist_cards.get(key)
-            if card is not None:
-                try:
-                    card.set_favorite(is_favorite)
-                except RuntimeError:
-                    pass
-        if self._detail_dlg is not None:
-            try:
-                self._detail_dlg.set_favorite(is_favorite)
-            except RuntimeError:
-                pass
-        self._refresh_library_chrome()
-
-    def _on_favorite_done(self, run_id: str, is_favorite: bool, ok: bool) -> None:
-        if ok:
-            try:
-                from ....core import telemetry_session_events
-                telemetry_session_events.track_history_favorite_toggled(run_id, is_favorite)
-            except Exception:
-                pass  # nosec B110
-            run_history_cache.save_runs(self._hist_runs.get("all") or [])
-            return
-        # Revert the optimistic flip.
-        for view_runs in self._hist_runs.values():
-            for r in view_runs:
-                if str(r.get("run_id") or "") == run_id:
-                    self._apply_favorite_ui(r, not is_favorite)
-                    return
-
-    # ---- restore / export ---------------------------------------------------
-
-    def _start_run_fetch(self, run: dict, action: tuple) -> None:
-        """Everything a restore or an export needs, on one background thread.
-
-        The tiles, the stored masks, the decode into geometry and (for an
-        export) the file write all happen there: done in the click handler they
-        froze QGIS for a minute or more on a big run, with nothing on screen.
-        """
-        if self._hist_busy or not self._auth:
-            return
-        self._hist_busy = True
-        self._pending_action = action
-        if self._detail_dlg is not None:
-            try:
-                self._detail_dlg.set_busy(True)
-            except RuntimeError:
-                pass
-        from ...plugin.run_restore import run_merge_separate
-
-        # (driver, confidence, path) for an export, None for a restore.
-        export = tuple(action[1:4]) if action and action[0] == "export" else None
-        # The merge policy is read HERE, on the GUI thread, and handed over as
-        # a plain bool: the worker must touch neither the plugin nor its caches.
-        worker = _RunFetchWorker(
-            self._history_client(), self._auth, run,
-            run_merge_separate(self._plugin, run), export)
-        worker.fetched.connect(self._on_run_fetched)
-        worker.failed.connect(self._on_run_fetch_failed)
-        worker.cancelled.connect(self._on_run_fetch_cancelled)
-        worker.progress.connect(self._on_run_fetch_progress)
-        self._fetch_worker = worker
-        self._track_live_worker(
-            worker, "fetched", "failed", "cancelled", "progress")
-        self._show_fetch_progress()
-        park_orphaned_worker(worker)
-        worker.start()
-
-    def _end_run_fetch(self) -> None:
-        self._hist_busy = False
-        self._pending_action = None
-        if self._detail_dlg is not None:
-            try:
-                self._detail_dlg.set_busy(False)
-            except RuntimeError:
-                pass
-
-    # ---- the wait window ----------------------------------------------------
-
-    def _show_fetch_progress(self) -> None:
-        """Arm the wait window, shown after a beat so a short run does not
-        flash a dialog on screen and take it away again."""
-        dlg = _RunProgressDialog(self._detail_dlg or self)
-        dlg.cancelled.connect(self._on_fetch_cancel_requested)
-        self._fetch_progress = dlg
-        QtC.safe_single_shot(350, self, self._reveal_fetch_progress)
-
-    def _reveal_fetch_progress(self) -> None:
-        dlg = self._fetch_progress
-        if dlg is None or not self._hist_busy:
-            return
-        try:
-            dlg.show()
-        except RuntimeError:
-            pass
-
-    def _close_fetch_progress(self) -> None:
-        """Take the wait window down because the work ended.
-
-        Never call this from its own cancelled signal: Qt routes a programmatic
-        close through reject(), and tearing a widget down inside its own signal
-        aborts QGIS on Qt6.
-        """
-        dlg = self._fetch_progress
-        self._fetch_progress = None
-        if dlg is None:
-            return
-        try:
-            dlg.finish()
-            dlg.deleteLater()
-        except RuntimeError:
-            pass
-
-    def _on_run_fetch_progress(self, phase: str, done: int, total: int) -> None:
-        dlg = self._fetch_progress
-        if dlg is None:
-            return
-        if phase == "decode":
-            text = tr("Rebuilding shapes ({done} of {total})").format(
-                done=done, total=total)
-        elif phase == "write":
-            text = tr("Writing the file...")
-            done, total = 0, 0
-        else:
-            text = tr("Loading stored detections ({done} of {total})").format(
-                done=done, total=total)
-        try:
-            dlg.set_step(text, done, total)
-        except RuntimeError:
-            pass
-
-    def _on_fetch_cancel_requested(self) -> None:
-        """Stop waiting for this run, now.
-
-        The thread is usually inside a blocking network call, so it takes up to
-        one call to notice. Its signals are cut here rather than left to land
-        in a dialog that has moved on, and the user gets the buttons back at
-        once; park_orphaned_worker owns what is left of the thread's life.
-        """
-        worker = self._fetch_worker
-        self._fetch_worker = None
-        # The window is closing itself (this runs from its own signal), so only
-        # drop the handle to it.
-        dlg = self._fetch_progress
-        self._fetch_progress = None
-        if dlg is not None:
-            try:
-                dlg.deleteLater()
-            except RuntimeError:
-                pass
-        if worker is not None:
-            try:
-                worker.requestInterruption()
-            except (RuntimeError, TypeError):
-                pass
-            # One guard per signal: batched with the interrupt above, a thread
-            # that had already finished raised on the first call and left all
-            # three handlers connected.
-            for signal_name in ("fetched", "failed", "progress"):
-                safe_disconnect(worker, signal_name)
-        self._end_run_fetch()
-
-    def _on_run_fetch_cancelled(self) -> None:
-        """The thread noticed the stop and wound down. The dialog freed itself
-        the moment Cancel was clicked, so there is nothing to undo here."""
-        log("Run history fetch stopped by the user", Qgis.MessageLevel.Info)
-
-    def _request_restore(self, run: dict, _detail_dlg=None) -> None:
-        if self._plugin is None or self._view_only:
-            return
-        self._start_run_fetch(run, ("restore",))
-
-    def _request_rerun(self, run: dict, _detail_dlg=None) -> None:
-        """Point the Automatic flow back at this run: same ground, same object,
-        same number of tiles, stopped one click short of spending anything.
-
-        Only the tile rows are fetched. The stored detections are what Restore
-        is for, and pointing at a zone does not need them.
-        """
-        if self._plugin is None or self._view_only or self._hist_busy:
-            return
-        if not self._auth:
-            return
-        self._hist_busy = True
-        if self._detail_dlg is not None:
-            try:
-                self._detail_dlg.set_busy(True)
-            except RuntimeError:
-                pass
-        worker = _RunZoneFetchWorker(self._history_client(), self._auth, run)
-        worker.fetched.connect(self._on_rerun_zone_fetched)
-        worker.failed.connect(self._on_run_fetch_failed)
-        self._track_live_worker(worker, "fetched", "failed")
-        park_orphaned_worker(worker)
-        worker.start()
-
-    def _on_rerun_zone_fetched(self, run: dict, tiles: list) -> None:
-        from ...plugin.run_restore import (
-            zone_extent_from_tiles,
-            zone_geometry_from_run,
-        )
-        self._end_run_fetch()
-        zone = zone_extent_from_tiles(tiles)
-        if zone is None:
-            QMessageBox.warning(
-                self, tr("Segment library"),
-                tr("This run did not keep where it looked, so it cannot be "
-                   "pointed at the same place. Draw the zone again."))
-            return
-        extent, authid = zone
-        dock = self._dock_widget()
-        if dock is None:
-            return
-        if self._detail_dlg is not None:
-            try:
-                self._detail_dlg.reject()
-            except RuntimeError:
-                pass
-        self.reject()  # close first; the plugin work is deferred a tick
-        payload = {
-            "prompt": run.get("prompt") or "",
-            "extent": list(extent),
-            "crs": authid,
-            "tiles": int(run.get("tiles") or len(tiles)),
-        }
-        # The shape the user drew, when the run kept it: the tile union is its
-        # bounding box, and re-running a box around an L-shaped zone bills for
-        # ground the first run never looked at. Carried in the same CRS as the
-        # extent beside it; absent on every older run, which keeps the box.
-        outline = zone_geometry_from_run(run, authid)
-        if outline is not None:
-            payload["zone_wkt"] = outline.asWkt()
-        dock.history_rerun_requested.emit(payload)
-
-    def _request_export(self, run: dict, _detail_dlg=None) -> None:
-        if self._plugin is None or self._view_only:
-            return
-        from ...plugin.run_restore import snap_confidence
-        default_conf = snap_confidence(run.get("threshold"), 0.30)
-        if default_conf <= 0.15:
-            default_conf = 0.30
-        dlg = _ExportRunDialog(run, default_conf, self._detail_dlg or self)
-        if not dlg.exec() or not dlg.path():
-            return
-        self._start_run_fetch(
-            run, ("export", dlg.driver(), dlg.confidence(), dlg.path()))
-
-    def _on_run_fetch_failed(self, code: str) -> None:
-        self._fetch_worker = None
-        self._close_fetch_progress()
-        self._end_run_fetch()
-        log(f"Run history fetch failed: {code}", Qgis.MessageLevel.Warning)
-        QMessageBox.warning(
-            self, tr("Segment library"),
-            tr("Could not load this run's stored detections. Try again later."))
-
-    def _on_run_fetched(self, run: dict, tiles: list, outcome: dict) -> None:
-        action = self._pending_action or ("restore",)
-        self._fetch_worker = None
-        self._close_fetch_progress()
-        self._end_run_fetch()
-        if "export" in outcome:
-            self._finish_export(run, outcome, action[1], action[3])
-            return
-        self._finish_restore(run, tiles, outcome)
-
-    def _missing_tiles_note(self, outcome: dict) -> str:
-        """One sentence when the fetch ran out of its wall-clock budget, so a
-        short result is never passed off as the whole run. Empty otherwise."""
-        skipped = int(outcome.get("tiles_skipped") or 0)
-        if skipped <= 0:
-            return ""
-        return tr("{n} part(s) of this run took too long to load and are "
-                  "missing from this result.").format(n=skipped)
-
-    def _finish_restore(self, run: dict, tiles: list, decoded: dict) -> None:
-        from qgis.PyQt.QtCore import Qt
-
-        from ...plugin import run_restore
-        # Building the review is still GUI work (the same tail a live run runs
-        # through _complete_auto_finalize); the decode that used to dominate it
-        # is already done on the thread.
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        try:
-            ok = run_restore.restore_run(self._plugin, run, tiles, decoded)
-        finally:
-            QApplication.restoreOverrideCursor()
-        if not ok:
-            QMessageBox.warning(
-                self, tr("Segment library"),
-                tr("Could not load this run's stored detections. Try again later."))
-            return
-        note = self._missing_tiles_note(decoded)
-        if note:
-            try:
-                self._plugin.iface.messageBar().pushWarning(
-                    "AI Segmentation", note)
-            except (RuntimeError, AttributeError):
-                pass
-        if self._detail_dlg is not None:
-            try:
-                self._detail_dlg.accept()
-            except RuntimeError:
-                pass
-        self.reject()  # no prompt chosen; the review is now open on the map
-
-    def _finish_export(self, run: dict, outcome: dict, driver: str,
-                       path: str) -> None:
-        """The file is already written (the fetch thread did it); what is left
-        is putting it on the map and saying how it went."""
-        from qgis.core import QgsProject
-
-        from ...plugin.run_restore import load_exported_layer
-
-        summary = outcome.get("export") or {}
-        count = int(summary.get("count") or 0)
-        layer = load_exported_layer(path, driver) if summary.get("written") else None
-        if not count or layer is None:
-            QMessageBox.warning(
-                self, tr("Export..."),
-                tr("Nothing to export at this confidence. Lower it and try again.")
-                if not count else
-                tr("The export failed. Check the file path and try again."))
-            return
-        # Exporting the same run twice used to stack a second layer on the
-        # first: same file, same name, two entries the user has to tell apart.
-        # Refresh the one already reading that file instead.
-        existing = _project_layer_reading(layer.source())
-        if existing is None:
-            QgsProject.instance().addMapLayer(layer)
-        else:
-            try:
-                existing.dataProvider().reloadData()
-                existing.triggerRepaint()
-            except (RuntimeError, AttributeError):
-                pass
-        try:
-            from ....core import telemetry_session_events
-            telemetry_session_events.track_history_exported(driver, count, run_id=_run_key(run))
-        except Exception:
-            pass  # nosec B110
-        note = self._missing_tiles_note(outcome)
-        QMessageBox.information(
-            self, tr("Export..."),
-            tr("Exported {n} polygon(s).").format(n=count) + (f"\n\n{note}" if note else ""))
 
     # ---- selection -------------------------------------------------------
 

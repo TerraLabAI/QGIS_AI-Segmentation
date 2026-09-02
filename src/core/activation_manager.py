@@ -30,16 +30,17 @@ TERRALAB_PREFIX = "TerraLab/"
 
 TUTORIAL_URL_FALLBACK = "https://youtu.be/lbADk75l-mk?si=q6WnwyV2NcmQYuhI"
 CONTACT_CALL_URL_FALLBACK = "https://calendly.com/barbot-yvann/30min"
-TERMS_URL = (
-    "https://terra-lab.ai/terms-of-sale"
-    "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
-    "&utm_content=settings_terms"
-)
-PRIVACY_URL = (
-    "https://terra-lab.ai/privacy-policy"
-    "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
-    "&utm_content=settings_privacy"
-)
+# The UTM stem every outbound legal link carries; the touchpoint adds its
+# own utm_content.
+_LEGAL_UTM_STEM = "utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
+# Bare page addresses, served as dials; the UTM is appended after the read.
+TERMS_URL_FALLBACK = "https://terra-lab.ai/terms-of-sale"
+CONSENT_TERMS_URL_FALLBACK = "https://terra-lab.ai/terms-of-use"
+PRIVACY_URL_FALLBACK = "https://terra-lab.ai/privacy-policy"
+TERMS_URL = f"{TERMS_URL_FALLBACK}?{_LEGAL_UTM_STEM}&utm_content=settings_terms"
+PRIVACY_URL = f"{PRIVACY_URL_FALLBACK}?{_LEGAL_UTM_STEM}&utm_content=settings_privacy"
+# Where a bug report or a question lands. Served as a top-level dial.
+SUPPORT_EMAIL_FALLBACK = "yvann.barbot@terra-lab.ai"
 DASHBOARD_URL = (
     "https://terra-lab.ai/dashboard/ai-segmentation"
     "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
@@ -59,14 +60,33 @@ def get_auth_token(settings=None) -> str:
     return _auth_get_activation_key(settings)
 
 
+def _forget_account_fingerprint() -> None:
+    """Drop the cached account tag that scopes the local stores.
+
+    Held here rather than left to each caller: the tag is what keeps one
+    account's history out of the next account's view, and a writer that forgot
+    the call served the account that had just left for the rest of the session.
+    Imported inside the call, because the cache module reaches back into this
+    one.
+    """
+    try:
+        from .presets.run_history_cache import reset_account_fingerprint_cache
+
+        reset_account_fingerprint_cache()
+    except Exception:  # noqa: BLE001 -- no cache to drop is the same as dropped
+        pass  # nosec B110
+
+
 def save_auth_token(token: str, settings=None):
     _auth_save_activation(token, settings)
+    _forget_account_fingerprint()
     s = settings or QgsSettings()
     s.setValue(f"{SETTINGS_PREFIX}activated", bool((token or "").strip()))
 
 
 def clear_auth(settings=None):
     _auth_clear_activation(settings)
+    _forget_account_fingerprint()
     s = settings or QgsSettings()
     s.setValue(f"{SETTINGS_PREFIX}activated", False)
 
@@ -250,12 +270,52 @@ def get_contact_call_url() -> str:
     return dial_url("contact_call_url", CONTACT_CALL_URL_FALLBACK)
 
 
-def get_terms_url() -> str:
-    return TERMS_URL
+def with_legal_utm(url: str, content: str) -> str:
+    """``url`` plus the shared UTM stem and this touchpoint's utm_content."""
+    joiner = "&" if "?" in url else "?"
+    return f"{url}{joiner}{_LEGAL_UTM_STEM}&utm_content={content}"
 
 
-def get_privacy_url() -> str:
-    return PRIVACY_URL
+def get_terms_url(content: str = "settings_terms") -> str:
+    """The terms of sale, served as ``terms_url``, read at click time."""
+    from .server_dials import dial_url
+
+    return with_legal_utm(dial_url("terms_url", TERMS_URL_FALLBACK), content)
+
+
+def get_consent_terms_url(content: str = "consent_terms") -> str:
+    """The terms of use behind the consent row, served as ``consent_terms_url``."""
+    from .server_dials import dial_url
+
+    return with_legal_utm(dial_url("consent_terms_url", CONSENT_TERMS_URL_FALLBACK), content)
+
+
+def get_privacy_url(content: str = "settings_privacy") -> str:
+    """The privacy policy, served as ``privacy_url``, read at click time."""
+    from .server_dials import dial_url
+
+    return with_legal_utm(dial_url("privacy_url", PRIVACY_URL_FALLBACK), content)
+
+
+_SUPPORT_EMAIL_MAX_CHARS = 120
+
+
+def get_support_email(fallback: str = SUPPORT_EMAIL_FALLBACK) -> str:
+    """The support address, served as ``support_email`` and checked for the
+    shape of one address: a single @, no blanks or control characters."""
+    from .server_dials import dial_str
+
+    served = dial_str("support_email", fallback)
+    if (
+        served.count("@") == 1
+        and len(served) <= _SUPPORT_EMAIL_MAX_CHARS
+        and served.isprintable()
+        and not any(c.isspace() for c in served)
+        and not served.startswith("@")
+        and not served.endswith("@")
+    ):
+        return served
+    return fallback
 
 
 def get_dashboard_url() -> str:

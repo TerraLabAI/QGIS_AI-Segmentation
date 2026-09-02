@@ -99,6 +99,13 @@ DESTRUCTIVE_METHODS = {
     "rename_session",
 }
 
+# apply_refine and review_filter belong in neither set above, on purpose.
+# They mutate the open review (which objects show as kept), so they are not
+# read-only, but nothing they do throws data away: total_found never drops,
+# and calling either again with different numbers is the only undo it needs.
+# review_remove_object and friends are destructive because they DO drop an
+# object into the correction journal; a size or confidence filter never does.
+
 _PARAM_KINDS = {
     inspect.Parameter.POSITIONAL_ONLY: "positional",
     inspect.Parameter.POSITIONAL_OR_KEYWORD: "positional_or_keyword",
@@ -140,6 +147,63 @@ def _split_doc(func: Any) -> tuple[str, str]:
     return parts[0].replace("\n", " ").strip(), (parts[1].strip() if len(parts) > 1 else "")
 
 
+# True for a line that is a NumPy-style docstring section header: a bare
+# heading immediately followed by a line of dashes underlining it.
+def _is_section_header(lines: list[str], index: int) -> bool:
+    line = lines[index]
+    stripped = line.strip()
+    if not stripped or line.startswith(" "):
+        return False
+    if index + 1 >= len(lines):
+        return False
+    underline = lines[index + 1].strip()
+    return bool(underline) and set(underline) == {"-"}
+
+
+# Every mcp_api_*.py docstring lists its parameters NumPy-style: "name : type"
+# at zero indent, an indented description below it. Reading that here means a
+# schema consumer gets the same words a person reading the source gets,
+# instead of the bare Python type repeated as if it were an explanation.
+def _param_descriptions(detail: str) -> dict[str, str]:
+    if not detail:
+        return {}
+    lines = detail.splitlines()
+    out: dict[str, list[str]] = {}
+    in_params = False
+    current: str | None = None
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if _is_section_header(lines, i):
+            in_params = stripped == "Parameters"
+            current = None
+            continue
+        if not in_params or (stripped and set(stripped) == {"-"}):
+            continue
+        if not stripped:
+            current = None
+            continue
+        if not line.startswith(" ") and ":" in stripped:
+            current = stripped.split(":", 1)[0].strip()
+            out[current] = []
+        elif current is not None:
+            out[current].append(stripped)
+    return {name: " ".join(parts).strip() for name, parts in out.items() if parts}
+
+
+# The prose before the first section header (Parameters, Returns, Cost...),
+# when a docstring has any: extra context a one-line summary drops.
+def _leading_prose(detail: str) -> str:
+    if not detail:
+        return ""
+    lines = detail.splitlines()
+    prose = []
+    for i, line in enumerate(lines):
+        if _is_section_header(lines, i):
+            break
+        prose.append(line.strip())
+    return " ".join(p for p in prose if p).strip()
+
+
 # Describes one method: what it takes, what it is for, what it costs.
 def describe_method(name: str, func: Any) -> dict:
     entry: dict[str, Any] = {"name": name}
@@ -148,6 +212,7 @@ def describe_method(name: str, func: Any) -> dict:
         entry["summary"] = summary
     if detail:
         entry["detail"] = detail
+    param_text = _param_descriptions(detail)
     params = []
     try:
         signature = inspect.signature(func)
@@ -161,6 +226,7 @@ def describe_method(name: str, func: Any) -> dict:
                 "name": param_name,
                 "kind": _PARAM_KINDS.get(param.kind, "unknown"),
                 "type": _annotation_text(param.annotation),
+                "description": param_text.get(param_name, ""),
                 "required": param.default is inspect.Parameter.empty,
                 "default": _default_value(param.default),
             })
@@ -243,15 +309,22 @@ def tool_definitions(prefix: str, handle: Any) -> list[dict]:
             # word "bool" out of a callable's return and calls it a checkbox.
             if _is_callable_annotation(param["type"]):
                 continue
+            # The docstring's own words when the Parameters section named
+            # this one, the bare type otherwise: naming the type is a poor
+            # fallback, but it beats nothing for a parameter no one wrote a
+            # sentence about.
             properties[param["name"]] = {
                 "type": _json_type(param["type"]),
-                "description": param["type"] or "",
+                "description": param.get("description") or param["type"] or "",
             }
             if param["required"]:
                 required.append(param["name"])
+        summary = method.get("summary", "")
+        extra = _leading_prose(method.get("detail", ""))
+        description = f"{summary} {extra}".strip() if extra else summary
         tools.append({
             "name": f"{prefix}_{method['name']}",
-            "description": method.get("summary", ""),
+            "description": description,
             "inputSchema": {
                 "type": "object",
                 "properties": properties,

@@ -18,6 +18,8 @@ the isolated venv, not from QGIS's Python).
 """
 from __future__ import annotations
 
+from .shape_policy_dials import reach_min_steps, reach_work_budget, weld_gap_m, weld_radius_px_cap
+
 # A gap no wider than this reads as one object interrupted, not two objects.
 WELD_GAP_M = 0.5
 WELD_RADIUS_PX_CAP = 3
@@ -34,8 +36,8 @@ def weld_radius_px(pixel_size_m: float) -> int:
     """Half the widest gap to weld, in pixels (closing bridges twice this)."""
     if not pixel_size_m or pixel_size_m <= 0:
         return 1
-    radius = int(round(WELD_GAP_M / (2.0 * pixel_size_m)))
-    return max(1, min(WELD_RADIUS_PX_CAP, radius))
+    radius = int(round(weld_gap_m(WELD_GAP_M) / (2.0 * pixel_size_m)))
+    return max(1, min(weld_radius_px_cap(WELD_RADIUS_PX_CAP), radius))
 
 
 def grow_shape_with_click(prior_mask, click_mask, pixel_size_m: float = 0.0,
@@ -166,7 +168,8 @@ def _reached_from(seed, mask):
     c0, c1 = max(0, int(cols[0]) - 1), min(mask.shape[1], int(cols[-1]) + 2)
     window = mask[r0:r1, c0:c1]
     walked = inside[r0:r1, c0:c1].copy()
-    budget = max(REACH_MIN_STEPS, int(REACH_WORK_BUDGET / max(1, walked.size)))
+    budget = max(reach_min_steps(REACH_MIN_STEPS),
+                 int(reach_work_budget(REACH_WORK_BUDGET) / max(1, walked.size)))
     for _ in range(budget):
         step = np.logical_and(_dilated_once(walked), window)
         if np.array_equal(step, walked):

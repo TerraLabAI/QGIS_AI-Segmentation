@@ -35,7 +35,11 @@ from .python_release_pins import (
     PYTHON_VERSIONS,
     RELEASE_TAG,
 )
-from .streamed_download import discard_part_file, stream_url_to_file
+from .streamed_download import (
+    discard_part_file,
+    sleep_unless_cancelled,
+    stream_url_to_file,
+)
 from .subprocess_utils import (  # nosec B404 - our helper, name merely starts with "subprocess"
     get_clean_env_for_venv,
     get_subprocess_kwargs,
@@ -293,7 +297,7 @@ def get_qgis_python_version() -> tuple[int, int]:
     """Get the target Python version for the standalone interpreter.
 
     Under Rosetta, returns (3, 10) so we download ARM64 Python 3.10+
-    for SAM2 support instead of matching QGIS's x86_64 Python 3.9.
+    for the AI engine instead of matching QGIS's x86_64 Python 3.9.
     """
     if IS_ROSETTA:
         return (3, 10)
@@ -432,15 +436,20 @@ def get_download_urls() -> list[str]:
     return [f"{base}/{name}" for name in names]
 
 
-def _sha256_file(filepath: str) -> str:
-    """Stream a file through SHA256 in 4096-byte blocks.
+#: Read size for the hash pass. The archive is tens of MB, and the small block
+#: the standard recipe uses costs one Python call per 4 KB for no gain.
+_HASH_BLOCK_BYTES = 1024 * 1024
 
-    Mirrors checkpoint_manager.verify_checkpoint_hash so the archive (tens of
-    MB) is not held in memory a second time.
+
+def _sha256_file(filepath: str) -> str:
+    """Stream a file through SHA256 a megabyte at a time.
+
+    Mirrors checkpoint_manager.verify_checkpoint_hash so the archive is not
+    held in memory a second time.
     """
     sha256_hash = hashlib.sha256()
     with open(filepath, "rb") as f:
-        for byte_block in iter(lambda: f.read(4096), b""):
+        for byte_block in iter(lambda: f.read(_HASH_BLOCK_BYTES), b""):
             sha256_hash.update(byte_block)
     return sha256_hash.hexdigest()
 
@@ -509,11 +518,23 @@ def download_python_standalone(
 
     urls = get_download_urls()
     python_version = get_python_full_version()
+    if not urls:
+        # No published archive name fits this machine. Reading urls[0] here
+        # raised an IndexError that reached the user as "list index out of
+        # range", which names neither the cause nor anything to do about it.
+        message = (
+            f"No standalone Python {python_version} build is published for "
+            f"{platform.system()} {platform.machine()}. Automatic mode works "
+            "without it; Semi-Auto needs a system Python instead."
+        )
+        _log(message, Qgis.MessageLevel.Critical)
+        return False, message
 
     _log(f"Downloading Python {python_version} from: {urls[0]}", Qgis.MessageLevel.Info)
 
     if progress_callback:
-        progress_callback(0, f"Downloading Python {python_version}...")
+        progress_callback(0, tr("Downloading Python {version}...").format(
+            version=python_version))
 
     # Create temp file for download, contained on the cache volume so a full
     # system drive does not ENOSPC the download (see plugin_cache_tmp_dir).
@@ -525,7 +546,7 @@ def download_python_standalone(
             return False, "Download cancelled"
 
         if progress_callback:
-            progress_callback(5, "Connecting to download server...")
+            progress_callback(5, tr("Connecting to download server..."))
 
         # Try each URL variant (stripped first, plain as fallback), each
         # with up to 3 attempts and exponential backoff. QGIS network
@@ -583,12 +604,16 @@ def download_python_standalone(
                 if result.ok:
                     break
 
-                discard_part_file(temp_path)
                 error_msg = result.error or "Download failed"
                 if _asset_unavailable(result.http_status, error_msg):
                     # The asset is not there for this build. Retrying the same
-                    # address cannot change that; the next variant might.
+                    # address cannot change that; the next variant might, and
+                    # its bytes are a different file, so nothing carries over.
+                    discard_part_file(temp_path)
                     break
+                # Everything else is worth another attempt against the same
+                # address, and the part file is what makes that attempt cheap:
+                # the transfer picks up where it stopped.
 
                 if attempt < max_retries - 1:
                     wait = 5 * (2 ** attempt)  # 5, 10s
@@ -601,13 +626,20 @@ def download_python_standalone(
                         progress_callback(5, tr(
                             "Network error, retrying in {seconds}s...").format(
                                 seconds=wait))
-                    time.sleep(wait)
+                    # Sliced, not a flat sleep: the ladder doubles, and a flat
+                    # one left Cancel dead for the whole wait.
+                    if sleep_unless_cancelled(wait, cancel_check):
+                        discard_part_file(temp_path)
+                        return False, "Download cancelled"
 
             if result is None or not result.ok:
                 unavailable = _asset_unavailable(
                     result.http_status if result is not None else None,
                     error_msg,
                 )
+                # Nothing more will be asked of this address, so its partial
+                # file must not be resumed against the next one.
+                discard_part_file(temp_path)
                 if unavailable:
                     if url_idx + 1 < len(urls):
                         _log(
@@ -689,7 +721,7 @@ def download_python_standalone(
             _log(f"Download complete ({content_size} bytes), extracting...", Qgis.MessageLevel.Info)
 
             if progress_callback:
-                progress_callback(55, "Extracting Python...")
+                progress_callback(55, tr("Extracting Python..."))
 
             # Remove existing standalone dir if it exists
             if os.path.exists(STANDALONE_DIR):
@@ -710,14 +742,15 @@ def download_python_standalone(
                 _create_python_symlinks(os.path.join(STANDALONE_DIR, "python"))
 
             if progress_callback:
-                progress_callback(80, "Verifying Python installation...")
+                progress_callback(80, tr("Verifying Python installation..."))
 
             # Verify installation
             success, verify_msg = verify_standalone_python()
 
             if success:
                 if progress_callback:
-                    progress_callback(100, f"✓ Python {python_version} installed")
+                    progress_callback(100, tr("Python {version} installed").format(
+                        version=python_version))
                 _log("Python standalone installed successfully", Qgis.MessageLevel.Success)
                 return True, f"Python {python_version} installed successfully"
             # Clean up broken installation so _get_system_python() won't find it
@@ -785,7 +818,7 @@ def verify_standalone_python() -> tuple[bool, str]:
         # stay hidden until it resurfaced as a cryptic "No module named
         # '_posixsubprocess'" crash at venv-creation time. Importing it here
         # catches the broken build now, so it is removed and re-downloaded
-        # instead of being trusted (#bug-anehm).
+        # instead of being trusted. Reported from the field.
         # A machine that momentarily refuses a new process (EAGAIN) must not
         # cost us an archive that is already downloaded and on disk. Retry the
         # spawn a couple of times; every other error fails immediately, so a
@@ -816,7 +849,7 @@ def verify_standalone_python() -> tuple[bool, str]:
             # Require the FULL version to match what we downloaded. A major.minor
             # check let a wrong interpreter (e.g. the host's 3.9.5 instead of the
             # bundled 3.9.24) pass verification, masking a broken extraction that
-            # only failed later at venv creation (#bug-anehm).
+            # only failed later at venv creation. Reported from the field.
             if version_output != expected_version:
                 msg = f"Python version mismatch: got {version_output}, expected {expected_version}"
                 _log(msg, Qgis.MessageLevel.Warning)
@@ -853,7 +886,13 @@ def _remove_standalone_tree(path: str) -> None:
             raise
         func(target)
 
-    shutil.rmtree(_win_extended_path(path), onerror=_retry)
+    if sys.version_info >= (3, 12):
+        # onerror is deprecated from 3.12, and its replacement hands the
+        # exception itself instead of the sys.exc_info() triple.
+        shutil.rmtree(_win_extended_path(path),
+                      onexc=lambda func, target, exc: _retry(func, target, exc))
+    else:
+        shutil.rmtree(_win_extended_path(path), onerror=_retry)
 
 
 def remove_standalone_python() -> tuple[bool, str]:

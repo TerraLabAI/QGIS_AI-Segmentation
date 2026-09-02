@@ -136,6 +136,7 @@ class DockRefineMixin:
         (Shape / Outline / Size) with its wording, so one setting reads the
         same in both modes.
         """
+        # One title for the life of the panel: nothing retitles it.
         self._refine_panel_title = tr("Outline settings")
         self.refine_group = QWidget()
         self.refine_group.setVisible(False)  # Hidden until segmentation active
@@ -618,7 +619,7 @@ class DockRefineMixin:
         except (RuntimeError, AttributeError, ImportError):
             return True
 
-    def _sync_refine_shape_toggles(self) -> None:
+    def _sync_refine_shape_toggles(self, publish: bool = True) -> None:
         """Show the pair on Cloud AI, hide it offline (hidden, never greyed,
         like every other cloud-only affordance in this panel).
 
@@ -626,6 +627,11 @@ class DockRefineMixin:
         offline outline. Their ticks are remembered and given back the moment
         the cloud answers again, exactly as Right angles does with Round
         corners.
+
+        ``publish=False`` for a caller that is seeding the whole panel: it
+        blocked every signal on purpose, and one announcement from in here
+        would send the half-written state back to the side that shapes the
+        outline.
         """
         rows = getattr(self, "refine_shape_toggles", None)
         if rows is None:
@@ -674,37 +680,22 @@ class DockRefineMixin:
         # Every setChecked above ran with the signals blocked, so the side that
         # shapes the outline heard none of them. Say it once, and only when
         # something actually moved.
-        if changed:
+        if changed and publish:
             self.publish_refine_settings()
 
     def _sync_refine_right_angle_controls(self, _state=None) -> None:
         """Make incompatible Shape controls unavailable with Right angles.
 
-        The Automatic review's rule (_sync_auto_right_angle_controls), applied
-        to the Manual panel. _emit_refine_changed enforces the same thing on the
-        values, so a disabled widget can never leave an old setting active.
-
-        Right angles itself is refused here when the geometry library behind it
-        is missing (right_angles_support), on the same terms as the review: only
-        a TICKED box is tested, and the seeded default is off, so the
-        build-time call never imports shapely at plugin load.
+        The shared body lives in right_angles_support (the review's Shapes step
+        runs the same one). What stays here is the Manual panel's own Round
+        corners handling: the user's tick is remembered while Right angles
+        holds it off, and given back the moment it lets go.
         """
-        ortho = getattr(self, "right_angles_checkbox", None)
-        if ortho is not None and ortho.isChecked():
-            from .right_angles_support import gate_right_angles
+        from .right_angles_support import apply_right_angle_conflicts
 
-            gate_right_angles(ortho, getattr(self, "right_angles_label", None))
-        enabled = not bool(ortho is not None and ortho.isChecked())
-        blocked_tip = tr(
-            "Unavailable while Right angles is on. Turn it off to adjust this "
-            "setting.")
-        for widget, normal_tip in getattr(
-                self, "_refine_right_angle_conflict_tooltips", ()):
-            try:
-                widget.setEnabled(enabled)
-                widget.setToolTip(normal_tip if enabled else blocked_tip)
-            except (RuntimeError, AttributeError):
-                pass
+        enabled = apply_right_angle_conflicts(
+            self, "right_angles_checkbox", "right_angles_label",
+            "_refine_right_angle_conflict_tooltips")
         # Curving an outline after it has been squared is contradictory. Clear
         # the state as well as disabling the control, so toggling Right angles
         # never leaves a hidden rounding pass in the preview. The user's own
@@ -798,16 +789,6 @@ class DockRefineMixin:
         self._refine_expanded = not self._refine_expanded
         self._apply_refine_toggle(self._refine_expanded)
 
-    def set_refine_panel_title(self, title: str) -> None:
-        """Retitle the panel (keeps the current collapse chevron)."""
-        self._refine_panel_title = title
-        self._refresh_refine_header()
-
-    def set_refine_collapsed(self, collapsed: bool) -> None:
-        """Force the panel collapsed/expanded (immediate)."""
-        self._refine_expanded = not collapsed
-        self._apply_refine_toggle(self._refine_expanded)
-
     def _apply_refine_toggle(self, expanded):
         """Show/hide the content card and sync the header chevron.
 
@@ -884,20 +865,6 @@ class DockRefineMixin:
             self.fill_holes_checkbox.isChecked(),
             right_angles,
         )
-
-    def get_refine_points_pct(self) -> int:
-        """Points dial: the share of its own points an outline keeps (1-100)."""
-        try:
-            return int(self.points_spinbox.value())
-        except (RuntimeError, AttributeError):
-            return REFINE_POINTS_PCT_DEFAULT
-
-    def get_refine_simplify_px(self) -> float:
-        """Simplify tolerance in crop pixels (0 = off)."""
-        try:
-            return float(self.simplify_spinbox.value())
-        except (RuntimeError, AttributeError):
-            return float(REFINE_SIMPLIFY_DEFAULT)
 
     def reset_refine_sliders(self):
         """Put the panel back where a new session starts, emitting nothing.
@@ -994,14 +961,7 @@ class DockRefineMixin:
         self._forget_refine_engine_memory()
         self._sync_fill_holes_max_row()
         self._sync_refine_right_angle_controls()
-        self._sync_refine_shape_toggles()
-
-    def set_fill_holes_max_value(self, max_m2: float) -> None:
-        """Set the fill-holes size threshold without emitting signals
-        (ground m2, 0 = fill every hole)."""
-        self.fill_holes_max_spinbox.blockSignals(True)
-        self.fill_holes_max_spinbox.setValue(max(0.0, float(max_m2 or 0.0)))
-        self.fill_holes_max_spinbox.blockSignals(False)
+        self._sync_refine_shape_toggles(publish=False)
 
     def set_size_filter_values(self, min_m2: float, max_m2: float) -> None:
         """Set the Min/Max size filters without emitting signals (0 = off)."""

@@ -8,6 +8,7 @@ from __future__ import annotations
 from qgis.PyQt.QtGui import QIcon
 
 from ..core.qt_compat import QAction
+from ..core.surface_dials import cross_promo_url, cross_sell_ai_edit_enabled
 from .external_links import open_external_url
 
 # QGIS registers a plugin under its install folder name, so match the released
@@ -16,10 +17,17 @@ _AI_EDIT_KEYS = ("AI_Edit", "QGIS_AI-Edit")
 # Must match the sibling's metadata.txt name= so the Plugin Manager filter lands
 # on the right row.
 _AI_EDIT_PLUGIN_NAME = "AI Edit by TerraLab"
+# Fallback for the served product page, read at click time.
 _AI_EDIT_PRODUCT_URL = (
     "https://terra-lab.ai/ai-edit"
     "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai_segmentation_cross_promo"
 )
+
+
+def ai_edit_cross_sell_offered() -> bool:
+    """Whether any AI Edit cross-sell surface should show. Server kill
+    switch, fail-open, read when the surface is built."""
+    return cross_sell_ai_edit_enabled()
 
 
 def _find_installed_plugin(keys: tuple[str, ...]):
@@ -63,7 +71,7 @@ def open_ai_edit_page() -> None:
     """Open the AI Edit product page in the browser - always the website, with
     no installed-plugin detection. Used by the in-dock footer CTA.
     """
-    open_external_url(_AI_EDIT_PRODUCT_URL)
+    open_external_url(cross_promo_url(_AI_EDIT_PRODUCT_URL))
 
 
 def open_plugin_manager(plugin_name: str, fallback_url: str) -> None:
@@ -161,7 +169,11 @@ def make_ai_edit_action(parent, iface, label: str, tooltip: str,
         plugin = _find_installed_plugin(_AI_EDIT_KEYS)
         if plugin is not None and _activate_dock(plugin):
             return
-        open_plugin_manager(_AI_EDIT_PLUGIN_NAME, _AI_EDIT_PRODUCT_URL)
+        open_plugin_manager(_AI_EDIT_PLUGIN_NAME, cross_promo_url(_AI_EDIT_PRODUCT_URL))
 
     action.triggered.connect(triggered)
+    # The kill switch hides the toolbar and menu entries in one place; the
+    # caller still gets an action to register and unload.
+    if not ai_edit_cross_sell_offered():
+        action.setVisible(False)
     return action

@@ -14,6 +14,11 @@ from qgis.core import Qgis, QgsMessageLog
 from .pip_diagnostics import get_app_control_help, is_antivirus_error, is_app_control_error
 from .subprocess_utils import get_clean_env_for_venv, get_subprocess_kwargs  # nosec B404
 
+# How long a timed-out read waits for its own reader thread once the pipe it is
+# blocked on has been closed. Short: this runs on the GUI thread, and the point
+# is to let the thread end, not to wait for it.
+_READER_JOIN_S = 0.2
+
 
 class SamWorkerError(RuntimeError):
     """Error reported by the worker over the protocol.
@@ -133,6 +138,10 @@ class SamPredictor:
 
         if reader_thread.is_alive():
             self.cleanup()
+            # cleanup() closes the pipe the thread is blocked on, so it ends by
+            # itself a moment later. Waited for briefly, and never longer: a
+            # thread that will not go is left daemon, exactly as before.
+            reader_thread.join(timeout=_READER_JOIN_S)
             raise TimeoutError(
                 f"Worker did not respond within {timeout_seconds}s"
             )

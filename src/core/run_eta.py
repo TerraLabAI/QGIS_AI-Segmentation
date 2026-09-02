@@ -9,8 +9,9 @@ decision is already made.
 Two properties decide the shape of what is shown:
 
 - **The relationship is a line.** A fixed opening cost, then a steady cost per
-  tile. Concurrency is fixed, so throughput does not improve with size and the
-  per-tile cost stays flat across the whole range.
+  tile. That per-tile cost is a served constant fitted to the fleet, so it
+  already carries what the adaptive width does on a real link, and throughput
+  does not improve with size.
 - **The spread is too wide for one number.** Wait times vary by more than a
   factor of two between an ordinary run and a slow one. Most of that is time
   no tile is in flight at all: imagery that arrives slowly, a retry, a link
@@ -36,7 +37,7 @@ from .i18n import tr
 # (waking the service, filling the pipeline). Generic fallbacks: the server
 # holds the values that follow the service, and these two only have to be the
 # right order of magnitude when it says nothing.
-SECONDS_PER_TILE_DEFAULT = 0.58
+SECONDS_PER_TILE_DEFAULT = 0.40
 FIXED_SECONDS_DEFAULT = 1.0
 
 # How much slower the top of the quoted band runs than its bottom. One factor,
@@ -63,18 +64,48 @@ _MIN_SHOW_BAND = (0.0, 3600.0)
 _SECTION_KEY = "run_eta"
 
 
-def run_seconds(tiles: int, policy: dict | None = None) -> tuple[float, float]:
+def run_seconds(tiles: int, policy: dict | None = None,
+                seconds_per_tile: float | None = None) -> tuple[float, float]:
     """Typical and slow wall clock for a run of ``tiles`` tiles, in seconds.
 
     ``(0.0, 0.0)`` when the tile count is not a usable positive number, which
     is every caller's signal to show nothing.
+
+    ``seconds_per_tile`` replaces the fleet-wide dial when the caller knows
+    better: the pace this account's own recent runs actually held (see
+    :func:`own_pace_seconds_per_tile`). The fleet dial is measured on the
+    service side, and a slow uplink or a corporate gateway can hold a run
+    several times longer than that without the service ever seeing it.
     """
     count = _positive_int(tiles)
     if count <= 0:
         return (0.0, 0.0)
     dials = _run_eta_dials(policy)
-    typical = dials["fixed_s"] + dials["seconds_per_tile"] * count
+    per_tile = dials["seconds_per_tile"]
+    if seconds_per_tile is not None:
+        per_tile = _dial({"own": seconds_per_tile}, "own", per_tile,
+                         _SECONDS_PER_TILE_BAND)
+    typical = dials["fixed_s"] + per_tile * count
     return (typical, typical * dials["slow_factor"])
+
+
+def own_pace_seconds_per_tile(plan: object) -> float | None:
+    """The pace of this account's own recent runs, from a served run plan.
+
+    The plan MAY carry an additive ``run_pace`` object with a
+    ``seconds_per_tile`` figure the server measured on the account's last
+    runs, wall clock from first tile sent to last tile answered. Absent,
+    malformed or out of band reads as None, and the caller keeps the fleet
+    dial: an older server, a first run, or a bad deploy must all leave the
+    estimate exactly as it is today.
+    """
+    if not isinstance(plan, dict):
+        return None
+    block = plan.get("run_pace")
+    if not isinstance(block, dict):
+        return None
+    value = _dial(block, "seconds_per_tile", 0.0, _SECONDS_PER_TILE_BAND)
+    return value if value > 0 else None
 
 
 def friendly_run_eta(tiles: int, policy: dict | None = None) -> str:
@@ -95,6 +126,108 @@ def friendly_run_eta(tiles: int, policy: dict | None = None) -> str:
     low = max(1, int(round(typical / 60.0)))
     high = max(low, int(math.ceil(slow / 60.0)))
     return tr("{m} min").format(m=_span(low, high))
+
+
+def friendly_run_eta_about(tiles: int, policy: dict | None = None,
+                           seconds_per_tile: float | None = None) -> str:
+    """One rounded duration for ``tiles`` tiles ("about 9 min"), or ``""``.
+
+    The single-figure form of :func:`friendly_run_eta`, for the line under
+    Detect: that line names the object the user typed, so it can afford one
+    number where the fold header quoted a band. The typical run, never the
+    slow end, and whole minutes only for the reason given there. Under a
+    minute it says so instead of rounding up to one. ``seconds_per_tile``
+    is the account's own measured pace when known (see :func:`run_seconds`).
+    """
+    typical, _slow = run_seconds(tiles, policy, seconds_per_tile)
+    if typical <= 0:
+        return ""
+    if typical < 60.0:
+        return tr("under a minute")
+    return tr("about {m} min").format(m=max(1, int(round(typical / 60.0))))
+
+
+def friendly_time_left(seconds: float) -> str:
+    """The run's own remaining time as a short sentence, or ``""``.
+
+    Coarse on purpose: the rate it comes from moves with every hiccup, and a
+    figure that ticks by the second reads as a promise the run cannot keep.
+    """
+    if seconds is None or seconds < 0:
+        return ""
+    if seconds < 45.0:
+        return tr("Less than a minute left")
+    minutes = max(1, int(round(seconds / 60.0)))
+    if minutes <= 1:
+        return tr("About a minute left")
+    return tr("About {m} min left").format(m=minutes)
+
+
+# The live "About N min left" line, and what it must not quote. A run opens
+# slower than it goes on: the first tiles wait on imagery and on the service
+# accepting the pass, and none of that repeats. Quoting that opening rate over
+# a long window put a figure on screen that halved in the first minute, which
+# reads as a promise the run never meant. So the line stays quiet a little
+# longer, and once it speaks it measures over a SHORT trailing window, where
+# the opening has already fallen out.
+LIVE_WINDOW_SECONDS = 30.0
+LIVE_MIN_TILES = 12
+LIVE_MIN_SECONDS = 15.0
+
+
+class RunPace:
+    """The pace of a run as it happens, from its own progress reports.
+
+    Feed it ``note(done, total, now)`` as tiles land and ask
+    :meth:`seconds_left`. The rate is measured over the last ``window_s``
+    seconds of reports (the whole run while it is shorter than that), so a
+    slow start does not drag on the estimate for the whole run and a hiccup
+    fades out of it within a minute. Silent until ``min_tiles`` tiles and
+    ``min_seconds`` seconds have been seen: before that the rate is noise.
+    Pure Python, no Qt, so the dock can own one per pass and tests can drive
+    it with a fake clock.
+    """
+
+    def __init__(self, window_s: float = LIVE_WINDOW_SECONDS,
+                 min_tiles: int = LIVE_MIN_TILES,
+                 min_seconds: float = LIVE_MIN_SECONDS) -> None:
+        self._window_s = max(1.0, float(window_s))
+        self._min_tiles = max(1, int(min_tiles))
+        self._min_seconds = max(0.0, float(min_seconds))
+        self._samples: list[tuple[float, int]] = []
+        self._total = 0
+
+    def note(self, done: int, total: int, now: float) -> None:
+        """Record one progress report at instant ``now`` (monotonic seconds)."""
+        done = max(0, int(done))
+        self._total = max(0, int(total))
+        if self._samples and done < self._samples[-1][1]:
+            # A pass that restarted its count: begin again.
+            self._samples = []
+        self._samples.append((now, done))
+        cutoff = now - self._window_s
+        while len(self._samples) > 2 and self._samples[1][0] < cutoff:
+            self._samples.pop(0)
+
+    def rate(self) -> float:
+        """Tiles per second over the window, or 0.0 while unknown."""
+        if len(self._samples) < 2:
+            return 0.0
+        (t0, d0), (t1, d1) = self._samples[0], self._samples[-1]
+        span = t1 - t0
+        if span < self._min_seconds or d1 - d0 < self._min_tiles:
+            return 0.0
+        return (d1 - d0) / span
+
+    def seconds_left(self) -> float | None:
+        """Seconds to the end of the pass, or None while the pace is unknown."""
+        rate = self.rate()
+        if rate <= 0 or not self._samples:
+            return None
+        remaining = self._total - self._samples[-1][1]
+        if remaining <= 0:
+            return 0.0
+        return remaining / rate
 
 
 def _span(low: int, high: int) -> str:

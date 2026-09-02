@@ -115,7 +115,7 @@ class DockQgisBridgeMixin:
             _SUBCARD_QSS.format(name="qgisBridgeBanner") + "QLabel { background: transparent; border: none; }")
         col = QVBoxLayout(self.qgis_bridge_banner)
         col.setContentsMargins(*_SUBCARD_MARGINS)
-        col.setSpacing(8)
+        col.setSpacing(6)
 
         # Title: the run's class names the polygon, the way the AI panel names
         # it. set_qgis_bridge_target fills the class in.
@@ -351,9 +351,10 @@ class DockQgisBridgeMixin:
         self._qgis_bridge_tool = str(tool)
         for key, btn in getattr(self, "_qgis_bridge_tool_buttons", {}).items():
             try:
-                btn.setProperty("armed", key == tool)
-                btn.style().unpolish(btn)
-                btn.style().polish(btn)
+                # One spelling of the armed property across the dock: the
+                # toggle QSS matches [armed="true"], so a bare bool would never
+                # paint.
+                self._set_btn_armed(btn, key == tool)
             except (RuntimeError, AttributeError):
                 pass
         # Drawing a new object is not editing the picked one, so the title says

@@ -74,12 +74,34 @@ def locale_variants(locale: str) -> list[str]:
     return variants
 
 
+# Session memo of the locale string. QGIS applies a language change only after
+# a restart, so this cannot move under us. It matters because building a
+# QSettings costs far more than reading a value off an existing one, and the
+# locale is read on paths that run hundreds of times per panel build.
+_user_locale: str | None = None
+
+
 def current_locale() -> str:
     """The QGIS UI locale, or an empty string when it cannot be read."""
-    try:
-        return str(QSettings().value("locale/userLocale", "en_US") or "")
-    except Exception:  # noqa: BLE001 -- locale is best-effort  # nosec B110
-        return ""
+    global _user_locale
+    if _user_locale is None:
+        try:
+            _user_locale = str(QSettings().value("locale/userLocale", "en_US") or "")
+        except Exception:  # noqa: BLE001 -- locale is best-effort  # nosec B110
+            return ""
+    return _user_locale
+
+
+def reset_locale_cache() -> None:
+    """Drop the memoized locale and everything loaded from it.
+
+    The memo is valid for as long as the QGIS locale is, which is the whole
+    session. Call this only when the locale itself changes under the plugin.
+    """
+    global _user_locale, _loaded
+    _user_locale = None
+    _loaded = False
+    _translations.clear()
 
 
 def resolve_language(supported) -> str | None:
@@ -98,7 +120,12 @@ def resolve_language(supported) -> str | None:
 
 
 def _load_translations():
-    """Load translations from .ts XML file based on QGIS locale."""
+    """Load translations from .ts XML file based on QGIS locale.
+
+    Never raises. Every caller reaches this through ``tr()``, which sits on the
+    first line of most of the plugin, so anything that escapes here takes the
+    whole plugin down at startup rather than costing one language.
+    """
     global _loaded
 
     if _loaded:
@@ -106,31 +133,37 @@ def _load_translations():
 
     _loaded = True
 
-    # Get the locale from QGIS settings
-    locale = QSettings().value("locale/userLocale", "en_US")
-    if not locale:
-        return
-
-    # English is the source language - no translation needed
-    if locale.startswith("en"):
-        return
-
-    # Find the translation file
-    plugin_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
     ts_path = None
-    for variant in locale_variants(locale):
-        candidate = os.path.join(plugin_dir, "i18n", f"ai_segmentation_{variant}.ts")
-        if os.path.exists(candidate):
-            ts_path = candidate
-            break
-
-    if ts_path is None:
-        return
-
     try:
+        # str(): QSettings hands back whatever the profile holds, and a value
+        # written as a list or a number has no startswith.
+        locale = current_locale()
+        if not locale:
+            return
+
+        # English is the source language - no translation needed
+        if locale.startswith("en"):
+            return
+
+        # Find the translation file
+        plugin_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+        for variant in locale_variants(locale):
+            candidate = os.path.join(plugin_dir, "i18n", f"ai_segmentation_{variant}.ts")
+            if os.path.exists(candidate):
+                ts_path = candidate
+                break
+
+        if ts_path is None:
+            return
+
         tree = _safe_parse(ts_path)
         root = tree.getroot()
+
+        # Built aside and swapped in at the end: a file that parses and then
+        # breaks part way through leaves the plugin all-English rather than
+        # half translated, which is the harder thing to report.
+        parsed: dict[str, str] = {}
 
         # Parse all contexts
         for context in root.findall("context"):
@@ -147,13 +180,24 @@ def _load_translations():
                     continue
 
                 source_text = source.text or ""
+                # A plain <translation> carries its text directly. A plural one
+                # nests <numerusform> children and leaves .text at None, which
+                # dropped the whole entry in silence.
                 translation_text = translation.text
+                if translation_text is None:
+                    forms = translation.findall("numerusform")
+                    if forms:
+                        translation_text = forms[0].text or ""
+                    else:
+                        translation_text = "".join(translation.itertext())
 
                 # Skip unfinished/empty translations
                 if translation_text and translation.get("type") != "unfinished":
-                    _translations[source_text] = translation_text
+                    parsed[source_text] = translation_text
 
-    except Exception as e:
+        _translations.update(parsed)
+
+    except Exception as e:  # noqa: BLE001 -- English is always a valid answer
         try:
             from qgis.core import Qgis, QgsMessageLog
             QgsMessageLog.logMessage(

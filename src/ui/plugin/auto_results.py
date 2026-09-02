@@ -30,15 +30,13 @@ from ...workers.live_stitch_thread import (
     LiveStitchThread,
 )
 from .shared import (
-    _AUTO_LIVE_FRAME_COST_RATIO,
-    _AUTO_LIVE_REPAINT_MAX_MS,
-    _AUTO_LIVE_REPAINT_MS,
     _FIELD_TYPE_DOUBLE,
     _FIELD_TYPE_INT,
     _FIELD_TYPE_STRING,
     _add_features_with_ids,
     _apply_fast_render,
     _notify_provider_write,
+    auto_live_repaint_settings,
     park_orphaned_worker,
 )
 
@@ -333,6 +331,7 @@ class AutoResultsMixin:
         self._auto_stitch_shape_px = 0.0
         self._auto_stitch_shape_mpu = 0.0
         self._auto_stitch_shapes_stale = True
+        self._auto_stitch_dirty_fids = set()
         stitcher = LiveStitchThread(
             self._auto_merger,
             params=params,
@@ -445,6 +444,12 @@ class AutoResultsMixin:
         self._auto_stitcher = None
         if stitcher is None:
             return
+        # Before the abort: a batch already folding runs to its end, and a
+        # queued emit from it would land on a torn-down flow.
+        try:
+            stitcher.batch_ready.disconnect()
+        except (RuntimeError, TypeError):
+            pass  # nothing was connected, or the sip object is already gone
         try:
             stitcher.abort()
             if not stitcher.join_run(STITCH_JOIN_TIMEOUT_MS):
@@ -483,6 +488,11 @@ class AutoResultsMixin:
         to the stitcher and return. Merging, measuring, gating and shaping all
         happen on that thread. Keep new work out of this slot.
         """
+        # A converted tile IS progress, whether or not the server has answered
+        # anything since: on a dense zone the conversion backlog outlives the
+        # last reply by minutes, and a watchdog fed by replies alone read that
+        # stretch as a wedged run and stopped it with paid tiles still queued.
+        self._note_auto_progress()
         stitcher = self._auto_stitcher
         if stitcher is None or not tagged_detections:
             return
@@ -491,7 +501,38 @@ class AutoResultsMixin:
     def _on_auto_stitch_batch(self) -> None:
         """Slot: the stitcher finished some objects. Ask for a repaint on the
         coalesced tick, so a burst of tiles becomes one provider write."""
+        self._note_auto_progress()  # folding is progress too (see the tile slot)
+        self._push_auto_assemble_progress()
         self._request_auto_live_repaint()
+
+    def _push_auto_assemble_progress(self) -> None:
+        """Tell the card how far the fold has got, so the bar can count it once
+        the wire has nothing left to add. Cheap counters, no lock."""
+        dock = self.dock_widget
+        if dock is None:
+            return
+        folded, queued = self._auto_stitch_backlog()
+        # Tiles answered but still converting are on their way to the
+        # stitcher and belong in the total, or the bar reads full while the
+        # converters still hold most of the run (see the worker's
+        # tiles_awaiting_conversion).
+        converting = int(getattr(
+            getattr(self, "_auto_worker", None), "tiles_awaiting_conversion", 0) or 0)
+        try:
+            dock.set_auto_assemble_tiles(folded, folded + queued + converting)
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _auto_stitch_backlog(self) -> tuple[int, int]:
+        """(tiles folded, tiles still queued) on the live stitcher; (0, 0)
+        without one. Plain counters, safe to read from the GUI thread."""
+        stitcher = self._auto_stitcher
+        if stitcher is None:
+            return 0, 0
+        try:
+            return int(stitcher.tiles_folded), int(stitcher.pending())
+        except RuntimeError:
+            return 0, 0
 
     def _drain_auto_tiles_now(self) -> None:
         """Block until the stitcher has folded everything, because the run is
@@ -505,16 +546,25 @@ class AutoResultsMixin:
         """
         import time as _t
 
+        # Same rule as the interactive drain: the clock restarts on every
+        # finished fold, so a long backlog is waited out and only a fold that
+        # has stopped moving is abandoned.
+        folded_seen, _queued = self._auto_stitch_backlog()
         deadline = _t.monotonic() + _STITCH_DRAIN_BUDGET_S
         hard_deadline = None
         while not self._finish_auto_stitcher(timeout_ms=_STITCH_WAIT_SLICE_MS):
             now = _t.monotonic()
+            folded, queued = self._auto_stitch_backlog()
+            if folded != folded_seen:
+                folded_seen = folded
+                deadline = now + _STITCH_DRAIN_BUDGET_S
             if hard_deadline is None:
                 if now < deadline:
                     continue
                 QgsMessageLog.logMessage(
-                    "Auto detection: live stitcher did not finish in "
-                    f"{int(_STITCH_DRAIN_BUDGET_S)}s; finalizing what it folded",
+                    "Auto detection: live stitcher folded no tile for "
+                    f"{int(_STITCH_DRAIN_BUDGET_S)}s with {queued} still queued; "
+                    "finalizing what it folded",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning)
                 self._abort_auto_stitch_queue()
                 hard_deadline = now + STITCH_JOIN_TIMEOUT_MS / 1000.0
@@ -544,6 +594,8 @@ class AutoResultsMixin:
         deltas = stitcher.take_deltas()
         if not deltas:
             return
+        import time as _time
+        _draw_t0 = _time.monotonic()
         try:
             if not layer.isValid():
                 return
@@ -630,6 +682,16 @@ class AutoResultsMixin:
             # Live-preview drawing is best-effort (the layer can be deleted from
             # under us mid-run). Narrow catch: do not mask geometry/merger bugs.
             pass
+        finally:
+            # Charged to the tick whether it drew or gave up: what the run
+            # summary needs is the GUI thread's own share of the run, and a
+            # tick that spent its time and then hit a dead layer spent it all
+            # the same.
+            self._auto_live_draw_ms = getattr(
+                self, "_auto_live_draw_ms", 0.0) + (
+                    _time.monotonic() - _draw_t0) * 1000.0
+            self._auto_live_draw_ticks = getattr(
+                self, "_auto_live_draw_ticks", 0) + 1
 
     def _repaint_live_layer(self, layer) -> None:
         """Show the objects that just landed WITHOUT killing the frame in flight.
@@ -695,8 +757,8 @@ class AutoResultsMixin:
         needs its cores for folding tiles."""
         import time
         frame_s = getattr(self, "_auto_live_frame_s", 0.0)
-        cool = min(_AUTO_LIVE_REPAINT_MAX_MS / 1000.0,
-                   frame_s * _AUTO_LIVE_FRAME_COST_RATIO)
+        _, cost_ratio, max_ms = auto_live_repaint_settings()
+        cool = min(max_ms / 1000.0, frame_s * cost_ratio)
         self._auto_live_repaint_not_before = time.monotonic() + cool
         self._auto_live_frame_started = time.monotonic()
 
@@ -743,6 +805,15 @@ class AutoResultsMixin:
         if self._auto_live_pacer_canvas is canvas:
             return
         self._disconnect_live_repaint_pacer()
+        # Every tile drops the layer's cached picture, and each redraw after
+        # that paints the polygons back band by band: they blink out on every
+        # zoom. Held for as long as the pacer is connected, the canvas only
+        # swaps complete pictures (see canvas_redraw_handover).
+        try:
+            from .canvas_redraw_handover import hold_map_picture_for_live_run
+            hold_map_picture_for_live_run(canvas)
+        except (RuntimeError, AttributeError, ImportError):  # nosec B110
+            pass
         try:
             canvas.mapCanvasRefreshed.connect(self._on_live_canvas_refreshed)
             # renderStarting gives the frame's true start, so the cool-down is
@@ -763,6 +834,11 @@ class AutoResultsMixin:
         self._auto_live_repaint_pending = False
         if canvas is None:
             return
+        try:
+            from .canvas_redraw_handover import release_live_run_picture_hold
+            release_live_run_picture_hold(canvas)
+        except (RuntimeError, AttributeError, ImportError):  # nosec B110
+            pass
         try:
             canvas.mapCanvasRefreshed.disconnect(self._on_live_canvas_refreshed)
         except (RuntimeError, AttributeError, TypeError):
@@ -823,7 +899,7 @@ class AutoResultsMixin:
             self._auto_repaint_timer.timeout.connect(self._apply_auto_live_deltas)
         if not self._auto_repaint_timer.isActive():
             n = len(self._auto_live_fid_map)
-            interval = _AUTO_LIVE_REPAINT_MS
+            interval, _, _ = auto_live_repaint_settings()
             if n >= 1500:
                 interval = min(1200, interval + (n // 1500) * 200)
             self._auto_repaint_timer.start(interval)
@@ -896,6 +972,12 @@ class AutoResultsMixin:
         # This is the path unload and the mode teardown reach it by, through
         # _stop_auto_detection.
         self._stop_review_refine_thread()
+        # The crash-net write rides the same chain. It is never cut short (a
+        # half-written GeoPackage table is worse than a late one), so this
+        # WAITS for it and records what it produced: an abandoned run that was
+        # billed still has its file, and the next run finds the shared
+        # GeoPackage free instead of locked.
+        self._finish_billed_autosave()
         # Invalidate any in-flight background preview-cache build.
         self._auto_preview_build_gen += 1
         self._auto_preview_build_state = None

@@ -83,3 +83,16 @@ def _host_provider_label(host: str) -> str | None:
         if needle in host:
             return label
     return None
+
+
+def online_basemap_credit(layer) -> str:
+    """Provider name to credit in a saved file's metadata, '' when there is none.
+
+    Only an online basemap earns a credit line: a local raster is already
+    named in the abstract by its own layer name, and "local raster" as a
+    rights statement says nothing to whoever the file is delivered to.
+    """
+    label = detect_basemap_label(layer)
+    if not label or label == _LOCAL_RASTER_LABEL:
+        return ""
+    return label

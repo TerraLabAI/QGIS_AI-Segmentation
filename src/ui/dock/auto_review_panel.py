@@ -7,8 +7,6 @@ are plain mixin members: widgets/signals live on the dock instance.
 """
 from __future__ import annotations
 
-from qgis.PyQt.QtCore import QLocale
-
 from ...core.i18n import tr
 from ...core.review_defaults import (
     AUTO_REVIEW_CLEAN_DEFAULT as _AUTO_REVIEW_CLEAN_DEFAULT,
@@ -34,11 +32,10 @@ from ...core.review_defaults import (
 from ...core.review_defaults import (
     AUTO_REVIEW_SMOOTH_DEFAULT as _AUTO_REVIEW_SMOOTH_DEFAULT,
 )
+from ...core.shape_policy_dials import auto_review_points_pct_default
 from .auto_review_build import _BTN_LINK_CONFIRM, _export_btn_label
 from .styles import (
-    _BTN_GREEN_STEP,
     _BTN_LINK_STRONG,
-    BRAND_GREEN,
     _snap_review_conf,
 )
 
@@ -49,6 +46,32 @@ class DockAutoReviewPanelMixin:
 
     # set_auto_review_installing lives in dock/install_lock.py: the banner now
     # holds the review still while it runs, which is a concern of its own.
+
+    # Rows the review hides on the way in and owes back on the way out.
+    _PRE_REVIEW_ROWS = ("auto_detail_row", "auto_credit_cost_label")
+
+    def _remember_pre_review_visibility(self) -> None:
+        """Record what the pre-run rows were showing before the review took
+        them."""
+        store: dict[str, bool] = {}
+        for name in self._PRE_REVIEW_ROWS:
+            widget = getattr(self, name, None)
+            try:
+                store[name] = bool(widget is not None and widget.isVisible())
+            except (RuntimeError, AttributeError):
+                store[name] = False
+        self._pre_review_visibility = store
+
+    def _pre_review_visible(self, name: str) -> bool:
+        """What one pre-run row was showing before the review opened."""
+        store = getattr(self, "_pre_review_visibility", None)
+        if isinstance(store, dict) and name in store:
+            return bool(store[name])
+        widget = getattr(self, name, None)
+        try:
+            return bool(widget is not None and widget.isVisible())
+        except (RuntimeError, AttributeError):
+            return False
 
     def set_auto_review_active(self, active: bool, count: int = 0,
                                reset_controls: bool = True,
@@ -65,6 +88,10 @@ class DockAutoReviewPanelMixin:
         constants, so the first result is already tuned to the prompt and the
         run resolution. Every NEW review reseeds (no cross-run memory).
         """
+        # Snapshot the rows the review is about to take, BEFORE anything here
+        # hides them, and only on the way in.
+        if active and not bool(getattr(self, "_auto_review_active", False)):
+            self._remember_pre_review_visibility()
         self._auto_review_active = active
         # The review is the end of the hand-over the run card was holding the
         # screen for (see set_auto_finalizing): release it here, BEFORE the
@@ -80,6 +107,10 @@ class DockAutoReviewPanelMixin:
             # object is land cover. A refine-handoff return (reset_controls
             # False) keeps whatever the user had.
             self.set_boundary_snap_offered(False)
+        if active:
+            # Answer the Right angles availability question now, once, rather
+            # than waiting for the user to tick a box that may have no engine.
+            self._offer_right_angles_availability()
         if active and reset_controls:
             # Fresh review: reset the per-control shape-adjust telemetry dedup set.
             self._review_shape_tracked = set()
@@ -119,18 +150,29 @@ class DockAutoReviewPanelMixin:
         # teardowns that skip this call, by reset_auto_to_start.
         self.auto_layer_combo.setVisible(not active)
         # Hide the prompt card (Describe what to find + Library) during review:
-        # the search is done, so the result + filters should own the panel.
+        # the search is done, so the result + filters should own the panel. The
+        # in-run receipt goes too, and does not come back: the review names
+        # what was found, which is a better answer than what was asked.
         self.auto_prompt_card.setVisible(not active)
+        try:
+            self.auto_run_summary_card.setVisible(False)
+        except (RuntimeError, AttributeError):
+            pass
         self.auto_detect_row.setVisible(not active)
         self.auto_exemplar_panel.setVisible(not active)
-        self.auto_detail_row.setVisible(not active and self.auto_detail_row.isVisible())
+        # Two rows come and go with the pre-run state, so the review gives back
+        # what it took: reading isVisible() on the way out always answers
+        # False, which made the restore a permanent no-op and lost the row for
+        # the rest of the session.
+        self.auto_detail_row.setVisible(
+            not active and self._pre_review_visible("auto_detail_row"))
         # The pre-run confidence box is always hidden now (confidence lives in
         # the review panel below); keep it hidden here too.
         self.auto_settings_box.setVisible(False)
         # The run is paid for: the cost estimate is pre-run info that only
         # confuses the review. (The locked layer header keeps naming the raster.)
         self.auto_credit_cost_label.setVisible(
-            not active and self.auto_credit_cost_label.isVisible())
+            not active and self._pre_review_visible("auto_credit_cost_label"))
         # Going back mid-review would silently desync the review from the
         # inputs; the exits (Finish, zone x / Escape, mode switch) all discard
         # or commit the review explicitly.
@@ -162,7 +204,8 @@ class DockAutoReviewPanelMixin:
                           self.auto_fill_max_spin,
                           self.auto_clean_spin, self.auto_ortho_check):
                     w.blockSignals(True)
-                self.auto_points_spin.setValue(_AUTO_REVIEW_POINTS_PCT_DEFAULT)
+                self.auto_points_spin.setValue(
+                    auto_review_points_pct_default(_AUTO_REVIEW_POINTS_PCT_DEFAULT))
                 self.auto_simplify_spin.setValue(
                     float(p.get("simplify_px", _AUTO_REVIEW_SIMPLIFY_DEFAULT)))
                 self.auto_round_corners_check.setChecked(
@@ -216,6 +259,16 @@ class DockAutoReviewPanelMixin:
             self.set_auto_review_step(1)
         self._update_auto_detect_enabled()
 
+    def set_closed_canopy_advice(self, on: bool) -> None:
+        """Show the closed-forest card for this review, or hide it. A user
+        who closed the card once never sees it again (dismissal is kept)."""
+        from .guidance import HINT_REVIEW_CLOSED_CANOPY, is_hint_dismissed
+        try:
+            self.auto_closed_canopy_hint.setVisible(
+                bool(on) and not is_hint_dismissed(HINT_REVIEW_CLOSED_CANOPY))
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110 - a review page mid-teardown shows nothing
+
     def set_auto_review_score_useful(self, useful: bool) -> None:
         """Show or drop the whole Confidence group on the Keep step.
 
@@ -264,50 +317,12 @@ class DockAutoReviewPanelMixin:
             pass
 
     def _format_auto_review_count(self, visible: int, total: int, pct: int,
-                                  size_bound: bool = False) -> str:
-        """ONE compact review readout line, always honest: green check + bold
-        shown-count, then a muted tail counting what the filters hide.
-        Sits at the top of the review card (it is the live readout of the
-        filters below it). A run that found something NEVER reads as '0
-        detected'. ``size_bound`` (only when visible == 0) swaps the reveal hint
-        to the Min size filter when that, not Confidence, is hiding everything.
-        The check is the lime success accent (the CTA green never announces
-        success).
+                                  bound: str = "confidence") -> str:
+        """ONE compact review readout line, always honest. Body in
+        review_count_line."""
+        from .review_count_line import format_review_count_line
 
-        The tail never names Confidence while objects are still shown. Every
-        run already arrives with a recall floor applied, so at the lowest
-        cutoff the slider hides NOTHING and the hidden cohort is entirely Min
-        size and hand deletions: a 700-tile run read "53 389 below 10%" with
-        Confidence sitting at its own floor, which sent the user to the one
-        slider that could not move."""
-        check = f'<span style="color:{BRAND_GREEN};">&#10003;</span> '
-        muted = 'style="color: rgba(128,128,128,0.95);"'
-        if total <= 0:
-            # Empty runs use the guidance box instead of this label; safe fallback.
-            return "<b>{title}</b>".format(title=tr("No objects found"))
-        loc = QLocale()
-        if visible >= total:
-            bold = (tr("1 object found") if total == 1
-                    else tr("{n} objects found").format(n=loc.toString(total)))
-            tail = tr("all shown")
-        elif visible > 0:
-            bold = tr("{visible} of {n} shown").format(
-                visible=loc.toString(visible), n=loc.toString(total))
-            tail = tr("{hidden} hidden by the filters").format(
-                hidden=loc.toString(total - visible))
-        else:
-            # No green check at 0 visible: nothing is shown, but the count is
-            # honest and the tail tells the user how to reveal them - naming the
-            # binding filter (Min size vs Confidence) so they pull the right one.
-            bold = (tr("1 object found") if total == 1
-                    else tr("{n} objects found").format(n=loc.toString(total)))
-            if size_bound:
-                tail = tr("0 shown - lower the Min size filter to reveal them")
-            else:
-                tail = tr(
-                    "0 shown at {pct}% - lower Confidence to reveal them").format(pct=pct)
-            return f"<b>{bold}</b> <span {muted}>· {tail}</span>"
-        return f"{check}<b>{bold}</b> <span {muted}>· {tail}</span>"
+        return format_review_count_line(visible, total, pct, bound)
 
     def set_auto_export_saving(self, saving: bool) -> None:
         """Put the Export button in its saving state, and repaint it now.
@@ -340,32 +355,36 @@ class DockAutoReviewPanelMixin:
             pass
 
     def update_auto_review_count(self, visible: int, total: int, pct: int,
-                                 size_bound: bool = False) -> None:
+                                 bound: str = "confidence") -> None:
         """Update the two-line review header + the Export button label after a
         live confidence re-filter. ``visible`` = objects shown now, ``total`` =
-        objects the run found, ``pct`` = current confidence cutoff. ``size_bound``
-        (only meaningful when visible == 0) means the Min size filter, not
-        Confidence, is what hides the objects, so the guidance names it."""
+        objects the run found, ``pct`` = current confidence cutoff. ``bound``
+        (only meaningful when visible == 0) names the filter that hides the
+        objects, ``"confidence"``, ``"min"`` or ``"max"``, so the guidance sends
+        the user to the dial that will reveal them."""
+        # Remembered so the install lock can hand Export back to this rule
+        # rather than to plain enabled when it releases.
+        self._auto_review_visible_count = int(visible)
         try:
             self._auto_review_count_label.setText(
-                self._format_auto_review_count(visible, total, pct, size_bound))
+                self._format_auto_review_count(visible, total, pct, bound))
             self.auto_export_btn.setText(_export_btn_label(visible))
             # A local-AI install holds the review still, Export included: a
             # count refresh must not hand back a button the lock just took.
             self.auto_export_btn.setEnabled(
                 visible > 0 and not self.review_install_locked())
             if visible == 0:
-                tip = (tr("Lower the Min size filter to show objects first.")
-                       if size_bound else
-                       tr("Lower Confidence to show objects first."))
+                if bound == "min":
+                    tip = tr("Lower the Min size filter to show objects first.")
+                elif bound == "max":
+                    tip = tr("Raise the Max size filter to show objects first.")
+                else:
+                    tip = tr("Lower Confidence to show objects first.")
             else:
-                # What the file carries. Nothing on screen said it, and it is
-                # the reason the export survives leaving this machine.
-                tip = tr(
-                    "Writes a GeoPackage with the QGIS style built in, English "
-                    "field names, and how the run was made (prompt, source "
-                    "layer, date, precision). It opens styled and documented "
-                    "on a colleague's machine, with no plugin installed.")
+                # One short line: what the click does. The filtered-out
+                # objects were the Keep step's call and are not restated here.
+                tip = tr("Save the {visible} polygons shown as a layer.").format(
+                    visible=visible)
             self.auto_export_btn.setToolTip(tip)
             # A run that found nothing hides both green primaries: there is
             # nothing to advance to or export. The moment the review holds an
@@ -509,51 +528,19 @@ class DockAutoReviewPanelMixin:
         except Exception:
             pass  # nosec B110
 
+    def _offer_right_angles_availability(self) -> None:
+        """Ask once, when a review opens, whether Right angles can run at all.
+        Body in right_angles_support."""
+        from .right_angles_support import offer_right_angles_availability
+
+        offer_right_angles_availability(self)
+
     def _sync_auto_right_angle_controls(self) -> None:
         """Make incompatible Shape controls unavailable with Right angles.
+        Body in right_angles_support."""
+        from .right_angles_support import sync_right_angle_conflicts
 
-        Orthogonalizing needs a controlled de-staircase pass. Extra generic
-        cleanup can erase narrow building parts, while corner rounding reverses
-        the requested result. The same rule is also enforced by the value
-        getter, so a disabled widget can never leave an old value active.
-
-        Right angles itself is refused here when the geometry library behind it
-        is missing, so a run that could only return the outline unchanged says
-        so instead (right_angles_support). Only a TICKED box is checked, which
-        is what keeps the shapely import off plugin load: the seeded default is
-        off, so the build-time call below costs nothing.
-        """
-        ortho = getattr(self, "auto_ortho_check", None)
-        if ortho is not None and ortho.isChecked():
-            from .right_angles_support import gate_right_angles
-
-            gate_right_angles(ortho, getattr(self, "auto_ortho_label", None))
-        enabled = not bool(ortho is not None and ortho.isChecked())
-        blocked_tip = tr(
-            "Unavailable while Right angles is on. Turn it off to adjust this "
-            "setting.")
-        for widget, normal_tip in getattr(
-                self, "_auto_right_angle_conflict_tooltips", ()):
-            try:
-                widget.setEnabled(enabled)
-                widget.setToolTip(normal_tip if enabled else blocked_tip)
-            except (RuntimeError, AttributeError):
-                pass
-        # Curving a footprint after it has been squared is contradictory. Clear
-        # the state as well as disabling the control, so toggling Right angles
-        # never leaves a hidden rounding pass in the preview.
-        round_corners = getattr(self, "auto_round_corners_check", None)
-        if not enabled and round_corners is not None:
-            try:
-                round_corners.blockSignals(True)
-                round_corners.setChecked(False)
-            except (RuntimeError, AttributeError):
-                pass
-            finally:
-                try:
-                    round_corners.blockSignals(False)
-                except (RuntimeError, AttributeError):
-                    pass
+        sync_right_angle_conflicts(self)
 
     def set_boundary_snap_offered(self, offered: bool) -> None:
         """Show or hide the Keep step's shared-borders control.
@@ -572,6 +559,20 @@ class DockAutoReviewPanelMixin:
             self.auto_boundary_snap_row.setVisible(bool(offered))
         except (RuntimeError, AttributeError):
             pass
+
+    def set_review_busy(self, busy: bool) -> None:
+        """Show or hide the review's shape-pass line. Body in
+        review_card_rows."""
+        from .review_card_rows import set_review_busy
+
+        set_review_busy(self, busy)
+
+    def set_boundary_snap_notice(self, reason: str) -> None:
+        """Say why shared borders did nothing on this set. Body in
+        review_card_rows."""
+        from .review_card_rows import set_boundary_snap_notice
+
+        set_boundary_snap_notice(self, reason)
 
     def get_auto_boundary_snap(self) -> bool:
         """Whether the review should give neighbouring shapes shared borders.
@@ -653,18 +654,24 @@ class DockAutoReviewPanelMixin:
             # above already number the steps, and it came straight back: read on
             # its own, "Fix what looks wrong" is a task, not a way forward, and
             # users took the re-run link instead of moving one step on.
+            # Text only: the green primary keeps the stylesheet it was built
+            # with, so a step change never has to re-apply it.
             if step == 0:
                 btn.setText(tr("Next: fix what looks wrong"))
-                btn.setStyleSheet(_BTN_GREEN_STEP)
             elif step == 1:
                 btn.setText(tr("Next: clean up the outlines"))
-                btn.setStyleSheet(_BTN_GREEN_STEP)
             # Shapes is the last step: its primary is Export, so the step
             # primary goes away there (and on a zero-detection run there is
             # nothing to advance to on any step).
             self._apply_step_next_visibility()
+            # Export is the end of the flow: one green primary per step, and
+            # the save only once the outlines are done. Enter follows it.
             self.auto_export_btn.setVisible(
                 step == 2 and not self._auto_zero_entry)
+            # The edit recap belongs to the Correct step alone.
+            recap = getattr(self, "auto_review_recap_label", None)
+            if recap is not None:
+                recap.setVisible(step == 1 and bool(recap.text()))
             self._apply_review_links(step)
             self._refresh_correct_panels()
             self._keep_review_primary_in_view()
@@ -702,14 +709,16 @@ class DockAutoReviewPanelMixin:
         Deferred one turn so the step's own layout has settled, and a no-op
         when the button is already on screen (ensureWidgetVisible scrolls the
         minimum, so the step content above stays put whenever it fits)."""
-        from qgis.PyQt.QtCore import QTimer
+        from ...core.qt_compat import safe_single_shot
 
         btn = (self.auto_export_btn
                if getattr(self, "_auto_review_step", 0) == 2
                else self.auto_step_next_btn)
         if btn.isHidden():
             return
-        QTimer.singleShot(0, lambda: self._scroll_review_primary(btn))
+        # Parented to the dock: a review torn down inside that turn must not
+        # scroll a button whose C++ half is already gone.
+        safe_single_shot(0, self, lambda: self._scroll_review_primary(btn))
 
     def _scroll_review_primary(self, btn) -> None:
         try:
@@ -752,7 +761,20 @@ class DockAutoReviewPanelMixin:
             pass
 
     def set_review_recap(self, text: str) -> None:
-        """Retained as a no-op compatibility setter for older controller paths."""
+        """Show what the Correct step has changed so far, under the ladder.
+
+        The controller has always sent this line and nothing rendered it, so
+        the user had no running trace of their own edits. Empty text clears it.
+        """
+        label = getattr(self, "auto_review_recap_label", None)
+        if label is None:
+            return
+        try:
+            label.setText(text or "")
+            label.setVisible(
+                bool(text) and int(getattr(self, "_auto_review_step", 0)) == 1)
+        except (RuntimeError, AttributeError):
+            pass
 
     def set_auto_display_mode(self, mode: str) -> None:
         """Programmatically select a review display colour mode ('normal' /

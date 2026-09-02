@@ -7,12 +7,9 @@ plain mixin members: state lives on the plugin instance (self).
 from __future__ import annotations
 
 from qgis.core import (
-    Qgis,
     QgsCoordinateReferenceSystem,
     QgsCoordinateTransform,
-    QgsFeature,
     QgsGeometry,
-    QgsMessageLog,
     QgsProject,
 )
 from qgis.PyQt.QtWidgets import (
@@ -20,21 +17,17 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from ...core.i18n import tr
+from ...core.interaction_dials import reslice_screen_first_min_objects
 from ...core.telemetry_errors import slot_guard
 from ..error_report_dialog import show_error_report
-from .shared import (
-    _add_features_fast,
-    _add_features_with_ids,
-    _clear_all_features,
-    _debounce_timer,
-    _notify_provider_write,
-)
+from .shared import _debounce_timer
 
 # Single-slot memo for the merge-policy token/category sets, keyed on the policy
 # merge-dict id so a repeated _default_merge_separate call does not re-normalize
-# the lists. One live policy dict at a time, so a new id replaces the entry (no
-# growth, no stale id-reuse across distinct dicts).
-_MERGE_SETS_CACHE: dict[str, object] = {"id": None, "sets": None}
+# the lists. The dict itself is held in the slot: without a reference the policy
+# dict can be collected and a different dict can land on the same id, which would
+# serve one policy's sets for another. One live entry, so no growth.
+_MERGE_SETS_CACHE: dict[str, object] = {"id": None, "sets": None, "merge": None}
 
 # Below this many objects a reslice finishes in a slice or two, so partitioning
 # the work by what is on screen would cost more than it saves.
@@ -69,7 +62,44 @@ def _merge_token_sets(merge: dict) -> tuple[frozenset, frozenset, frozenset]:
     )
     _MERGE_SETS_CACHE["id"] = key
     _MERGE_SETS_CACHE["sets"] = result
+    _MERGE_SETS_CACHE["merge"] = merge
     return result
+
+
+def _union_review_sets(geoms: list, scores: list | None, ids: object,
+                       full_geoms: list, full_scores: list,
+                       full_ids: list) -> tuple[list, list | None, int] | None:
+    """The visible set plus every found object it does not already hold, keyed
+    on det_id. Returns (geoms, scores, added_count), or None when either side
+    lacks a usable id list.
+
+    The rescue export used to compare the two SIZES. Two sets of the same size
+    can hold different objects (a hand edit revealed one and the size gate hid
+    another), and the size test then swapped the visible set out for a full set
+    that was missing what the user had on screen. Identity keeps both.
+    """
+    vis_ids = list(ids) if isinstance(ids, (list, tuple)) else None
+    if vis_ids is None or len(vis_ids) != len(geoms):
+        return None
+    if len(full_ids) != len(full_geoms):
+        return None
+    out_geoms = list(geoms)
+    out_scores = list(scores) if scores is not None and len(scores) == len(geoms) else None
+    seen = {det_id for det_id in vis_ids if det_id is not None}
+    added = 0
+    for i, det_id in enumerate(full_ids):
+        if det_id is not None and det_id in seen:
+            continue
+        g = full_geoms[i]
+        if g is None or g.isEmpty():
+            continue
+        out_geoms.append(g)
+        if out_scores is not None:
+            out_scores.append(full_scores[i] if i < len(full_scores) else None)
+        if det_id is not None:
+            seen.add(det_id)
+        added += 1
+    return out_geoms, out_scores, added
 
 
 class AutoReviewMixin:
@@ -131,16 +161,15 @@ class AutoReviewMixin:
         if norm in continuous_tokens or token in continuous_tokens:
             return False
         try:
-            from ...core.presets import segmentation_presets as _sp
-            for preset in _sp.all_presets():
-                if str(preset.get("prompt", "")).strip().lower().replace("_", " ") != norm:
-                    continue
-                if preset.get("weak"):
-                    return False
-                cat = str(preset.get("category", "")).lower()
-                if cat in continuous_categories:
-                    return False
-                break
+            from ...core.review_presets import live_catalog_categories
+            for category in live_catalog_categories():
+                for preset in category.get("presets") or []:
+                    if str(preset.get("prompt", "")).strip().lower().replace("_", " ") != norm:
+                        continue
+                    if preset.get("weak"):
+                        return False
+                    cat = str(preset.get("category") or category.get("key") or "").lower()
+                    return cat not in continuous_categories
         except Exception:  # noqa: BLE001 -- never block a run on a preset lookup  # nosec B110
             pass
         return True
@@ -182,7 +211,46 @@ class AutoReviewMixin:
             "pixel_size": (self._auto_review or {}).get("pixel_size", 1.0),
             "gen": self._auto_finalize_gen,
         }
+        # Say the pass is running, and offer the way out of it. Only on a set
+        # big enough for the pass to be visible: on a small one the line would
+        # appear and vanish inside a frame.
+        self._set_review_busy(
+            len(self._auto_objects)
+            >= reslice_screen_first_min_objects(_RESLICE_SCREEN_FIRST_MIN_OBJECTS))
         self._step_auto_finalize_refine()
+
+    def _set_review_busy(self, busy: bool) -> None:
+        """Show or hide the review's shape-pass line, and wire its Stop once."""
+        dock = self.dock_widget
+        if dock is None:
+            return
+        try:
+            if busy and not getattr(self, "_review_stop_wired", False):
+                btn = getattr(dock, "auto_review_stop_btn", None)
+                if btn is not None:
+                    btn.clicked.connect(self._on_review_stop_clicked)
+                    self._review_stop_wired = True
+            dock.set_review_busy(bool(busy))
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _on_review_stop_clicked(self) -> None:
+        """Stop the shape pass where it is, keeping what it has already drawn.
+
+        The generation bump supersedes the cooperative pump, so a slice already
+        queued finds itself stale and does nothing. The refine thread goes with
+        it: every job still queued describes work nobody is waiting for now.
+        The visible set stays whatever the last push wrote, which is exactly
+        what the user can see on the map.
+        """
+        if not self._auto_review:
+            return
+        self._auto_finalize_gen += 1
+        self._auto_finalize_state = None
+        stop = getattr(self, "_stop_review_refine_thread", None)
+        if stop is not None:
+            stop()
+        self._set_review_busy(False)
 
     def _reslice_pending_screen_last(self) -> list:
         """``_auto_objects`` enumerated, with the ones under the user's eyes at
@@ -199,8 +267,9 @@ class AutoReviewMixin:
         set, where the whole pass lands inside one or two slices anyway.
         """
         pending = list(enumerate(self._auto_objects))
-        if len(pending) < _RESLICE_SCREEN_FIRST_MIN_OBJECTS:
+        if len(pending) < reslice_screen_first_min_objects(_RESLICE_SCREEN_FIRST_MIN_OBJECTS):
             return pending
+        boxes = self._reslice_object_boxes()
         try:
             canvas = self.iface.mapCanvas()
             extent = canvas.extent()
@@ -215,8 +284,8 @@ class AutoReviewMixin:
                     QgsProject.instance()).transformBoundingBox(extent)
             offscreen, onscreen = [], []
             for row in pending:
-                base = row[1][0]
-                if base is not None and extent.intersects(base.boundingBox()):
+                box = boxes[row[0]]
+                if box is not None and extent.intersects(box):
                     onscreen.append(row)
                 else:
                     offscreen.append(row)
@@ -225,6 +294,25 @@ class AutoReviewMixin:
         if not onscreen or not offscreen:
             return pending
         return offscreen + onscreen
+
+    def _reslice_object_boxes(self) -> list:
+        """Bounding boxes of ``_auto_objects``, one per index, memoised.
+
+        ``boundingBox()`` walks the whole geometry, so a dense result paid a
+        full scan of every object on each reslice just to decide the refine
+        order. The memo is keyed on the identity and the length of the object
+        list; a geometry swapped in place at a stable index therefore serves a
+        stale box, which can only misplace an object in the ORDER the pump
+        refines in, never change what it becomes."""
+        objects = self._auto_objects or []
+        key = (id(objects), len(objects))
+        memo = getattr(self, "_reslice_box_memo", None)
+        if memo is not None and memo[0] == key:
+            return memo[1]
+        boxes = [row[0].boundingBox() if row[0] is not None else None
+                 for row in objects]
+        self._reslice_box_memo = (key, boxes)
+        return boxes
 
     def _on_auto_show_tiles_toggled(self, show: bool) -> None:
         """Review debug toggle: overlay the tile grid on the finished result, or
@@ -375,227 +463,13 @@ class AutoReviewMixin:
                            partial: bool = False,
                            update_extents: bool | None = None) -> None:
         """Write geoms onto the live review selection layer and update the
-        review count. Shared by the accurate refresh and the fast confidence-
-        drag preview.
+        review count. Body, and the two push strategies behind it, in
+        review_layer_push."""
+        from .review_layer_push import push_review_geoms
 
-        With ``stamp`` + ``ids`` the push is INCREMENTAL: the provider gets only
-        the delta (add / delete / changed geometry) against _review_fid_map,
-        keyed on det_id. ``stamp`` names the geometry provenance (preview-cache
-        build vs refine-cache shape key), so identical det_id + stamp means the
-        on-layer geometry is already current and nothing is written. This is
-        what makes a confidence-drag tick or a filter-only reslice O(delta)
-        instead of a full truncate + re-add of every feature. Without a stamp
-        (unknown provenance: protected-dissolve output, handoff harvest) the
-        push falls back to the full truncate + re-add.
-
-        ``repair=False`` skips the per-geom makeValid for the fast path (raw
-        geoms are usually valid; the accurate pass repairs at cache-fill).
-        ``scores`` feeds the review heatmap (1.0 fallback keeps a mismatched
-        case green/trusted); ``ids`` is the canonical det_id the Random display
-        mode hues on (NULL fallback lets the renderer hue on $id).
-
-        ``partial=True`` is the PROGRESSIVE mode used mid-reslice: geoms not in
-        this batch are LEFT on the layer (their old shape) instead of deleted,
-        and the header/extents stay untouched, so a long shape-refine visibly
-        sweeps the map instead of freezing on the old state until the end. It
-        only ever applies through the incremental diff (never a truncate)."""
-        layer = self._auto_selection_layer
-        if layer is None:
-            return
-        try:
-            if not layer.isValid():
-                return
-            # The Manual method puts THIS layer into a QGIS edit session. Every
-            # write below goes through the PROVIDER, which the edit buffer does
-            # not see, and the buffer is what commit and rollback act on: the
-            # write is lost, or it moves a vertex out from under the user's
-            # cursor. Nothing is owed by skipping. The way out of a Manual
-            # session commits first and reslices after, so the layer is
-            # republished on committed geometry a moment later.
-            if layer.isEditable():
-                if not getattr(self, "_review_push_editable_logged", False):
-                    self._review_push_editable_logged = True
-                    QgsMessageLog.logMessage(
-                        "Review push skipped: the review layer is in a QGIS "
-                        "edit session; it is republished when the session ends.",
-                        "AI Segmentation", level=Qgis.MessageLevel.Info)
-                return
-            count = -1
-            if stamp is not None and ids is not None and len(ids) == len(geoms):
-                count = self._diff_push_review_geoms(
-                    layer, geoms, scores, ids, stamp, keep_missing=partial)
-            if count < 0:
-                if partial:
-                    return  # progressive apply needs the diff path; skip quietly
-                count = self._full_push_review_geoms(
-                    layer, geoms, repair, scores, ids, stamp)
-            # updateExtents rescans every feature (O(N) on a memory provider):
-            # only the accurate release pass needs it (zoom-to-layer); the 40ms
-            # drag preview renders by viewport via the spatial index, so the
-            # stale cached extent is invisible mid-drag. Defaults to `repair`
-            # for callers that do not say (the historical coupling), but the
-            # review-entry push decouples them: its geoms are already repaired
-            # at cache-fill, so repair=False, yet it still needs fresh extents.
-            do_extents = repair if update_extents is None else update_extents
-            if do_extents and not partial:
-                layer.updateExtents()
-            # The rows above went in through the PROVIDER, which emits no signal
-            # QGIS's snapping index or vertex tool listen to. Without this the
-            # hand-edit tools keep pointing at the features from BEFORE this
-            # filter change, and clicking a vertex silently does nothing.
-            _notify_provider_write(layer)
-            # triggerRepaint alone schedules the canvas update; the extra
-            # mapCanvas().refresh() forced a full re-render of EVERY layer on
-            # each (debounced) slider tick, which is what made review sliders lag.
-            # Through the live run's pacer, not straight at the layer: a bare
-            # triggerRepaint makes the canvas abandon the frame it is drawing and
-            # start again, and a slider drag pushes faster than a dense set can
-            # be drawn, so no frame ever finished and the map read as frozen for
-            # the whole drag. The pacer marks the layer dirty instead and repaints
-            # when the canvas says it finished.
-            self._repaint_live_layer(layer)
-            if partial:
-                return  # header + extents settle on the final complete push
-            # Keep the review count honest with the size filter (it can hide
-            # detections): show how many are actually on the layer now.
-            self._update_review_header(count)
-        except Exception as e:  # noqa: BLE001
-            # Review must never crash the UI, so the guard stays broad; but a
-            # swallowed geometry error was fully silent. Log once per rebuild
-            # generation (reset in _start_auto_reslice) so a real bug surfaces
-            # without spamming the log on every confidence-drag tick.
-            if not self._review_push_err_logged:
-                self._review_push_err_logged = True
-                QgsMessageLog.logMessage(
-                    f"Auto review: geometry rebuild error: {e}",
-                    "AI Segmentation", level=Qgis.MessageLevel.Warning)
-
-    def _diff_push_review_geoms(self, layer, geoms: list, scores: list | None,
-                                ids: list, stamp: tuple,
-                                keep_missing: bool = False) -> int:
-        """Incremental provider update against _review_fid_map. Returns the
-        visible count written, or -1 when a diff is not possible (unknown
-        provider contents, a missing/duplicate det_id) so the caller falls back
-        to the full push. Geometry writes coerce to MultiPolygon lazily (only
-        the delta pays the copy). ``keep_missing`` (progressive mid-reslice
-        batches) leaves entries absent from this batch untouched on the layer
-        instead of deleting them; the final complete push reconciles."""
-        from .auto_results import _diff_live_fid_map
-        pr = layer.dataProvider()
-        old_map = self._review_fid_map
-        if not old_map and pr.featureCount() > 0:
-            return -1  # cannot trust a diff against unknown provider contents
-        current = []
-        geom_by_id = {}
-        score_by_id = {}
-        for i, geom in enumerate(geoms):
-            if geom is None or geom.isEmpty():
-                continue
-            det_id = ids[i]
-            if det_id is None or det_id in geom_by_id:
-                return -1  # unknown or ambiguous identity: full push instead
-            s = (float(scores[i])
-                 if scores is not None and i < len(scores) and scores[i] is not None
-                 else 1.0)
-            current.append((det_id, stamp, True, s))
-            geom_by_id[det_id] = geom
-            score_by_id[det_id] = s
-        adds, geom_changes, attr_changes, deletes, new_map = _diff_live_fid_map(
-            old_map, current)
-        if keep_missing:
-            # Progressive batch: entries not processed yet keep their old
-            # shape on the layer and their old mapping.
-            deletes = []
-            for det_id, rec in old_map.items():
-                if det_id not in new_map and det_id not in geom_by_id:
-                    new_map[det_id] = rec
-        from ...core.layer_conventions import to_multipolygon
-
-        def _mp(g):
-            return to_multipolygon(g) or g
-
-        if deletes:
-            pr.deleteFeatures(deletes)
-        if adds:
-            fields = layer.fields()
-            add_feats = []
-            for det_id in adds:
-                feat = QgsFeature(fields)
-                feat.setGeometry(_mp(geom_by_id[det_id]))
-                feat.setAttributes(["", score_by_id[det_id], int(det_id)])
-                add_feats.append((det_id, feat))
-            # The assigned provider fids (needed so a later tick can target
-            # these objects) come back on the RETURNED copies; addFeatures
-            # never mutates its inputs.
-            ok, added = _add_features_with_ids(pr, [f for _, f in add_feats])
-            if ok and len(added) == len(add_feats):
-                for (det_id, _f), out in zip(add_feats, added):
-                    pfid = out.id()
-                    if pfid is not None and pfid >= 0:
-                        new_map[det_id] = (
-                            pfid, stamp, True, score_by_id[det_id])
-        if geom_changes:
-            pr.changeGeometryValues(
-                {pf: _mp(geom_by_id[d]) for pf, d in geom_changes.items()})
-        if attr_changes:
-            score_idx = layer.fields().indexOf("score")
-            if score_idx >= 0:
-                pr.changeAttributeValues(
-                    {pf: {score_idx: score_by_id[d]}
-                     for pf, d in attr_changes.items()})
-        self._review_fid_map = new_map
-        return len(current)
-
-    def _full_push_review_geoms(self, layer, geoms: list, repair: bool,
-                                scores: list | None, ids: list | None,
-                                stamp: tuple | None) -> int:
-        """Full clear + re-add of the visible set (the pre-diff behaviour).
-        Rebuilds _review_fid_map when identity (ids + stamp) is available so the
-        NEXT push can diff; otherwise clears it (later pushes stay full until a
-        stamped one bootstraps)."""
-        from ...core.layer_conventions import repair_polygon, to_multipolygon
-        pr = layer.dataProvider()
-        _clear_all_features(pr)
-        self._review_fid_map = {}
-        with_identity = stamp is not None and ids is not None and len(ids) == len(geoms)
-        features_to_add = []
-        for i, geom in enumerate(geoms):
-            if geom is None or geom.isEmpty():
-                continue
-            if repair:
-                geom = to_multipolygon(repair_polygon(geom) or geom)
-            else:
-                geom = to_multipolygon(geom) or geom
-            if geom is None or geom.isEmpty():
-                continue
-            feat = QgsFeature(layer.fields())
-            feat.setGeometry(geom)
-            score = float(scores[i]) if scores is not None and i < len(scores) and scores[i] is not None else 1.0
-            det_id = ids[i] if ids is not None and i < len(ids) else None
-            feat.setAttributes(
-                ["", score, int(det_id) if det_id is not None else None])
-            features_to_add.append((det_id, score, feat))
-        if features_to_add:
-            if with_identity:
-                # The provider fids that bootstrap the next incremental push
-                # come back on the RETURNED copies; addFeatures never mutates
-                # its inputs.
-                ok, added = _add_features_with_ids(
-                    pr, [f for _, _, f in features_to_add])
-                fid_map = {}
-                complete = ok and len(added) == len(features_to_add)
-                if complete:
-                    for (det_id, score, _f), out in zip(features_to_add, added):
-                        pfid = out.id()
-                        if (det_id is None or pfid is None or pfid < 0 or det_id in fid_map):
-                            complete = False
-                            break
-                        fid_map[det_id] = (pfid, stamp, True, score)
-                if complete:
-                    self._review_fid_map = fid_map
-            else:
-                _add_features_fast(pr, [f for _, _, f in features_to_add])
-        return len(features_to_add)
+        push_review_geoms(self, geoms, repair=repair, scores=scores, ids=ids,
+                          stamp=stamp, partial=partial,
+                          update_extents=update_extents)
 
     def _on_auto_refine_changed_debounced(self) -> None:
         """Slot connected to auto_refine_changed; restarts the 150 ms debounce timer.
@@ -616,38 +490,59 @@ class AutoReviewMixin:
         shown now, total = all found whole objects, pct = current cutoff."""
         if not self.dock_widget:
             return
+        # This runs on the COMPLETE push only (a progressive mid-pass batch
+        # returns before it), so it is the point the shape pass is finished
+        # with and the busy line has nothing left to announce.
+        self._set_review_busy(False)
         try:
             # Rows are overwritten and appended, never deleted, so the raw
             # length keeps counting what the user removed. The header is a
             # count of what is still there, hand-drawn objects included: they
             # are what lifts a review that found nothing out of its empty state.
             removed = self._review_removed_fids()
-            total = sum(1 for det_idx in range(len(self._auto_objects))
-                        if det_idx not in removed)
+            # Counted off the removal set, not by walking every row: this runs
+            # on every push, and the removals are a handful next to the objects.
+            n_objects = len(self._auto_objects)
+            total = n_objects - sum(
+                1 for det_idx in removed if 0 <= det_idx < n_objects)
             pct = int(round((self._auto_confidence or 0.0) * 100))
             # When nothing is visible, tell the user which filter is actually
             # hiding the objects so they reach for the right lever: the Min size
             # filter can hide everything even when Confidence would show them.
-            size_bound = (visible == 0 and total > 0 and self._review_zero_is_size_bound())
+            bound = ("confidence" if visible or total <= 0
+                     else self._review_zero_binding_gate())
             self.dock_widget.update_auto_review_count(
-                visible, total, pct, size_bound=size_bound)
+                visible, total, pct, bound=bound)
         except (RuntimeError, AttributeError):
             pass
 
-    def _review_zero_is_size_bound(self) -> bool:
-        """With nothing visible, decide whether the Min size filter (not
-        Confidence) is what hides the objects: True when at least one found
-        object scores at/above the current Confidence cutoff (so Confidence is
-        NOT the binding filter and the size gate must be), so the header can
-        point at the lever that will actually reveal them."""
+    def _review_zero_binding_gate(self) -> str:
+        """With nothing visible, name the filter that hides the objects:
+        ``"confidence"``, ``"min"`` or ``"max"``.
+
+        An object scoring at or above the cutoff proves Confidence is not what
+        hides it, so one of the two size gates is, and the header has to point
+        at the one the user can actually pull. Saying "lower the Min size" when
+        Max size is what binds sends them to a dial that changes nothing."""
         conf = self._auto_confidence or 0.0
+        params = self._widget_review_params()
+        min_a = float(params.get("min_a") or 0.0)
+        max_a = float(params.get("max_a") or 0.0)
         removed = self._review_removed_fids()
-        for det_idx, (base, score, _area) in enumerate(self._auto_objects):
+        below_min = 0
+        above_max = 0
+        for det_idx, (base, score, area) in enumerate(self._auto_objects):
             if det_idx in removed or base is None or base.isEmpty():
                 continue
-            if score >= conf:
-                return True
-        return False
+            if score < conf:
+                continue
+            if min_a > 0 and area < min_a:
+                below_min += 1
+            elif max_a > 0 and area > max_a:
+                above_max += 1
+        if not below_min and not above_max:
+            return "confidence"
+        return "min" if below_min >= above_max else "max"
 
     def _drop_preview_geom_cache(self) -> None:
         """Free the confidence-slider preview cache and disarm any build still
@@ -695,13 +590,16 @@ class AutoReviewMixin:
                 n += 1
         return n
 
-    def _full_found_review_geoms(self) -> tuple[list, list | None]:
+    def _full_found_review_geoms(self) -> tuple[list, list, list]:
         """The review's found objects with the Confidence gate dropped but the
         current size + shape refine kept. The safety-net exit paths export this
         so a billed detection hidden ONLY by the Confidence cutoff is never
         lost. Hand edits are folded into the canonical rows and their det_ids
         skip the gates, so _compute_visible_objects already carries them; no
-        separate protected set to merge back."""
+        separate protected set to merge back.
+
+        Comes back with its parallel det_id list so the export can union the two
+        sets by identity."""
         review = self._auto_review or {}
         pixel_size = review.get("pixel_size", 1.0) or 1.0
         params = dict(self._widget_review_params())
@@ -709,10 +607,10 @@ class AutoReviewMixin:
         # Budgeted: the hidden cohort was never refined, so on a dense review
         # this owes thousands of GEOS passes, and its callers are the exit
         # paths, teardown and QGIS quit among them. See _RESCUE_REFINE_BUDGET_S.
-        from .auto_review_geometry import _RESCUE_REFINE_BUDGET_S
+        from .auto_review_geometry import rescue_refine_budget
         return self._compute_visible_objects(
             params, pixel_size, with_scores=True,
-            refine_budget_s=_RESCUE_REFINE_BUDGET_S)
+            refine_budget_s=rescue_refine_budget(), with_ids=True)
 
     def _export_auto_review(self, include_hidden: bool = False,
                             autosave: bool = False
@@ -761,8 +659,15 @@ class AutoReviewMixin:
         conf_applied = float(getattr(self, "_auto_confidence", 0.0) or 0.0)
         if include_hidden:
             visible_n = sum(1 for g in geoms if g is not None and not g.isEmpty())
-            full_geoms, full_scores = self._full_found_review_geoms()
-            if len(full_geoms) > visible_n:
+            full_geoms, full_scores, full_ids = self._full_found_review_geoms()
+            merged = _union_review_sets(
+                geoms, scores, review.get("ids"), full_geoms, full_scores, full_ids)
+            if merged is not None:
+                geoms, scores, extra = merged
+                if extra:
+                    conf_applied = 0.0
+            elif len(full_geoms) > visible_n:
+                # No usable identity on one side, so fall back to the size test.
                 geoms, scores = full_geoms, full_scores
                 conf_applied = 0.0
         if scores is not None and len(scores) != len(geoms):
@@ -789,6 +694,7 @@ class AutoReviewMixin:
             # of a duplicate of everything just written, and it was sitting
             # between the user's click and their layer.
             run_id = self._auto_run_id or None
+            exported_layer_id = self._auto_export_layer_id or ""
 
             def _drop_autosave_copy():
                 self._pending_autosave_drop = None
@@ -796,6 +702,18 @@ class AutoReviewMixin:
                     from ...core.run_autosave import clear_pending
                     clear_pending(run_id, drop_table=True)
                 except Exception:  # nosec B110
+                    pass
+                # The drop is the LAST write into the file the saved layer
+                # reads, and its commit holds the file exactly when the
+                # layer's first render may be reading it: that render comes
+                # back with no rows, paints an empty map, and nothing asks
+                # for another frame. Ask for one after the write, the same
+                # rule persist_layer_to_file_later applies to its writes.
+                try:
+                    layer = QgsProject.instance().mapLayer(exported_layer_id)
+                    if layer is not None:
+                        layer.triggerRepaint()
+                except (RuntimeError, AttributeError):  # nosec B110
                     pass
 
             # The timer belongs to the dock and dies with it, so an unload
@@ -853,7 +771,11 @@ class AutoReviewMixin:
             pass
         try:
             from ...core import telemetry_run_events, telemetry_session_events
+            from .auto_client_profile import review_pass_profile
             found = len(self._auto_objects)
+            pass_profile = dict(review_pass_profile(self))
+            pass_profile["objects"] = len(refined)
+            pass_profile.setdefault("on_pool", False)
             telemetry_run_events.track_auto_export_done(
                 run_id=self._auto_run_id or "",
                 exported_count=len(refined),
@@ -862,6 +784,7 @@ class AutoReviewMixin:
                 display_mode=self._auto_display_mode,
                 refined_in_manual=getattr(self, "_auto_refined_in_manual", False),
                 autosave=autosave,
+                pass_profile=pass_profile,
             )
             if refined:
                 telemetry_session_events.track_first_generation_milestone(mode="auto")
@@ -899,6 +822,9 @@ class AutoReviewMixin:
         # Snapshot the prompt BEFORE _export_auto_review nulls the review, so the
         # end-of-run value recap (shown on the Start page) can name the object.
         recap_prompt = ((self._auto_review or {}).get("prompt") or "").strip()
+        # Export saves what is on screen. The Confidence cutoff is the Keep
+        # step's decision, already made, so the finish line asks nothing.
+        include_hidden = False
         # Say it is working before the work starts: the whole commit is
         # synchronous, and the map is deliberately held still for the redraw
         # that follows, so nothing else on screen can answer the click.
@@ -910,7 +836,7 @@ class AutoReviewMixin:
             pass
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            exported = self._export_auto_review()
+            exported = self._export_auto_review(include_hidden=include_hidden)
         finally:
             QApplication.restoreOverrideCursor()
             try:
@@ -1007,13 +933,19 @@ class AutoReviewMixin:
         self._review_abandon_tracked = True
         try:
             from ...core import telemetry_run_events
+            from .auto_client_profile import review_pass_profile
+            instances = len((self._auto_review or {}).get("geoms", []))
+            pass_profile = dict(review_pass_profile(self))
+            pass_profile["objects"] = instances
+            pass_profile.setdefault("on_pool", False)
             telemetry_run_events.track_review_abandoned(
                 run_id=self._auto_run_id or "",
-                instances_at_exit=len((self._auto_review or {}).get("geoms", [])),
+                instances_at_exit=instances,
                 refined=bool(getattr(self, "_review_tel_refined", False)),
                 confidence_changed=bool(
                     getattr(self, "_review_tel_conf_changed", False)),
                 exit_path=exit_path,
+                pass_profile=pass_profile,
             )
         except Exception:
             pass  # nosec B110
@@ -1062,7 +994,21 @@ class AutoReviewMixin:
     def _on_auto_review_exit_clicked(self) -> None:
         """Exit from the review: offer to Save (export) the detections, Discard
         them, or Cancel, so a billed result is NEVER silently dropped nor
-        silently autosaved. On Save/Discard, leave to the Start step (unlocked)."""
+        silently autosaved. On Save/Discard, leave to the Start step (unlocked).
+
+        A fix session left open on the Correct step is folded first, the same
+        way the step switch folds it. The Save below writes the review's own
+        geometry, so without the fold the vertices the user had just moved were
+        counted, offered and then dropped."""
+        try:
+            if getattr(self, "_refine_add_mode_active", False):
+                self._exit_ai_add_mode()
+            if (getattr(self, "_refine_handoff_active", False)
+                    or getattr(self, "_qgis_bridge_active", False)):
+                self._fold_active_correct_session()
+            self._disarm_shape_tool()
+        except (RuntimeError, AttributeError):  # nosec B110
+            pass
         visible = self._current_visible_review_count()
         # Save exports the FULL found set (Confidence gate dropped, size + shape
         # kept) whenever it is larger than the visible set, so a billed

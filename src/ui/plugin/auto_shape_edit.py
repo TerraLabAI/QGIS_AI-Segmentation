@@ -57,6 +57,10 @@ _NAVIGATION_TOOL_CLASSES = ("QgsMapToolPan",)
 # measure: that one grows every time the user zooms out.
 _MERGE_SEAM_TOLERANCE_PX = 2.0
 
+# Where a journal entry carries its own undo key. Set on the entry itself, so
+# the reversal payload can never be handed to a later entry.
+_UNDO_TOKEN_ATTR = "shape_undo_token"  # nosec B105 - an attribute name, not a secret
+
 
 class AutoShapeEditMixin:
     """The review's Correct-step map tools: select a detection, or merge
@@ -97,15 +101,21 @@ class AutoShapeEditMixin:
         # with a full GEOS op on each click.
         self._shape_review_params = None
         self._shape_hit_index = None
+        # The visible-set list the standing hit index was built from, so an
+        # arm over an unchanged review reuses it (_drawn_set_published).
+        self._shape_hit_built_from = None
         # Canonical object index -> geometry currently drawn in the review.
         # After a Manual reshape the visible geometry can differ from the
         # original detection; hit-testing the rendered shape keeps Correct's
         # actions anchored to what the user actually clicked.
         self._shape_hit_geoms: dict[int, object] = {}
-        # id(JournalEntry) -> the ShapeEdit that reverses it. Entries are plain
-        # dataclasses (unhashable), so the payload is keyed on their id.
+        # undo token -> the ShapeEdit that reverses it. Entries are plain
+        # dataclasses (unhashable), so each one is stamped with a token of its
+        # own; id(entry) is handed to the next object at that address once the
+        # entry is collected, which would give one edit another's payload.
         self._shape_edit_undo: dict[int, object] = {}
-        # id(JournalEntry) -> the pre-fold _auto_manual_removed snapshot, for an
+        self._shape_undo_token_seq = 0
+        # undo token -> the pre-fold _auto_manual_removed snapshot, for an
         # AI-refine fold whose deletions live in that set (not the correction
         # removal set the ShapeEdit's unremoved covers). Restored on undo.
         self._fold_manual_removed_undo: dict[int, set] = {}
@@ -530,8 +540,12 @@ class AutoShapeEditMixin:
         if getattr(self, "_shape_edit_mode", None) is not None:
             self._build_shape_hit_index()
         else:
-            # Nothing armed: a stale snapshot would only mislead the band.
+            # Nothing armed: a stale snapshot would only mislead the band. The
+            # index goes with it, or the next arm would find its build key
+            # still matching and keep an empty geometry cache.
             self._shape_hit_geoms = {}
+            self._shape_hit_index = None
+            self._shape_hit_built_from = None
         if getattr(self, "_correct_selected_idx", None) is None:
             return
         self._refresh_correct_selection_band()
@@ -834,13 +848,32 @@ class AutoShapeEditMixin:
     # Journal, undo and the shared refresh
     # ------------------------------------------------------------------
 
+    def _shape_undo_token_for(self, entry) -> int:
+        """Stamp ``entry`` with its own undo key and return it.
+
+        The key has to outlive nothing but the entry, and must never name a
+        second one: a counter does that, an address does not.
+        """
+        token = int(getattr(self, "_shape_undo_token_seq", 0)) + 1
+        self._shape_undo_token_seq = token
+        try:
+            setattr(entry, _UNDO_TOKEN_ATTR, token)
+        except (AttributeError, TypeError):
+            pass
+        return token
+
+    def _shape_undo_token_of(self, entry):
+        """The undo key stamped on ``entry``, or None when it carries none
+        (an entry journalled by another path, which owns no payload here)."""
+        return getattr(entry, _UNDO_TOKEN_ATTR, None)
+
     def _record_shape_edit(self, edit, fids: tuple) -> None:
         """Record one hand edit on the review's journal, so Undo last and Clear
         all reach it. The reversal payload rides beside it, keyed on the
-        entry's id."""
+        entry's own undo token."""
         entry = JournalEntry(kind=edit.kind, fids=tuple(fids))
         self._push_correct_entry(entry)
-        self._shape_edit_undo[id(entry)] = edit
+        self._shape_edit_undo[self._shape_undo_token_for(entry)] = edit
 
     def _record_fold_edit(self, edit, fids: tuple,
                           manual_removed_before=None):
@@ -858,22 +891,29 @@ class AutoShapeEditMixin:
             return None
         entry = JournalEntry(kind=KIND_REFINE, fids=tuple(fids))
         self._push_correct_entry(entry)
-        self._shape_edit_undo[id(entry)] = edit
+        token = self._shape_undo_token_for(entry)
+        self._shape_edit_undo[token] = edit
         if manual_removed_before is not None:
-            self._fold_manual_removed_undo[id(entry)] = set(manual_removed_before)
+            self._fold_manual_removed_undo[token] = set(manual_removed_before)
         self._refresh_correction_summary()
         return entry
 
-    def _revert_shape_edit_entry(self, entry) -> None:
+    def _revert_shape_edit_entry(self, entry,
+                                 defer_refresh: bool = False) -> None:
         """Undo one recorded hand edit or fold (called by the journal's undo
         branch).
 
         A payload that is gone means the object list was rebuilt under it: do
         nothing rather than write rows at indices that moved.
+
+        ``defer_refresh`` leaves the refresh to a caller unwinding a whole
+        journal in one gesture.
         """
-        edit = self._shape_edit_undo.pop(id(entry), None)
+        token = self._shape_undo_token_of(entry)
+        edit = None if token is None else self._shape_edit_undo.pop(token, None)
         if edit is None:
-            self._fold_manual_removed_undo.pop(id(entry), None)
+            if token is not None:
+                self._fold_manual_removed_undo.pop(token, None)
             return
         ids = self._shape_edit_ids()
         restored_indices = tuple(idx for idx, _row in edit.restored)
@@ -890,7 +930,7 @@ class AutoShapeEditMixin:
                 manual_ids.difference_update(int(i) for i in exempted)
         # The AI-refine fold records deletions in _auto_manual_removed wholesale,
         # so its undo restores the pre-fold snapshot rather than a per-index diff.
-        snap = self._fold_manual_removed_undo.pop(id(entry), None)
+        snap = self._fold_manual_removed_undo.pop(token, None)
         if snap is not None:
             self._auto_manual_removed = set(snap)
         # The undo popped the appended tail, so any per-shape settings stored
@@ -905,7 +945,8 @@ class AutoShapeEditMixin:
         # An undo restores the overwritten rows (and drops any appended tail);
         # only the restored rows changed shape. The unremoved (merge-absorbed)
         # rows kept their original geometry, so their cache is still valid.
-        self._after_shape_edit(changed=restored_indices)
+        if not defer_refresh:
+            self._after_shape_edit(changed=restored_indices)
 
     def _after_shape_edit(self, changed=None) -> None:
         """One refresh for every hand edit and every undo of one: the changed
@@ -972,44 +1013,85 @@ class AutoShapeEditMixin:
                 out.append(det_idx)
         return out
 
+    def _drawn_set_published(self):
+        """The list object the review last published as its visible set.
+
+        Held by identity, never by its contents: every reslice ASSIGNS a fresh
+        list (nothing appends to this one), so "same list object" is an exact
+        reading of "nothing on screen moved", where a stamp or a length is not.
+        A hand edit reshapes one object without changing either.
+        """
+        geoms = (self._auto_review or {}).get("geoms")
+        return geoms if isinstance(geoms, list) else None
+
     def _build_shape_hit_index(self) -> None:
         """Build the per-gesture hit-test cache: snapshot the review params
-        (a preset regex rebuild) and a QgsSpatialIndex over every object's
-        bbox, so a click narrows to a few candidates instead of scanning all
-        objects with a full GEOS op. Best-effort: on any failure the hit tests
-        fall back to the full scan."""
-        self._shape_review_params = self._widget_review_params()
+        (a preset regex rebuild), index every object's BOUNDING BOX, and keep
+        the drawn shape beside it under the same index, so a click narrows to
+        a few candidates and then resolves the exact geometry by index instead
+        of scanning every object with a full GEOS op.
+
+        Reused as is when the review has published no new visible set and the
+        filters have not moved since the last build, so re-arming over an
+        unchanged review costs nothing. Best-effort: on any failure the hit
+        tests fall back to the full scan.
+        """
+        params = self._widget_review_params()
+        published = self._drawn_set_published()
+        if (published is not None and self._shape_hit_index is not None
+                and published is getattr(self, "_shape_hit_built_from", None)
+                and params == self._shape_review_params):
+            return
+        self._shape_review_params = params
         self._shape_hit_index = None
+        self._shape_hit_built_from = None
         self._shape_hit_geoms = {}
         try:
-            from qgis.core import QgsFeature, QgsSpatialIndex
+            from qgis.core import QgsSpatialIndex
             index = QgsSpatialIndex()
             review = self._auto_review or {}
             review_geoms = review.get("geoms") or []
             review_ids = review.get("ids")
-            by_display_id = {
-                self._object_fid_for(det_idx): det_idx
-                for det_idx in range(len(self._auto_objects))
-            }
+            n_objects = len(self._auto_objects)
+            fids = getattr(self, "_auto_object_fids", None)
+            if fids is not None and len(fids) >= n_objects:
+                # Read straight off the id list rather than through the
+                # per-index accessor: this runs once per object of the whole
+                # run, every time the gesture re-arms.
+                by_display_id = {fids[i]: i for i in range(n_objects)}
+            else:
+                by_display_id = {
+                    self._object_fid_for(det_idx): det_idx
+                    for det_idx in range(n_objects)
+                }
             visible = []
             if isinstance(review_ids, list) and len(review_ids) == len(review_geoms):
                 for geom, det_id in zip(review_geoms, review_ids):
                     det_idx = by_display_id.get(det_id)
                     if det_idx is not None:
                         visible.append((det_idx, geom))
+            built_from = published
             if not visible:
+                # No published set to key on: the fallback reads the canonical
+                # rows, which a hand edit rewrites without touching the review.
+                built_from = None
                 visible = [(det_idx, row[0])
                            for det_idx, row in enumerate(self._auto_objects)]
             for det_idx, geom in visible:
                 if geom is None or geom.isEmpty():
                     continue
-                feat = QgsFeature(det_idx)
-                feat.setGeometry(QgsGeometry(geom))
-                index.addFeature(feat)
-                self._shape_hit_geoms[det_idx] = QgsGeometry(geom)
+                # The index gets the bbox and nothing else: it only ever
+                # answers "which ids sit near this rectangle", and building a
+                # QgsFeature per object to tell it that cost one throwaway
+                # feature and one geometry hop per object of the whole run.
+                held = QgsGeometry(geom)
+                index.addFeature(int(det_idx), held.boundingBox())
+                self._shape_hit_geoms[det_idx] = held
             self._shape_hit_index = index
+            self._shape_hit_built_from = built_from
         except (RuntimeError, AttributeError, TypeError, ImportError):
             self._shape_hit_index = None
+            self._shape_hit_built_from = None
             self._shape_hit_geoms = {}
 
     def _shape_hit_candidates(self, rect) -> list[int]:

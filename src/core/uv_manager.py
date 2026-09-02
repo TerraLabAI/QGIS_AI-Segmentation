@@ -28,15 +28,30 @@ from qgis.PyQt.QtNetwork import QNetworkRequest
 
 from .archive_utils import safe_extract_tar as _safe_extract_tar
 from .archive_utils import safe_extract_zip as _safe_extract_zip
-from .cache_paths import plugin_cache_tmp_dir
+from .cache_paths import PLUGIN_CACHE_DIR, plugin_cache_tmp_dir
 from .logging_utils import log as _log
 from .model_config import IS_ROSETTA
+from .streamed_download import sleep_unless_cancelled
 from .subprocess_utils import get_clean_env_for_venv, get_subprocess_kwargs  # nosec B404 - our own helper
 
-# Plain home path on purpose: the binary stays put when AI_SEGMENTATION_CACHE_DIR
-# moves the rest of the cache, so an existing install keeps finding it.
-UV_HOME_DIR = os.path.expanduser("~/.qgis_ai_segmentation")
-UV_DIR = os.path.join(UV_HOME_DIR, "uv")
+# Older releases put the binary under the home directory whatever
+# AI_SEGMENTATION_CACHE_DIR said. A binary already there is kept and found, so
+# an install that moved its cache does not download uv again and a rule an IT
+# desk wrote for that path keeps matching. A fresh install puts it with the rest
+# of the cache, so one root holds everything the plugin writes. Normalised, as
+# the cache root is: expanduser on Windows leaves a "/" after the home part.
+_LEGACY_UV_HOME_DIR = os.path.normpath(os.path.expanduser("~/.qgis_ai_segmentation"))
+
+
+def _resolve_uv_dir() -> str:
+    legacy = os.path.join(_LEGACY_UV_HOME_DIR, "uv")
+    binary = "uv.exe" if sys.platform == "win32" else "uv"
+    if os.path.isfile(os.path.join(legacy, binary)):
+        return legacy
+    return os.path.join(PLUGIN_CACHE_DIR, "uv")
+
+
+UV_DIR = _resolve_uv_dir()
 UV_VERSION = "0.10.10"
 
 # SHA256 of each release asset, copied from the official uv-<triple><ext>.sha256
@@ -216,6 +231,24 @@ def uv_exists() -> bool:
     return os.path.isfile(get_uv_path())
 
 
+def _discard_uv_dir() -> bool:
+    """Remove the uv directory, waiting out a scanner that holds the binary.
+
+    True once the binary is gone. On Windows an on-access scanner holds a
+    binary it has just seen run, and an rmtree with errors ignored walks away
+    leaving the file in place: the next existence check then reads a binary
+    that failed its own check as an installed uv, and the whole install runs
+    on it.
+    """
+    from .checkpoint_manager import _remove_with_retry
+
+    binary = get_uv_path()
+    if os.path.isfile(binary) and not _remove_with_retry(binary):
+        return False
+    shutil.rmtree(UV_DIR, ignore_errors=True)
+    return not os.path.isfile(binary)
+
+
 def _get_uv_platform_info() -> tuple[str, str]:
     """Returns (platform_triple, extension) for the uv download URL.
 
@@ -337,8 +370,14 @@ def download_uv(
     Returns (success, message).
     """
     if uv_exists():
-        _log(f"uv already exists at {get_uv_path()}")
-        return True, "uv already installed"
+        # Reached with a binary still on disk when its check failed and the
+        # file would not go (see verify_uv). Calling that one installed hands
+        # the install to a tool that does not run.
+        if verify_uv():
+            _log(f"uv already exists at {get_uv_path()}")
+            return True, "uv already installed"
+        if uv_exists():
+            return False, "the uv binary on disk fails its check and cannot be replaced"
 
     reason = unsupported_download_platform_reason()
     if reason:
@@ -394,7 +433,10 @@ def download_uv(
                 if progress_callback:
                     progress_callback(
                         0, f"Network error, retrying in {wait}s...")
-                time.sleep(wait)
+                # Sliced, not a flat sleep: the ladder doubles, and a flat one
+                # left Cancel dead for the whole wait.
+                if sleep_unless_cancelled(wait, cancel_check):
+                    return False, "Download cancelled"
 
     finally:
         if restore_proxy:
@@ -434,8 +476,8 @@ def download_uv(
             f.write(content_bytes)
 
         # Remove existing UV_DIR if present
-        if os.path.exists(UV_DIR):
-            shutil.rmtree(UV_DIR)
+        if os.path.exists(UV_DIR) and not _discard_uv_dir():
+            return False, "the previous uv binary is held by another program"
         os.makedirs(UV_DIR, exist_ok=True)
 
         # Extract to a temp dir first, then move uv binary to UV_DIR. Same
@@ -539,7 +581,7 @@ def verify_uv(retries: int = 3) -> bool:
                         "Re-downloading.",
                         Qgis.MessageLevel.Warning
                     )
-                    shutil.rmtree(UV_DIR, ignore_errors=True)
+                    _discard_uv_dir()
                     return False
                 return True
             last_error = result.stderr or result.stdout or f"exit code {result.returncode}"
@@ -554,7 +596,7 @@ def verify_uv(retries: int = 3) -> bool:
 
     _log(f"uv verification failed: {last_error}", Qgis.MessageLevel.Warning)
     # Cleanup on failure
-    shutil.rmtree(UV_DIR, ignore_errors=True)
+    _discard_uv_dir()
     return False
 
 
@@ -563,7 +605,8 @@ def remove_uv() -> tuple[bool, str]:
     if not os.path.exists(UV_DIR):
         return True, "uv not installed"
     try:
-        shutil.rmtree(UV_DIR)
+        if not _discard_uv_dir():
+            return False, "the uv binary is held by another program"
         _log("Removed uv installation", Qgis.MessageLevel.Success)
         return True, "uv removed"
     except Exception as e:

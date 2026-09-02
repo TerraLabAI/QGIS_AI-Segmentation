@@ -18,6 +18,39 @@ from qgis.core import (
 class AutoReviewOpenMixin:
     """Hand a finished run to the review, or export it headless."""
 
+    def _run_export_crs(self, source_layer) -> QgsCoordinateReferenceSystem:
+        """The CRS the finished run's geometry is in.
+
+        The run's captured authid whenever it names a valid system. A custom
+        projection comes back with an EMPTY authid, and EPSG:4326 is not a safe
+        stand-in there: the coordinates are metres, so the saved layer lands far
+        from the imagery with nothing said. The source layer's own CRS answers
+        that case, and the last-resort substitute is logged rather than taken in
+        silence.
+        """
+        authid = str(getattr(self, "_auto_crs_authid", None) or "").strip()
+        if authid:
+            crs = QgsCoordinateReferenceSystem(authid)
+            if crs.isValid():
+                return crs
+        layer_crs = None
+        try:
+            if source_layer is not None:
+                layer_crs = source_layer.crs()
+        except (RuntimeError, AttributeError):
+            layer_crs = None
+        if layer_crs is not None and layer_crs.isValid():
+            QgsMessageLog.logMessage(
+                "Auto review: the run carries no usable CRS id; the export "
+                "takes the source layer's CRS.",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            return layer_crs
+        QgsMessageLog.logMessage(
+            "Auto review: no CRS could be resolved for the run; the export "
+            "falls back to EPSG:4326 and may be misplaced.",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning)
+        return QgsCoordinateReferenceSystem("EPSG:4326")
+
     def _complete_auto_finalize(self, visible: list, tiles_succeeded: int,
                                 scores: list | None = None,
                                 ids: list | None = None) -> None:
@@ -27,8 +60,6 @@ class AutoReviewOpenMixin:
         ``visible``) that feed the review heatmap and the stable Random colours.
         Headless exports it straight to a layer; interactive enters the post-run
         review."""
-        crs = QgsCoordinateReferenceSystem(self._auto_crs_authid or "EPSG:4326")
-
         # Determine source layer name.
         source_layer = self._get_active_raster_layer()
         source_layer_name = ""
@@ -37,6 +68,7 @@ class AutoReviewOpenMixin:
                 source_layer_name = source_layer.name()
         except (RuntimeError, AttributeError):
             pass
+        crs = self._run_export_crs(source_layer)
 
         # Get prompt text for output filename.
         prompt_text = ""
@@ -165,6 +197,7 @@ class AutoReviewOpenMixin:
             visible_n = len(visible)
             start_pct = int(round((self._auto_confidence or 0.0) * 100))
             if self._auto_tel_stop_reason in (None, "completed"):
+                from .auto_client_profile import client_profile_props
                 blob_armed, blob_dropped, tile_m = self._auto_blob_guard_stats()
                 telemetry_run_events.track_auto_detect_completed(
                     run_id=self._auto_run_id or "",
@@ -180,6 +213,7 @@ class AutoReviewOpenMixin:
                     blob_armed=blob_armed,
                     blob_dropped=blob_dropped,
                     tile_ground_m=tile_m,
+                    client_profile=client_profile_props(self),
                 )
             telemetry_run_events.track_review_opened(
                 run_id=self._auto_run_id or "",
@@ -196,10 +230,68 @@ class AutoReviewOpenMixin:
         self._review_tel_refined = False
         self._review_tel_conf_changed = False
         self._review_abandon_tracked = False
+        self._offer_closed_canopy_advice(tiles_succeeded)
+        self._remember_auto_run_pace(tiles_succeeded)
         QgsMessageLog.logMessage(
             f"Auto detection: {len(visible)} object(s) ready for review",
             "AI Segmentation", level=Qgis.MessageLevel.Info,
         )
+
+    def _remember_auto_run_pace(self, tiles_succeeded: int) -> None:
+        """Feed this run's wall clock, Detect click to review open, to the
+        quote's memory, and requote the dock from it right away.
+
+        Never raises and never logs a figure: a missing start stamp (a run
+        restored from disk, a headless run) just teaches nothing.
+        """
+        started = getattr(self, "_auto_run_started_mono", None)
+        self._auto_run_started_mono = None
+        if started is None:
+            return
+        try:
+            import time as _time
+
+            from ...core.run_pace_memory import own_machine_pace, remember_run
+            remember_run(int(tiles_succeeded or 0), _time.monotonic() - started)
+            pace = own_machine_pace()
+            if pace is not None and self.dock_widget is not None:
+                self.dock_widget.set_auto_own_pace(pace)
+        except Exception:  # noqa: BLE001 -- the memory is a convenience
+            pass  # nosec B110
+
+    def _offer_closed_canopy_advice(self, tiles_succeeded: int) -> None:
+        """Show the closed-forest card when this run has its signature: a
+        tree word, separate objects, few raw masks per tile and whole tiles
+        handed back as one block. Every other run hides the card."""
+        if not self.dock_widget:
+            return
+        try:
+            from ...core.detection_policy import closed_canopy_signature, prompt_suggests_canopy
+            prompt = str((self._auto_run_ctx or {}).get("prompt") or "")
+            # A localized word ("arbre") is judged by its English token, the
+            # way every other prompt lookup works.
+            try:
+                prompt = str(self._resolve_object_token(prompt) or prompt)
+            except (RuntimeError, AttributeError, TypeError):
+                pass  # nosec B110 - the typed word stands
+            span_dropped = int(getattr(self, "_auto_blob_split", (0, 0, 0))[1])
+            on = (
+                bool(getattr(self, "_auto_merge_separate", True))
+                and prompt_suggests_canopy(prompt)
+                and closed_canopy_signature(
+                    int(getattr(self, "_auto_raw_count", 0) or 0),
+                    int(tiles_succeeded or 0), span_dropped)
+            )
+            if on:
+                QgsMessageLog.logMessage(
+                    f"Auto detection: closed-canopy signature ({span_dropped} "
+                    f"spanning mask(s) dropped over {tiles_succeeded} tile(s)); "
+                    "review shows the forest advice",
+                    "AI Segmentation", level=Qgis.MessageLevel.Info,
+                )
+            self.dock_widget.set_closed_canopy_advice(on)
+        except Exception:  # noqa: BLE001 - advice never blocks a review
+            pass  # nosec B110
 
     def _archive_auto_default_export(self) -> None:
         """Archive the run's clean export the moment the review opens, using the

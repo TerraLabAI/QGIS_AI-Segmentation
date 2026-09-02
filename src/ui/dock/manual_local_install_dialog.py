@@ -59,6 +59,13 @@ _INSTALL_MINUTES = 10
 # or a machine so slow the user needs their software back either way.
 _STALL_SECONDS = 180
 
+# How long the window may hold the whole application, however healthy the
+# install looks. The watchdog above only fires on silence, and a running
+# install reports far more often than that, so it never fired at all: a user
+# who wanted their map back during a long download had no way to get it. This
+# one does not restart on a tick.
+_HOLD_SECONDS = 4 * 60
+
 # What `ask()` returns when the user picked the other engine. Qt keeps 0 and 1
 # for Rejected and Accepted, so a window shut with Escape or the title bar X
 # stays 0 and can be told apart from a button somebody actually pressed.
@@ -251,6 +258,12 @@ class ManualLocalInstallDialog(QDialog):
         self._stall_timer.setSingleShot(True)
         self._stall_timer.setInterval(_STALL_SECONDS * 1000)
         self._stall_timer.timeout.connect(self._on_install_stalled)
+        # Started once when the install starts and never restarted, so the
+        # application comes back whether or not the install is reporting.
+        self._hold_timer = QTimer(self)
+        self._hold_timer.setSingleShot(True)
+        self._hold_timer.setInterval(_HOLD_SECONDS * 1000)
+        self._hold_timer.timeout.connect(self._release_application)
         self._show_offer()
 
     # -- copy ---------------------------------------------------------------
@@ -333,6 +346,7 @@ class ManualLocalInstallDialog(QDialog):
         self.show()
         self.raise_()
         self._stall_timer.start()
+        self._hold_timer.start()
 
     def is_installing(self) -> bool:
         """Whether this window is carrying an install right now."""
@@ -347,6 +361,7 @@ class ManualLocalInstallDialog(QDialog):
         """
         self._installing = False
         self._stall_timer.stop()
+        self._hold_timer.stop()
 
     # -- the ways out, all of them asked back ---------------------------------
 
@@ -418,8 +433,18 @@ class ManualLocalInstallDialog(QDialog):
         """
         if not self._installing:
             return
+        self._stall_note.setVisible(True)
+        self._release_application()
+
+    def _release_application(self) -> None:
+        """Stop holding the whole application, keeping the window up.
+
+        The install stays running and the Stop button stays where it was. Only
+        the block on the rest of QGIS goes.
+        """
+        if not self._installing:
+            return
         try:
-            self._stall_note.setVisible(True)
             if self.windowModality() != Qt.WindowModality.NonModal:
                 # All the way to non-modal, never to window-modal: a
                 # window-modal dialog blocks its parent window, and the parent

@@ -8,6 +8,10 @@ math lives here.
 """
 from __future__ import annotations
 
+# Shipped defaults the run worker passes back in when nothing is served.
+DEFAULT_COOLDOWN_CYCLES = 1
+DEFAULT_FAILURE_THRESHOLD = 3
+
 
 class AdaptiveConcurrency:
     """AIMD controller for the number of in-flight tile requests.
@@ -30,18 +34,41 @@ class AdaptiveConcurrency:
         start: int = 3,
         minimum: int = 1,
         maximum: int = 6,
-        cooldown_cycles: int = 1,
+        cooldown_cycles: int = DEFAULT_COOLDOWN_CYCLES,
     ) -> None:
         self._min = max(1, int(minimum))
         self._max = max(self._min, int(maximum))
         self._cap = min(max(int(start), self._min), self._max)
         self._cooldown_cycles = max(0, int(cooldown_cycles))
         self._cooldown = 0
+        # How many times the window was halved over the run. Read at the
+        # terminal, so a run that crawled can say whether the link or the
+        # service made it narrow.
+        self.setbacks = 0
 
     @property
     def cap(self) -> int:
         """Current in-flight ceiling, always within [minimum, maximum]."""
         return self._cap
+
+    @property
+    def maximum(self) -> int:
+        """Widest the window may grow to. Set at construction, and movable
+        afterwards (see :meth:`set_maximum`)."""
+        return self._max
+
+    def set_maximum(self, maximum: int) -> None:
+        """Move the ceiling mid-run, keeping the live width inside it.
+
+        The width a run may open is not always knowable when the run starts:
+        the capacity behind the service can change while it is running, and
+        only the service knows it. A new maximum below the live cap clamps it
+        at once, so a narrower ceiling takes effect on the next fill rather
+        than after the controller has halved its way down to it. Never below
+        ``minimum``.
+        """
+        self._max = max(self._min, int(maximum))
+        self._cap = min(max(self._cap, self._min), self._max)
 
     def on_clean_cycle(self) -> None:
         """Additive increase after a cycle that made progress with no setback.
@@ -60,6 +87,7 @@ class AdaptiveConcurrency:
         latency spike, then hold for ``cooldown_cycles`` before growing again."""
         self._cap = max(self._min, self._cap // 2)
         self._cooldown = self._cooldown_cycles
+        self.setbacks += 1
 
 
 class OfflineFastFail:
@@ -94,7 +122,7 @@ class OfflineFastFail:
         "DNS_ERROR", "CONNECTION_REFUSED", "PROXY_ERROR", "NO_INTERNET",
     })
 
-    def __init__(self, threshold: int = 3) -> None:
+    def __init__(self, threshold: int = DEFAULT_FAILURE_THRESHOLD) -> None:
         self._threshold = max(1, int(threshold))
         self._streak = 0
 

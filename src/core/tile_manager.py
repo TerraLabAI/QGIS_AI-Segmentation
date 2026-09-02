@@ -19,10 +19,24 @@ OVERLAP_FRACTION = 0.20
 # two things tiles still cost, service time and the user's wait, and nothing
 # else. Memory stays flat (tiles render just-in-time). Client fallback
 # for the server policy's `max_tiles_per_run`.
-MAX_TILES = 2500
-# Target ground footprint per tile (meters). Used to size tiles when the source
-# has no native resolution (WMS); native-resolution sources tile at their own
-# deepest zoom, which is already finer than this.
+MAX_TILES = 20000
+# Tiles one run may spend per km2 of the zone drawn. The ceiling above bounds a
+# run's wall clock; this bounds what a run may spend for each km2 it bills, and
+# that is the one ratio somebody can drive to an absurd value on purpose, since
+# the price follows the surface and not the grid. Sized on the finest ground
+# tile any class is measurably answered at, so it refuses no precision anybody
+# can use. Client fallback for the server policy's `max_tiles_per_km2`.
+MAX_TILES_PER_KM2 = 130
+# Floor under the per-km2 rule: a zone smaller than one tile still needs a grid
+# worth running. Client fallback for `max_tiles_floor`.
+MAX_TILES_FLOOR = 16
+# UNREACHABLE (2026-09-01): no reader anywhere in src/, tests/ or scripts/.
+# It reads as live WMS policy and is not: the WMS path sizes its tiles through
+# the detail window in auto_flow, which never looks here. Kept so a reader does
+# not take it for the value that path uses.
+# Target ground footprint per tile (meters), for a source with no native
+# resolution; native-resolution sources tile at their own deepest zoom, which
+# is already finer than this.
 DETECTION_TILE_FOOTPRINT_M = 100.0
 
 # Coarse edge (m/px) of the model's adequate-quality band. Client fallback for
@@ -49,11 +63,19 @@ DEFAULT_AUTO_TILE_BUDGET = 30
 
 # Hard ceiling on tiles the auto-picked default may propose. It existed to
 # stop one default run draining a credit allowance; per-km2 billing removed
-# that risk, so what it guards now is the wait and the service time. It sits
-# just under MAX_TILES rather than at it, so the recommended level always
-# leaves the user somewhere finer to drag to. Client fallback for the server policy's
+# that risk, and the run cap (MAX_TILES and MAX_TILES_PER_KM2) already bounds
+# the wait and the service time. It sits at MAX_TILES so the default reaches
+# the object's own target tile on a large zone instead of stopping at a flat
+# number that was under it. Client fallback for the server policy's
 # `seed_tile_cap`.
-AUTO_SEED_TILE_CAP = 2000
+AUTO_SEED_TILE_CAP = 20000
+
+# Levels the Precision slider keeps open above an automatically picked level.
+# A default that sits at the top of its travel leaves the user no way to ask
+# for more, so the seed stops this far short of the machine ceiling and the
+# object band keeps its top this far past the seed wherever a finer level
+# exists. Client fallback for the server policy's `seed_headroom_levels`.
+AUTO_SEED_HEADROOM_LEVELS = 1
 
 # How far past a source's native resolution a render may go (linear factor on
 # m/px): upsampling adds no pixels but enlarges each object in model space,
@@ -70,19 +92,25 @@ AUTO_OBJECT_MIN_PX = 20
 # tile side each piece carries too little context to stitch. Client fallback
 # for the server policy's `seed.split_risk_tile_frac`.
 SPLIT_RISK_TILE_FRAC = 0.5
-# Share of a tile's ground side an object may take before the model starts
-# judging it from a fragment rather than seeing it whole. Bounds the FINE END
-# of the Precision slider, and nothing else.
-#
-# Deliberately its own value rather than a borrowed one. `max_object_tile_frac`
-# in the same policy reads as the same idea but does a different job: it
-# guards the seed, so moving it moves what a default run costs and returns.
-# `SPLIT_RISK_TILE_FRAC` marks a later point again, where the pieces stop being
-# stitchable, which is where the amber warning belongs. Three limits, three
-# numbers, so retuning one cannot move the other two by accident.
-#
-# Client fallback for the server policy's `seed.detail_max_object_tile_frac`.
-DETAIL_MAX_OBJECT_TILE_FRAC = 0.20
+# How far the Precision slider travels either side of the automatic pick, as
+# a ratio on the tile's ground side. The coarse end is the level whose tile
+# covers this many times the recommended tile, the fine end the level whose
+# tile covers the recommended tile divided by this. Both ends stay inside the
+# machine ceiling and the object's own served floor and ceiling. Bounding the
+# travel on the pick keeps the pick inside the band on every zone size, and
+# stops a run from being asked at a tile so small the model gains nothing
+# from it. Client fallbacks for the server policy's
+# `seed.detail_coarse_travel_ratio` and `seed.detail_fine_travel_ratio`.
+DETAIL_COARSE_TRAVEL_RATIO = 2.0
+DETAIL_FINE_TRAVEL_RATIO = 2.0
+# Share of a tile's ground side a DRAWN example may take when it is the only
+# thing describing the object (no word typed). The seed reads the example as a
+# measurement and grows the tile until the object fits inside this share, so a
+# large one is read whole instead of in fragments. Under the prompt-less seed
+# resolution the tile never shrinks, so a small example leaves the grid exactly
+# where it has always been. Client fallback for the server policy's
+# `seed.drawn_object_tile_frac`.
+DRAWN_OBJECT_TILE_FRAC = 0.25
 # Native pixels an object's NARROW dimension must span before the coarse mask
 # grid may be requested for it: under this a half-cell boundary shift eats the
 # object's thin parts. Client fallback for the server policy's

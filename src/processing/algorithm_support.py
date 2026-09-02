@@ -16,6 +16,7 @@ from qgis.core import (
     QgsProcessingException,
 )
 
+from ..core.i18n import tr
 from ..mcp_api import AISEG_KEYS, _find_plugin
 
 # Same shape as AISEG_REGISTER_URL in mcp_api, tagged for this surface so a
@@ -323,7 +324,7 @@ def load_model_briefly(api, feedback) -> str:
         return STILL_LOADING_MESSAGE
     seconds = point_model_load_timeout_seconds()
     feedback.pushInfo(
-        f"The model is not loaded yet. Waiting up to {seconds} seconds for it.")
+        tr("The model is not loaded yet. Waiting up to {0} seconds for it.").format(seconds))
     detail = ""
     for _ in range(max(1, int(seconds))):
         if feedback.isCanceled():

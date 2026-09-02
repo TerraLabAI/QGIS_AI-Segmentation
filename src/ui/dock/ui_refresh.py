@@ -15,12 +15,9 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
-from ...core.activation_manager import (
-    has_tos_accepted,
-    has_tos_locked,
-)
 from ...core.cloud_notice_seen import cloud_notice_seen
 from ...core.i18n import tr
+from ...core.surface_dials import install_eta_ceiling_s, install_eta_honest_s
 from .cloud_notice_line import cloud_notice_line_html
 from .font_scale import scale_qss_font_px, widget_pixel_ratio
 from .guidance import (
@@ -32,13 +29,10 @@ from .guidance import (
 )
 from .setup_status_text import setup_status_sentence
 from .styles import (
-    _BTN_EXPORT_DISABLED,
-    _BTN_EXPORT_READY,
     _INSTRUCTIONS_CARD_QSS,
     _INSTRUCTIONS_HINT_QSS,
     BRAND_GREEN,
     ERROR_TEXT,
-    SUCCESS_TEXT,
     _msg_label_qss,
     _msg_text,
 )
@@ -53,6 +47,13 @@ from .widgets import (
 # that link, which is the only reason the legend is there.
 _SIGN_ADD = "\U0001F7E2"
 _SIGN_TRIM = "\u274C"
+
+# The install countdown. Past the first figure the estimate stops naming a
+# number and says "more than", because a fresh install on a slow link runs far
+# longer than any early reading suggests. The second figure is the hard cap on
+# the arithmetic, so a stalled tick cannot produce an absurd countdown.
+_INSTALL_ETA_HONEST_S = 20 * 60
+_INSTALL_ETA_CEILING_S = 4 * 60 * 60
 
 
 def format_km2_left(value) -> str:
@@ -109,11 +110,21 @@ def format_km2_surface(value) -> str:
     Precision follows size: under 1 km² two decimals (0.41), under 10 one
     (2.3), above that none (14). A zone is priced by this number, so a small
     one must not round to 0 and a large one must not carry noise digits.
+
+    Under the two-decimal step the digits keep going instead of collapsing.
+    Two decimals turned every zone below 0.005 km² into "0", which reads as a
+    free run over ground the account is charged for; four decimals cover a
+    zone down to a hundred square metres, and anything smaller still prints
+    its smallest non-zero step rather than zero.
     """
     try:
         number = max(0.0, float(value))
     except (TypeError, ValueError):
         return "0"
+    if number <= 0:
+        return "0"
+    if number < 0.005:
+        return f"{max(number, 0.0001):.4f}".rstrip("0").rstrip(".")
     if number < 1:
         return f"{round(number, 2):g}"
     if number < 10:
@@ -126,11 +137,58 @@ class DockStateMixin:
 
     # ---- End Automatic mode helpers -------------------------------------------
 
-    def set_dependency_status(self, ok: bool, message: str):
+    #: The tick that fronts a ready line. It belongs to the label, not to the
+    #: sentence: baked into a caller's string it travelled into every
+    #: translation and each caller had to remember it.
+    _READY_MARK = "\u2713"
+
+    def _set_install_button_kind(self, kind: str, text: str) -> None:
+        """Label the setup primary and record WHICH install it offers.
+
+        Later ticks branch on the kind, never on the label: the label is
+        translated, and it also carries wordings ("Retry", the model-only
+        download) that no reading of "Install" or "Update" can tell apart.
+        """
+        self._install_kind = (kind, text)
+        try:
+            self.install_button.setText(text)
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _install_button_kind(self) -> str:
+        """The install the setup primary offers now: "install", "update" or
+        "retry".
+
+        Falls back to reading the label when another surface wrote it (the
+        model-only download does), so the recorded kind is never trusted over
+        a label it does not match.
+        """
+        recorded = getattr(self, "_install_kind", None)
+        try:
+            live = self.install_button.text()
+        except (RuntimeError, AttributeError):
+            live = ""
+        if isinstance(recorded, tuple) and len(recorded) == 2 and recorded[1] == live:
+            return str(recorded[0])
+        if live == tr("Update"):
+            return "update"
+        if live == tr("Retry"):
+            return "retry"
+        return "install"
+
+    def set_dependency_status(self, ok: bool, message: str, mark: bool = True):
+        """Show the setup status. ``mark`` fronts a ready line with the tick.
+
+        Pass mark=False for a state that is good but not finished, so the
+        tick keeps meaning "nothing left to do".
+        """
         self._dependencies_ok = ok
 
         if ok:
-            self.setup_status_label.setText(message)
+            text = message or ""
+            if text and mark and not text.startswith(self._READY_MARK):
+                text = f"{self._READY_MARK} {text}"
+            self.setup_status_label.setText(text)
             self.setup_status_label.setToolTip("")
             self.setup_status_label.setVisible(True)
             self.setup_status_label.setStyleSheet("font-weight: bold; color: palette(text);")
@@ -154,7 +212,7 @@ class DockStateMixin:
                 self.setup_status_label.setStyleSheet(
                     f"font-weight: bold; color: {ERROR_TEXT};")
                 self.setup_status_label.setVisible(True)
-                self.install_button.setText(tr("Retry"))
+                self._set_install_button_kind("retry", tr("Retry"))
             else:
                 # Show what came in. Three callers report a refused install
                 # through this line and nowhere else (a sandboxed QGIS, a Mac
@@ -166,9 +224,9 @@ class DockStateMixin:
                     "font-weight: bold; color: palette(text);")
                 self.setup_status_label.setVisible(bool(display))
                 if is_update:
-                    self.install_button.setText(tr("Update"))
+                    self._set_install_button_kind("update", tr("Update"))
                 else:
-                    self.install_button.setText(tr("Install"))
+                    self._set_install_button_kind("install", tr("Install"))
             # The raw text is what a bug report needs, so it stays one hover
             # away. Cleared when the line already shows it, so no tooltip
             # repeats the sentence under it.
@@ -192,8 +250,15 @@ class DockStateMixin:
 
         self._update_full_ui()
 
-    def set_install_progress(self, percent: int, message: str):
-        """Unified progress for deps install + model download."""
+    def set_install_progress(self, percent: int, message: str,
+                             state: str | None = None):
+        """Unified progress for deps install + model download.
+
+        ``state`` names how the install ended: "cancelled", "failed", or None
+        while it is still running. Reading the end off the displayed sentence
+        was wrong in every language but English, so the caller says it. The
+        text test stays as the fallback for a caller that says nothing.
+        """
         import time
 
         # Mirror progress into the review's inline install banner while a
@@ -231,9 +296,17 @@ class DockStateMixin:
 
                 if blended_speed > 0:
                     remaining = remaining_pct / blended_speed
-                    max_remaining = 480
-                    remaining = min(remaining, max_remaining)
-                    if remaining > 60:
+                    # A long install used to be clamped to eight minutes and
+                    # then sat on "~8 min left" for the next half hour. The
+                    # ceiling is now high enough to cover a slow link, and
+                    # anything past the honest-estimate mark says so instead
+                    # of naming a number nobody should trust.
+                    honest_s = install_eta_honest_s(_INSTALL_ETA_HONEST_S)
+                    remaining = min(remaining, install_eta_ceiling_s(_INSTALL_ETA_CEILING_S))
+                    if remaining > honest_s:
+                        time_info = " " + tr("(more than {n} min left)").format(
+                            n=int(honest_s / 60))
+                    elif remaining > 60:
                         time_info = " " + tr("(~{n} min left)").format(
                             n=int(remaining / 60))
                     elif remaining > 10:
@@ -253,8 +326,15 @@ class DockStateMixin:
         # own progress.
         self._mirror_manual_install_progress(percent, f"{message}{time_info}")
 
-        is_update = self.install_button.text() in (
-            tr("Update"), tr("Updating..."))
+        is_update = self._install_button_kind() == "update"
+
+        # How this tick ended. The caller's word wins; the text test only
+        # answers for a caller that passed nothing.
+        lowered = (message or "").lower()
+        install_cancelled = (state == "cancelled"
+                             or (state is None and "cancel" in lowered))
+        install_failed = (state == "failed"
+                          or (state is None and "failed" in lowered))
 
         if percent == 0:
             # An install just started: the setup section owns the interactive
@@ -282,7 +362,7 @@ class DockStateMixin:
             self.setup_status_label.setVisible(False)
             self.welcome_title.setText(tr("Installing AI Segmentation..."))
             self._progress_timer.start(500)
-        elif percent >= 100 or "cancel" in message.lower() or "failed" in message.lower():
+        elif percent >= 100 or install_cancelled or install_failed:
             self._progress_timer.stop()
             self._install_start_time = None
             # Whatever this install carried, it is over. The next one says for
@@ -296,14 +376,14 @@ class DockStateMixin:
             self.install_button.setVisible(True)
             self.install_button.setEnabled(True)
             if is_update:
-                self.install_button.setText(tr("Update"))
+                self._set_install_button_kind("update", tr("Update"))
             else:
-                self.install_button.setText(tr("Install"))
-            if "cancel" in message.lower():
+                self._set_install_button_kind("install", tr("Install"))
+            if install_cancelled:
                 self.setup_status_label.setVisible(True)
                 self.setup_status_label.setText(tr("Installation cancelled"))
                 self.welcome_title.setText(tr("Click Install to set up AI Segmentation"))
-            elif "failed" in message.lower():
+            elif install_failed:
                 self.setup_status_label.setVisible(True)
                 self.setup_status_label.setText(tr("Installation failed"))
                 self.welcome_title.setText(tr("Click Install to set up AI Segmentation"))
@@ -315,8 +395,7 @@ class DockStateMixin:
                 self.welcome_title.setText(tr("Click Install to set up AI Segmentation"))
             # The install is over, whichever way. The window goes with it, and
             # a failure asks the panel to take over.
-            self._finish_manual_install_window(
-                "failed" not in message.lower())
+            self._finish_manual_install_window(not install_failed)
         else:
             # Intermediate tick (1..99). The deps phase hides the bar via
             # set_dependency_status once deps are validated; the very next
@@ -432,15 +511,25 @@ class DockStateMixin:
         if active:
             self._update_instructions()
 
+    def _set_layer_combo_style(self, qss: str) -> None:
+        """Write the picker's stylesheet only when it changes: this runs on
+        every refresh, and a stylesheet write re-polishes the whole combo."""
+        if getattr(self, "_layer_combo_qss", None) == qss:
+            return
+        self._layer_combo_qss = qss
+        try:
+            self.layer_combo.setStyleSheet(qss)
+        except (RuntimeError, AttributeError):
+            pass
+
     def _update_button_visibility(self):
         if self._segmentation_active:
             # Hide label, lock combo (grayed out, no dropdown arrow)
             self.layer_label.setVisible(False)
             self.layer_combo.setEnabled(False)
-            self.layer_combo.setStyleSheet(
+            self._set_layer_combo_style(
                 "QComboBox { color: palette(text); }"
-                "QComboBox::drop-down { width: 0px; border: none; }"
-            )
+                "QComboBox::drop-down { width: 0px; border: none; }")
 
             self.start_container.setVisible(False)
             # In a refine handoff the state card IS the guidance (and carries
@@ -454,14 +543,20 @@ class DockStateMixin:
             # Save/Undo/Stop are base-Manual controls. In a refine handoff the
             # state card owns every action (Keep / Edit shape / Undo click /
             # Remove), so the legacy rows stay hidden for the whole handoff.
+            #
+            # These three are the session's fixed row and stay GREYED when
+            # they have nothing to act on, where Export HIDES. The exception is
+            # deliberate: they are the gesture the session teaches (click,
+            # then save), so a row that appeared only after the first click
+            # would hide the very step the user is looking for, and the panel
+            # would jump under the cursor on every click. Export names an
+            # outcome that does not exist yet, so it has nothing to teach.
             save_visible = not self._refine_handoff
             self.save_mask_button.setVisible(save_visible)
             self.save_mask_button.setEnabled(self._has_mask)
 
-            # Export button: visible during segmentation, EXCEPT in a refine
-            # handoff, where committing goes through Back to review -> Finish (a
-            # direct manual export would orphan the held Automatic review).
-            self.export_button.setVisible(not self._refine_handoff)
+            # Export button: shown once a polygon is kept, and never during a
+            # refine handoff. _update_export_button_style owns both rules.
             self._update_export_button_style()
 
             secondary_visible = not self._refine_handoff
@@ -489,7 +584,7 @@ class DockStateMixin:
             # Not segmenting - show label, unlock combo, restore dropdown arrow
             self.layer_label.setVisible(True)
             self.layer_combo.setEnabled(True)
-            self.layer_combo.setStyleSheet("QComboBox { color: palette(text); }")
+            self._set_layer_combo_style("QComboBox { color: palette(text); }")
 
             self.start_container.setVisible(True)
             self.instructions_label.setVisible(False)
@@ -575,7 +670,12 @@ class DockStateMixin:
             # "Shape settings" belong to the OPEN edit only (the geometry-delta
             # edit has no SAM points, so _has_mask alone would keep the panel
             # hidden forever). A mere selection shows just Edit shape / Remove.
-            self.refine_group.setVisible(self._has_mask or getattr(self, "_handoff_editing", False))
+            # The open fix session is what earns the panel: a reshape has no
+            # SAM points of its own, so _has_mask alone kept Shape settings
+            # hidden until the first click.
+            self.refine_group.setVisible(
+                self._has_mask
+                or bool(getattr(self, "_auto_correct_session_active", False)))
             return
 
         # One panel in both engines, open from the start of the session: the
@@ -595,20 +695,20 @@ class DockStateMixin:
         else:
             self.export_button.setText(tr("Export polygon to a layer"))
 
-        if count > 0:
-            self.export_button.setEnabled(True)
-            self.export_button.setStyleSheet(_BTN_EXPORT_READY)
-            self.export_button.setToolTip(
-                tr("Writes a GeoPackage layer with your {n} kept polygons.").format(
-                    n=count))
-        else:
-            self.export_button.setEnabled(False)
-            self.export_button.setStyleSheet(_BTN_EXPORT_DISABLED)
-            # A dead primary with an empty tooltip is the most hovered control
-            # on this page. Say what would turn it on.
-            self.export_button.setToolTip(
-                tr("Save a polygon first. Export writes every polygon you "
-                   "kept to a layer."))
+        # Nothing kept means nothing to export, so the primary goes away
+        # instead of standing there greyed. It comes back on the first saved
+        # polygon. Hidden for the whole refine handoff too, where committing
+        # goes through Back to review -> Finish (a direct manual export would
+        # orphan the held Automatic review).
+        show = bool(count > 0 and self._segmentation_active
+                    and not self._refine_handoff)
+        self.export_button.setVisible(show)
+        if not show:
+            return
+        self.export_button.setEnabled(True)
+        self.export_button.setToolTip(
+            tr("Writes a GeoPackage layer with your {n} kept polygons.").format(
+                n=count))
 
     def set_point_count(self, positive: int, negative: int):
         self._positive_count = positive
@@ -702,8 +802,11 @@ class DockStateMixin:
             # is a machine elsewhere that may still be starting up. Pointing at
             # the wrong one sends the user to check the wrong thing.
             self._set_instructions_style("waiting")
-            if getattr(self, "_manual_encoding_phase", "") == "remote":
+            phase = getattr(self, "_manual_encoding_phase", "")
+            if phase == "remote":
                 line = tr("Sending to the AI...")
+            elif phase == "encode":
+                line = tr("Preparing the imagery for the AI...")
             else:
                 line = tr("Reading the imagery around your click...")
             self.instructions_label.setText(_msg_text("info", line))
@@ -743,6 +846,14 @@ class DockStateMixin:
                        "Reopen AI Segmentation to follow it."))
             except Exception:
                 pass  # nosec B110
+        elif bool(getattr(self, "_qgis_bridge_active_ui", False)):
+            # A Manual (vertex) fix owns a live QGIS edit session on the layer.
+            # Hiding the dock over it leaves the user editing with no panel and
+            # no way back, so finish it the way the panel's own Save does.
+            try:
+                self.auto_qgis_bridge_done_requested.emit()
+            except (TypeError, RuntimeError):
+                pass
         elif self._refine_handoff:
             # T13: closing mid-reshape folds the AI edits into the held review,
             # then lets the dock hide (the review is there on reopen). The fold
@@ -776,7 +887,6 @@ class DockStateMixin:
         self._positive_count = 0
         self._negative_count = 0
         self._handoff_editing = False
-        self._handoff_selected = 0
         self._manual_encoding = False
         self._manual_encoding_phase = "imagery"
         self.reset_refine_sliders()
@@ -823,6 +933,55 @@ class DockStateMixin:
         from ..plugin.shared import is_layer_georeferenced
         return is_layer_georeferenced(layer)
 
+    def _sync_imagery_hero(self, combo, hero) -> bool:
+        """Whether imagery is available for this page, and the hero variant
+        that goes with the answer.
+
+        The combo list is a cache of the layer tree; the project is the
+        truth. A combo that says "nothing" over a project that holds a
+        visible raster is relisted on the spot (the case seen live: an online
+        basemap loaded, and the page still asking for imagery). A project
+        whose rasters are all unchecked gets the "hidden" card, with one
+        button that checks them again, instead of a card asking to load
+        what is already there."""
+        from ..layer_tree_combobox import project_raster_presence
+        from .widgets import set_hero_variant
+        try:
+            visible, hidden = project_raster_presence()
+        except (RuntimeError, AttributeError):
+            visible, hidden = 0, 0
+        # The list and the tree disagree in either direction (a raster that
+        # appeared, or every raster unchecked while the list still names
+        # two): relist now rather than trust a debounced signal that may not
+        # have fired, the case a live test caught.
+        if combo.count_layers() != visible and not getattr(combo, "_frozen", False):
+            try:
+                combo._refresh()
+            except (RuntimeError, AttributeError):
+                pass  # nosec B110 - the debounced refresh still comes
+        has_rasters = combo.count_layers() > 0
+        variant = "hidden" if (not has_rasters and hidden > 0) else "empty"
+        try:
+            if getattr(hero, "hero_variant", None) != variant:
+                set_hero_variant(hero, variant)
+            show_btn = getattr(hero, "hero_show_btn", None)
+            if show_btn is not None and not getattr(hero, "_show_btn_wired", False):
+                hero._show_btn_wired = True
+                show_btn.clicked.connect(self._on_reveal_hidden_imagery)
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110 - a card mid-teardown keeps its old text
+        return has_rasters
+
+    def _on_reveal_hidden_imagery(self) -> None:
+        """The hero's "Show it on the map" button: check the unchecked rasters
+        (and their groups). The tree's visibility signal then relists the
+        combos and the page leaves the hero on its own."""
+        from ..layer_tree_combobox import reveal_hidden_rasters
+        try:
+            reveal_hidden_rasters()
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110
+
     def _update_ui_state(self):
         if self._mode == Mode.INTERACTIVE:
             self._update_ui_state_interactive()
@@ -834,7 +993,7 @@ class DockStateMixin:
         layer = self.layer_combo.currentLayer()
         has_layer = layer is not None
 
-        has_rasters_available = self.layer_combo.count_layers() > 0
+        has_rasters_available = self._sync_imagery_hero(self.layer_combo, self.no_rasters_widget)
         empty = not has_rasters_available and not self._segmentation_active
         # One info per state: with no raster the Manual page
         # shows ONLY the hero (identical to Automatic), never the header or the
@@ -864,7 +1023,8 @@ class DockStateMixin:
             or self._manual_cloud_route_picked()
         activated = self._plugin_activated
         # Once the ToS lock is set, consent is permanent - skip the accepted check.
-        tos_ok = has_tos_locked() or has_tos_accepted()
+        tos_locked, tos_accepted = self._consent_flags()
+        tos_ok = tos_locked or tos_accepted
         # A cloud session with an empty account can click but never save, so it
         # is not a session. The credit gate below the button carries the two
         # ways on from here.
@@ -892,13 +1052,15 @@ class DockStateMixin:
         # Manual) and hide it once consent is sealed.
         try:
             self.auto_tos_checkbox.blockSignals(True)
-            self.auto_tos_checkbox.setChecked(has_tos_accepted())
+            tos_locked, tos_accepted = self._consent_flags()
+            self.auto_tos_checkbox.setChecked(tos_accepted)
             self.auto_tos_checkbox.blockSignals(False)
-            self.auto_tos_container.setVisible(not has_tos_locked())
+            self.auto_tos_container.setVisible(not tos_locked)
         except (RuntimeError, AttributeError):
             pass
         if not self._auto_started:
-            has_auto_rasters = self.auto_layer_combo.count_layers() > 0
+            has_auto_rasters = self._sync_imagery_hero(
+                self.auto_layer_combo, self.auto_no_rasters_widget)
             # One info per state: with no raster the page
             # shows ONLY the hero card. The label and the whole steps stack
             # (Start button + caption) come back once imagery exists.
@@ -934,7 +1096,11 @@ class DockStateMixin:
                          or getattr(self, "_auto_review_active", False))
         exhausted = self._is_free_exhausted() and not owns_page
         self.auto_upsell_card.setVisible(exhausted)
-        self.auto_controls_section.setVisible(not exhausted)
+        # Every other refusal a control on this page cannot clear takes the
+        # page the same way (auto_run_block.py). The free wall above claims
+        # the seat first, so the two can never both be up.
+        blocked = self._refresh_auto_run_block(suppressed=exhausted)
+        self.auto_controls_section.setVisible(not exhausted and not blocked)
         if exhausted:
             try:
                 from ...core import telemetry_session_events
@@ -946,11 +1112,20 @@ class DockStateMixin:
         # Start (not started) -> Draw zone (started, no zone) -> Prompt (zone set).
         if not exhausted and not self._auto_run_active:
             if not self._auto_started:
-                self._go_to_auto_step(0)
+                target = 0
             elif not self._auto_zone_is_set:
-                self._go_to_auto_step(1)
+                target = 1
             else:
-                self._go_to_auto_step(2)
+                target = 2
+            # Only when it actually moves. A refresh during an open review kept
+            # re-running the step machine for the step already on screen, which
+            # re-drove the prompt card and the example panel every pass.
+            try:
+                settled = self.auto_steps.currentIndex() == target
+            except (RuntimeError, AttributeError):
+                settled = False
+            if not settled:
+                self._go_to_auto_step(target)
         # The cloud disclosure on the Precision card, which is where the run is
         # priced and the last screen before Detect sends a tile. Read here and
         # nowhere else in this panel: the flag may only change what is drawn.
@@ -1119,7 +1294,7 @@ class DockStateMixin:
                    "to close."))),
             dense=True)
         self.auto_exemplar_armed_tip.setVisible(shown)
-        self._refresh_auto_exemplar_explainer(armed=shown)
+        self._refresh_auto_exemplar_explainer(slot_taken=shown)
         self._auto_exemplar_hint_kind = "armed"
         self._set_exemplar_quality()
 
@@ -1153,7 +1328,7 @@ class DockStateMixin:
                 tr("This example is very small at this precision. "
                    "Raise the precision or draw a larger object."))))
             self.auto_exemplar_size_warning.setVisible(True)
-            self._refresh_auto_exemplar_explainer(armed=True)
+            self._refresh_auto_exemplar_explainer(slot_taken=True)
             self._auto_exemplar_hint_kind = "warning"
             # The size warning is the more urgent message: make the
             # second-example nudge (a DIFFERENT label) yield to it now.
@@ -1189,6 +1364,9 @@ class DockStateMixin:
         label 1 = positive (find similar), 0 = exclude. Also refreshes the Detect
         gate + the add-buttons' cap state."""
         layout = self._auto_exemplar_chips_layout
+        # Remembered for the in-run receipt, which rebuilds its own read-only
+        # copy of these thumbnails rather than borrowing this card's.
+        self._auto_exemplar_items = list(items)
         # Clear existing cards (keep the trailing stretch at the end).
         while layout.count() > 1:
             item = layout.takeAt(0)
@@ -1197,7 +1375,7 @@ class DockStateMixin:
                 w.setParent(None)
                 w.deleteLater()
         from ...core.detect_gate import exclude_available
-        from ...core.exemplar_store import max_exclude, max_positive
+        from ...core.exemplar_store import max_exclude, max_positive, max_total
         self._auto_positive_exemplars = sum(1 for it in items if it[1] == 1)
         exclude_count = sum(1 for it in items if it[1] == 0)
         # The first example turns "Draw on the map" into "Draw another
@@ -1208,30 +1386,40 @@ class DockStateMixin:
             thumb = it[2] if len(it) > 2 else None
             card = self._make_exemplar_chip(eid, label, idx + 1, thumb)
             layout.insertWidget(layout.count() - 1, card)
-        # The positive add button disables at its own cap. The exclude add
-        # button is a bonus refinement, offered ONLY once the positive set is
-        # strong enough; below that it stays HIDDEN so the primary flow is a
-        # single green "Draw an example" button. When shown it still disables at
-        # its own cap. Hiding, not disabling, keeps one clear affordance at a
-        # time. Both ceilings come from the store's resolvers, the same ones the
-        # store enforces on insert, so the row can never offer a slot the store
-        # would refuse (or hide one the server just opened).
+        # The positive add button disables at the PAID cap, and at the total
+        # ceiling. The exclude add button is a refinement of a positive, offered
+        # ONLY once one exists; below that it stays HIDDEN so the primary flow
+        # is a single green "Draw an example" button. When shown it still
+        # disables at its own cap. Hiding, not disabling, keeps one clear
+        # affordance at a time. The ceilings come from the store's resolvers,
+        # the same ones the store enforces on insert, so the row can never
+        # offer a slot the store would refuse (or hide one the server just
+        # opened). The FREE plan's smaller ceilings are not applied here on
+        # purpose: its buttons stay live, and the click past the free ceiling
+        # shows the Pro offer (exemplar_upsell.py) instead of arming.
+        total_left = (self._auto_positive_exemplars + exclude_count) < max_total()
         try:
             self.auto_ex_inc_btn.setEnabled(
-                self._auto_positive_exemplars < max_positive())
+                total_left and self._auto_positive_exemplars < max_positive())
             exc = getattr(self, "auto_ex_exc_btn", None)
             if exc is not None:
                 exc_available = exclude_available(self._auto_positive_exemplars)
                 exc.setVisible(exc_available)
                 exc.setEnabled(
-                    exc_available and exclude_count < max_exclude())
+                    exc_available and total_left and exclude_count < max_exclude())
+        except (RuntimeError, AttributeError):
+            pass
+        # The example set changed, so the offer raised on the previous set is
+        # stale: an example removed frees the free slot again.
+        try:
+            self.hide_auto_exemplar_upsell()
         except (RuntimeError, AttributeError):
             pass
         # A drawn reference speaks for itself: the how/why explainer yields to
         # the thumbnails, and returns if every reference is removed.
         self._auto_exemplar_count = len(items)
         self._refresh_auto_exemplar_explainer(
-            armed=self._auto_exemplar_line_busy())
+            slot_taken=self._auto_exemplar_line_busy())
         self._set_exemplar_quality()
         # An existing reference keeps the example section open (it holds the
         # thumbnails); an empty list leaves the collapse state to the user.
@@ -1262,6 +1450,18 @@ class DockStateMixin:
         line = getattr(self, "auto_exemplar_quality_line", None)
         if dots is None or line is None:
             return
+        # A known free account gets one example per run, so a meter that aims
+        # at two and a line asking for the second would push at a door the
+        # plan keeps shut. Both stay off; the offer card answers the click.
+        known_free = (getattr(self, "_auto_credits", None) is not None
+                      and not getattr(self, "_auto_is_subscriber", False))
+        if known_free:
+            try:
+                dots.setVisible(False)
+                line.setVisible(False)
+            except (RuntimeError, AttributeError):
+                pass
+            return
         # Header dots: filled lime up to the drawn count, hollow grey for the
         # rest of the recommended two.
         filled = min(positives, 2)
@@ -1283,27 +1483,28 @@ class DockStateMixin:
             if positives <= 0 or armed_showing:
                 line.setVisible(False)
             elif positives == 1:
-                line.setStyleSheet(scale_qss_font_px(
-                    "font-size: 11px; color: rgba(128, 128, 128, 0.95);"
-                    " background: transparent; border: none;"))
+                # A boxed neutral message, like every other line on this card.
+                # Loose text under a control reads as a stray caption and
+                # cannot be told apart from the label above it.
+                line.setStyleSheet(_msg_label_qss("neutral"))
                 line.setText(tr("Add one more example for the best results."))
                 line.setVisible(True)
             else:
-                line.setStyleSheet(scale_qss_font_px(
-                    f"font-size: 11px; font-weight: 600; color: {SUCCESS_TEXT};"
-                    " background: transparent; border: none;"))
-                line.setText(
-                    "✓  " + tr("Best quality. Two references locked in."))
-                line.setVisible(True)
+                # At two the dots are full, and that is the whole message. A
+                # sentence here only congratulated the user for a state the
+                # meter above it already shows.
+                line.setVisible(False)
         except (RuntimeError, AttributeError):
             pass
 
     def _make_exemplar_chip(self, exemplar_id: str, label: int,
-                            index: int = 1, thumbnail=None) -> QWidget:
+                            index: int = 1, thumbnail=None,
+                            removable: bool = True) -> QWidget:
         """A 52px reference card (AI-Edit _ThumbWidget look): the drawn crop +
         a numbered badge + a remove x. Border green for a positive example, red
         for an exclude box. Falls back to a flat tinted tile when no thumbnail
-        was captured."""
+        was captured. ``removable=False`` drops the x, for the in-run receipt
+        where nothing can be taken back."""
         from qgis.PyQt.QtGui import QPixmap
         is_pos = label == 1
         rgba = "67,160,71" if is_pos else "229,57,53"
@@ -1343,7 +1544,8 @@ class DockStateMixin:
                 card.setCursor(Qt.CursorShape.PointingHandCursor)
                 card.setToolTip(tr("Click to enlarge"))
                 card.mousePressEvent = (
-                    lambda _ev, im=thumbnail: self._show_exemplar_detail(im))
+                    lambda _ev, im=thumbnail, n=index, lb=label: (
+                        self._show_exemplar_detail(im, n, lb)))
             except (RuntimeError, TypeError):
                 pass
         # Numbered badge, top-left.
@@ -1355,7 +1557,9 @@ class DockStateMixin:
             " padding: 0 3px; }"))
         badge.adjustSize()
         badge.move(1, 1)
-        # Remove x, top-right.
+        # Remove x, top-right. The receipt's copy of the same chip has none.
+        if not removable:
+            return card
         remove = QToolButton(card)
         remove.setText("✕")
         remove.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1368,16 +1572,17 @@ class DockStateMixin:
         remove.move(side - 17, 1)
         remove.clicked.connect(
             lambda _checked=False, eid=exemplar_id: self.auto_exemplar_remove_requested.emit(eid))
-        # Kept so the in-run read-only view can hide the remove x while leaving
-        # the thumbnail (and its click-to-enlarge) in place (see
-        # _set_exemplar_readonly).
-        card._remove_btn = remove
         return card
 
-    def _show_exemplar_detail(self, image) -> None:
-        """Popup showing the reference example enlarged, so the user can inspect
-        what the AI uses (the object with a little of its natural surroundings).
-        Best-effort: never fatal."""
+    def _show_exemplar_detail(self, image, index: int = 1,
+                              label: int = 1) -> None:
+        """Popup showing one reference enlarged, at the size the AI reads it.
+
+        The window says which reference it is and what it does, in the title
+        and one short line. It used to carry a two-line explanation of the crop
+        under the picture, which described the mechanism to someone who is
+        looking at the picture and can see it. Best-effort: never fatal.
+        """
         if image is None:
             return
         try:
@@ -1397,7 +1602,9 @@ class DockStateMixin:
                 Qt.TransformationMode.SmoothTransformation)
             pm.setDevicePixelRatio(ratio)
             dlg = QDialog(self)
-            dlg.setWindowTitle(tr("Example"))
+            dlg.setWindowTitle(
+                tr("Exclude {n}").format(n=index) if label == 0
+                else tr("Reference {n}").format(n=index))
             lay = QVBoxLayout(dlg)
             lay.setContentsMargins(12, 12, 12, 12)
             lay.setSpacing(8)
@@ -1405,10 +1612,11 @@ class DockStateMixin:
             img_lbl.setPixmap(pm)
             img_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             lay.addWidget(img_lbl)
-            hint = QLabel(tr(
-                "This is exactly what the AI uses: your object with a little "
-                "of its surroundings."))
+            hint = QLabel(
+                tr("The AI drops objects that look like this.") if label == 0
+                else tr("The AI looks for more objects like this."))
             hint.setWordWrap(True)
+            hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
             hint.setStyleSheet("color: rgba(128,128,128,0.9); font-size: 11px;")
             lay.addWidget(hint)
             from .font_scale import apply_font_scale_to_tree
@@ -1420,6 +1628,11 @@ class DockStateMixin:
 
     def _update_auto_detect_enabled(self):
         """Enable the Detect button based on current Automatic mode state."""
+        # Every gate move ends here, so this is where the takeover card learns
+        # whether it owns the page (auto_run_block.py). Before the early
+        # returns below: a gate that clears while the review is open still has
+        # to put the controls back.
+        self._apply_auto_run_block_takeover()
         if not self._plugin_activated or self._auto_review_active:
             self.auto_detect_btn.setEnabled(False)
             # The tooltip belongs to the state the button is in. Left alone it
@@ -1437,42 +1650,31 @@ class DockStateMixin:
         # own (see core/detect_gate.can_detect).
         has_text = bool(self.auto_prompt_input.text().strip())
         positives = self._auto_positive_exemplars if self._EXEMPLARS_ENABLED else 0
-        # An object CONCEPT exists once a prompt is typed or one example is
-        # drawn; that is what the Detail slider gate needs (see below).
+        # An object is named by a word OR by a drawn example, and either one is
+        # enough to run (see core/detect_gate.can_detect). The Precision fold
+        # waits for the same thing: its default is computed from the object, so
+        # a level tuned before there is an object is thrown away by the re-seed.
         has_object = has_text or positives > 0
         can_run = can_detect(has_text, positives)
-        # The Detail slider gates on the object CONCEPT, not on can_run: its
-        # default is OBJECT-AWARE (committing a prompt re-seeds it), so a value
-        # tuned BEFORE the object was named got thrown away by the re-seed and
-        # the user lost their adjustment. Greying it until the object exists
-        # makes the order explicit: name it, then fine-tune the grid. It stays
-        # available with a single example (the concept is there) even while
-        # Detect waits for the second one.
         self._apply_auto_detail_gate(has_object)
         not_too_large = not self._auto_zone_too_large
-        if self._auto_is_subscriber:
-            # Block a subscriber whose balance is known to be 0 (None = not yet
-            # fetched, fail open). Mirrors the free-tier credit gate below.
-            credits_ok = self._auto_credits is None or self._auto_credits > 0
-        else:
-            free_left = self._auto_free_left
-            credits_ok = (free_left is not None and free_left > 0) or free_left is None
+        # Known-zero only (None = not yet fetched, fail open). One definition,
+        # read here and by the takeover card, so the greyed button and the
+        # card that replaces the page can never disagree.
+        credits_ok = not self._auto_balance_spent()
         # Monthly surface envelope: the zone is larger than the km² the account
         # has left. Only fires when the server told us both figures; unknown
         # envelopes fail open and the server enforces (set_auto_km2_block).
         km2_ok = not getattr(self, "_auto_km2_exceeded", False)
         # Consent gates DETECT (the moment credits are spent), not Start: the
         # checkbox sits right above this button (see auto_build).
-        tos_ok = has_tos_locked() or has_tos_accepted()
+        tos_locked, tos_accepted = self._consent_flags()
+        tos_ok = tos_locked or tos_accepted
         # The server can take Automatic off the whole fleet. Until now the run
         # refused at the click, so the button stayed green over a mode that
         # could not run. Fails open, so an unreachable configuration changes
         # nothing.
-        try:
-            from ...core.activation_manager import is_automatic_mode_enabled
-            auto_available = bool(is_automatic_mode_enabled())
-        except Exception:  # noqa: BLE001 -- a dead switch must not block a run
-            auto_available = True
+        auto_available = self._auto_service_available()
         hard_ok = has_layer and not_too_large and credits_ok
         hard_ok = hard_ok and tos_ok and km2_ok and auto_available
         run_allowed = hard_ok and can_run
@@ -1501,31 +1703,15 @@ class DockStateMixin:
             tip = tr("This zone is larger than the surface you have left this "
                      "month. Draw a smaller zone.")
         elif hard_ok and not can_run:
-            tip = tr("Type what to find first. An example is optional.")
+            tip = tr("Type what to find, or draw an example of it.")
         else:
             tip = ""
         self.auto_detect_btn.setToolTip(tip)
-        # detect_blocked telemetry: once per episode, only when the run is set up
-        # (layer + object) but a hard gate (credits / zone too large) blocks it.
-        reason = None
-        if has_layer and has_object and not self._auto_run_active and not run_allowed:
-            if not auto_available:
-                # The run path used to report this one; it no longer gets the
-                # click, so the signal is raised where the refusal now happens.
-                reason = "kill_switch"
-            elif not not_too_large:
-                reason = "zone_too_large"
-            elif not km2_ok:
-                reason = "km2_envelope"
-            elif not credits_ok:
-                reason = "credits"
-        if reason and reason != getattr(self, "_detect_blocked_last", None):
-            try:
-                from ...core import telemetry_session_events
-                telemetry_session_events.track_detect_blocked(reason=reason)
-            except Exception:
-                pass  # nosec B110
-        self._detect_blocked_last = reason
+        # detect_blocked telemetry, once per episode, off the same reason the
+        # takeover card paints (auto_run_block.py). It no longer waits for a
+        # typed prompt: the takeover hides the prompt box, so a refusal the
+        # user never got to type into was counting as no refusal at all.
+        self._note_detect_blocked(self._auto_run_block_reason())
 
     def _refresh_auto_credits_display(self):
         """Drive the footer credit gauge (ring + count + Subscribe pill).
@@ -1565,16 +1751,14 @@ class DockStateMixin:
             else:
                 self._footer_credits_label.setText(str(remaining))
                 self._credit_ring.setVisible(False)
-            if envelope_view is not None:
-                pass
-            elif self._auto_is_subscriber:
+            if envelope_view is None and self._auto_is_subscriber:
                 tooltip = tr("{n} cloud detections remaining").format(n=remaining)
-            elif total is not None and total > 0:
+            elif envelope_view is None and total is not None and total > 0:
                 tooltip = tr("{n} of {total} free cloud detections left").format(
                     n=remaining, total=total)
-            elif remaining == 1:
+            elif envelope_view is None and remaining == 1:
                 tooltip = tr("1 free cloud detection remaining")
-            else:
+            elif envelope_view is None:
                 tooltip = tr("{n} free cloud detections remaining").format(n=remaining)
             # A balance with no return date cannot be acted on: the quota
             # renews on the sign-up anniversary, which nobody can guess.
@@ -1627,6 +1811,11 @@ class DockStateMixin:
             return
         from ...core.server_dials import dial_copy
 
+        wall = getattr(self, "_auto_upsell_wall", None)
+        if wall is not None:
+            from ...core.pro_ceiling import pro_ceiling_contact_email
+            wall.set_contact_email(pro_ceiling_contact_email())
+
         # Name the free way out beside the paid one, whenever the server told
         # us when the quota renews.
         env = getattr(self, "_quota_envelopes", None)
@@ -1667,12 +1856,12 @@ class DockStateMixin:
             # format(), so a stray brace in served text cannot raise here.
             served = dial_copy(
                 "trial.exhausted",
-                tr("Your {n} free detections are used up"))
+                tr("Your {n} free cloud detections are used up"))
             title.setText(served.replace("{n}", str(int(total))))
         else:
             title.setText(dial_copy(
                 "trial.exhausted_no_count",
-                tr("Your free detections are used up")))
+                tr("Your free cloud detections are used up")))
 
     def cleanup_signals(self):
         """Disconnect project signals and clean up shortcuts/timers on plugin reload."""
@@ -1706,18 +1895,25 @@ class DockStateMixin:
                 self._on_layer_visibility_changed)
         except (TypeError, RuntimeError, AttributeError):
             pass
+        # The arming filter sits on the QGIS main window, which outlives the
+        # dock. Left there, every key press on a reloaded QGIS walks into the
+        # filter of a dock that is gone.
+        window = getattr(self, "_shortcut_arming_window", None)
+        filt = getattr(self, "_shortcut_arming_filter", None)
+        if window is not None and filt is not None:
+            try:
+                window.removeEventFilter(filt)
+            except (RuntimeError, AttributeError):
+                pass
+        self._shortcut_arming_window = None
+        # The filter itself goes too: kept, it is a live reference to a dock
+        # that is being torn down.
+        self._shortcut_arming_filter = None
         # Clean up every QShortcut to prevent stale callbacks. They are all
         # window-level, so one left connected keeps firing into a dock that is
-        # gone. getattr keeps this working if a shortcut was never built.
-        for name in (
-                "start_shortcut",
-                "auto_escape_shortcut",
-                "auto_enter_shortcut",
-                "auto_enter_shortcut_kp",
-                "auto_correct_remove_delete_shortcut",
-                "auto_correct_remove_backspace_shortcut",
-                "auto_correct_undo_shortcut"):
-            shortcut = getattr(self, name, None)
+        # gone. The list is written by the builder (build.py), so a shortcut
+        # added there is never missed here.
+        for shortcut in getattr(self, "_dock_shortcuts", ()):
             if shortcut is None:
                 continue
             try:
@@ -1725,43 +1921,29 @@ class DockStateMixin:
                 shortcut.deleteLater()
             except (TypeError, RuntimeError, AttributeError):
                 pass
-        # Stop timers first, then disconnect to avoid race conditions
-        try:
-            self._progress_timer.blockSignals(True)
-            self._progress_timer.stop()
-            self._progress_timer.timeout.disconnect()
-        except (TypeError, RuntimeError, AttributeError):
-            pass
-        try:
-            self._refine_debounce_timer.blockSignals(True)
-            self._refine_debounce_timer.stop()
-            self._refine_debounce_timer.timeout.disconnect()
-        except (TypeError, RuntimeError, AttributeError):
-            pass
-        try:
-            self._auto_review_debounce_timer.blockSignals(True)
-            self._auto_review_debounce_timer.stop()
-            self._auto_review_debounce_timer.timeout.disconnect()
-        except (TypeError, RuntimeError, AttributeError):
-            pass
-        try:
-            self._auto_conf_debounce_timer.blockSignals(True)
-            self._auto_conf_debounce_timer.stop()
-            self._auto_conf_debounce_timer.timeout.disconnect()
-        except (TypeError, RuntimeError, AttributeError):
-            pass
-        try:
-            self._visibility_debounce_timer.blockSignals(True)
-            self._visibility_debounce_timer.stop()
-            self._visibility_debounce_timer.timeout.disconnect()
-        except (TypeError, RuntimeError, AttributeError):
-            pass
-        try:
-            self._pairing_anim_timer.blockSignals(True)
-            self._pairing_anim_timer.stop()
-            self._pairing_anim_timer.timeout.disconnect()
-        except (TypeError, RuntimeError, AttributeError):
-            pass
+        self._dock_shortcuts = []
+        # Every timer the dock owns. Stopped first, then disconnected, so a
+        # queued tick can never reach a torn-down dock.
+        for name in (
+                "_progress_timer",
+                "_refine_debounce_timer",
+                "_auto_review_debounce_timer",
+                "_auto_conf_debounce_timer",
+                "_auto_conf_preview_timer",
+                "_auto_progress_ease_timer",
+                "_auto_prompt_focus_timer",
+                "_auto_detail_emit_timer",
+                "_visibility_debounce_timer",
+                "_pairing_anim_timer"):
+            timer = getattr(self, name, None)
+            if timer is None:
+                continue
+            try:
+                timer.blockSignals(True)
+                timer.stop()
+                timer.timeout.disconnect()
+            except (TypeError, RuntimeError, AttributeError):
+                pass
         # Remove the temp dir holding the generated checkbox icons
         if getattr(self, "_checkbox_icon_dir", None):
             import shutil

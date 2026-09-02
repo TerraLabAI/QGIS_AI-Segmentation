@@ -12,6 +12,11 @@ actually wait on it is most of the click:
 None of that changes between two clicks on the same layer, so this holds the
 last dataset and hands it back.
 
+A few rasters are held per backend, not one: a session alternating between two
+of them (two orthos compared, an ortho plus a reference mosaic) evicted and
+re-opened on every click with a single slot, which is the whole cost this
+module exists to remove.
+
 A plain file is re-opened when its size or its modification time moves, so a
 raster rewritten under a live session serves its new pixels. A dataset behind
 a URL or a GDAL container URI is keyed on the URI alone: there is nothing to
@@ -30,14 +35,19 @@ from __future__ import annotations
 
 import os
 import threading
+from collections import OrderedDict
 from contextlib import contextmanager
 
 _RASTERIO_LOCK = threading.Lock()
 _GDAL_LOCK = threading.Lock()
 
-# (identity, dataset) per backend, or None.
-_rasterio_held: tuple[tuple, object] | None = None
-_gdal_held: tuple[tuple, object] | None = None
+# How many rasters a backend keeps open. Small on purpose: a handle costs
+# memory and, on Windows, blocks a delete or a rename.
+_HELD_SLOTS = 3
+
+# identity -> dataset per backend, least recently used first.
+_rasterio_held: OrderedDict = OrderedDict()
+_gdal_held: OrderedDict = OrderedDict()
 
 
 def dataset_identity(path: str) -> tuple:
@@ -66,6 +76,22 @@ def _close_quietly(dataset) -> None:
         pass
 
 
+def _drop_superseded(held: OrderedDict, identity: tuple) -> None:
+    """Close a held dataset for the same path whose file has since changed.
+
+    The identity carries the file's size and time, so a rewritten raster gets a
+    new key and the stale handle would otherwise sit in the slots.
+    """
+    for key in [k for k in held if k[0] == identity[0] and k != identity]:
+        _close_quietly(held.pop(key))
+
+
+def _evict_extra(held: OrderedDict) -> None:
+    """Close whatever falls off the end of a backend's slots."""
+    while len(held) > _HELD_SLOTS:
+        _close_quietly(held.popitem(last=False)[1])
+
+
 @contextmanager
 def borrow_rasterio_dataset(path: str):
     """Yield an open rasterio dataset for ``path``. Never close what comes out:
@@ -74,20 +100,19 @@ def borrow_rasterio_dataset(path: str):
     The lock is held for the whole block, which is the read, so one dataset is
     never read from two threads at once.
     """
-    global _rasterio_held
     import rasterio
 
     identity = dataset_identity(path)
     with _RASTERIO_LOCK:
-        held = _rasterio_held
-        if held is not None and held[0] == identity:
-            yield held[1]
+        dataset = _rasterio_held.get(identity)
+        if dataset is not None:
+            _rasterio_held.move_to_end(identity)
+            yield dataset
             return
-        if held is not None:
-            _close_quietly(held[1])
-            _rasterio_held = None
+        _drop_superseded(_rasterio_held, identity)
         dataset = rasterio.open(path)
-        _rasterio_held = (identity, dataset)
+        _rasterio_held[identity] = dataset
+        _evict_extra(_rasterio_held)
         yield dataset
 
 
@@ -105,33 +130,31 @@ def acquire_gdal_dataset(path: str):
     (feature_encoder.crop_read_is_thread_safe), and the crop reader takes one
     raster at a time.
     """
-    global _gdal_held
     from osgeo import gdal
 
     identity = dataset_identity(path)
     with _GDAL_LOCK:
-        held = _gdal_held
-        if held is not None and held[0] == identity:
-            return held[1]
-        if held is not None:
-            _close_quietly(held[1])
-            _gdal_held = None
+        dataset = _gdal_held.get(identity)
+        if dataset is not None:
+            _gdal_held.move_to_end(identity)
+            return dataset
+        _drop_superseded(_gdal_held, identity)
         dataset = gdal.Open(path)
         if dataset is None:
             return None
-        _gdal_held = (identity, dataset)
+        _gdal_held[identity] = dataset
+        _evict_extra(_gdal_held)
         return dataset
 
 
 def release_raster_datasets() -> None:
     """Drop every held dataset. Called when a session ends and when the plugin
     unloads. Idempotent, and never raises."""
-    global _rasterio_held, _gdal_held
     with _RASTERIO_LOCK:
-        if _rasterio_held is not None:
-            _close_quietly(_rasterio_held[1])
-        _rasterio_held = None
+        for dataset in _rasterio_held.values():
+            _close_quietly(dataset)
+        _rasterio_held.clear()
     with _GDAL_LOCK:
-        if _gdal_held is not None:
-            _close_quietly(_gdal_held[1])
-        _gdal_held = None
+        for dataset in _gdal_held.values():
+            _close_quietly(dataset)
+        _gdal_held.clear()

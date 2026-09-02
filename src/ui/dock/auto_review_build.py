@@ -30,10 +30,11 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from ...core.i18n import tr
-from .auto_correct_build import _REVIEW_HEADING_NOTE_QSS, _REVIEW_HEADING_QSS
-from .font_scale import scale_qss_font_px
+from .auto_correct_build import _REVIEW_HEADING_QSS
+from .font_scale import scale_px_length, scale_qss_font_px
 from .guidance import (
     BLUE_TINT,
+    HINT_REVIEW_CLOSED_CANOPY,
     HINT_REVIEW_CONFIDENCE,
     DismissibleHint,
 )
@@ -50,7 +51,6 @@ from .styles import (
     _REVIEW_CONF_STEP,
     _SLIDER_QSS,
     ERROR_TEXT,
-    _card_divider,
     _step_dial,
 )
 
@@ -264,6 +264,16 @@ class DockAutoReviewBuildMixin:
         # control) in place.
         self._auto_review_dials_row = self._build_review_dials()
         _card_layout.addWidget(self._auto_review_dials_row)
+        # What the Correct step has changed so far, in one quiet line under the
+        # ladder: how many objects are kept, and how many shapes the hand edits
+        # touched. Only the Correct step shows it (set_auto_review_step), and it
+        # stays empty until there is something to say.
+        self.auto_review_recap_label = QLabel("")
+        self.auto_review_recap_label.setWordWrap(True)
+        self.auto_review_recap_label.setStyleSheet(
+            "font-size: 11px; color: rgba(128, 128, 128, 0.95);")
+        self.auto_review_recap_label.setVisible(False)
+        _card_layout.addWidget(self.auto_review_recap_label)
         # Breathing room between the ladder and the step page: the dial labels
         # otherwise sit flush on the next line and the two zones read as one
         # block.
@@ -287,6 +297,7 @@ class DockAutoReviewBuildMixin:
         self.auto_review_step_stack.setSizePolicy(
             QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         _card_layout.addWidget(self.auto_review_step_stack)
+        _card_layout.addWidget(self._build_review_busy_row())
 
         # Kept as an instance handle so the QGIS-bridge banner can hide the
         # whole review card while the user edits in QGIS's own tools.
@@ -408,11 +419,24 @@ class DockAutoReviewBuildMixin:
         The step has no heading of its own: the dial above already names it,
         and each group carries its own title in the shared heading style. What
         the confidence number MEANS is the part that was missing, and it lives
-        in the tip under the slider."""
+        in the tip under the slider.
+
+        Confidence and size sit in two boxes of their own, stacked close, the
+        way the setup step tells its two inputs apart. Both filters apply at
+        once, so nothing is written between the boxes."""
         page = QWidget()
         lay = QVBoxLayout(page)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(6)
+
+        # Confidence and size are two filters that both apply, so each
+        # one gets its own box inside the review card instead of running
+        # together in the card body. No separator word between them: that
+        # would say they are alternatives, and they are not.
+        from .review_card_rows import review_zone
+        self.auto_review_confidence_zone, _conf_col = review_zone(
+            "autoKeepConfidenceZone")
+        lay.addWidget(self.auto_review_confidence_zone)
 
         # This label IS the step's head, so it wears the shared heading style
         # and lines up with the titles on the other two steps. The row is a
@@ -437,9 +461,9 @@ class DockAutoReviewBuildMixin:
         self.auto_review_confidence_spin.setValue(30)
         self.auto_review_confidence_spin.setSuffix("%")
         self.auto_review_confidence_spin.setMinimumWidth(62)
-        self.auto_review_confidence_spin.setMaximumWidth(78)
+        self.auto_review_confidence_spin.setMaximumWidth(scale_px_length(78))
         _conf_hdr.addWidget(self.auto_review_confidence_spin)
-        lay.addWidget(self.auto_review_confidence_header)
+        _conf_col.addWidget(self.auto_review_confidence_header)
 
         # Live readout of the cutoff, INSIDE the group it describes: ONE compact
         # line ("✓ 158 of 352 shown · 194 below 65%", built by
@@ -450,7 +474,7 @@ class DockAutoReviewBuildMixin:
         self._auto_review_count_label.setWordWrap(True)
         self._auto_review_count_label.setStyleSheet(
             "font-size: 11px; color: palette(text);")
-        lay.addWidget(self._auto_review_count_label)
+        _conf_col.addWidget(self._auto_review_count_label)
 
         # Stands in for the whole Confidence group on a run whose objects all
         # came back rated the same. There the control is not a filter but a
@@ -460,7 +484,7 @@ class DockAutoReviewBuildMixin:
         self.auto_review_flat_score_note = QLabel("")
         self.auto_review_flat_score_note.setWordWrap(True)
         self.auto_review_flat_score_note.setVisible(False)
-        lay.addWidget(self.auto_review_flat_score_note)
+        _conf_col.addWidget(self.auto_review_flat_score_note)
 
         # Score distribution strip above the slider: bars right of the cutoff are
         # bright (kept), left are dimmed (filtered out). Visual only.
@@ -468,7 +492,7 @@ class DockAutoReviewBuildMixin:
         self.auto_conf_histogram = ConfidenceHistogram()
         self.auto_conf_histogram.setToolTip(
             tr("How many objects sit at each confidence level."))
-        lay.addWidget(self.auto_conf_histogram)
+        _conf_col.addWidget(self.auto_conf_histogram)
         self.auto_review_confidence_slider = QSlider(Qt.Orientation.Horizontal)
         self.auto_review_confidence_slider.setRange(
             _REVIEW_CONF_MIN, _REVIEW_CONF_MAX)
@@ -487,7 +511,7 @@ class DockAutoReviewBuildMixin:
             self._schedule_conf_refilter)
         self.auto_review_confidence_spin.valueChanged.connect(
             self._on_conf_spin_changed)
-        lay.addWidget(self.auto_review_confidence_slider)
+        _conf_col.addWidget(self.auto_review_confidence_slider)
 
         # End labels so the slider direction reads at a glance (mirrors the
         # detail slider's Coarse/Fine ends). A widget, not a bare layout, for
@@ -504,19 +528,33 @@ class DockAutoReviewBuildMixin:
         _conf_ends.addWidget(_conf_left)
         _conf_ends.addStretch()
         _conf_ends.addWidget(_conf_right)
-        lay.addWidget(self.auto_review_confidence_ends)
+        _conf_col.addWidget(self.auto_review_confidence_ends)
 
         # What the number on the spinbox actually is. Nothing on the step said
         # it: a user reading "30%" had no way to know it is the AI rating its
         # own work. One line in the blue tip box, under the control it
         # explains, closed for good with the x once read.
+        # A closed forest: the AI hands the canopy back as one block and no
+        # tile size or word separates its trees (measured, not guessed). The
+        # finalize shows this card only on a run with that signature, so the
+        # empty forest interior comes with its reason and the word that works.
+        self.auto_closed_canopy_hint = DismissibleHint(
+            HINT_REVIEW_CLOSED_CANOPY,
+            tr("Closed forest: the AI takes it as one cover and does not "
+               "separate its trees. For the forest as one area, re-run "
+               'with "forest".'),
+            tint=BLUE_TINT,
+        )
+        self.auto_closed_canopy_hint.setVisible(False)
+        _conf_col.addWidget(self.auto_closed_canopy_hint)
+
         self.auto_confidence_hint = DismissibleHint(
             HINT_REVIEW_CONFIDENCE,
             tr("How sure the AI is about each object. Lower shows more, "
                "higher keeps only the sure ones."),
             tint=BLUE_TINT,
         )
-        lay.addWidget(self.auto_confidence_hint)
+        _conf_col.addWidget(self.auto_confidence_hint)
 
         lay.addWidget(self._build_size_filter_block())
         lay.addWidget(self._build_boundary_snap_block())
@@ -525,130 +563,25 @@ class DockAutoReviewBuildMixin:
         return page
 
     def _build_size_filter_block(self) -> QWidget:
-        """Min / Max size: the second way an object is kept or dropped.
+        """Min / Max ground area, in its own box under Confidence. Body in
+        review_card_rows."""
+        from .review_card_rows import build_size_filter_block
 
-        Both hide detections client-side by true ground area (free, instant;
-        0 = off / no limit), so they belong beside Confidence and not with the
-        outline controls they used to sit under. The count line above names
-        this filter when it, rather than Confidence, is what hides everything:
-        the control it names now sits on the same step.
-        """
-        from qgis.PyQt.QtWidgets import QDoubleSpinBox
-
-        block = QWidget()
-        col = QVBoxLayout(block)
-        col.setContentsMargins(0, 0, 0, 0)
-        col.setSpacing(6)
-        col.addWidget(_card_divider())
-        # Same header shape as the Confidence group above it: the two filters
-        # on this step read as siblings, and the step still heads itself
-        # through its groups rather than a bare title row.
-        hdr = QHBoxLayout()
-        size_lbl = QLabel(tr("Size"))
-        size_lbl.setStyleSheet(_REVIEW_HEADING_QSS)
-        size_note = QLabel(tr("hide anything outside this range"))
-        size_note.setWordWrap(True)
-        size_note.setStyleSheet(_REVIEW_HEADING_NOTE_QSS)
-        hdr.addWidget(size_lbl)
-        hdr.addWidget(size_note, 1)
-        col.addLayout(hdr)
-
-        row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(10)
-        min_lbl = QLabel(tr("Minimum"))
-        min_lbl.setStyleSheet("font-size: 11px;")
-        self.auto_min_size_spin = QDoubleSpinBox()
-        self.auto_min_size_spin.setRange(0.0, 1_000_000.0)
-        self.auto_min_size_spin.setDecimals(1)
-        self.auto_min_size_spin.setValue(0.0)
-        self.auto_min_size_spin.setSuffix(" m²")
-        self.auto_min_size_spin.setSpecialValueText(tr("Off"))
-        self.auto_min_size_spin.setMinimumWidth(78)
-        self.auto_min_size_spin.setMaximumWidth(110)
-        self.auto_min_size_spin.setToolTip(tr(
-            "Hide detections smaller than this ground area. Use it to drop tiny "
-            "noise blobs. 0 = keep all."))
-        max_lbl = QLabel(tr("Maximum"))
-        max_lbl.setStyleSheet("font-size: 11px;")
-        self.auto_max_size_spin = QDoubleSpinBox()
-        self.auto_max_size_spin.setRange(0.0, 10_000_000.0)
-        self.auto_max_size_spin.setDecimals(1)
-        self.auto_max_size_spin.setValue(0.0)
-        self.auto_max_size_spin.setSuffix(" m²")
-        self.auto_max_size_spin.setSpecialValueText(tr("No limit"))
-        self.auto_max_size_spin.setMinimumWidth(78)
-        self.auto_max_size_spin.setMaximumWidth(110)
-        self.auto_max_size_spin.setToolTip(tr(
-            "Hide detections larger than this ground area. 0 = no limit."))
-        row.addWidget(min_lbl)
-        row.addWidget(self.auto_min_size_spin)
-        row.addStretch()
-        row.addWidget(max_lbl)
-        row.addWidget(self.auto_max_size_spin)
-        col.addLayout(row)
-
-        # Re-derive the visible set on any change (confidence has its own
-        # debounced re-filter path).
-        self.auto_min_size_spin.valueChanged.connect(
-            lambda _v: self.auto_refine_changed.emit())
-        self.auto_max_size_spin.valueChanged.connect(
-            lambda _v: self.auto_refine_changed.emit())
-        return block
+        return build_size_filter_block(self)
 
     def _build_boundary_snap_block(self) -> QWidget:
-        """Shared borders: one checkbox plus its one-line tip.
+        """Shared borders: one checkbox, its tip and its refusal line. Body in
+        review_card_rows."""
+        from .review_card_rows import build_boundary_snap_block
 
-        A land-cover map is one surface cut into classes, so neighbouring
-        shapes are meant to meet exactly; a detector returns each shape on its
-        own, leaving a hairline gap or overlap. This closes them, free and
-        instantly, on the shapes currently shown.
+        return build_boundary_snap_block(self)
 
-        The whole block is HIDDEN unless the run looks like land cover (see
-        set_boundary_snap_offered): between two buildings or two cars the gap
-        is real data, so there the option must not exist at all.
-        """
-        from qgis.PyQt.QtWidgets import QCheckBox
+    def _build_review_busy_row(self) -> QWidget:
+        """The line that says a shape pass is running, and the way to stop it.
+        Body in review_card_rows."""
+        from .review_card_rows import build_review_busy_row
 
-        from ...core.boundary_snap import snap_default_enabled
-        from .guidance import HINT_REVIEW_SHARED_BORDERS
-
-        self._auto_boundary_snap_offered = False
-        block = QWidget()
-        col = QVBoxLayout(block)
-        col.setContentsMargins(0, 0, 0, 0)
-        col.setSpacing(4)
-        col.addWidget(_card_divider())
-
-        row = QHBoxLayout()
-        label = QLabel(tr("Shared borders:"))
-        label.setStyleSheet("font-size: 11px;")
-        tip = tr(
-            "Give neighbouring shapes one exact border instead of a hairline "
-            "gap or overlap. For land cover, where the map is one surface.")
-        label.setToolTip(tip)
-        self.auto_boundary_snap_check = QCheckBox()
-        self.auto_boundary_snap_check.setChecked(snap_default_enabled())
-        self.auto_boundary_snap_check.setToolTip(tip)
-        self.auto_boundary_snap_check.stateChanged.connect(
-            lambda s: self._on_shape_control_changed(
-                "shared_boundaries", bool(s)))
-        row.addWidget(label)
-        row.addStretch()
-        row.addWidget(self.auto_boundary_snap_check)
-        col.addLayout(row)
-
-        self.auto_boundary_snap_hint = DismissibleHint(
-            HINT_REVIEW_SHARED_BORDERS,
-            tr("Closes the hairline gaps between neighbouring shapes, for "
-               "land cover maps."),
-            tint=BLUE_TINT,
-        )
-        col.addWidget(self.auto_boundary_snap_hint)
-
-        self.auto_boundary_snap_row = block
-        block.setVisible(False)
-        return block
+        return build_review_busy_row(self)
 
     # -- Step dials ---------------------------------------------------------
 

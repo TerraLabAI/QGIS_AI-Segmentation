@@ -28,6 +28,7 @@ from qgis.PyQt.QtWidgets import (
 
 from ...core.i18n import tr
 from ...core.server_dials import dial_copy
+from .contact_copy import CopyEmailLabel
 from .styles import (
     _BTN_CHIP,
     _CARD_CHILD_BTN_RESET_QSS,
@@ -94,6 +95,7 @@ class DockManualCreditGateMixin:
 
         card_layout.addSpacing(4)
         card_layout.addWidget(self._build_manual_credit_pro_lane())
+        card_layout.addWidget(self._build_manual_credit_contact_lane())
         card_layout.addSpacing(6)
         for widget in self._build_manual_credit_free_way_out():
             card_layout.addWidget(widget)
@@ -120,12 +122,12 @@ class DockManualCreditGateMixin:
         # "cloud detections", which is what the counter in the footer counts.
         star = dial_copy(
             "upsell.bullet_quota_manual",
-            tr("2,000 cloud objects every month in Semi-Auto"))
+            tr("500 cloud objects every month in Semi-Auto"))
         # One line, and it answers the free lane in the same order: what the AI
         # does, then what it asks of you. Feature lists were tried here and none
         # of them let a reader compare the lanes.
-        # The star line above already carries the 2,000 figure, so this line
-        # must not repeat it: it says what the figure buys you.
+        # The star line above already carries the figure, so this line must
+        # not repeat it: it says what the figure buys you.
         title = dial_copy(
             "upsell.manual_lane_title",
             tr("Keep clicking with the same cloud AI, nothing to install."))
@@ -144,6 +146,21 @@ class DockManualCreditGateMixin:
                 tr("39 EUR a month, cancel anytime.")),
             star=star,
         )
+        return lane
+
+    def _build_manual_credit_contact_lane(self) -> QWidget:
+        """The subscriber's lane, in the paid lane's seat.
+
+        A subscriber has nothing to buy here, so the offer lane is hidden for
+        them, and until this card existed the page had no exit but waiting.
+        Compact: one served sentence, our address, and a button that copies
+        it. Hidden until the refresh shows it, and only when the server
+        allows.
+        """
+        lane = UpsellCard("manualCreditContact", "compact",
+                          on_cta=self._on_pro_contact_objects_wall)
+        lane.setVisible(False)
+        self.manual_credit_contact_lane = lane
         return lane
 
     def _build_manual_credit_free_way_out(self) -> list[QWidget]:
@@ -173,8 +190,13 @@ class DockManualCreditGateMixin:
         self.manual_credit_offline_btn.setStyleSheet(_BTN_CHIP)
         self.manual_credit_offline_btn.clicked.connect(
             self._on_manual_credit_offline_clicked)
+        # Last, and grey: many who hit this wall have a need no plan names.
+        # The address is one click to copy. Free accounts only: a subscriber
+        # already has the contact lane above.
+        self.manual_credit_custom_needs = CopyEmailLabel()
         return [rule, self.manual_credit_free_note,
-                self.manual_credit_offline_btn]
+                self.manual_credit_offline_btn,
+                self.manual_credit_custom_needs]
 
     # -- state --------------------------------------------------------------
 
@@ -262,6 +284,8 @@ class DockManualCreditGateMixin:
             lane = getattr(self, "manual_credit_pro_lane", None)
             if lane is not None:
                 lane.setVisible(not subscriber)
+            self._refresh_manual_credit_contact_lane(subscriber)
+            self._refresh_manual_credit_custom_needs(subscriber)
             env = getattr(self, "_quota_envelopes", None)
             if env is not None and env.objects_cap:
                 # Open with what the month produced, in the envelope's unit.
@@ -299,6 +323,30 @@ class DockManualCreditGateMixin:
         except (RuntimeError, AttributeError):
             return
         self._note_manual_upsell_viewed()
+
+    def _refresh_manual_credit_contact_lane(self, subscriber: bool) -> None:
+        """Fill and show the subscriber's contact lane, or hide it."""
+        from ...core.pro_ceiling import pro_ceiling_enabled
+        lane = getattr(self, "manual_credit_contact_lane", None)
+        if lane is None:
+            return
+        show = subscriber and pro_ceiling_enabled()
+        if show:
+            body, cta = self._pro_ceiling_copy()
+            lane.set_text(body, None, cta, detail=self._pro_ceiling_detail())
+        lane.setVisible(show)
+
+    def _refresh_manual_credit_custom_needs(self, subscriber: bool) -> None:
+        """Fill the free wall's custom-needs line, or hide it for a
+        subscriber, who has the contact lane instead."""
+        line = getattr(self, "manual_credit_custom_needs", None)
+        if line is None:
+            return
+        if subscriber:
+            line.set_email(None)
+            return
+        from ...core.pro_ceiling import pro_ceiling_contact_email
+        line.set_email(pro_ceiling_contact_email())
 
     def _manual_credit_reset_text(self) -> str:
         """How many were spent and when they come back, or "" for neither.
@@ -360,24 +408,32 @@ class DockManualCreditGateMixin:
         if self._manual_engine_local_ready():
             return base
         try:
-            from .manual_local_install_dialog import local_install_disk_figures
+            from .manual_local_install_dialog import (
+                local_install_disk_figures,
+                local_install_minutes,
+            )
 
             need, _free = local_install_disk_figures()
+            minutes = str(local_install_minutes())
         except Exception:  # noqa: BLE001 -- an unknown floor drops the figure
             need = 0.0
-        # Served whole, number included. The shipped English keeps its exact
-        # wording because it is the lookup key for eleven translations, so the
-        # minutes figure moves here by serving the sentence rather than by
-        # rewriting it. {gb} is substituted after the read, so a served line
-        # has to carry the placeholder.
-        if need > 0:
+            minutes = ""
+        # Both figures are served, and both reach the sentence through their
+        # placeholder, so one deploy changes what every installed version says.
+        # A served line has to carry the placeholders.
+        if need > 0 and minutes:
             return base + " " + dial_copy(
                 "manual_gate.install_note",
-                tr("It downloads first: {gb} GB and about 10 minutes."),
-            ).replace("{gb}", f"{need:g}")
+                tr("It downloads first: {gb} GB and about {n} minutes."),
+            ).replace("{gb}", f"{need:g}").replace("{n}", minutes)
+        if minutes:
+            return base + " " + dial_copy(
+                "manual_gate.install_note_no_size",
+                tr("It downloads first, and takes about {n} minutes."),
+            ).replace("{n}", minutes)
         return base + " " + dial_copy(
-            "manual_gate.install_note_no_size",
-            tr("It downloads first, and takes about 10 minutes."),
+            "manual_gate.install_note_no_time",
+            tr("It downloads first."),
         )
 
     def _note_manual_upsell_viewed(self) -> None:

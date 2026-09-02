@@ -280,16 +280,18 @@ class AutoZoneMixin:
         Deferred a tick so the library modal has fully closed before the flow
         switch runs (the signal fires while the dialog loop is still
         unwinding)."""
-        from qgis.PyQt.QtCore import QTimer
+        from ...core.qt_compat import safe_single_shot
         payload = dict(entry) if isinstance(entry, dict) else {}
-        QTimer.singleShot(0, lambda: self._history_rerun_here(payload))
+        safe_single_shot(0, self.dock_widget or self.iface.mainWindow(),
+                         lambda: self._history_rerun_here(payload))
 
     def _on_history_reuse_prompt_requested(self, prompt: str) -> None:
         """Recent card "Same object, new zone": start the Automatic flow on the
         draw-zone step with the prompt prefilled for step 2."""
-        from qgis.PyQt.QtCore import QTimer
+        from ...core.qt_compat import safe_single_shot
         text = str(prompt or "")
-        QTimer.singleShot(0, lambda: self._history_reuse_prompt(text))
+        safe_single_shot(0, self.dock_widget or self.iface.mainWindow(),
+                         lambda: self._history_reuse_prompt(text))
 
     def _history_rerun_here(self, entry: dict) -> None:
         """Same zone + same object. The zone is rebuilt from the shape the run
@@ -847,6 +849,11 @@ class AutoZoneMixin:
         """Compute credit estimate for current zone + layer and update the grid preview."""
         if self._tile_manager is None:
             return
+        # The tile ceiling follows the zone drawn, and the grid refuses on its
+        # own copy of it. Arm it before anything computes a grid, or the first
+        # estimate after a zone change is judged on the previous zone's
+        # ceiling.
+        self._auto_zone_tile_cap()
         # The tile-grid preview + cost belong to the pre-Detect state only; the
         # run and the review own the canvas.
         if not self._tile_grid_allowed():
@@ -938,7 +945,7 @@ class AutoZoneMixin:
             tiles_list = self._tiles_in_polygon(
                 tiles_list, grid["bbox"], pixel_w, pixel_h, layer,
                 grid.get("crs"))
-            if len(tiles_list) > max_tiles_per_run_cap():
+            if len(tiles_list) > self._auto_zone_tile_cap():
                 tiles_list = None
         credit_count = len(tiles_list) if tiles_list is not None else -1
         # credit_count == -1 means > MAX_TILES
@@ -999,7 +1006,10 @@ class AutoZoneMixin:
                     too_coarse = (tile_ground_m > ceiling_m if ceiling_m > 0
                                   else ground_mupp >= gsd_warn_max_mupp(0.5))
                     self.dock_widget.set_auto_detail_gsd_warning(
-                        too_coarse and not wide_view)
+                        too_coarse and not wide_view,
+                        can_improve=self._detail_max_clears_coarse(
+                            layer, zone_in_layer, ceiling_m),
+                    )
                     # Object-aware slider guidance: same debounced chokepoint,
                     # so it tracks drags, prompt commits and zone redraws.
                     self._push_detail_feedback(layer, zone_in_layer, ground_mupp)
@@ -1028,6 +1038,37 @@ class AutoZoneMixin:
 
         if credit_count > 0 and self._auto_zone is not None:
             self._show_zone_tile_grid(layer, grid)
+
+    def _detail_max_clears_coarse(
+        self, layer, zone_in_layer, ceiling_m: float
+    ) -> bool:
+        """Whether the finest precision on offer would clear the coarse warning.
+
+        The amber line has two fixes and they contradict each other: raise the
+        precision, or draw a smaller zone. Which one is true depends on the ground
+        the TOP of the slider's own travel reads, so the sentence asks that
+        question instead of reading the cursor's position, which told a user to
+        raise a precision whose top end is just as coarse.
+
+        False on any failure: that is the sentence that never sends someone to a
+        control which cannot help them.
+        """
+        try:
+            from ...core.detection_policy import gsd_warn_max_mupp
+            from ...core.tile_manager import TILE_SIZE
+
+            top = int(self.dock_widget.auto_detail_slider.maximum())
+            sized = self._grid_for_detail(layer, zone_in_layer, top)
+            if sized is None:
+                return False
+            mupp = self._mupp_to_meters(layer, zone_in_layer, sized[2])
+            if mupp <= 0:
+                return False
+            if ceiling_m > 0:
+                return TILE_SIZE * mupp <= ceiling_m
+            return mupp < gsd_warn_max_mupp(0.5)
+        except (RuntimeError, AttributeError, ValueError, ZeroDivisionError):
+            return False
 
     def _hide_auto_cost_label(self) -> None:
         """Blank the zone-surface label when there is nothing to estimate
@@ -1070,7 +1111,15 @@ class AutoZoneMixin:
             return
         if self._tile_manager is None or self._auto_zone is None:
             return
-        tiles = self._tile_manager.compute_grid(grid["pixel_w"], grid["pixel_h"])
+        # Uncapped, like the run and like the estimate above it. The grid
+        # covers the zone's BOUNDING BOX and the run sends only the tiles the
+        # drawn polygon touches, so a capped build returned None on any zone
+        # whose box passes the ceiling while its real run sits well under it.
+        # The preview then vanished with no message on exactly the large,
+        # slanted zones that most need to show how they are split. The cap
+        # still refuses the run itself, upstream, on the culled count.
+        tiles = self._tile_manager.compute_grid(
+            grid["pixel_w"], grid["pixel_h"], apply_cap=False)
         if not tiles or len(tiles) <= 1:
             return  # a single tile needs no inner grid
         minx, miny, maxx, maxy = grid["bbox"]
@@ -1540,9 +1589,11 @@ class AutoZoneMixin:
                0 maps to maxy; pixel Y grows downward).
         crs_authid: authid of that run CRS, needed to bring the layer extent
                into the same units; the extent test is skipped without it.
-        Returns tiles unchanged when neither test applies (no polygon drawn and
-        no usable extent, the rectangle/MCP path on an online source) or on any
-        error, and never culls to an empty list (safety fallback)."""
+        Returns tiles unchanged when neither test applies (no polygon drawn
+        and no usable extent, the rectangle/MCP path on an online source) or on
+        any error. An EMPTY list is a real answer: the zone covers no ground on
+        this layer. Handing the uncut grid back instead billed every tile of it
+        for a run whose every detection is then clipped away."""
         poly = self._polygon_in_run_crs(layer)
         if poly is not None and poly.isEmpty():
             poly = None
@@ -1589,7 +1640,7 @@ class AutoZoneMixin:
                     kept.append(tile)
             elif cell.intersects(poly):
                 kept.append(tile)
-        return kept or tiles
+        return kept
 
     def _show_zone_polygon_band(self, geom: QgsGeometry) -> None:
         """Persistent branded outline of the drawn polygon zone + delete badge.
@@ -1900,8 +1951,15 @@ class AutoZoneMixin:
         try:
             if getattr(self, "_refine_handoff_active", False) and self.saved_polygons:
                 self._collect_manual_refine_into_review()
-        except Exception:
-            pass  # nosec B110 -- teardown must never raise mid-signal
+        except Exception as exc:  # noqa: BLE001 -- teardown must never raise mid-signal
+            # Same loss as the discard path: hand edits absent from the save.
+            try:
+                from ...core.telemetry_errors import track_plugin_error
+                track_plugin_error(stage="segment",
+                                   error_code="review_fold_edits_failed",
+                                   message=type(exc).__name__)
+            except Exception:  # noqa: BLE001  # nosec B110
+                pass
         # Persist a still-pending (billed) review before dropping it: a paid
         # detection must survive a project switch too, not just Finish/Exit. The
         # export falls back to a standalone GeoPackage when the shared project

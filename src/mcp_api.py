@@ -36,7 +36,9 @@ from .mcp_api_review import SegmentationReviewMixin
 _PLUGIN_FOLDER = os.path.basename(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
-AISEG_KEYS = [_PLUGIN_FOLDER, "AI_Segmentation", "QGIS_AI-Segmentation"]
+# Deduplicated: a checkout under the released folder name would otherwise
+# list "AI_Segmentation" twice in FACADE_MISSING_MESSAGE.
+AISEG_KEYS = list(dict.fromkeys([_PLUGIN_FOLDER, "AI_Segmentation", "QGIS_AI-Segmentation"]))
 AISEG_REGISTER_URL = "https://terra-lab.ai/ai-segmentation?utm_source=qgis&utm_medium=mcp&utm_campaign=ai-agent"
 
 # Bumped when a method is added. A caller reads it from get_status() or
@@ -150,6 +152,26 @@ def not_found_error(
             listed += f" (+{len(names) - 8} more)"
         return {"_error": f"{message} Available: {listed}."}
     return {"_error": f"{message} There is no {kind} here to choose from."}
+
+
+def coerce_bool_param(name: str, value) -> tuple[bool | None, dict | None]:
+    """Turn one caller-supplied argument into a real bool, or an ``_error``.
+
+    ``bool("false")`` is ``True``, so a caller sending the string "false"
+    where JSON would have sent the literal ``false`` silently turns a switch
+    on instead of off. A real bool passes through unchanged. A string is
+    accepted only as "true"/"false"/"1"/"0"/"yes"/"no", case-insensitive;
+    anything else is refused rather than guessed at.
+    """
+    if isinstance(value, bool):
+        return value, None
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in ("true", "1", "yes"):
+            return True, None
+        if lowered in ("false", "0", "no"):
+            return False, None
+    return None, {"_error": f"{name} must be a boolean (true/false), got {value!r}."}
 
 
 def raster_layer_names() -> list[str]:

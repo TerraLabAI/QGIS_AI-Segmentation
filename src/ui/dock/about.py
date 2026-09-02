@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import html
 
-from qgis.PyQt.QtCore import QSize, Qt
+from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -22,6 +22,7 @@ from qgis.PyQt.QtWidgets import (
 from ...core.activation_manager import (
     TUTORIAL_URL_FALLBACK,
     get_contact_call_url,
+    get_support_email,
     get_tutorial_url,
 )
 from ...core.i18n import tr
@@ -211,8 +212,8 @@ class DockAboutMixin:
         # that move without waiting for a plugin release.
         self._subscribe_pill.setToolTip(dial_copy(
             "upsell.pill_tooltip",
-            tr("Pro: 2,000 objects a month in Semi-Auto with Cloud AI, and "
-               "300 km² of Automatic. Same AI, same free clicks and "
+            tr("Pro: 500 cloud objects a month in Semi-Auto with Cloud AI, "
+               "and 200 km² of Automatic. Same AI, same free clicks and "
                "corrections, every machine you work on.")))
         self._subscribe_pill.setCursor(Qt.CursorShape.PointingHandCursor)
         # Filled brand-blue pill (stronger than the old ghost outline): white
@@ -263,8 +264,7 @@ class DockAboutMixin:
         # A painted book, not U+1F4D6: Windows draws that character as a colour
         # emoji at the full em box, which broke the row's shared baseline and
         # made one glyph twice the size of its neighbours.
-        self._tutorial_btn.setIcon(footer_book_icon(footer_widget))
-        self._tutorial_btn.setIconSize(QSize(FOOTER_GLYPH_PX, FOOTER_GLYPH_PX))
+        self._tutorial_btn.set_glyph_icon(footer_book_icon, FOOTER_GLYPH_PX)
         self._tutorial_btn.setToolTip(tr("Open the step-by-step tutorial"))
         self._tutorial_btn.setAccessibleName(tr("Tutorial"))
         self._tutorial_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -274,8 +274,7 @@ class DockAboutMixin:
         footer_row.addWidget(self._tutorial_btn)
 
         self._settings_btn = _FooterIconButton(footer_widget)
-        self._settings_btn.setIcon(footer_gear_icon(footer_widget))
-        self._settings_btn.setIconSize(QSize(FOOTER_GLYPH_PX, FOOTER_GLYPH_PX))
+        self._settings_btn.set_glyph_icon(footer_gear_icon, FOOTER_GLYPH_PX)
         self._settings_btn.setToolTip(tr("Settings"))
         self._settings_btn.setAccessibleName(tr("Settings"))
         self._settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -523,7 +522,7 @@ class DockAboutMixin:
         # Served like every other outbound link on this screen, so the
         # booking address can move without a plugin release.
         calendly_url = get_contact_call_url()
-        support_email = "yvann.barbot@terra-lab.ai"
+        support_email = get_support_email("yvann.barbot@terra-lab.ai")
 
         dlg = QDialog(self)
         dlg.setWindowTitle(tr("Contact us"))

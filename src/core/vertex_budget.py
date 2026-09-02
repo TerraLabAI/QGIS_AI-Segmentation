@@ -31,6 +31,8 @@ import heapq
 import math
 from typing import Any
 
+from .shape_policy_dials import floor_max_chord_steps
+
 # A closed ring needs three distinct points; below four there is nothing left to
 # thin and any budget under it is a caller mistake, not an instruction.
 MIN_RING_VERTICES = 4
@@ -545,6 +547,7 @@ def _dp_mark_keeps(seq: list, start: int, end: int, tolerance: float,
     under one step, which no staircase can meet, so on its own it would split a
     short staircase for ever. And the caller's flat ``tolerance``, over all.
     """
+    floor_steps = floor_max_chord_steps(_FLOOR_MAX_CHORD_STEPS)
     stack = [(start, end)]
     while stack:
         i, j = stack.pop()
@@ -582,7 +585,7 @@ def _dp_mark_keeps(seq: list, start: int, end: int, tolerance: float,
             # than |dx| + |dy| and an upper bound waved it through, flattening
             # real detail that happens to sit off the pixel grid.
             if (grid_step > 0.0
-                    and norm <= _FLOOR_MAX_CHORD_STEPS * grid_step
+                    and norm <= floor_steps * grid_step
                     and abs(walked - (abs(dx) + abs(dy))) <= 1e-9 * max(1.0, walked)
                     and large > 0.0
                     and small >= _EVEN_STRADDLE * large):

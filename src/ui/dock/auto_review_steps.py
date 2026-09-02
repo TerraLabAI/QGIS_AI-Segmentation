@@ -42,6 +42,7 @@ from ...core.review_defaults import (
 from ...core.review_defaults import (
     AUTO_REVIEW_SMOOTH_DEFAULT as _AUTO_REVIEW_SMOOTH_DEFAULT,
 )
+from ...core.shape_policy_dials import auto_review_points_pct_default
 from .auto_correct_build import _review_step_heading
 from .font_scale import scale_px_length
 from .styles import _settings_zone
@@ -105,7 +106,8 @@ def build_shapes_page(dock) -> QWidget:
     # traced points, so a dense outline (hundreds of points) still needs a very
     # low share to reach a hand-drawn count. Stepping from 5 reaches 1.
     dock.auto_points_spin.setRange(1, 100)
-    dock.auto_points_spin.setValue(_AUTO_REVIEW_POINTS_PCT_DEFAULT)
+    dock.auto_points_spin.setValue(
+        auto_review_points_pct_default(_AUTO_REVIEW_POINTS_PCT_DEFAULT))
     dock.auto_points_spin.setSuffix(" %")
     dock.auto_points_spin.setMinimumWidth(62)
     dock.auto_points_spin.setMaximumWidth(scale_px_length(78))
@@ -121,9 +123,7 @@ def build_shapes_page(dock) -> QWidget:
     _simplify_lbl = QLabel(tr("Simplify"))
     _simplify_lbl.setStyleSheet("font-size: 11px;")
     _simplify_lbl.setToolTip(tr(
-        "Drop points closer than this distance to a straight edge (0 = off). "
-        "A distance, not a count: pushed high it can flatten curved walls. "
-        "Points is usually the better dial; this stays for comparison."))
+        "Drop points closer than this distance to a straight edge (0 = off)."))
     _simplify_hdr.addWidget(_simplify_lbl)
     _simplify_hdr.addStretch()
     dock.auto_simplify_spin = QDoubleSpinBox()
@@ -197,6 +197,15 @@ def build_shapes_page(dock) -> QWidget:
     _ortho_row.addWidget(_ortho_lbl)
     _ortho_row.addStretch()
     _ortho_row.addWidget(dock.auto_ortho_check)
+    # The refusal, written where the control is. A greyed box with the reason
+    # in a tooltip answers only the user who hovers it, and this control is the
+    # one that can be missing its engine on an otherwise healthy QGIS. Hidden
+    # until the availability gate says so, which the review open runs.
+    dock.auto_ortho_unavailable_label = QLabel("")
+    dock.auto_ortho_unavailable_label.setWordWrap(True)
+    dock.auto_ortho_unavailable_label.setStyleSheet(
+        "font-size: 10px; color: rgba(128, 128, 128, 0.95);")
+    dock.auto_ortho_unavailable_label.setVisible(False)
 
     # Right angles is a guided geometry mode. Keep incompatible generic edge
     # controls visible but disabled, and enforce the same rule in the getter.
@@ -308,6 +317,7 @@ def build_shapes_page(dock) -> QWidget:
         "autoShapeZoneShape", tr("Shape"),
         tr("how each outline is styled"), [
             _ortho_row,
+            dock.auto_ortho_unavailable_label,
             _round_row,
             _fill_row,
             dock.auto_fill_max_row,

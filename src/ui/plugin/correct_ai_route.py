@@ -30,6 +30,7 @@ from qgis.core import Qgis, QgsMessageLog
 from qgis.PyQt.QtCore import QTimer
 
 from ...core.i18n import tr
+from ...core.interaction_dials import route_memo_ms
 
 # How long the served switch and the account store may be answered from the
 # last look. Same name and value as the Semi-Auto hover preview's own memo
@@ -55,7 +56,7 @@ class CorrectAiRouteMixin:
             return False
         now = time.monotonic() * 1000.0
         memo = getattr(self, "_correct_route_memo", None)
-        if memo is not None and now - memo[0] < _ROUTE_MEMO_MS:
+        if memo is not None and now - memo[0] < route_memo_ms(_ROUTE_MEMO_MS):
             return memo[1]
         try:
             from ...core.server_dials import correct_ai_cloud_enabled
@@ -126,9 +127,14 @@ class CorrectAiRouteMixin:
             # The answer callback is what makes the lane billable: the ledger
             # charges an object only once a click on it came back from the
             # network, so a fix the machine never got an answer for is free.
+            # A ledger already open (Start opened it before this predictor is
+            # built) hands its id straight over; a later one reaches this
+            # predictor through ``_start_manual_credit_session`` instead.
+            ledger = getattr(self, "_manual_credit_ledger", None)
             self.predictor = CloudSamPredictor(
                 auth=get_auth_header(),
                 on_remote_answer=self._note_manual_cloud_answer,
+                session_id=getattr(ledger, "session_id", None),
             )
         except Exception as err:  # noqa: BLE001 -- fall back to the on-device path
             QgsMessageLog.logMessage(

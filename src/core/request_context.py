@@ -28,6 +28,9 @@ CONFIG_LANGUAGES = ("en", "fr", "es", "pt_BR")
 _MAX_VALUE_CHARS = 32
 _UNSAFE_CHARS = re.compile(r"[^A-Za-z0-9._+-]")
 
+# Sentinel for "asked once, and there is no answer", so a file that cannot be
+# read is not re-opened on every request.
+_VERSION_UNKNOWN = "\x00"
 _plugin_version_cache: str | None = None
 
 
@@ -40,22 +43,26 @@ def sanitize(value) -> str | None:
 
 
 def plugin_version() -> str | None:
-    """The installed plugin version from metadata.txt, or None. Memoized."""
+    """The installed plugin version from metadata.txt, or None. Memoized.
+
+    The absence is remembered too: the file either has a usable version line or
+    it does not, and re-opening it on every request bought nothing.
+    """
     global _plugin_version_cache
     if _plugin_version_cache is not None:
-        return _plugin_version_cache
+        return None if _plugin_version_cache == _VERSION_UNKNOWN else _plugin_version_cache
+    version = None
     try:
         plugin_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         with open(os.path.join(plugin_dir, "metadata.txt"), encoding="utf-8") as fh:
             for line in fh:
                 if line.startswith("version="):
                     version = sanitize(line.strip().split("=", 1)[1])
-                    if version:
-                        _plugin_version_cache = version
-                    return version
+                    break
     except Exception:  # noqa: BLE001 -- context is best-effort  # nosec B110
-        pass
-    return None
+        version = None
+    _plugin_version_cache = version or _VERSION_UNKNOWN
+    return version
 
 
 def os_tag() -> str | None:

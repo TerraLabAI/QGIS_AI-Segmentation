@@ -103,6 +103,7 @@ class PairingPollTask(QgsTask):
         browser_seen = False
         stall_hinted = False
         expiry_hinted = False
+        last_logged_detail = ""
         offline_streak = 0
         while not self.isCanceled() and time.monotonic() < deadline:
             try:
@@ -206,8 +207,16 @@ class PairingPollTask(QgsTask):
             # Status detail makes user error reports diagnosable (pending =
             # browser seen, not_found = browser never seen, NO_INTERNET = the
             # poll itself failing). Never log the code itself.
+            #
+            # Only when it CHANGES. The poll runs every few seconds for as long
+            # as the user takes to finish in the browser, and the same line
+            # repeated pushes everything else out of the log the bug report
+            # carries, which is the only place these lines are ever read.
             detail = status or (result.get("code") if isinstance(result, dict) else None)
-            log(f"Pairing poll: waiting ({detail or 'unknown'})")
+            detail = detail or "unknown"
+            if detail != last_logged_detail:
+                last_logged_detail = detail
+                log(f"Pairing poll: waiting ({detail})")
             self._sleep_cancellable(sleep_s)
 
         if self.isCanceled():

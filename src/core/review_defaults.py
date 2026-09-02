@@ -10,6 +10,8 @@ proof: each constant is defined exactly once, right here.
 
 from __future__ import annotations
 
+import math
+
 # Cloud-model detection-confidence: the UI's default cutoff, AND the value the plugin
 # uses as the recall-leaning starting point for the post-run review slider. 0.30
 # is recall-leaning for aerial imagery (users prefer deleting a few false
@@ -339,6 +341,11 @@ _ADAPTIVE_MIN_ANCHOR = 10
 # Never open the review below this cutoff: the bottom score tier next to the
 # server recall floor is junk-dominated for every class.
 _ADAPTIVE_FLOOR = 0.15
+# The review slider moves in 5% steps.
+_REVIEW_SLIDER_STEP = 5
+# A percentage read off a float carries dust (0.15 * 100 is not exactly 15.0),
+# so a value already on the grid must not snap up a whole step.
+_GRID_SNAP_EPSILON = 1e-9
 
 
 def _adaptive_params() -> tuple[int, float, float, float, int, float]:
@@ -411,8 +418,14 @@ def adaptive_review_confidence(
     low_scores = sorted(s for s, _a in below)
     p25 = low_scores[int(0.25 * (len(low_scores) - 1))]
     cutoff = max(floor, p25)
-    step = int(cutoff * 100 / 5.0) * 5  # snap DOWN to the slider's 5% grid
-    step = min(step, int(round(default * 100)) - 5)
-    if step < int(floor * 100):
+    grid = _REVIEW_SLIDER_STEP
+    step = int(cutoff * 100 / grid) * grid  # snap DOWN to the slider's grid
+    # The floor snaps UP to that same grid. A floor off the grid has no slider
+    # position of its own, and measuring a snapped step against the raw floor
+    # opens the review below the floor whenever the two round apart.
+    floor_step = int(math.ceil(floor * 100 / grid - _GRID_SNAP_EPSILON)) * grid
+    step = max(step, floor_step)
+    step = min(step, int(round(default * 100)) - grid)
+    if step < floor_step:
         return None
     return step / 100.0

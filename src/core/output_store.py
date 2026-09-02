@@ -33,7 +33,7 @@ from qgis.core import (
     QgsVectorFileWriter,
     QgsVectorLayer,
 )
-from qgis.PyQt.QtCore import QDate, QLocale
+from qgis.PyQt.QtCore import QDate, Qt
 from qgis.PyQt.QtGui import QColor
 
 from .i18n import tr
@@ -218,20 +218,33 @@ def _output_group_layer_names() -> set[str]:
     return names
 
 
-def friendly_layer_name(prompt: str) -> str:
-    """Tree name for a committed run: "Buildings (3 Jul)".
+def friendly_layer_name(prompt: str, gpkg_path: str = "") -> str:
+    """Tree name for a committed run: "Buildings (2026-07-03)".
 
     Only the first letter is capitalized (the rest stays as typed), the date
-    is locale-short, and a same-prompt-same-day rerun becomes
-    "Buildings 2 (3 Jul)" by scanning the AI Segmentation group.
+    is ISO 8601, and a same-prompt-same-day rerun becomes
+    "Buildings 2 (2026-07-03)" by scanning the AI Segmentation group.
+
+    ``gpkg_path`` names the file the run is about to be written into. The
+    name doubles as the table's GeoPackage identifier, which the file keeps
+    unique, so the scan also covers the identifiers already in that file:
+    the tree forgets a layer the user removed, the file does not.
+
+    ISO and not a locale-short date: "3 Jul" carries no year, so two runs a
+    year apart read as the same day, and the layer panel sorts them by month
+    name. The written form also matches the date in the table name.
     """
     base = (prompt or "").strip()
     base = (base[0].upper() + base[1:]) if base else tr("Segmentation")
-    date_str = QLocale().toString(QDate.currentDate(), "d MMM")
-    existing = _output_group_layer_names()
+    date_str = QDate.currentDate().toString(Qt.DateFormat.ISODate)
+    existing = {name.lower() for name in _output_group_layer_names()}
+    if gpkg_path:
+        from .output_gpkg_rollover import layer_identifiers
+
+        existing |= {name.lower() for name in (layer_identifiers(gpkg_path) or set())}
     candidate = f"{base} ({date_str})"
     counter = 2
-    while candidate in existing:
+    while candidate.lower() in existing:
         candidate = f"{base} {counter} ({date_str})"
         counter += 1
     return candidate
@@ -246,9 +259,20 @@ def _existing_tables(gpkg_path: str) -> set[str] | None:
     ``snake_table_name`` a name that is already in use. The write then REPLACES
     an earlier run's table. "Unknown" costs one probe per candidate name and
     keeps the run.
+
+    The empty set is for a file confirmed absent (or confirmed empty), never
+    for one the OS refuses to stat: that one is unknown too.
     """
-    if not os.path.exists(gpkg_path):
+    from .output_gpkg_rollover import file_size, table_names
+
+    if file_size(gpkg_path) == 0:
         return set()
+    # gpkg_contents over read-only SQLite, which is one query. querySublayers
+    # opens every table through OGR, and on a shared file holding a few
+    # hundred runs that was seconds spent on the Export click.
+    names = table_names(gpkg_path)
+    if names:
+        return names
     try:
         metadata = QgsProviderRegistry.instance().providerMetadata("ogr")
         if metadata is not None:
@@ -286,7 +310,12 @@ def snake_table_name(prompt: str, gpkg_path: str) -> str:
     # not tell two runs apart in the file. The fallback stem below already uses
     # \w for the same reason.
     base = re.sub(r"[^\w]+", "_", (prompt or "").strip().lower()).strip("_")
-    base = base[:40].strip("_") or "segmentation"
+    base = _ascii_table_stem(base)[:40].strip("_") or "segmentation"
+    # A name that opens on a digit is not a plain SQL identifier, so every
+    # reader that does not quote it (a spreadsheet import, a CAD bridge, an
+    # ogr2ogr one-liner) fails on the file rather than on the query.
+    if base[0].isdigit():
+        base = f"t_{base}"
     date_str = QDate.currentDate().toString("yyyyMMdd")
     tables = _existing_tables(gpkg_path)
     candidate = f"{base}_{date_str}"
@@ -295,6 +324,29 @@ def snake_table_name(prompt: str, gpkg_path: str) -> str:
         candidate = f"{base}_{date_str}_{counter}"
         counter += 1
     return candidate
+
+
+def _ascii_table_stem(base: str) -> str:
+    """ASCII form of a table-name stem, accents folded, the rest hex-escaped.
+
+    A GeoPackage stores UTF-8 happily, but the tools the file travels to do
+    not all agree: a table name outside ASCII comes back mangled or unopenable
+    in enough of them that the name is worth keeping plain. An accented Latin
+    prompt folds to its base letters, and anything that will not fold becomes
+    "u" plus its code point, which stays unique so two prompts never collide.
+    """
+    import unicodedata
+
+    folded = unicodedata.normalize("NFKD", base)
+    out = []
+    for char in folded:
+        if unicodedata.combining(char):
+            continue
+        if char.isascii():
+            out.append(char)
+        else:
+            out.append(f"u{ord(char):04x}")
+    return "".join(out)
 
 
 def _probe_writable(directory: str) -> bool:
@@ -381,7 +433,11 @@ def project_gpkg_path(source_layer) -> str:
     """
     from .output_gpkg_rollover import next_output_gpkg
 
-    return next_output_gpkg(_output_directory(source_layer), GPKG_FILENAME)
+    # Normalised: the directory comes from Qt with forward slashes and the
+    # join adds the platform's, and that mixed spelling is what the log and
+    # the layer source would otherwise show a Windows user.
+    return os.path.normpath(
+        next_output_gpkg(_output_directory(source_layer), GPKG_FILENAME))
 
 
 def _ground_metre_transform(memory_layer):
@@ -406,12 +462,23 @@ def _ground_metre_transform(memory_layer):
 
 
 def _write_gpkg(memory_layer, path: str, table: str, overwrite_file: bool,
-                transform=None) -> str:
+                transform=None, identifier: str = "",
+                description: str = "") -> str:
     """Run one V3 write. Returns '' on success, the error message otherwise."""
     options = QgsVectorFileWriter.SaveVectorOptions()
     options.driverName = "GPKG"
     options.fileEncoding = "UTF-8"
     options.layerName = table
+    # gpkg_contents carries a human title and a one-line description beside
+    # the table name. Without them every reader that is not this QGIS session
+    # lists the run as "buildings_20260703" and nothing else.
+    layer_options = []
+    if identifier:
+        layer_options.append(f"IDENTIFIER={_gpkg_option_value(identifier)}")
+    if description:
+        layer_options.append(f"DESCRIPTION={_gpkg_option_value(description)}")
+    if layer_options:
+        options.layerOptions = layer_options
     if transform is not None:
         options.ct = transform
     options.actionOnExistingFile = (
@@ -428,6 +495,17 @@ def _write_gpkg(memory_layer, path: str, table: str, overwrite_file: bool,
     if result[0] == QgsVectorFileWriter.WriterError.NoError:
         return ""
     return str(result[1]) if len(result) > 1 and result[1] else "unknown writer error"
+
+
+# What one GDAL layer-creation option value may carry. The value travels in a
+# "NAME=value" string, so a newline in it would end the option.
+_MAX_GPKG_OPTION_CHARS = 250
+
+
+def _gpkg_option_value(text: str) -> str:
+    """One line of plain text, short enough for a layer-creation option."""
+    flat = " ".join(str(text or "").split())
+    return flat[:_MAX_GPKG_OPTION_CHARS]
 
 
 def _load_table(path: str, table: str, display_name: str) -> QgsVectorLayer | None:
@@ -468,14 +546,25 @@ def write_run_table(memory_layer, *, prompt: str, source_layer, fallback_stem: s
     per-run file (today's behavior) so a locked/corrupted shared gpkg never
     loses a paid detection. Returns None only when even the fallback fails.
     """
+    from .output_gpkg_rollover import file_size
+
     gpkg_path = project_gpkg_path(source_layer)
+    note_unexpected_output_folder(os.path.dirname(gpkg_path), source_layer)
     table = snake_table_name(prompt, gpkg_path)
-    friendly = friendly_layer_name(prompt)
+    friendly = friendly_layer_name(prompt, gpkg_path)
     transform = _ground_metre_transform(memory_layer)
 
+    # Recreate the file only when it is confirmed missing. A file that cannot
+    # be stat'ed is unknown, and creating over an unknown shared GeoPackage
+    # drops every run already in it. Appending into a file that turns out to be
+    # absent costs nothing: the writer creates it.
+    # English, like the rest of the file's metadata: it is read by whoever the
+    # deliverable is handed to, not by the person who ran the export.
+    description = "Objects detected with AI Segmentation."
     error_message = _write_gpkg(
         memory_layer, gpkg_path, table,
-        overwrite_file=not os.path.exists(gpkg_path), transform=transform,
+        overwrite_file=file_size(gpkg_path) == 0, transform=transform,
+        identifier=friendly, description=description,
     )
     if not error_message:
         layer = _load_table(gpkg_path, table, friendly)
@@ -495,24 +584,68 @@ def write_run_table(memory_layer, *, prompt: str, source_layer, fallback_stem: s
     # mount), a new name in that same folder fails for the same reason, and the
     # run is lost with a writable home folder one step away.
     fallback_error = "no writable output directory"
+    # One reason per folder, kept together for the final line. Each folder
+    # refuses for its own reason (a lock on a share, a full disk at home), and
+    # the last one alone sends the reader to the wrong cause.
+    failures: list[tuple[str, str]] = []
     for directory in output_directory_candidates(source_layer):
         fallback_path = os.path.join(directory, f"{stem}_{timestamp}.gpkg")
         fallback_error = _write_gpkg(
-            memory_layer, fallback_path, table, overwrite_file=True, transform=transform)
+            memory_layer, fallback_path, table, overwrite_file=True,
+            transform=transform, identifier=friendly, description=description)
         if not fallback_error:
             layer = _load_table(fallback_path, table, friendly)
             if layer is not None:
                 return WriteResult(fallback_path, table, layer, True, error_message, gpkg_path)
             fallback_error = "saved file could not be reloaded"
+        failures.append((directory, fallback_error))
         QgsMessageLog.logMessage(
             f"Fallback export failed in this folder ({fallback_error}), trying the next one",
             _LOG_TAG, level=Qgis.MessageLevel.Warning,
         )
+    detail = "; ".join(f"{folder}: {reason}" for folder, reason in failures) or fallback_error
     QgsMessageLog.logMessage(
-        f"Fallback export failed everywhere: {fallback_error}",
+        f"Fallback export failed everywhere: {detail}",
         _LOG_TAG, level=Qgis.MessageLevel.Critical,
     )
     return None
+
+
+# Armed once the session has told the user where a run landed, so the notice
+# is shown at most once however many runs follow.
+_output_folder_notice_shown = False
+
+
+def note_unexpected_output_folder(directory: str, source_layer) -> None:
+    """Name the folder a run was saved in when it is not one the user picked.
+
+    A project that was never saved, over a web basemap, has neither a project
+    folder nor a raster folder, so the GeoPackage lands in the home folder.
+    Nothing on screen said so, and the user went looking for their file next
+    to a project that does not exist yet. Said once per session.
+    """
+    global _output_folder_notice_shown
+    if _output_folder_notice_shown or not directory:
+        return
+    try:
+        project = QgsProject.instance()
+        expected = [project.homePath() or project.absolutePath(),
+                    _source_layer_dir(source_layer)]
+        key = os.path.normcase(os.path.abspath(directory))
+        for candidate in expected:
+            if candidate and os.path.normcase(os.path.abspath(candidate)) == key:
+                return
+        _output_folder_notice_shown = True
+        from qgis.utils import iface
+
+        if iface is None:
+            return
+        iface.messageBar().pushInfo(
+            GROUP_NAME,
+            tr("Saved to {folder}. Save the project to keep your results "
+               "beside it.").format(folder=directory))
+    except Exception:  # noqa: BLE001 -- a notice never blocks a save  # nosec B110
+        pass
 
 
 def ensure_output_group():

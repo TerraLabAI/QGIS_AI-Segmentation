@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import re
 
-from qgis.PyQt.QtCore import QEvent, QItemSelectionModel, QModelIndex, QSize, Qt, QTimer
+from qgis.PyQt.QtCore import QEvent, QItemSelectionModel, QModelIndex, QSize, Qt
 from qgis.PyQt.QtGui import QColor, QPainter, QStandardItem, QStandardItemModel
 from qgis.PyQt.QtWidgets import QCompleter, QFrame, QListView, QStyledItemDelegate
 
@@ -39,11 +39,18 @@ from ...core.presets.segmentation_presets import (
     pick_label,
     preset_search_haystack,
 )
-from ...core.qt_compat import event_pos
+from ...core.qt_compat import event_pos, safe_single_shot
+from ...core.surface_dials import (
+    prompt_suggest_max_rows,
+    prompt_suggest_recent_scan,
+    prompt_suggest_synonym_min_chars,
+    prompt_suggest_visible_rows,
+)
 from .styles import BRAND_BLUE
 
 # How many rows the list shows. Past this the popup stops reading as a shortcut
 # and starts reading as a catalogue, which the Library button already covers.
+# Served dial, read at call time; this is the fallback.
 _MAX_ROWS = 14
 
 # Shortest Latin-script query that may reach the cross-language synonyms. Under
@@ -145,7 +152,8 @@ def synonyms_may_answer(query: str) -> bool:
     catalogue's own Japanese for roof is two characters. Only those scripts are
     exempt; a two-letter Greek or Cyrillic fragment is as thin as a Latin one.
     """
-    return len(query) >= _SYNONYM_MIN_CHARS or writes_a_whole_word(query)
+    return (len(query) >= prompt_suggest_synonym_min_chars(_SYNONYM_MIN_CHARS)
+            or writes_a_whole_word(query))
 
 
 # Anything that is not a letter or a digit, in any script. Folded to a space so
@@ -310,7 +318,7 @@ class DockAutoPromptSuggestMixin:
         completer.setCompletionRole(_TOKEN_ROLE)
         # _MAX_ROWS caps what is ranked; this caps how much of it is on
         # screen, so a long answer scrolls instead of covering the step below.
-        completer.setMaxVisibleItems(_VISIBLE_ROWS)
+        completer.setMaxVisibleItems(prompt_suggest_visible_rows(_VISIBLE_ROWS))
         completer.activated[QModelIndex].connect(self._on_prompt_suggest_chosen)
 
         self._prompt_suggest_model = model
@@ -424,6 +432,7 @@ class DockAutoPromptSuggestMixin:
                 band = 0
             scored.append((band, order, entry))
         scored.sort(key=lambda row: (row[0], row[1]))
+        max_rows = prompt_suggest_max_rows(_MAX_ROWS)
         out: list[dict] = []
         seen: set[str] = set()
         for _band, _order, entry in scored:
@@ -431,7 +440,7 @@ class DockAutoPromptSuggestMixin:
                 continue
             seen.add(entry["token"])
             out.append(entry)
-            if len(out) >= _MAX_ROWS:
+            if len(out) >= max_rows:
                 break
         return out
 
@@ -497,25 +506,42 @@ class DockAutoPromptSuggestMixin:
         self._prompt_suggest_index_revision = revision
         return entries
 
+    def forget_prompt_suggest_recent(self) -> None:
+        """Drop the cached history read, so the next keystroke rebuilds it.
+
+        Called from every route back to the setup screen (_go_to_auto_step),
+        which is the only place a finished run can have been added to the
+        history since the list was last built.
+        """
+        self._prompt_suggest_recent_cache = None
+
     def _prompt_suggest_recent_tokens(self) -> set[str]:
         """The English tokens this user already ran, lowercased for comparison.
 
         A history entry is a record ({prompt, ts, ...}), not a string: the
         prompt has to be read out of it, or nothing ever matches and the band
         that puts the user's own objects first is dead.
+
+        Cached: this runs once per keystroke, and the uncached version read
+        QSettings and parsed the whole history on each one.
         """
+        cached = getattr(self, "_prompt_suggest_recent_cache", None)
+        if cached is not None:
+            return cached
         try:
             from ...core.presets.segment_history import get_recent
 
-            recent = get_recent()[:_RECENT_SCAN]
+            recent = get_recent()[:prompt_suggest_recent_scan(_RECENT_SCAN)]
         except Exception:  # noqa: BLE001 -- no history is a normal first run
-            return set()
+            self._prompt_suggest_recent_cache = set()
+            return self._prompt_suggest_recent_cache
         tokens: set[str] = set()
         for item in recent:
             prompt = item.get("prompt") if isinstance(item, dict) else item
             text = str(prompt or "").strip().lower()
             if text:
                 tokens.add(text)
+        self._prompt_suggest_recent_cache = tokens
         return tokens
 
     def _prompt_suggest_fill(self, rows: list[dict]) -> bool:
@@ -557,7 +583,7 @@ class DockAutoPromptSuggestMixin:
         """
         try:
             chrome = popup.height() - popup.viewport().height()
-            shown = min(row_count, _VISIBLE_ROWS)
+            shown = min(row_count, prompt_suggest_visible_rows(_VISIBLE_ROWS))
             popup.setFixedHeight(shown * _ROW_HEIGHT + max(chrome, 2 * popup.frameWidth()))
         except (RuntimeError, AttributeError):
             pass
@@ -581,7 +607,10 @@ class DockAutoPromptSuggestMixin:
         # curated vocabulary from one typed freehand; the drop-down serves the
         # same vocabulary, so it reports itself the same way.
         self._prompt_from_library = True
-        QTimer.singleShot(0, lambda: self._prompt_suggest_settle(token))
+        # Parented to the dock: a bare singleShot keeps the lambda, and the
+        # widget it captures, alive in the global event loop and fires into a
+        # freed object when the panel goes first.
+        safe_single_shot(0, self, lambda: self._prompt_suggest_settle(token))
 
     def _prompt_suggest_settle(self, token: str) -> None:
         try:

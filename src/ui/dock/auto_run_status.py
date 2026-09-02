@@ -74,20 +74,30 @@ class DockAutoRunStatusMixin:
         word against a width the word itself created. A character cap covers
         the first paint, where nothing has a width yet.
         """
-        capped = word if len(word) <= 22 else word[:21] + "…"
+        capped = word if len(word) <= 22 else word[:21] + "\u2026"
         try:
             from qgis.PyQt.QtGui import QFontMetrics
 
-            metrics = QFontMetrics(self.auto_progress_count_label.font())
             free = self.auto_progress_card.width() - self.auto_progress_pct_label.width()
+            # The row repaints many times a second while answers land, and both
+            # the word and the width it is measured against hold still across
+            # almost all of those, so the measurement is done once per pair.
+            key = (capped, fixed, free)
+            cached = getattr(self, "_auto_progress_elide_cache", None)
+            if cached is not None and cached[0] == key:
+                return cached[1]
+            metrics = QFontMetrics(self.auto_progress_count_label.font())
             free -= metrics.horizontalAdvance(fixed)
             # Card margins plus the row spacing, and a little slack for the bold
             # face the stylesheet sets, which the plain font under-measures.
             free -= 34
             if free < 24:
-                return capped
-            return metrics.elidedText(
-                capped, Qt.TextElideMode.ElideRight, free)
+                out = capped
+            else:
+                out = metrics.elidedText(
+                    capped, Qt.TextElideMode.ElideRight, free)
+            self._auto_progress_elide_cache = (key, out)
+            return out
         except (RuntimeError, AttributeError, TypeError):
             return capped
 
@@ -132,6 +142,12 @@ class DockAutoRunStatusMixin:
         self._auto_billed_tile_total = max(0, int(total))
         # Which pass the card is showing (see _auto_progress_phase_pair).
         self._auto_progress_phase = "grid"
+        # The pass's own measured pace, for the time-left line. One per pass:
+        # the free re-scan starts its count from zero and runs at its own rate.
+        self._auto_run_pace = None
+        # The assembly pass has not started and owns nothing yet.
+        self._auto_assemble_latched = False
+        self._auto_assemble_tiles = (0, 0)
 
     def _auto_progress_phase_pair(self, current: int, total: int) -> tuple:
         """Split the worker's run-wide (completed, total) into the pass the card
@@ -147,8 +163,27 @@ class DockAutoRunStatusMixin:
         ``of`` for the second pass grows while parents keep answering; the row
         shows the real number rather than a guessed denominator.
         """
-        billed = getattr(self, "_auto_billed_tile_total", 0)
         current = max(0, current)
+        if getattr(self, "_auto_finalizing", False):
+            # The tiles are all in and the shapes are being built. Its own
+            # phase, so it gets its own high-water mark: a count that arrives
+            # here used to land under the pass that was already at its peak and
+            # be swallowed, which froze the bar for the whole "Almost done"
+            # window.
+            return "finalize", current, total
+        if getattr(self, "_auto_assemble_latched", False):
+            # Every tile has been answered and the fold is still behind, so the
+            # answered count has nothing left to say: it sat at a full bar for
+            # the whole assembly on a large run, next to a time-left line that
+            # never moved. From here the bar counts what is actually being
+            # worked on.
+            folded, given = getattr(self, "_auto_assemble_tiles", (0, 0))
+            if given > 0:
+                return "assemble", folded, given
+            # Nothing was ever handed to a stitcher (the headless path runs
+            # without one), so there is no assembly to count and the answered
+            # split below stays the honest reading.
+        billed = getattr(self, "_auto_billed_tile_total", 0)
         if not billed:
             # No quoted grid (headless/MCP path): nothing to split.
             return "grid", current, total
@@ -157,6 +192,43 @@ class DockAutoRunStatusMixin:
         if refine_total and current >= billed:
             return "refine", refine_done, refine_total
         return "grid", min(current, billed), billed
+
+    def set_auto_assemble_tiles(self, done: int, given: int) -> None:
+        """How many of the tiles handed to the live stitcher it has folded in.
+
+        The bar follows the answered tiles while answering is the slow half.
+        Once every tile has been answered and the fold is still behind, this
+        pair takes the bar over and keeps it: a run whose long tail is assembly
+        showed a nearly full bar and "Less than a minute left" for as long as
+        the assembly took, which reads as a hang rather than as work.
+
+        Latched, never un-latched before the finalize: the run's tile total
+        grows when a dense tile queues its quadrants, so the answered pass can
+        briefly look unfinished again, and a bar that swapped back would empty
+        its fill and climb a second time.
+        """
+        pair = (max(0, int(done)), max(0, int(given)))
+        if pair == getattr(self, "_auto_assemble_tiles", (0, 0)):
+            return
+        self._auto_assemble_tiles = pair
+        if not getattr(self, "_auto_assemble_latched", False):
+            return
+        current, total = getattr(self, "_auto_progress_pair", (0, 0))
+        self.set_auto_tile_progress(current, total)
+
+    def note_auto_tiles_all_answered(self) -> None:
+        """Hand the bar to the assembly count, once the wire has no more to
+        give. Called by the run when the last tile is answered; the fold is
+        normally still behind at that moment."""
+        self._auto_assemble_latched = True
+
+    def set_auto_finalize_tiles(self, done: int, total: int) -> None:
+        """How many answered tiles the hand-over has folded in so far. Only
+        the finalize row reads it; a run that never reports it shows the
+        plain "Building the shapes"."""
+        self._auto_finalize_tiles = (max(0, int(done)), max(0, int(total)))
+        if getattr(self, "_auto_finalizing", False):
+            self._refresh_auto_progress_readout()
 
     def _refresh_auto_progress_readout(self) -> None:
         """Rebuild the progress card's Row 1 (the pass count + live found count)
@@ -167,20 +239,85 @@ class DockAutoRunStatusMixin:
         current, total = getattr(self, "_auto_progress_pair", (0, 0))
         found = getattr(self, "_auto_found_count", 0)
         phase, current, total = self._auto_progress_phase_pair(current, total)
-        if phase == "refine":
-            # Named, counted and separate: the row is the only thing that says
-            # this pass exists, and it is where the run spends most of its time.
-            count_txt = tr("Dense area {current}/{total}").format(
+        # The tile count is the run's unit, not the user's: it lives in the
+        # tooltip. The row says how much of the drawn surface is done.
+        tooltip = ""
+        if phase == "finalize":
+            # Its own words: the tiles are done and nothing more is billed, so
+            # the row must not keep counting a pass that has ended. While the
+            # answered tiles are still being folded in, the row counts THAT,
+            # so a long tail reads as work moving and not as a hang.
+            done, of = getattr(self, "_auto_finalize_tiles", (0, 0))
+            count_txt = tr("Building the shapes")
+            if of > 0 and done < of:
+                count_txt += " · " + tr("{current} of {total} tiles").format(
+                    current=done, total=of)
+        elif phase == "assemble":
+            # Same words as the finalize row, because it is the same work: the
+            # answers are in and their shapes are being built. Both strings are
+            # already in every locale.
+            count_txt = tr("Building the shapes")
+            if total > 0 and current < total:
+                count_txt += " · " + tr("{current} of {total} tiles").format(
+                    current=current, total=total)
+        elif phase == "refine":
+            # Named and separate: the row is the only thing that says this
+            # pass exists, and it is where the run spends most of its time.
+            # "no extra cost" because a second pass over the same ground reads
+            # as a second bill.
+            count_txt = tr("Dense area · no extra cost")
+            tooltip = tr("{current} of {total} tiles").format(
                 current=current, total=total)
         else:
-            count_txt = tr("Detection {current}/{total}").format(
+            count_txt = self._auto_surface_done_text(current, total)
+            tooltip = tr("{current} of {total} tiles").format(
                 current=current, total=total)
         if found > 0:
             found_txt = self._auto_found_so_far_text(found, count_txt)
             count_txt += ' <span style="color: rgba(128,128,128,0.95);">· ' + found_txt + "</span>"
         self.auto_progress_count_label.setText(count_txt)
+        self.auto_progress_count_label.setToolTip(tooltip)
+        if phase == "finalize":
+            # The bar is the animated busy one here, so a percent beside it
+            # would name a number nothing is measuring.
+            self.auto_progress_pct_label.setVisible(False)
+            return
+        self.auto_progress_pct_label.setVisible(True)
         pct = getattr(self, "_auto_progress_target", 0) // (_PROGRESS_SCALE // 100)
         self.auto_progress_pct_label.setText(f"{max(0, min(100, pct))}%")
+
+    def _auto_surface_done_text(self, done: int, of: int) -> str:
+        """Row 1 of the paid pass: the surface scanned so far out of the zone,
+        or the share done when the zone's surface is not known (headless)."""
+        km2 = getattr(self, "_auto_zone_km2", None)
+        if km2 is None or km2 <= 0 or not of:
+            pct = int(100 * min(1.0, max(0.0, done / of))) if of else 0
+            return tr("{pct}% done").format(pct=pct)
+        from .ui_refresh import format_km2_surface
+        done_km2 = km2 * min(1.0, max(0.0, done / of))
+        return tr("{done} of {total} km²").format(
+            done=format_km2_surface(done_km2), total=format_km2_surface(km2))
+
+    def _note_auto_pace(self, phase: str, done: int, of: int) -> None:
+        """Feed one progress report to the pass's pace tracker."""
+        if phase == "finalize":
+            return
+        from ...core.run_eta import RunPace
+        pace = getattr(self, "_auto_run_pace", None)
+        if pace is None or getattr(self, "_auto_pace_phase", None) != phase:
+            pace = RunPace()
+            self._auto_run_pace = pace
+            self._auto_pace_phase = phase
+        pace.note(done, of, time.monotonic())
+
+    def _auto_time_left_text(self) -> str:
+        """"About 9 min left" from the run's own pace, or "" while unknown."""
+        pace = getattr(self, "_auto_run_pace", None)
+        if pace is None:
+            return ""
+        from ...core.run_eta import friendly_time_left
+        left = pace.seconds_left()
+        return friendly_time_left(left) if left is not None else ""
 
     def set_auto_tile_progress(self, current: int, total: int) -> None:
         self.auto_status_banner.setVisible(False)
@@ -189,6 +326,17 @@ class DockAutoRunStatusMixin:
         self._auto_progress_pair = (current, total)
         self._set_auto_progress_visible(True)
         phase, done, of = self._auto_progress_phase_pair(current, total)
+        self._note_auto_pace(phase, done, of)
+        if phase == "finalize":
+            # The tiles are in and the hand-over card owns the bar (see
+            # _paint_auto_finalize_card): it is the animated busy one, and a
+            # late count must only refresh the row, never re-arm a determinate
+            # fill that would then sit still for the whole "Almost done"
+            # window.
+            self._auto_progress_phase = phase
+            self._refresh_auto_progress_readout()
+            self._render_auto_wait_label()
+            return
         if phase != getattr(self, "_auto_progress_phase", "grid"):
             # The paid grid is in and the free re-scan owns the bar now: empty
             # the fill so the second pass measures itself from zero, instead of
@@ -365,15 +513,19 @@ class DockAutoRunStatusMixin:
         self._auto_wait_phase = phase
         self._render_auto_wait_label()
 
-    def set_auto_link_slow(self, slow: bool) -> None:
+    def set_auto_link_slow(self, slow: bool, local: bool = False) -> None:
         """Whether the run has gone quiet long enough to say so on the card.
 
         A mid-run silence and a hang look the same on a progress bar, and the
         run that is merely slow is the common one. Saying it keeps the user
-        waiting instead of cancelling work they have already paid for."""
-        if bool(slow) == getattr(self, "_auto_link_slow", False):
+        waiting instead of cancelling work they have already paid for.
+        ``local`` says the silence is this machine's own work (answers being
+        turned into shapes), so the line must not blame the connection."""
+        if (bool(slow) == getattr(self, "_auto_link_slow", False)
+                and bool(local) == getattr(self, "_auto_link_local", False)):
             return
         self._auto_link_slow = bool(slow)
+        self._auto_link_local = bool(local)
         self._render_auto_wait_label()
 
     def _render_auto_wait_label(self) -> None:
@@ -400,13 +552,27 @@ class DockAutoRunStatusMixin:
             text = tr("Almost done - building the shapes...")
         elif current > 0:
             if not getattr(self, "_auto_link_slow", False):
-                self.auto_progress_label.setVisible(False)
+                # Tiles are flowing: the line under the bar is the time left,
+                # measured on this run's own pace, and nothing until it is
+                # known.
+                text = self._auto_time_left_text()
+                if not text:
+                    self.auto_progress_label.setVisible(False)
+                    return
+                self.auto_progress_label.setText(text)
+                self.auto_progress_label.setVisible(True)
                 return
             # Tiles landed and then stopped. The bar alone reads as a hang, and
             # the work already billed is lost if that reading makes the user
-            # cancel, so name the cause and say the run is still on.
-            text = tr("Connection is slow - still working, everything already "
-                      "found is kept...")
+            # cancel, so name the cause and say the run is still on. When the
+            # cause is this machine turning answers into shapes, say that:
+            # "connection" would send the user to check a link that is fine.
+            if getattr(self, "_auto_link_local", False):
+                text = tr("Building the shapes on this computer - still "
+                          "working, everything already found is kept...")
+            else:
+                text = tr("Connection is slow - still working, everything already "
+                          "found is kept...")
         else:
             pos = getattr(self, "_auto_queue_position", 0)
             eta_s = getattr(self, "_auto_queue_eta", 0)
@@ -559,8 +725,11 @@ class DockAutoRunStatusMixin:
                 suggestion = ""
         self._auto_zero_synonym = suggestion
         if suggestion:
+            # &-escaped like the example chip above: Qt eats a lone & in button
+            # text as a mnemonic marker. The stored word keeps its single &.
+            shown = suggestion.replace("&", "&&")
             self.auto_zero_synonym_chip.setText(
-                "→  " + tr('Try "{word}" instead').format(word=suggestion))
+                "→  " + tr('Try "{word}" instead').format(word=shown))
         self.auto_zero_synonym_chip.setVisible(bool(suggestion))
         self.auto_zero_assist_row.setVisible(True)
         # The rescue sits under the Detect row, which is below the fold on a

@@ -62,6 +62,19 @@ _TIMEOUT_CEILING_MS = 30_000
 
 _HTTP_STATUS = resolve_qt_enum(QNetworkRequest, "Attribute", "HttpStatusCodeAttribute")
 
+# The activation key rides a raw header, and Qt replays raw headers on every
+# hop it follows, so an authenticated preview is limited to same-origin
+# redirects: a 3xx pointing at another host is refused instead of handing the
+# key to that host. Resolved by name for the Qt5 flat vs Qt6 scoped enum split.
+_REDIRECT_ATTR = getattr(getattr(QNetworkRequest, "Attribute", QNetworkRequest),
+                         "RedirectPolicyAttribute",
+                         getattr(QNetworkRequest, "RedirectPolicyAttribute", None))
+_RedirectPolicy = getattr(QNetworkRequest, "RedirectPolicy", QNetworkRequest)
+_SAME_ORIGIN_REDIRECT = getattr(_RedirectPolicy, "SameOriginRedirectPolicy",
+                                getattr(QNetworkRequest, "SameOriginRedirectPolicy", None))
+_NO_LESS_SAFE_REDIRECT = getattr(_RedirectPolicy, "NoLessSafeRedirectPolicy",
+                                 getattr(QNetworkRequest, "NoLessSafeRedirectPolicy", None))
+
 # The calls on the wire, held only so Python does not collect one mid-request.
 # Cleared as each finishes, exactly like the connection warm in click_transport.
 _live_calls: set = set()
@@ -196,10 +209,15 @@ def read_preview_answer(answer: dict, height: int, width: int):
         scores = answer.get("scores")
         scored = (isinstance(scores, (list, tuple))
                   and len(scores) == len(rles))
+        if not scored:
+            # No usable score means no way to pick the candidate the click
+            # would pick, and a ghost that disagrees with the click is worse
+            # than no ghost.
+            return None
         index = 0
         decoded = [decode_rle_to_mask(r, int(height), int(width), strict=True)
                    for r in rles]
-        if scored and len(rles) > 1:
+        if len(rles) > 1:
             # More than one candidate came back: choose exactly as the click
             # does in _run_prediction, or the ghost shows one candidate and
             # the click commits another. Area is read off the decoded masks,
@@ -215,7 +233,7 @@ def read_preview_answer(answer: dict, height: int, width: int):
         mask = decoded[index]
         if not np.any(mask):
             return None
-        score = float(scores[index]) if scored else 0.0
+        score = float(scores[index])
         return mask, score, _preview_logits_row(answer, index)
     except Exception:  # noqa: BLE001 -- an unreadable answer is no picture
         return None
@@ -270,6 +288,11 @@ class HoverPreviewCall:
             payload = json.dumps(self._body, allow_nan=False).encode("utf-8")
             request = QNetworkRequest(QUrl(self._url))
             request.setRawHeader(b"Content-Type", b"application/json")
+            if _REDIRECT_ATTR is not None:
+                policy = (_SAME_ORIGIN_REDIRECT if self._auth
+                          else _NO_LESS_SAFE_REDIRECT)
+                if policy is not None:
+                    request.setAttribute(_REDIRECT_ATTR, policy)
             # Absent below Qt 5.15, same guard as the download path.
             if hasattr(request, "setTransferTimeout"):
                 request.setTransferTimeout(hover_preview_timeout_ms())

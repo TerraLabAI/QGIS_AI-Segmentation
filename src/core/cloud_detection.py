@@ -23,6 +23,12 @@ else:
 import numpy as np  # noqa: E402
 
 from .review_defaults import HOLE_NOISE_CEILING_M  # noqa: E402
+from .shape_policy_dials import (  # noqa: E402
+    archive_jpeg_quality,
+    imagery_probe_px,
+    imagery_probe_timeout_ms,
+    render_zone_timeout_ms,
+)
 
 if TYPE_CHECKING:
     from qgis.core import QgsRasterLayer, QgsRectangle
@@ -43,11 +49,16 @@ _RLE_FORMAT: str = "offset_count_row_major_one_based"
 # Upload bytes dominate the per-tile time on slow connections, so the encode
 # quality is a fidelity/bandwidth trade-off. Detection scores sitting near the
 # review confidence cutoff are sensitive to compression noise, so the default
-# stays near-lossless (Qt's JPEG writer keeps 4:4:4 chroma from quality 90 up);
-# the server policy can lower it fleet-wide for bandwidth without a release
-# (seed.tile_jpeg_quality, read at encode time by _tile_jpeg_quality).
+# stays high (Qt's JPEG writer keeps 4:4:4 chroma from quality 90 up) and
+# matches what the server policy serves, so a fresh install with a cold policy
+# cache uploads the same bytes as everyone else; the policy can move it
+# fleet-wide without a release (seed.tile_jpeg_quality, read at encode time
+# by _tile_jpeg_quality).
 _TILE_IMAGE_FORMAT: str = "JPEG"
-_TILE_JPEG_QUALITY: int = 98
+_TILE_JPEG_QUALITY: int = 90
+# The un-stamped copy that rides beside a stamped tile is a record, not model
+# input (see encode_tile_archive_copy), so it is encoded for size.
+_ARCHIVE_JPEG_QUALITY: int = 80
 
 
 def _tile_jpeg_quality() -> int:
@@ -620,7 +631,7 @@ def render_zone_to_image(
     extent: QgsRectangle,
     width: int,
     height: int,
-    timeout_ms: int = _RENDER_ZONE_TIMEOUT_MS,
+    timeout_ms: int | None = None,
     resample_local: bool = False,
     render_crs=None,
 ):
@@ -650,6 +661,7 @@ def render_zone_to_image(
         width:   Output image width in pixels.
         height:  Output image height in pixels.
         timeout_ms: Hard cap so a stalled network render cannot hang forever.
+                    None takes the served cap, else the shipped one.
         resample_local: Render a fine LOCAL raster through the same averaged
                      downsample clone the tile path uses, so a stamp shrunk to
                      the run resolution is smoothed, not decimated nearest, and
@@ -663,6 +675,9 @@ def render_zone_to_image(
     """
     from qgis.core import QgsMapRendererParallelJob, QgsMapSettings, QgsProject
     from qgis.PyQt.QtCore import QEventLoop, QSize, QTimer
+
+    if timeout_ms is None:
+        timeout_ms = render_zone_timeout_ms(_RENDER_ZONE_TIMEOUT_MS)
     from qgis.PyQt.QtGui import QColor
 
     if width <= 0 or height <= 0:
@@ -720,9 +735,13 @@ def render_zone_to_image(
         if not job.isActive():
             img = job.renderedImage()
         else:
-            # Timed out: stop the job and bail.
-            job.cancelWithoutBlocking()
+            # Timed out. BLOCKING cancel, like the tile render path: the render
+            # threads must stop touching the clone before the only reference to
+            # it dies at return, and the job was already taken off
+            # _active_render_jobs, so nothing else can reach it.
+            job.cancel()
             logger.warning("render_zone_to_image: render timed out after %d ms", timeout_ms)
+            del render_clone
             return None, None
         # The clone (when any) backed the render layer; release it now the job
         # has finished, mirroring the tile render path's cleanup.
@@ -774,6 +793,31 @@ def visible_extent_for(extent: QgsRectangle, width: int, height: int):
 # path can hold several jobs at once; tracking every live job lets teardown
 # cancel them synchronously BEFORE the raster layer they read can be deleted.
 _active_render_jobs: list = []
+# The same async jobs as (job, state, finish). cancel() emits no finished(), so
+# the bare list above cannot honour start_tile_render_job's "on_done fires
+# exactly once" contract on a teardown: the finisher has to be reachable.
+_tile_render_hooks: list = []
+
+
+def _drop_tile_render_hook(job) -> None:
+    """Forget one async tile job's cancel hook. Idempotent."""
+    for i, entry in enumerate(_tile_render_hooks):
+        if entry[0] is job:
+            del _tile_render_hooks[i]
+            return
+
+
+def _release_job_later(state: dict) -> None:
+    """Drop a settled render job on the next event-loop turn.
+
+    Not inline: the finisher usually runs inside the job's own finished()
+    emission, and destroying a QObject from its own signal is a crash. One turn
+    later is still what lets a job that rendered in milliseconds, and the image
+    it owns, go now instead of being held until its timeout fires.
+    """
+    from qgis.PyQt.QtCore import QTimer
+
+    QTimer.singleShot(0, lambda: state.update(job=None))
 
 
 def cancel_active_tile_render() -> None:
@@ -785,6 +829,8 @@ def cancel_active_tile_render() -> None:
     would free the QgsRasterLayer under an active render job. As a bonus it
     makes Cancel feel instant instead of waiting out a slow basemap render.
     Safe no-op when nothing is rendering."""
+    hooks = list(_tile_render_hooks)
+    _tile_render_hooks.clear()
     jobs = list(_active_render_jobs)
     _active_render_jobs.clear()
     for job in jobs:
@@ -792,6 +838,16 @@ def cancel_active_tile_render() -> None:
             job.cancel()
         except (RuntimeError, AttributeError):
             pass
+    # cancel() emits no finished(), so an async tile job's on_done would never
+    # fire, and start_tile_render_job promises exactly one call. Run each
+    # finisher here, with the image refused: the render threads were stopped
+    # mid-pass, so whatever the job holds is a partial tile.
+    for _job, state, finish in hooks:
+        state["cancelled"] = True
+        try:
+            finish()
+        except Exception:  # noqa: BLE001 - a teardown must never raise
+            logger.warning("cancel_active_tile_render: finish failed")
 
 
 def _configure_downsample_resampling(layer, qgis_module) -> bool:
@@ -941,7 +997,8 @@ def _render_crs_or_layer(layer, render_crs):
 
 
 def _tile_render_settings(layer, tile_extent, width: int, height: int,
-                          render_clone=None, render_crs=None):
+                          render_clone=None, render_crs=None,
+                          clone_resolved: bool = False):
     """The QgsMapSettings recipe for one tile render.
 
     Returns (settings, render_clone). The clone (None for online providers)
@@ -955,7 +1012,12 @@ def _tile_render_settings(layer, tile_extent, width: int, height: int,
     the thread that paints, so it belongs once per run and not once per tile.
     Sharing one layer object across the overlapping tile jobs is what the
     online path below already does: it takes the ``else layer`` branch and
-    hands every concurrent job the user's single layer."""
+    hands every concurrent job the user's single layer.
+
+    ``clone_resolved`` says the caller already asked and got nothing back, so
+    a None here means "there is no clone", not "none built yet". Without it a
+    run whose clone genuinely resolves to None reopens the GDAL dataset on the
+    main thread once per tile."""
     from qgis.core import QgsMapSettings, QgsProject
     from qgis.PyQt.QtCore import QSize
     from qgis.PyQt.QtGui import QColor
@@ -969,7 +1031,7 @@ def _tile_render_settings(layer, tile_extent, width: int, height: int,
     # and the imagery is sampled from ground shifted against the coordinates
     # the detections are stamped with.
     settings.setTransformContext(QgsProject.instance().transformContext())
-    if render_clone is None:
+    if render_clone is None and not clone_resolved:
         render_clone = _local_raster_render_clone(layer)
     render_layer = render_clone if render_clone is not None else layer
     settings.setLayers([render_layer])
@@ -993,6 +1055,7 @@ def start_tile_render_job(
     timeout_ms: int = 60000,
     render_clone=None,
     render_crs=None,
+    clone_resolved: bool = False,
 ) -> bool:
     """Start ONE tile render as an ASYNC job and return immediately. MAIN THREAD.
 
@@ -1012,34 +1075,47 @@ def start_tile_render_job(
         return False
     try:
         settings, render_clone = _tile_render_settings(
-            layer, tile_extent, width, height, render_clone, render_crs)
+            layer, tile_extent, width, height, render_clone, render_crs,
+            clone_resolved)
         job = QgsMapRendererParallelJob(settings)
     except Exception as exc:  # noqa: BLE001
         logger.warning("start_tile_render_job: failed for %dx%d: %s", width, height, exc)
         return False
 
-    state = {"done": False, "clone": render_clone}
+    state = {"done": False, "clone": render_clone, "job": job,
+             "cancelled": False}
 
     def _finish(timed_out: bool = False) -> None:
         if state["done"]:
             return
         state["done"] = True
-        if job in _active_render_jobs:
-            _active_render_jobs.remove(job)
+        rjob = state["job"]
+        _drop_tile_render_hook(rjob)
+        if rjob in _active_render_jobs:
+            _active_render_jobs.remove(rjob)
         img = None
         try:
-            if not job.isActive():
-                img = job.renderedImage()
+            if state["cancelled"]:
+                # Cancelled from cancel_active_tile_render: the render threads
+                # were stopped mid-pass, so renderedImage() holds a partial
+                # tile that must never be encoded, submitted and billed.
+                img = None
+            elif not rjob.isActive():
+                img = rjob.renderedImage()
             else:
                 # Blocking cancel: the render threads must stop touching the
                 # layer/clone before we release our reference to it.
-                job.cancel()
+                rjob.cancel()
                 if timed_out:
                     logger.warning(
                         "start_tile_render_job: render timed out after %d ms", timeout_ms)
         except (RuntimeError, AttributeError):
             img = None
         state["clone"] = None
+        # The timeout timer closes over `state` alone, so this is what frees a
+        # job (and its several-MB image) that finished in milliseconds instead
+        # of holding it for the whole timeout window.
+        _release_job_later(state)
         if img is not None and img.isNull():
             img = None
         try:
@@ -1050,11 +1126,14 @@ def start_tile_render_job(
     job.finished.connect(_finish)
     QTimer.singleShot(timeout_ms, lambda: _finish(timed_out=True))
     _active_render_jobs.append(job)
+    _tile_render_hooks.append((job, state, _finish))
     try:
         job.start()
     except Exception as exc:  # noqa: BLE001
         logger.warning("start_tile_render_job: start failed: %s", exc)
         state["done"] = True
+        state["job"] = None
+        _drop_tile_render_hook(job)
         if job in _active_render_jobs:
             _active_render_jobs.remove(job)
         return False
@@ -1094,6 +1173,55 @@ def tile_is_blank_array(
     counts = np.unique(flat, return_counts=True)[1]
     dominant = int(counts.max())
     return (dominant / float(flat.size)) >= dominant_frac
+
+
+# Stride of the coarse look a degenerate check takes before it reads every
+# pixel. 1/16 of the tile is enough to rule most tiles out.
+_DEGENERATE_QUICK_STRIDE = 4
+
+
+def _degenerate_ruled_out(
+    arr: np.ndarray, nodata_frac: float, band_eps: float,
+    nodata_rgb_eps: int, min_valid_px: float,
+) -> bool:
+    """True when a strided sample of ``arr`` already proves the full tile is
+    NOT degenerate, so the full-resolution pass can be skipped.
+
+    Every rule tile_is_degenerate_array applies is monotone in the sample:
+    a sample's valid pixels are a subset of the tile's, so the tile holds at
+    least as many valid pixels as the sample and each band spreads at least
+    as far. The sample can therefore rule a tile IN as content, never OUT as
+    empty; when it cannot rule it in, the caller runs the full pass, and the
+    verdict is the full pass's, unchanged. Channel order does not matter here
+    (per-band spreads are compared as a set), so the caller may pass the
+    tile in whatever byte order it holds it.
+    """
+    stride = _DEGENERATE_QUICK_STRIDE
+    sample = arr[::stride, ::stride, :]
+    if sample.size == 0:
+        return False
+    rgb = sample[:, :, :3].reshape(-1, 3)
+    valid = None
+    if sample.shape[2] >= 4:
+        valid = sample[:, :, 3].reshape(-1) != 0
+    if int(nodata_rgb_eps) >= 0:
+        lit = rgb.max(axis=1) > int(nodata_rgb_eps)
+        valid = lit if valid is None else (valid & lit)
+    n_px_full = int(arr.shape[0] * arr.shape[1])
+    if valid is not None:
+        n_valid = int(valid.sum())
+        if n_valid == 0:
+            return False
+        if n_valid < max(0.0, float(min_valid_px)):
+            return False
+        # The tile's no-data fraction is at most the pixels the sample did
+        # not see as valid, over the whole tile.
+        frac_ceiling = (n_px_full - n_valid) / float(n_px_full)
+        if 0.0 < float(nodata_frac) <= 1.0 and frac_ceiling >= float(nodata_frac):
+            return False
+        rgb = rgb[valid]
+    spread = np.subtract(rgb.max(axis=0), rgb.min(axis=0), dtype=np.float64)
+    return bool((spread > max(0.0, float(band_eps))).any())
 
 
 def tile_is_degenerate_array(
@@ -1152,6 +1280,9 @@ def tile_is_degenerate_array(
     """
     if arr is None or arr.ndim != 3 or arr.shape[2] < 3 or arr.size == 0:
         return False
+    if _degenerate_ruled_out(arr, nodata_frac, band_eps, nodata_rgb_eps,
+                             min_valid_px):
+        return False
     eps = max(0.0, float(band_eps))
     floor_px = max(0.0, float(min_valid_px))
     # Keep the tile's own dtype: widening a full-resolution tile to int64 costs
@@ -1205,6 +1336,11 @@ def tile_is_degenerate(
         ptr.setsize(h * full.bytesPerLine())
         arr = np.frombuffer(ptr, dtype=np.uint8).reshape(h, full.bytesPerLine() // 4, 4)
         arr = arr[:, :w, :]
+        # A coarse look in Qt's own BGRA order first: the check is channel
+        # order blind, and most tiles never need the full copy below.
+        if _degenerate_ruled_out(arr, nodata_frac, band_eps, nodata_rgb_eps,
+                                 min_valid_px):
+            return False
         # Qt BGRA byte order -> RGBA.
         rgba = arr[:, :, [2, 1, 0, 3]]
         return tile_is_degenerate_array(
@@ -1396,9 +1532,9 @@ def probe_depth_chain(
     extent,
     render_crs=None,
     count: int = 2,
-    side_px: int = _IMAGERY_PROBE_PX,
+    side_px: int | None = None,
     min_side_px: int = 32,
-    timeout_ms: int = _IMAGERY_PROBE_TIMEOUT_MS,
+    timeout_ms: int | None = None,
 ):
     """One piece of ground rendered at several depths, finest first.
 
@@ -1417,6 +1553,10 @@ def probe_depth_chain(
     render_zone_to_image).
     """
     images = []
+    if side_px is None:
+        side_px = imagery_probe_px(_IMAGERY_PROBE_PX)
+    if timeout_ms is None:
+        timeout_ms = imagery_probe_timeout_ms(_IMAGERY_PROBE_TIMEOUT_MS)
     side = int(side_px)
     for _ in range(max(2, int(count))):
         if side < int(min_side_px):
@@ -1487,6 +1627,48 @@ def encode_tile_png(
     if not data:
         return None
     return (tx, ty, cw, ch), data
+
+
+def encode_tile_archive_copy(
+    img,
+    tx: int,
+    ty: int,
+    tw: int,
+    th: int,
+) -> bytes | None:
+    """Encode one tile sub-rectangle as a SMALL archive copy: half the linear
+    size at quality _ARCHIVE_JPEG_QUALITY, so roughly a fifth of the bytes of
+    the sent tile.
+
+    This is the un-stamped picture of the same ground the sent tile covers. It
+    rides beside a submission the run stamped reference crops into, purely so
+    the archive keeps a record of what was under the band; nothing reads it on
+    the request path. A record does not need the pixels the model reads, and
+    at full size it doubled what the run put on the uplink.
+
+    Returns the encoded bytes, or None when the rectangle is empty or the
+    encode produced nothing.
+    """
+    from qgis.PyQt.QtCore import QBuffer, QRect, Qt
+
+    from .qt_compat import WriteOnly
+
+    cw = min(tw, img.width() - tx)
+    ch = min(th, img.height() - ty)
+    if cw <= 0 or ch <= 0:
+        return None
+    sub = img.copy(QRect(tx, ty, cw, ch))
+    small = sub.scaled(
+        max(1, cw // 2), max(1, ch // 2),
+        Qt.AspectRatioMode.IgnoreAspectRatio,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+    buf = QBuffer()
+    buf.open(WriteOnly)
+    small.save(buf, _TILE_IMAGE_FORMAT, archive_jpeg_quality(_ARCHIVE_JPEG_QUALITY))
+    data = bytes(buf.data())
+    buf.close()
+    return data or None
 
 
 def composite_tile_with_stamps(img, tx, ty, tw, th, stamps, bottom=False):
@@ -1766,10 +1948,12 @@ def detection_mask_count(response: dict, score_threshold: float = 0.0) -> int:
         _response_mask_list(response), score_threshold))
 
 
-def _iter_masks(raw_masks: list, decode_h: int, decode_w: int, score_threshold: float):
+def _iter_masks(raw_masks: list, decode_h: int, decode_w: int,
+                score_threshold: float, strict: bool = False):
     """The lazy half of :func:`iter_detection_masks`: one decoded mask per step."""
     for entry, score in _iter_mask_entries(raw_masks, score_threshold):
-        mask = decode_rle_to_mask(entry.get("rle", ""), decode_h, decode_w)
+        mask = decode_rle_to_mask(
+            entry.get("rle", ""), decode_h, decode_w, strict=strict)
         raw_box = entry.get("box")
         if isinstance(raw_box, (list, tuple)) and len(raw_box) == 4:
             box = [float(v) for v in raw_box]
@@ -1783,6 +1967,7 @@ def iter_detection_masks(
     tile_w: int,
     tile_h: int,
     score_threshold: float = 0.0,
+    strict: bool = False,
 ):
     """Decode a completed status response into (mask, score, box), ONE AT A TIME.
 
@@ -1803,6 +1988,10 @@ def iter_detection_masks(
 
     When response["width"] or ["height"] is None (the server may omit them),
     the caller-supplied tile_w / tile_h are used for RLE decoding.
+
+    ``strict`` is handed to :func:`decode_rle_to_mask`: a caller that shows the
+    answer to a user sets it, so a mask the encoding did not describe raises
+    instead of arriving empty or half set.
     """
     raw_masks = response.get("masks") or []
     if not isinstance(raw_masks, list):
@@ -1815,7 +2004,7 @@ def iter_detection_masks(
     decode_w = int(srv_w) if srv_w is not None else tile_w
     decode_h = int(srv_h) if srv_h is not None else tile_h
 
-    return _iter_masks(raw_masks, decode_h, decode_w, score_threshold)
+    return _iter_masks(raw_masks, decode_h, decode_w, score_threshold, strict)
 
 
 def decode_detection_response(

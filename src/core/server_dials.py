@@ -177,6 +177,27 @@ def dial_str(path: str, fallback: str, allowed: Iterable[str] | None = None) -> 
     return fallback
 
 
+# Hosts a plain-HTTP request may still reach: a developer's own machine, where
+# nothing leaves it.
+_LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1", "")
+
+
+def cleartext_remote_url(url: str) -> bool:
+    """Whether this address would send an authenticated request in the clear.
+
+    Every call the plugin makes carries the activation key, so plain HTTP to
+    anything but the local machine has to be refused. Only reachable through a
+    hand-edited development override; the shipped addresses are all https.
+    """
+    if not isinstance(url, str) or not url.startswith("http://"):
+        return False
+    try:
+        host = (urlsplit(url).hostname or "").lower()
+    except Exception:  # noqa: BLE001 -- an unparsable address is not safe
+        return True
+    return host not in _LOCAL_HOSTS
+
+
 def safe_web_url(candidate: Any, fallback: str) -> str:
     """``candidate`` when it is a usable https web address, else ``fallback``.
 
@@ -472,12 +493,14 @@ def crop_webp_enabled() -> bool:
 def gzip_request_bodies_enabled() -> bool:
     """Whether a large request body may travel gzipped.
 
-    Default ON: every route that takes a large body reads the encoding, so a
-    plugin that never hears from the server still gets the shorter upload, and
-    a client whose dial read fails on a slow link is exactly the one that
-    needs it. A served false is what takes it back from the whole fleet.
+    Default OFF, and fail-CLOSED like ``crop_webp`` above. The encoding is a
+    wire contract: a server that cannot inflate a body reads the gzip stream as
+    JSON and refuses the whole request, which on these routes costs a click or
+    a tile. So a plugin that has never heard from a server sends what every
+    server reads, and the shorter upload arrives the day the blob says
+    ``features.gzip_request_bodies: true``.
     """
-    return feature_switch("features.gzip_request_bodies", True)
+    return dial_bool("features.gzip_request_bodies", False)
 
 
 def automatic_mode_enabled() -> bool:

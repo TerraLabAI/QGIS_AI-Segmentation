@@ -21,6 +21,16 @@ class AutoRunTerminalMixin:
         self._set_zone_badge_enabled(True)
         if self.dock_widget:
             try:
+                # The hold goes up BEFORE the run screen is stood down, not at
+                # the top of the finalize below. Everything in between (the
+                # credit refresh, the telemetry, the run summary) can serve the
+                # event loop, and with the flag still down the dock painted one
+                # frame of the finished screen, so the user saw the run "end"
+                # for about a second before "building the shapes" replaced it.
+                # Headless has no screen to protect and releases the hold on a
+                # path this one does not reach.
+                if not self._auto_headless_run:
+                    self.dock_widget.set_auto_finalizing(True)
                 self.dock_widget.set_auto_run_active(False)
                 self.dock_widget.set_auto_status("idle")
             except (RuntimeError, AttributeError):
@@ -36,6 +46,10 @@ class AutoRunTerminalMixin:
         worker = self._auto_worker
         tiles_succeeded = getattr(worker, "tiles_succeeded", 0)
         self._capture_auto_mask_gsd(worker)
+        # The client profile is read off the worker and the render bridge
+        # here, while both still exist; the completed event carries it.
+        from .auto_client_profile import snapshot_worker_profile
+        snapshot_worker_profile(self, worker)
         # The all-finished signal fires from inside the worker's run loop, which
         # may not have returned yet: park a strong ref before dropping ours so a
         # still-running QThread is never garbage-collected (which aborts QGIS).
@@ -92,15 +106,26 @@ class AutoRunTerminalMixin:
             # which are free (RESPLIT_CHARGE_EVERY=0). The charged number is the
             # quoted base grid, shown by the dock's count row. Logging it as
             # "billed" reads as an overcharge.
+            # The two client threads the split never covered. A run whose
+            # worker phases add up to a fraction of its wall clock spent the
+            # rest here, and until these were logged there was no way to tell
+            # that from the message panel.
+            stitcher = getattr(self, "_auto_stitcher", None)
+            fold_ms = float(getattr(stitcher, "fold_ms", 0.0) or 0.0)
+            folded = int(getattr(stitcher, "tiles_folded", 0) or 0)
             QgsMessageLog.logMessage(
                 "Auto detection: run summary - render {} ms, detect {} ms, "
                 "{} tile(s) processed, {} raw detection(s), mask/render px ratio "
-                "{:.2f}, {} saturated tile(s) re-split (free), {} tile(s) gate-skipped"
+                "{:.2f}, {} saturated tile(s) re-split (free), {} tile(s) gate-skipped, "
+                "stitch {:.0f} ms over {} tile(s), live draw {:.0f} ms over {} tick(s)"
                 .format(
                     self._auto_render_ms, detect_ms, tiles_succeeded,
                     self._auto_raw_count, ratio,
                     getattr(self, "_auto_subdiv_tiles", 0),
-                    getattr(self, "_auto_gate_skipped_tiles", 0)),
+                    getattr(self, "_auto_gate_skipped_tiles", 0),
+                    fold_ms, folded,
+                    float(getattr(self, "_auto_live_draw_ms", 0.0)),
+                    int(getattr(self, "_auto_live_draw_ticks", 0))),
                 "AI Segmentation", level=Qgis.MessageLevel.Info,
             )
         except (RuntimeError, AttributeError):
@@ -307,23 +332,40 @@ class AutoRunTerminalMixin:
         # that spent it inside restore_absorbed_partitions (super-linear in the
         # parents carrying parts) read the same in the log.
         self._mark_finalize_phase(state, "restore")
-        merged_ided = self._resolve_exemplar_finalize_ided()
+        merged_ided, remerge = self._begin_exemplar_finalize_merge()
         self._auto_merger = None
-        # The end-of-run redundancy sweep (drop leftover partial readings mostly
-        # painted over by larger objects: patches/strips double-painting a big
-        # roof, which pairwise dedup cannot catch) is GEOS-heavy on dense runs,
-        # so it runs cooperatively (phase "sweep") and never freezes the GUI at
-        # "run finished".
+        from qgis.PyQt.QtCore import QTimer
+        if remerge is not None:
+            # An exemplar-only run read as distinct objects: the fold of every
+            # retained fragment is its own cooperative phase, so a run with
+            # tens of thousands of them no longer freezes the map for the
+            # length of the re-merge.
+            state["phase"] = "remerge"
+            state["remerge"] = remerge
+            state["remerge_t0"] = None
+            QTimer.singleShot(0, self._step_auto_finalize_refine)
+            return
+        self._seed_finalize_sweep_phase(state, merged_ided)
+
+    def _seed_finalize_sweep_phase(self, state: dict, merged_ided: list) -> None:
+        """Autosave the billed set, then seed the cooperative sweep phase.
+
+        Reached with the merged rows in hand, from the drain directly or from
+        the exemplar re-merge phase. The end-of-run redundancy sweep (drop
+        leftover partial readings mostly painted over by larger objects:
+        patches/strips double-painting a big roof, which pairwise dedup cannot
+        catch) is GEOS-heavy on dense runs, so it runs cooperatively (phase
+        "sweep") and never freezes the GUI at "run finished"."""
         if not merged_ided:
             self._auto_finalize_state = None
             self._record_auto_zero_result(state["tiles_succeeded"])
             return
 
-        # Crash net: the billed merged set reaches DISK before the fragile
-        # sweep/build/filter/review tail runs on it. If anything past this
-        # point dies, the next plugin start offers the file back, so a paid
-        # run can no longer end with nothing delivered. Best-effort: a failed
-        # write logs and changes nothing.
+        # Crash net: the billed merged set is handed to disk as soon as the
+        # merger is read, in parallel with the fragile sweep/build/filter/review
+        # tail. If anything past this point dies, the next plugin start offers
+        # the file back, so a paid run can no longer end with nothing
+        # delivered. Best-effort: a failed write logs and changes nothing.
         self._mark_finalize_phase(state, "autosave")
         self._autosave_billed_results(merged_ided)
 
@@ -381,6 +423,7 @@ class AutoRunTerminalMixin:
             # _on_auto_zero_detections still emits its separate plugin_error, the
             # same pairing the _on_auto_error NETWORK path uses.
             completed_terminal = self._auto_tel_stop_reason in (None, "completed")
+            from .auto_client_profile import client_profile_props
             if completed_terminal and self._auto_run_network_dead(tiles_succeeded):
                 telemetry_run_events.track_auto_detect_failed(
                     run_id=self._auto_run_id or "",
@@ -388,6 +431,7 @@ class AutoRunTerminalMixin:
                     tiles_done=tiles_succeeded,
                     duration_ms=self._auto_duration_ms(),
                     warming_ms=self._auto_warming_wait_ms(),
+                    client_profile=client_profile_props(self),
                 )
             else:
                 telemetry_run_events.track_auto_zero_result(
@@ -413,9 +457,17 @@ class AutoRunTerminalMixin:
                         blob_armed=blob_armed,
                         blob_dropped=blob_dropped,
                         tile_ground_m=tile_m,
+                        client_profile=client_profile_props(self),
                     )
         except Exception:
             pass  # nosec B110
+        # An empty run is a run: its log ships like any other terminal. Sent
+        # once per run, so the finalize pump's own send is a no-op after this.
+        try:
+            from ...core.run_log_capture import send_run_log
+            send_run_log("completed")
+        except Exception:  # noqa: BLE001  # nosec B110
+            pass
         # D8: a HEALTHY empty interactive run (tiles processed, nothing found)
         # enters the review directly on the Correct step, where a drawn box
         # can trigger a surgical re-detect; the selection layer stays alive so

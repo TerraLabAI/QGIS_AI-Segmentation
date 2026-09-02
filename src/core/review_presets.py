@@ -32,6 +32,12 @@ from .review_defaults import (
     fill_holes_max_m2_with_floor,
     min_size_noise_floor_m2,
 )
+from .shape_policy_dials import (
+    auto_review_clean_default,
+    auto_review_close_notches_default,
+    auto_review_expand_default,
+    auto_review_simplify_default,
+)
 
 # Neutral fallback shape class: the faithful review_defaults values. Used for
 # an unknown prompt and whenever no server policy is available.
@@ -43,6 +49,19 @@ _DEFAULT_SETTINGS: dict = {
     "simplify_px": AUTO_REVIEW_SIMPLIFY_DEFAULT,
     "clean_px": AUTO_REVIEW_CLEAN_DEFAULT,
 }
+
+
+def _default_settings() -> dict:
+    """The neutral settings with the served opening values applied.
+
+    Built at call time: the dials fill after import, and the two the
+    server may move (simplify and clean) have to read what is served now.
+    """
+    return {
+        **_DEFAULT_SETTINGS,
+        "simplify_px": auto_review_simplify_default(AUTO_REVIEW_SIMPLIFY_DEFAULT),
+        "clean_px": auto_review_clean_default(AUTO_REVIEW_CLEAN_DEFAULT),
+    }
 
 
 # Normalization and keyword matching are shared with the other policy tables
@@ -68,11 +87,11 @@ def _class_settings_for(cls: str, policy: dict | None) -> dict:
     served = (review_policy(policy).get("class_settings") or {}).get(cls)
     if cls == "default":
         return (
-            {**_DEFAULT_SETTINGS, **served}
+            {**_default_settings(), **served}
             if isinstance(served, dict) and served
-            else _DEFAULT_SETTINGS
+            else _default_settings()
         )
-    return served if isinstance(served, dict) else _DEFAULT_SETTINGS
+    return served if isinstance(served, dict) else _default_settings()
 
 
 def shape_class_for(prompt: str, policy: dict | None = None) -> str:
@@ -105,15 +124,42 @@ def shape_class_for(prompt: str, policy: dict | None = None) -> str:
     category_to_class = review.get("category_to_class")
     if isinstance(category_to_class, dict):
         try:
-            from .presets.segmentation_presets import fallback_categories
-
-            for cat in fallback_categories():
-                for preset in cat["presets"]:
-                    if preset["prompt"].lower() == text:
-                        return category_to_class.get(cat["key"], "default")
+            for cat in live_catalog_categories():
+                for preset in cat.get("presets") or []:
+                    if str(preset.get("prompt", "")).lower() == text:
+                        return category_to_class.get(cat.get("key"), "default")
         except Exception:  # noqa: BLE001 -- catalogue lookup is best-effort  # nosec B110
             pass
     return "default"
+
+
+# (catalogue stamp, categories): the served catalogue is rebuilt on every read,
+# and the class lookups above run once per object, so one copy is held per
+# cached revision. An empty stamp is the shipped list, which is built once.
+_LIVE_CATALOG: tuple[str, list[dict]] | None = None
+
+
+def live_catalog_categories() -> list[dict]:
+    """The catalogue the class lookups walk: the disk-cached served one when
+    a fetch ever landed (its TTL does not matter here, a stale catalogue still
+    beats the shipped nine), else the shipped list. Never networks."""
+    global _LIVE_CATALOG
+    from .presets.segmentation_presets import catalog_revision, fallback_categories
+
+    stamp = catalog_revision()
+    if not stamp:
+        return fallback_categories()
+    held = _LIVE_CATALOG
+    if held is not None and held[0] == stamp:
+        return held[1]
+    try:
+        from .presets.segmentation_presets_client import cached_or_offline_catalog
+
+        cats, _tops = cached_or_offline_catalog()
+    except Exception:  # noqa: BLE001 -- no cache or no Qt is the shipped list
+        cats = fallback_categories()
+    _LIVE_CATALOG = (stamp, cats)
+    return cats
 
 
 def min_size_m2_for(
@@ -155,14 +201,17 @@ def review_preset_for(
     cls = shape_class_for(prompt, policy)
     settings = _class_settings_for(cls, policy)
     return {
-        "simplify_px": float(settings.get("simplify_px", AUTO_REVIEW_SIMPLIFY_DEFAULT)),
+        "simplify_px": float(settings.get(
+            "simplify_px", auto_review_simplify_default(AUTO_REVIEW_SIMPLIFY_DEFAULT))),
         "smooth": bool(settings.get("smooth", AUTO_REVIEW_SMOOTH_DEFAULT)),
-        "expand_px": int(settings.get("expand_px", AUTO_REVIEW_EXPAND_DEFAULT)),
+        "expand_px": int(settings.get(
+            "expand_px", auto_review_expand_default(AUTO_REVIEW_EXPAND_DEFAULT))),
         # Not settings.get(): a class does not get to turn hole filling off, it
         # only sets how far above the floor it goes (see _fill_holes_max_m2).
         "fill_holes": AUTO_REVIEW_FILL_HOLES_DEFAULT,
         "fill_holes_max_m2": _fill_holes_max_m2(settings),
-        "clean_px": float(settings.get("clean_px", AUTO_REVIEW_CLEAN_DEFAULT)),
+        "clean_px": float(settings.get(
+            "clean_px", auto_review_clean_default(AUTO_REVIEW_CLEAN_DEFAULT))),
         "close_notches_m": _close_notches_m(settings),
         "ortho": _ortho_default_for(prompt, cls, settings, policy),
         "min_size_m2": min_size_m2_for(prompt, mask_gsd_m, policy),
@@ -202,7 +251,7 @@ def _close_notches_m(settings: dict) -> float:
     val = settings.get("close_notches_m")
     if isinstance(val, (int, float)) and not isinstance(val, bool) and val > 0:
         return float(val)
-    return AUTO_REVIEW_CLOSE_NOTCHES_M_DEFAULT
+    return auto_review_close_notches_default(AUTO_REVIEW_CLOSE_NOTCHES_M_DEFAULT)
 
 
 def _fill_holes_max_m2(settings: dict) -> float:

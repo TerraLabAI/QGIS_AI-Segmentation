@@ -112,17 +112,27 @@ class CorrectGestureArt(QWidget):
         return path
 
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt name
+        # end() runs in a finally: a painter still active on the widget when
+        # the fault unwinds leaves the device locked, and the next paint on it
+        # fails too. A paint fault must never reach Qt either way.
         try:
             painter = QPainter(self)
+        except Exception:  # noqa: BLE001 - nothing to close, nothing to paint
+            return
+        try:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
             box = self._box()
             if self._method == "manual":
                 self._paint_manual(painter, box)
             else:
                 self._paint_ai(painter, box)
-            painter.end()
         except Exception:  # noqa: BLE001 - a paint fault must never reach Qt
-            return
+            pass  # nosec B110
+        finally:
+            try:
+                painter.end()
+            except Exception:  # noqa: BLE001 - already ended or gone
+                pass  # nosec B110
 
     # ------------------------------------------------------------------
 

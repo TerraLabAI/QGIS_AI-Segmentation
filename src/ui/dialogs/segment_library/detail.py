@@ -11,6 +11,7 @@ auto-loop animation.
 from __future__ import annotations
 
 from qgis.PyQt.QtCore import QSettings, Qt, QTimer, pyqtSignal
+from qgis.PyQt.QtGui import QGuiApplication
 from qgis.PyQt.QtWidgets import (
     QApplication,
     QComboBox,
@@ -58,6 +59,7 @@ from .common import (
     _iso_norm,
     _relative_when,
 )
+from .run_summary import run_status_text, run_time_text, run_zone_area_text
 
 # Width asked of the image route for the run popup's comparison. One of the
 # sizes the route serves; a larger request would be snapped down to it anyway.
@@ -89,7 +91,7 @@ class _DetailDialogBase(QDialog):
 
     def _build_shell(self, title: str, badge_text: str) -> None:
         self.setWindowTitle(title or tr("Details"))
-        self.setMinimumSize(560, 420)
+        self._apply_screen_floor(560, 420)
         self.setSizeGripEnabled(True)
         self._fullscreen = False
         self._aspect_locked = False
@@ -144,7 +146,7 @@ class _DetailDialogBase(QDialog):
         badge_row.setContentsMargins(0, 0, 0, 0)
         # Double any "&" so Qt does not eat it as a mnemonic marker (a category
         # like "Buildings & structures" would otherwise render with a gap).
-        badge = QLabel(badge_text.upper().replace("&", "&&"))
+        badge = QLabel(badge_text.replace("&", "&&"))
         badge.setStyleSheet(_BADGE_STYLE)
         badge_row.addWidget(badge)
         badge_row.addStretch(1)
@@ -254,6 +256,23 @@ class _DetailDialogBase(QDialog):
         self.raise_()
         self.activateWindow()
 
+    def _apply_screen_floor(self, floor_w: int, floor_h: int) -> None:
+        """Minimum size, capped by the screen this window opens on.
+
+        A flat floor taller than the desktop (a small laptop at a large text
+        scale) leaves a window nothing can bring back. Same read as the
+        library shell uses.
+        """
+        try:
+            screen = self.screen() or QGuiApplication.primaryScreen()
+        except (AttributeError, RuntimeError):
+            screen = QGuiApplication.primaryScreen()
+        if screen is not None:
+            avail = screen.availableGeometry()
+            floor_w = min(floor_w, int(avail.width() * 0.96))
+            floor_h = min(floor_h, int(avail.height() * 0.92))
+        self.setMinimumSize(floor_w, floor_h)
+
     def keyPressEvent(self, event):  # noqa: N802 - Qt signature
         if event.key() == Qt.Key.Key_Escape and self._fullscreen:
             self._toggle_fullscreen()
@@ -263,7 +282,7 @@ class _DetailDialogBase(QDialog):
     # -- shared info blocks -------------------------------------------------------
 
     def _section_label(self, text: str) -> QLabel:
-        lbl = QLabel(text.upper())
+        lbl = QLabel(text)
         lbl.setStyleSheet(_SECTION_STYLE)
         return lbl
 
@@ -281,6 +300,7 @@ class _DetailDialogBase(QDialog):
         header.addWidget(self._section_label(tr("Prompt")))
         header.addStretch(1)
         self._copy_btn = QPushButton(tr("Copy"))
+        self._copy_btn.setAutoDefault(False)
         self._copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._copy_btn.setFlat(True)
         self._copy_btn.setToolTip(tr("Copy prompt"))
@@ -380,6 +400,7 @@ class _PresetDetailDialog(_DetailDialogBase):
         use = QPushButton(tr("Use this prompt"))
         use.setStyleSheet(_PRIMARY_BTN)
         use.setMinimumHeight(38)
+        use.setDefault(True)
         use.setCursor(Qt.CursorShape.PointingHandCursor)
         use.clicked.connect(self._on_use)
         # View-only (a run is in flight): inspection stays open, picking does not.
@@ -420,12 +441,22 @@ class _RunDetailDialog(_DetailDialogBase):
 
         if self._lib._plugin is None:
             hint = tr("Open the Library from the Automatic page to use this.")
-            for btn in (self.restore_btn, self.export_btn):
+            for btn in (self.restore_btn, self.export_btn, self.rerun_btn):
                 btn.setEnabled(False)
                 btn.setToolTip(hint)
-        if not run.get("run_id"):
-            # Legacy pseudo-run: no server row to star.
-            self.star_btn.setEnabled(False)
+        elif not self._lib._auth:
+            # Every one of these three reads the stored run back from the
+            # account. Signed out they returned in silence, so the click looked
+            # like a bug; say what is missing instead.
+            hint = tr("Sign in to reopen, export or run this zone again.")
+            for btn in (self.restore_btn, self.export_btn, self.rerun_btn):
+                btn.setEnabled(False)
+                btn.setToolTip(hint)
+        if not run.get("run_id") or not self._lib._auth:
+            # No server row to flip (a legacy pseudo-run, or no account): the
+            # star would light up and be gone on the next open. Hidden, not
+            # greyed, so the footer carries no dead control.
+            self.star_btn.setVisible(False)
 
         # Before/after of the run's preview tile (input vs mask overlay),
         # fetched with the account's auth headers via the image route. Own
@@ -451,23 +482,34 @@ class _RunDetailDialog(_DetailDialogBase):
             self.slider.set_placeholder_text(tr("No preview"))
 
     def _build_info(self) -> None:
+        """The same facts the card carries, in the same words, plus the two
+        the card has no room for (the ground resolution and the drawn
+        examples). A detail that renames what the card called something else
+        reads as a different run."""
         run = self._run
         chips: list[tuple[str, str]] = []
         when = _relative_when(_iso_norm(
             run.get("started_at") or run.get("created_at")))
+        clock = run_time_text(run)
         if when:
-            chips.append((tr("DATE"), when))
-        chips.append((tr("OBJECTS"), str(run.get("objects") or 0)))
-        chips.append((tr("CHARGED"), str(run.get("credits") or 0)))
-        chips.append((tr("CLOUD DETECTIONS"), str(run.get("tiles") or 0)))
+            chips.append((tr("Date"), f"{when}, {clock}" if clock else when))
+        zone = run_zone_area_text(run)
+        if zone:
+            chips.append((tr("Zone"), zone))
+        chips.append((tr("Objects"), str(run.get("objects") or 0)))
+        chips.append((tr("Cloud detections"), str(run.get("tiles") or 0)))
+        chips.append((tr("Charged"), str(run.get("credits") or 0)))
         try:
             mupp = float(run.get("pixel_size_m") or 0)
             if mupp > 0:
-                chips.append((tr("RESOLUTION"), f"{mupp:.2f} m/px"))
+                chips.append((tr("Resolution"), f"{mupp:.2f} m/px"))
         except (TypeError, ValueError):
             pass
+        status = run_status_text(run)
+        if status:
+            chips.append((tr("Status"), status))
         if run.get("has_exemplars"):
-            chips.append((tr("EXAMPLE"), tr("Used")))
+            chips.append((tr("Example"), tr("Used")))
         self._info_col.addWidget(self._build_prompt_block(self._prompt))
         self._info_col.addWidget(self._chips_grid(chips))
 
@@ -479,6 +521,10 @@ class _RunDetailDialog(_DetailDialogBase):
         actions.setSpacing(8)
         self.restore_btn = QPushButton(tr("Restore to map"))
         self.restore_btn.setStyleSheet(_ACTION_BTN)
+        # None of the three actions here is what Return means: each one closes
+        # this popup and moves the map. A QPushButton inside a QDialog claims
+        # that role by default, so the first one built was firing on Return.
+        self.restore_btn.setAutoDefault(False)
         self.restore_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.restore_btn.setToolTip(tr(
             "Reopens this run's review at the same place, with its imagery. "
@@ -488,10 +534,25 @@ class _RunDetailDialog(_DetailDialogBase):
         actions.addWidget(self.restore_btn, 1)
         self.export_btn = QPushButton(tr("Export..."))
         self.export_btn.setStyleSheet(_ACTION_BTN)
+        self.export_btn.setAutoDefault(False)
         self.export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.export_btn.clicked.connect(
             lambda: self._lib._request_export(self._run, self))
         actions.addWidget(self.export_btn, 1)
+        # Quietest control in the window, and the only one that cannot be
+        # undone from here. Hidden outright when there is no server row to
+        # remove, rather than sitting greyed beside two live buttons.
+        self.delete_btn = QPushButton(tr("Delete run"))
+        self.delete_btn.setStyleSheet(_COPY_BTN)
+        self.delete_btn.setAutoDefault(False)
+        self.delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.delete_btn.setToolTip(tr(
+            "Takes this run out of your history. Its detections stay stored."))
+        self.delete_btn.clicked.connect(
+            lambda: self._lib._request_delete(self._run, self))
+        self.delete_btn.setVisible(
+            bool(self._run.get("run_id")) and bool(self._lib._auth))
+        actions.addWidget(self.delete_btn)
         col.addLayout(actions)
 
         primary = QHBoxLayout()
@@ -512,11 +573,11 @@ class _RunDetailDialog(_DetailDialogBase):
         self.rerun_btn = QPushButton(tr("Run this zone again"))
         self.rerun_btn.setStyleSheet(_PRIMARY_BTN)
         self.rerun_btn.setMinimumHeight(38)
+        self.rerun_btn.setAutoDefault(False)
         self.rerun_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.rerun_btn.setToolTip(tr(
-            "Points the map back at this run with the same object and the same "
-            "number of cloud detections, ready to detect. Nothing is spent "
-            "until you do."))
+            "Points the map back at this run, ready to detect the same object "
+            "again. Nothing is spent until you do."))
         self.rerun_btn.clicked.connect(
             lambda: self._lib._request_rerun(self._run, self))
         primary.addWidget(self.rerun_btn, 1)
@@ -542,13 +603,27 @@ class _RunDetailDialog(_DetailDialogBase):
             tr("Remove from favorites") if fav else tr("Add to favorites"))
         self.star_btn.blockSignals(False)
 
-    def set_busy(self, busy: bool) -> None:
-        for btn in (self.restore_btn, self.export_btn):
-            btn.setEnabled(not busy and self._lib._plugin is not None)
-        if busy:
-            self.restore_btn.setText(tr("Loading..."))
-        else:
-            self.restore_btn.setText(tr("Restore to map"))
+    def set_busy(self, busy: bool, actor: str = "restore") -> None:
+        # Run again reads the run back from the account exactly as the other
+        # two do, and one fetch runs at a time: left live it took the click and
+        # answered nothing, which reads as a broken button.
+        usable = (not busy and self._lib._plugin is not None
+                  and bool(self._lib._auth)
+                  and not getattr(self._lib, "_view_only", False))
+        buttons = {
+            "restore": (self.restore_btn, tr("Restore to map")),
+            "export": (self.export_btn, tr("Export...")),
+            "rerun": (self.rerun_btn, tr("Run this zone again")),
+        }
+        for btn, _label in buttons.values():
+            btn.setEnabled(usable)
+        # Removing a run needs the account, not the plugin, so it follows the
+        # same one-at-a-time rule but not the view-only one.
+        self.delete_btn.setEnabled(not busy and bool(self._lib._auth))
+        # The wait belongs on the button that was pressed. Written on Restore
+        # whatever the user clicked, it read as the wrong action starting.
+        for key, (btn, label) in buttons.items():
+            btn.setText(tr("Loading...") if busy and key == actor else label)
 
     def _on_loaded(self, pid: str, which: str, pixmap) -> None:
         if pid != (self._run.get("preview_request_id") or ""):
@@ -601,10 +676,20 @@ class _RunProgressDialog(QDialog):
         row.addStretch()
         cancel = QPushButton(tr("Cancel"))
         cancel.setStyleSheet(_GHOST_BTN_QSS)
+        cancel.setAutoDefault(False)
         cancel.setCursor(Qt.CursorShape.PointingHandCursor)
         cancel.clicked.connect(self.reject)
         row.addWidget(cancel)
         lay.addLayout(row)
+
+    def keyPressEvent(self, event):  # noqa: N802 - Qt signature
+        # Escape reaches reject(), which cancels. On a window whose work takes
+        # minutes that is one stray key away from starting over, so the way out
+        # is the Cancel button the user has to aim at.
+        if event.key() == Qt.Key.Key_Escape and not self._done:
+            event.ignore()
+            return
+        super().keyPressEvent(event)
 
     def set_step(self, text: str, done: int = 0, total: int = 0) -> None:
         """One line of what is happening. ``total`` of 0 leaves the line busy
@@ -631,17 +716,22 @@ class _RunProgressDialog(QDialog):
 class _ExportRunDialog(QDialog):
     """Format + confidence + destination for the direct Export of a past run."""
 
-    _FORMATS = (
-        ("GeoPackage", "GPKG"),
-        ("GeoJSON", "GeoJSON"),
-        ("ESRI Shapefile", "ESRI Shapefile"),
-        ("KML", "KML"),
-    )
+    # What each driver is called on screen. Only the ones whose id is not
+    # already the name people use need an entry; a driver the exporter gains
+    # and this does not name still appears, under its own id.
+    _DRIVER_LABELS = {"GPKG": "GeoPackage"}
 
     def __init__(self, run: dict, default_confidence: float, parent=None):
         super().__init__(parent)
+        from ....core.polygon_exporter import EXPORT_DRIVERS
+
         self._run = run
-        self.setWindowTitle(tr("Export..."))
+        # One source for the formats: a driver added to the exporter shows up
+        # here without a second list to remember.
+        self._formats = tuple(
+            (self._DRIVER_LABELS.get(driver, driver), driver)
+            for driver in EXPORT_DRIVERS)
+        self.setWindowTitle(tr("Export"))
         self.setMinimumWidth(420)
 
         lay = QVBoxLayout(self)
@@ -653,11 +743,14 @@ class _ExportRunDialog(QDialog):
         fmt_lbl.setStyleSheet("color: palette(text); background: transparent;")
         form_row.addWidget(fmt_lbl)
         self.format_combo = QComboBox()
-        for label, _driver in self._FORMATS:
+        for label, _driver in self._formats:
             self.format_combo.addItem(label)
-        self.format_combo.setToolTip(tr(
-            "GeoPackage keeps the embedded style; other formats are saved "
-            "without a style."))
+        self.format_combo.setToolTip(
+            tr("GeoPackage keeps the embedded style; other formats are saved "
+               "without a style.")
+            + "\n"
+            + tr("GeoJSON and KML are written in EPSG:4326. Shapefile "
+                 "shortens field names to 10 characters."))
         self.format_combo.currentIndexChanged.connect(self._sync_extension)
         form_row.addWidget(self.format_combo, 1)
         lay.addLayout(form_row)
@@ -684,6 +777,10 @@ class _ExportRunDialog(QDialog):
         path_row.addWidget(self.path_edit, 1)
         browse = QPushButton(tr("Browse..."))
         browse.setStyleSheet(_GHOST_BTN_QSS)
+        # Return in this form means Export. Every QPushButton in a QDialog
+        # volunteers for that, and this one is built first, so Return over the
+        # format or the confidence box was opening the file chooser instead.
+        browse.setAutoDefault(False)
         browse.setCursor(Qt.CursorShape.PointingHandCursor)
         browse.clicked.connect(self._pick_path)
         path_row.addWidget(browse)
@@ -692,19 +789,21 @@ class _ExportRunDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         cancel = QPushButton(tr("Cancel"))
+        cancel.setAutoDefault(False)
         cancel.setCursor(Qt.CursorShape.PointingHandCursor)
         cancel.clicked.connect(self.reject)
         btn_row.addWidget(cancel)
-        self.ok_btn = QPushButton(tr("Export..."))
+        self.ok_btn = QPushButton(tr("Export"))
         self.ok_btn.setStyleSheet(_PRIMARY_BTN)
         self.ok_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.ok_btn.setDefault(True)
         self.ok_btn.setEnabled(False)
         self.ok_btn.clicked.connect(self.accept)
         btn_row.addWidget(self.ok_btn)
         lay.addLayout(btn_row)
 
     def driver(self) -> str:
-        return self._FORMATS[self.format_combo.currentIndex()][1]
+        return self._formats[self.format_combo.currentIndex()][1]
 
     def confidence(self) -> float:
         return float(self.conf_spin.value())
@@ -749,10 +848,10 @@ class _ExportRunDialog(QDialog):
 
         from ....core.polygon_exporter import driver_extension
         ext = driver_extension(self.driver())
-        label = self._FORMATS[self.format_combo.currentIndex()][0]
+        label = self._formats[self.format_combo.currentIndex()][0]
         suggested = os.path.join(self._start_dir(), self._default_name() + ext)
         path, _filter = QFileDialog.getSaveFileName(
-            self, tr("Export..."), suggested,
+            self, tr("Export"), suggested,
             f"{label} (*{ext})")
         if not path:
             return

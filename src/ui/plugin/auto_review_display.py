@@ -210,6 +210,10 @@ class AutoReviewDisplayMixin:
         except (RuntimeError, AttributeError):
             return
         self._review_edit_style_layer_id = layer_id
+        # A new review layer means a swap deferred against the old one can never
+        # arrive. Without this the pending flag stayed set and every later edit
+        # state change on the new layer was ignored.
+        self._review_edit_style_pending = False
 
     def _on_review_layer_edit_state(self) -> None:
         """The review layer entered or left an edit session: re-pick the
@@ -225,10 +229,17 @@ class AutoReviewDisplayMixin:
         """
         if getattr(self, "_review_edit_style_pending", False):
             return
+        owner = getattr(self, "dock_widget", None)
+        if owner is None:
+            return
         self._review_edit_style_pending = True
         try:
-            from qgis.PyQt.QtCore import QTimer
-            QTimer.singleShot(0, self._reapply_review_display_after_edit_state)
+            from ...core.qt_compat import safe_single_shot
+
+            # Parented to the dock, so the deferred swap dies with the panel
+            # instead of landing on a freed layer one turn later.
+            safe_single_shot(
+                0, owner, self._reapply_review_display_after_edit_state)
         except (RuntimeError, AttributeError, ImportError):
             # No timer, no deferral: keeping the colour right is worth less than
             # not reentering the commit, so drop this swap. The next mode switch

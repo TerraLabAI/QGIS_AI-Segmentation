@@ -15,6 +15,7 @@ from qgis.core import (
     QgsProcessingParameterRasterLayer,
 )
 
+from ..core.i18n import tr
 from .algorithm_support import (
     FACADE_MISSING_MESSAGE,
     PLAN_HELP_LINE,
@@ -173,7 +174,7 @@ class SegmentationStatusAlgorithm(QgsProcessingAlgorithm):
             available = self._project_raster_names() or (
                 [selected] if selected else [])
 
-        feedback.pushInfo(f"State: {state or 'unknown'}. Ready: {ready}.")
+        feedback.pushInfo(tr("State: {0}. Ready: {1}.").format(state or "unknown", ready))
         if action:
             feedback.pushInfo(action)
 

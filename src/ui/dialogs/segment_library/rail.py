@@ -33,6 +33,7 @@ from ...dock.font_scale import scale_px_length
 from .common import (
     _RAIL_FAVORITES_TARGET,
     _RAIL_GROUP,
+    _RAIL_HISTORY_VIEWS,
     _RAIL_ITEM_COUNT,
     _RAIL_PANEL,
     _RAIL_POPULAR_TARGET,
@@ -80,22 +81,25 @@ class LibraryRailMixin:
 
         self._add_rail_group(box, tr("Featured"), first=True)
         box.addWidget(self._make_rail_item(
-            _RAIL_POPULAR_TARGET, tr("Popular"), self._rail_count(_RAIL_POPULAR_TARGET)))
+            _RAIL_POPULAR_TARGET, tr("Popular"),
+            self._rail_count_label(_RAIL_POPULAR_TARGET)))
 
         rows = self._category_rail_rows()
         if rows:
             self._add_rail_group(box, tr("Categories"))
             for target, label, count in rows:
-                box.addWidget(self._make_rail_item(target, label, count))
+                box.addWidget(self._make_rail_item(
+                    target, label, self._rail_count_text(count)))
 
         # The user's own work closes the rail, the way AI Edit's does: a first
         # run has nothing there, so the curated content has to lead.
         self._add_rail_group(box, tr("My work"))
         box.addWidget(self._make_rail_item(
-            _RAIL_RECENT_TARGET, tr("Recent"), self._rail_count(_RAIL_RECENT_TARGET)))
+            _RAIL_RECENT_TARGET, tr("Recent"),
+            self._rail_count_label(_RAIL_RECENT_TARGET)))
         box.addWidget(self._make_rail_item(
             _RAIL_FAVORITES_TARGET, tr("Favorites"),
-            self._rail_count(_RAIL_FAVORITES_TARGET)))
+            self._rail_count_label(_RAIL_FAVORITES_TARGET)))
 
         box.addStretch()
         return panel
@@ -123,9 +127,15 @@ class LibraryRailMixin:
         lbl.setContentsMargins(9, 2 if first else 12, 8, 4)
         box.addWidget(lbl)
 
-    def _make_rail_item(self, target: str, label: str, count: int) -> QPushButton:
+    def _make_rail_item(self, target: str, label: str,
+                        count_text: str) -> QPushButton:
         btn = QPushButton()
         btn.setObjectName("railitem")
+        # A rail row is navigation, never the window's default action. Left as
+        # it comes, the first row built volunteers as the dialog's default
+        # button, so Return typed in the search box jumped the user to that
+        # row and cleared what they had typed.
+        btn.setAutoDefault(False)
         btn.setCursor(QtC.PointingHandCursor)
         btn.setStyleSheet(_rail_item_style(False))
         btn.setSizePolicy(QtC.SizePolicyExpanding, QtC.SizePolicyFixed)
@@ -140,7 +150,7 @@ class LibraryRailMixin:
         text.setStyleSheet(_rail_label_style(False))
         text.setAttribute(QtC.WA_TransparentForMouseEvents)
         row.addWidget(text, 1)
-        count_lbl = QLabel(self._rail_count_text(count))
+        count_lbl = QLabel(count_text)
         count_lbl.setStyleSheet(_RAIL_ITEM_COUNT)
         count_lbl.setAttribute(QtC.WA_TransparentForMouseEvents)
         row.addWidget(count_lbl)
@@ -159,19 +169,42 @@ class LibraryRailMixin:
         return str(count) if count > 0 else ""
 
     def _rail_count(self, target: str) -> int:
-        """How many entries the row's view holds right now."""
+        """How many entries the row's view holds right now.
+
+        A history row counts what its grid would actually paint, and nothing
+        else. Counting the local recents behind a signed-in account was the
+        bug this rule exists for: the rail said Recent 20 while the grid was
+        still loading the account's own runs, which was never 20.
+        """
         if target == _RAIL_POPULAR_TARGET:
             return sum(1 for i in self._top_picks if i in self._by_id)
         if target == _RAIL_RECENT_TARGET:
-            runs = self._hist_runs.get("all") or []
-            return len(runs) if runs else len(self._local_recent_entries())
+            if not self._auth:
+                return len(self._local_recent_entries())
+            return len(self._hist_runs.get("all") or [])
         if target == _RAIL_FAVORITES_TARGET:
-            return (len(self._hist_runs.get("favorites") or [])
-                    + len(self._favorite_template_presets()))
+            server = (len(self._hist_runs.get("favorites") or [])
+                      if self._auth else 0)
+            return server + len(self._favorite_template_presets())
         for cat in self._categories:
             if cat.get("key") == target:
                 return len(cat.get("presets", []))
         return 0
+
+    def _rail_count_label(self, target: str) -> str:
+        """The count as the row prints it.
+
+        Blank while the view is still being read, because a number written
+        under a loading list is a guess. A "+" says the account holds more
+        than this page, so the row never claims a total it has not seen.
+        """
+        view = _RAIL_HISTORY_VIEWS.get(target)
+        if view is not None and self._history_view_loading(view):
+            return ""
+        text = self._rail_count_text(self._rail_count(target))
+        if text and view is not None and self._hist_has_more.get(view):
+            text += "+"
+        return text
 
     def _refresh_rail_counts(self) -> None:
         """Update the counts that move with the user's own work. Category and
@@ -179,7 +212,7 @@ class LibraryRailMixin:
         for target in (_RAIL_RECENT_TARGET, _RAIL_FAVORITES_TARGET):
             lbl = self._rail_counts.get(target)
             if _rail_widget_alive(lbl):
-                lbl.setText(self._rail_count_text(self._rail_count(target)))
+                lbl.setText(self._rail_count_label(target))
 
     # ---- navigation ------------------------------------------------------
 

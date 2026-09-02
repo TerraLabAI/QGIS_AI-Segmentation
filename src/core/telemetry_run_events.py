@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from . import telemetry_events as ev
 from .telemetry import scrub_payload_value, track
+from .telemetry_run_profile import client_props, review_pass_props
 
 
 def track_auto_start_clicked(layer_kind: str, has_credits_known: bool = False) -> None:
@@ -188,7 +189,8 @@ def track_auto_detect_completed(run_id: str, duration_ms: int, tiles_done: int,
                                 merge_mode_final: str = "separate",
                                 blob_armed: int = 0,
                                 blob_dropped: int = 0,
-                                tile_ground_m: int = 0) -> None:
+                                tile_ground_m: int = 0,
+                                client_profile: dict | None = None) -> None:
     """warming_ms is the wall time the run spent in the server waiting room
     (cold start / queue) as perceived by the user; 0 = the run never waited.
     Per-tile latency lives server-side keyed by run_id, so no client percentiles.
@@ -203,8 +205,13 @@ def track_auto_detect_completed(run_id: str, duration_ms: int, tiles_done: int,
     they need the armed count as a denominator, and both only mean something
     against the tile's ground side, which is what decides how big an object has
     to be to reach the guard.
+
+    client_profile is the flat per-run client profile (telemetry_run_profile),
+    merged in under a client_ prefix. Every key is optional: a server-side
+    reader that only has the run_id can then say where THIS machine spent the
+    run, without asking the user for a log.
     """
-    track(ev.AUTO_DETECT_COMPLETED, {
+    props = {
         "run_id": run_id,
         "duration_ms": duration_ms,
         "tiles_done": tiles_done,
@@ -220,7 +227,9 @@ def track_auto_detect_completed(run_id: str, duration_ms: int, tiles_done: int,
         "blob_armed": int(blob_armed),
         "blob_dropped": int(blob_dropped),
         "tile_ground_m": int(tile_ground_m),
-    })
+    }
+    props.update(client_props(client_profile))
+    track(ev.AUTO_DETECT_COMPLETED, props)
 
 
 def track_auto_gate_scan(run_id: str, tiles: int, group: int, scans: int,
@@ -251,16 +260,19 @@ def track_auto_gate_scan(run_id: str, tiles: int, group: int, scans: int,
 
 def track_auto_detect_failed(run_id: str, error_class: str, tiles_done: int,
                              duration_ms: int | None = None,
-                             warming_ms: int = 0) -> None:
+                             warming_ms: int = 0,
+                             client_profile: dict | None = None) -> None:
     """error_class: NETWORK/AUTH/CREDITS_EXHAUSTED/SERVER/CANCELLED/TIMEOUT/
-    DEVICE_LIMIT/UNKNOWN."""
-    track(ev.AUTO_DETECT_FAILED, {
+    DEVICE_LIMIT/UNKNOWN. client_profile as on the completed event."""
+    props = {
         "run_id": run_id,
         "error_class": error_class,
         "tiles_done": tiles_done,
         "duration_ms": duration_ms,
         "warming_ms": warming_ms,
-    })
+    }
+    props.update(client_props(client_profile))
+    track(ev.AUTO_DETECT_FAILED, props)
 
 
 def track_auto_detect_cancelled(run_id: str, tiles_done: int, tiles_total: int,
@@ -268,7 +280,8 @@ def track_auto_detect_cancelled(run_id: str, tiles_done: int, tiles_total: int,
                                 duration_ms: int | None = None,
                                 warming_ms: int = 0,
                                 backend_stalled: bool = False,
-                                submit_retries: int = 0) -> None:
+                                submit_retries: int = 0,
+                                client_profile: dict | None = None) -> None:
     """duration_ms separates a reflex cancel from a gave-up-after-minutes one;
     warming_ms says how much of that wait was the server waiting room (this is
     the busy-time signal; no separate seconds field, so the *_ms convention
@@ -276,8 +289,9 @@ def track_auto_detect_cancelled(run_id: str, tiles_done: int, tiles_total: int,
     service was unresponsive (waiting-room time and/or submit retries): the user
     cancelled a sick backend, not a healthy run. submit_retries is the run's
     total transient submit-retry count. Together they keep a backend outage from
-    reading as a user-initiated cancel in analytics."""
-    track(ev.AUTO_DETECT_CANCELLED, {
+    reading as a user-initiated cancel in analytics. client_profile as on the
+    completed event."""
+    props = {
         "run_id": run_id,
         "tiles_done": tiles_done,
         "tiles_total": tiles_total,
@@ -286,7 +300,9 @@ def track_auto_detect_cancelled(run_id: str, tiles_done: int, tiles_total: int,
         "warming_ms": warming_ms,
         "backend_stalled": bool(backend_stalled),
         "submit_retries": int(submit_retries),
-    })
+    }
+    props.update(client_props(client_profile))
+    track(ev.AUTO_DETECT_CANCELLED, props)
 
 
 def track_credits_exhausted(run_id: str, tiles_done: int, tiles_total: int,
@@ -391,10 +407,12 @@ def track_refine_in_manual_back(run_id: str, validated_count: int,
 
 def track_auto_export_done(run_id: str, exported_count: int, visible_pct_of_found: int,
                            final_confidence: int, display_mode: str,
-                           refined_in_manual: bool, autosave: bool = False) -> None:
+                           refined_in_manual: bool, autosave: bool = False,
+                           pass_profile: dict | None = None) -> None:
     """autosave marks the passive leave-safety export (mode switch, new run,
-    unload), as opposed to an explicit Finish / Save && exit."""
-    track(ev.AUTO_EXPORT_DONE, {
+    unload), as opposed to an explicit Finish / Save && exit. pass_profile is
+    the review's pass timing (telemetry_run_profile.review_pass_props)."""
+    props = {
         "run_id": run_id,
         "exported_count": exported_count,
         "visible_pct_of_found": visible_pct_of_found,
@@ -402,21 +420,27 @@ def track_auto_export_done(run_id: str, exported_count: int, visible_pct_of_foun
         "display_mode": display_mode,
         "refined_in_manual": bool(refined_in_manual),
         "autosave": bool(autosave),
-    })
+    }
+    props.update(review_pass_props(pass_profile))
+    track(ev.AUTO_EXPORT_DONE, props)
 
 
 def track_review_abandoned(run_id: str, instances_at_exit: int, refined: bool,
-                           confidence_changed: bool, exit_path: str) -> None:
+                           confidence_changed: bool, exit_path: str,
+                           pass_profile: dict | None = None) -> None:
     """The user left the Automatic review without clicking Finish. exit_path is
     one of exit_button | new_run | mode_switch | zone_redraw | raster_removed |
-    unload | other. No PII by construction."""
-    track(ev.REVIEW_ABANDONED, {
+    unload | other. No PII by construction. pass_profile as on
+    auto_export_done."""
+    props = {
         "run_id": run_id,
         "instances_at_exit": int(instances_at_exit),
         "refined": bool(refined),
         "confidence_changed": bool(confidence_changed),
         "exit_path": exit_path,
-    })
+    }
+    props.update(review_pass_props(pass_profile))
+    track(ev.REVIEW_ABANDONED, props)
 
 
 def track_auto_retry_clicked(run_id: str, discarded_count: int, confirmed: bool) -> None:

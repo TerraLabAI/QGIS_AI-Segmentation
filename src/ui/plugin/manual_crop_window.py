@@ -402,8 +402,13 @@ class ManualCropWindowMixin:
         """Canvas -> raster map-units-per-pixel for an online crop, stashing the
         per-crop mupp state. Shared by the sync (_extract_crop_only) and async
         (_begin_online_crop_fetch) online paths so both compute it identically.
+
+        The stash is held back until the crop it describes is in hand (see
+        _apply_encode_result_ok). Written straight through, a fetch that failed
+        left the baseline naming a crop that never arrived, and the click after
+        it matched that baseline, skipped the re-fetch and was answered from
+        the older imagery still loaded.
         """
         canvas_mupp, actual_mupp = self._online_crop_mupp_now(mupp_override)
-        self._current_crop_canvas_mupp = canvas_mupp
-        self._current_crop_actual_mupp = actual_mupp
+        self._pending_crop_zoom_baseline = (None, canvas_mupp, actual_mupp)
         return actual_mupp

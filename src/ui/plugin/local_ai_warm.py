@@ -46,10 +46,8 @@ import os
 
 from qgis.core import (
     Qgis,
-    QgsCoordinateTransform,
     QgsMessageLog,
     QgsPointXY,
-    QgsProject,
 )
 
 from .shared import _debounce_timer
@@ -661,31 +659,34 @@ class LocalAiWarmMixin:
             return False
         if self._current_layer is layer and self._current_raster_path:
             return True
+        held = self._current_layer is not None and self._current_layer is not layer
+        session_owns_it = (getattr(self, "_manual_session_parked", False)
+                           or bool(getattr(self, "saved_polygons", None)))
+        if held and session_owns_it:
+            # A session, parked or live, owns these values. Rebinding them
+            # behind a cursor movement points the crop reader at another
+            # raster and every later click reads the wrong imagery.
+            return False
         self._current_layer = layer
         self._current_layer_name = layer.name().replace(" ", "_")
         self._current_raster_path = source
         self._is_online_layer = False
         self._is_non_georeferenced_mode = not self._is_layer_georeferenced(layer)
+        if held:
+            # The crop the predictor holds belongs to the raster we just left,
+            # so nothing may claim to know it any more.
+            self._current_crop_info = None
+            self._encoded_crop_window = None
+            self._inflight_crop_window = None
         self._bind_correct_crop_transforms(layer)
         return True
 
-    def _bind_correct_crop_transforms(self, layer) -> None:
-        """Canvas <-> raster transforms for the bound raster, or None when both
-        sides share a CRS. Mirrors what a session start installs."""
-        self._canvas_to_raster_xform = None
-        self._raster_to_canvas_xform = None
-        try:
-            canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
-            raster_crs = layer.crs()
-            if not (raster_crs.isValid() and canvas_crs.isValid()):
-                return
-            if canvas_crs == raster_crs:
-                return
-            project = QgsProject.instance()
-            self._canvas_to_raster_xform = QgsCoordinateTransform(
-                canvas_crs, raster_crs, project)
-            self._raster_to_canvas_xform = QgsCoordinateTransform(
-                raster_crs, canvas_crs, project)
-        except (RuntimeError, AttributeError):
-            self._canvas_to_raster_xform = None
-            self._raster_to_canvas_xform = None
+    def _bind_correct_crop_transforms(self, layer=None) -> None:
+        """Canvas <-> raster transforms for the bound raster, plus the watch
+        that rebuilds them when the project CRS moves.
+
+        Exactly what a session start installs, because it is the same call: a
+        second builder here drifted from that one and never followed the CRS.
+        """
+        self._rebuild_manual_crs_transforms()
+        self._start_canvas_crs_watch()

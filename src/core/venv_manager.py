@@ -17,7 +17,10 @@ from qgis.core import Qgis
 
 from . import install_config
 from .cache_paths import PLUGIN_CACHE_DIR
-from .install_lock import InstallLock
+from .install_degraded import degraded_packages as recorded_degraded_packages
+from .install_degraded import record_degraded
+from .install_lock import InstallLock, lock_age_seconds
+from .install_progress_text import download_size_of, install_display_name
 from .logging_utils import log as _log
 from .model_config import IS_ROSETTA, SAM_PACKAGE, TORCH_MIN, TORCHVISION_MIN
 from .pip_diagnostics import (
@@ -104,7 +107,9 @@ from .pip_diagnostics import (
 from .pip_diagnostics import (
     is_windows_process_crash as _is_windows_process_crash,
 )
+from .streamed_download import sleep_unless_cancelled as _sleep_unless_cancelled
 from .subprocess_utils import get_clean_env_for_venv as _get_base_clean_env  # nosec B404
+from .subprocess_utils import get_subprocess_kwargs as _get_base_subprocess_kwargs  # nosec B404
 from .uv_manager import (
     download_uv,
     get_uv_path,
@@ -126,6 +131,28 @@ from .venv_network import (  # noqa: F401
 # Module-level uv state (set during create_venv_and_install)
 _uv_available = False
 _uv_path: str | None = None
+_uv_state_probed = False
+
+
+def _ensure_uv_state() -> None:
+    """Learn whether a uv binary is on disk when no install ran this session.
+
+    The two globals above are written by create_venv_and_install and by
+    _drop_uv, so a session that opens on a finished install reads them as
+    False. The repair paths verify_venv takes then build a pip command, though
+    uv is on disk and is the tool that works where pip's launcher does not.
+    Probed once, the first time a command is built.
+    """
+    global _uv_available, _uv_path, _uv_state_probed
+    if _uv_available or _uv_state_probed:
+        return
+    _uv_state_probed = True
+    try:
+        if uv_exists() and verify_uv():
+            _uv_available = True
+            _uv_path = get_uv_path()
+    except Exception:  # noqa: BLE001 -- pip is the answer when uv cannot be read
+        pass  # nosec B110
 
 
 PLUGIN_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -510,7 +537,7 @@ def _check_rosetta_warning() -> str | None:
 
     return (
         "Rosetta detected: QGIS is running as x86_64 on Apple Silicon. "
-        "Installing native ARM64 Python 3.10+ for SAM2 support."
+        "Installing native ARM64 Python 3.10+ for the AI engine."
     )
 
 
@@ -518,8 +545,8 @@ def _check_rosetta_warning() -> str | None:
 # the machine, one venv per Python version, and nothing on any platform records
 # "in use": the install lock covers a venv being BUILT, never one another window
 # merely has open. So a complete tree that was written to inside this window is
-# treated as somebody's working environment. Wide on purpose: deleting 4 GB
-# somebody depends on costs far more than keeping it.
+# treated as somebody's working environment. Wide on purpose: deleting an
+# environment somebody depends on costs far more than keeping it.
 _FOREIGN_VENV_KEEP_DAYS = 90
 
 # Name a venv is moved to before it is deleted, so a delete that stops part way
@@ -544,7 +571,8 @@ def _venv_may_be_another_qgis(venv_dir: str) -> bool:
             newest = max(newest, os.path.getmtime(probe))
         except OSError:
             continue
-    return (time.time() - newest) < _FOREIGN_VENV_KEEP_DAYS * 86400
+    from . import transport_dials as _td  # noqa: PLC0415 -- read at call time
+    return (time.time() - newest) < _td.foreign_venv_keep_days(_FOREIGN_VENV_KEEP_DAYS) * 86400
 
 
 def _remove_dead_venv(venv_dir: str) -> bool:
@@ -643,11 +671,11 @@ def _check_gdal_available() -> tuple[bool, str]:
             return True, f"GDAL {result.stdout.strip()} found"
         return False, ""
     except FileNotFoundError:
-        return False, (
-            "GDAL library not found. Rasterio requires GDAL to be installed.\n"
-            "Please install GDAL:\n"
-            "  brew install gdal"
-        )
+        # No system copy, which is the normal state: the published wheel
+        # carries its own. Telling the user to install one would send them
+        # after something that is not what failed, so say nothing and let the
+        # real error through.
+        return False, ""
     except Exception:
         return True, ""  # Assume OK if check fails
 
@@ -970,20 +998,27 @@ def _ensure_venv_packages_available_locked():
     #
     needs_numpy_fix = False
     old_version = "unknown"
+    # The surgery below takes QGIS's own directories out of sys.path for the
+    # whole process, which every other plugin in the session shares. It only
+    # runs where it is the fix, on the releases that bundle the old numpy.
+    numpy_fix_applies = Qgis.QGIS_VERSION_INT < 33000
     try:
         if "numpy" in sys.modules:
             old_np = sys.modules["numpy"]
             old_version = getattr(old_np, "__version__", "0.0.0")
         else:
-            # numpy not loaded yet; check if QGIS Python path has an old one
-            # by probing before we import (which would lock in the wrong one)
             old_version = "not_loaded"
 
         if old_version == "not_loaded":
-            # numpy not yet imported; ensure venv path is first so the
-            # first import picks up the venv copy
-            needs_numpy_fix = True
-        else:
+            # Nothing has imported numpy yet, so there is nothing to undo:
+            # putting the venv ahead of the rest of the path is enough for the
+            # first import to pick the venv copy, and it leaves every other
+            # directory where it was.
+            if sys.path and os.path.normcase(sys.path[0]) != _sp_key:
+                if site_packages in sys.path:
+                    sys.path.remove(site_packages)
+                sys.path.insert(0, site_packages)
+        elif numpy_fix_applies:
             parts = old_version.split(".")[:3]
             vn = [int(x) for x in parts] + [0] * (3 - len(parts))
             np_old = (vn[0] < 1) or (vn[0] == 1 and vn[1] < 22)
@@ -1567,8 +1602,24 @@ def _run_with_cancel(
         tmp_kwargs = {}
     out_fd, out_path = tempfile.mkstemp(suffix="_out.txt", prefix="run_", **tmp_kwargs)
     err_fd, err_path = tempfile.mkstemp(suffix="_err.txt", prefix="run_", **tmp_kwargs)
-    out_file = os.fdopen(out_fd, "w", encoding="utf-8")
-    err_file = os.fdopen(err_fd, "w", encoding="utf-8")
+    try:
+        out_file = os.fdopen(out_fd, "w", encoding="utf-8")
+        err_file = os.fdopen(err_fd, "w", encoding="utf-8")
+    except Exception:
+        # The first fdopen took ownership of its descriptor, the second did
+        # not: closing the raw pair here would close one twice. Close what is
+        # still raw, drop the files, and let the caller see the real error.
+        for raw in (out_fd, err_fd):
+            try:
+                os.close(raw)
+            except OSError:
+                pass  # nosec B110 - already owned by a file object, or gone
+        for leaked in (out_path, err_path):
+            try:
+                os.unlink(leaked)
+            except OSError:
+                pass  # nosec B110
+        raise
 
     process = None
     try:
@@ -2104,6 +2155,10 @@ def purge_cache_dir(keep_install_lock: bool = True,
     and False comes back: a delete that stopped part way leaves the tree half
     gone, so it can never be reported as a clean removal.
     """
+    # Whatever this removes, the remembered local-model answer no longer
+    # describes what is on disk.
+    from .local_model_cache import invalidate as _forget_local_model
+    _forget_local_model()
     if not os.path.isdir(PLUGIN_CACHE_DIR):
         return True
     _sweep_pending_delete()
@@ -2183,6 +2238,7 @@ def _build_install_cmd(python_path: str, pip_args: list) -> list:
     which disables TLS verification. This should only be present in
     pip_args during SSL error retry, never in the default install path.
     """
+    _ensure_uv_state()
     if _uv_available and _uv_path and not _uv_would_choke_on(python_path):
         cmd = [_uv_path, "pip"]
         skip_next = False
@@ -2262,13 +2318,14 @@ def _repair_install_args(package_name: str, pkg_spec: str) -> list:
     return args
 
 
-def _repin_numpy(venv_dir: str):
+def _repin_numpy(venv_dir: str, cancel_check: Callable[[], bool] | None = None):
     """
     Check numpy version in the venv and force-downgrade if >= 2.0.
 
-    This is a safety net: torch may pull numpy 2.x as a transitive
-    dependency, which breaks torchvision and other packages.
-    On Python 3.13+ numpy 2.x is expected, so skip the check.
+    This is a safety net: a transitive dependency may pull numpy 2.x, which
+    breaks the packages pinned below it. On Python 3.13+ numpy 2.x is
+    expected, so skip the check. Both subprocesses answer Cancel: the second
+    one is a real install and can run for a minute.
     """
     if sys.version_info >= (3, 13):
         _log("Python >= 3.13: numpy 2.x is expected, skipping repin",
@@ -2288,16 +2345,18 @@ def _repin_numpy(venv_dir: str):
     subprocess_kwargs = _get_subprocess_kwargs()
 
     try:
-        result = subprocess.run(  # nosec B603
-            [python_path, "-c",
-             "import numpy; print(numpy.__version__)"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
-            env=env, **subprocess_kwargs,
-        )
+        result = _run_with_cancel(
+            [python_path, "-c", "import numpy; print(numpy.__version__)"],
+            30, env, subprocess_kwargs, cancel_check)
         if result.returncode != 0:
             return  # numpy not installed or broken, nothing to fix here
 
-        version_str = result.stdout.strip()
+        # The LAST non-empty line, not the whole stream: a warning printed on
+        # import lands ahead of the number and int() raised on it.
+        lines = [ln.strip() for ln in result.stdout.splitlines() if ln.strip()]
+        if not lines:
+            return
+        version_str = lines[-1]
         major = int(version_str.split(".")[0])
         if major >= 2:
             _log(
@@ -2311,11 +2370,10 @@ def _repin_numpy(venv_dir: str):
                 "numpy>=1.26.0,<2.0.0",
             ]
             downgrade_cmd = _build_install_cmd(python_path, downgrade_args)
-            downgrade_result = subprocess.run(  # nosec B603
-                downgrade_cmd,
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
-                env=env, **subprocess_kwargs,
-            )
+            downgrade_result = _run_with_cancel(
+                downgrade_cmd, 120, env, subprocess_kwargs, cancel_check)
+            if downgrade_result.returncode == -1 and cancel_check and cancel_check():
+                return
             if downgrade_result.returncode == 0:
                 _log("numpy downgraded successfully to <2.0.0", Qgis.MessageLevel.Success)
             else:
@@ -2323,24 +2381,6 @@ def _repin_numpy(venv_dir: str):
                 _log(f"numpy downgrade failed: {err[:200]}", Qgis.MessageLevel.Warning)
     except Exception as e:
         _log(f"numpy version check failed: {e}", Qgis.MessageLevel.Warning)
-
-
-def _sleep_unless_cancelled(seconds: float, cancel_check) -> bool:
-    """Wait in slices, answering Cancel while the clock runs. True if cancelled.
-
-    A plain sleep of the network retry backoff left the Cancel button dead for
-    the whole wait, and the ladder doubles, so the last one is long enough that
-    the install reads as frozen. The slice is short enough to feel immediate
-    and long enough not to spin.
-    """
-    deadline = time.monotonic() + max(0.0, float(seconds))
-    while True:
-        if cancel_check and cancel_check():
-            return True
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            return False
-        time.sleep(min(0.25, remaining))
 
 
 def _get_verification_timeout(package_name: str) -> int:
@@ -2621,6 +2661,9 @@ def _run_pip_install(
 
         start_time = time.monotonic()
         last_download_status = ""
+        # The last installer line written to the log, so one status is not
+        # repeated once per tick.
+        last_logged_status = ""
         download_ratio: float | None = None
         # The timeout below is an IDLE timeout, not a wall clock. A big wheel on
         # a slow link is not a hung install, and killing it at a fixed age is
@@ -2647,7 +2690,14 @@ def _run_pip_install(
                     process.wait(timeout=10)
                 except subprocess.TimeoutExpired:
                     process.kill()
-                    process.wait(timeout=5)
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        # The child outlived the kill. The user asked to stop,
+                        # so answer the cancel; letting this out would surface
+                        # as a timed-out install instead.
+                        _log("Cancelled install: the process did not exit "
+                             "after being killed", Qgis.MessageLevel.Warning)
                 return _PipResult(-1, "", "Installation cancelled")
 
             # Check the idle timeout
@@ -2703,17 +2753,25 @@ def _run_pip_install(
             else:
                 elapsed_str = f"{elapsed}s"
 
-            # Build progress message. last_download_status is raw text parsed
-            # from the installer's own output, so it stays as the installer
-            # wrote it rather than being folded into a translated template.
+            # Build the progress message. The installer's own line is
+            # English and names its own packages, so it goes to the log; the
+            # screen gets the same fact in the user's language, with the size
+            # the installer named when it named one.
+            shown_name = install_display_name(package_name)
             if last_download_status:
-                msg = f"{last_download_status}... {elapsed_str}"
-            elif package_name == "torch":
-                msg = tr("Downloading PyTorch (~180 MB)... {elapsed}").format(
-                    elapsed=elapsed_str)
+                if last_download_status != last_logged_status:
+                    last_logged_status = last_download_status
+                    _log(last_download_status, Qgis.MessageLevel.Info)
+                size = download_size_of(last_download_status)
+                if size:
+                    msg = tr("Downloading {package} ({size})... {elapsed}").format(
+                        package=shown_name, size=size, elapsed=elapsed_str)
+                else:
+                    msg = tr("Downloading {package}... {elapsed}").format(
+                        package=shown_name, elapsed=elapsed_str)
             else:
                 msg = tr("Installing {package}... {elapsed}").format(
-                    package=package_name, elapsed=elapsed_str)
+                    package=shown_name, elapsed=elapsed_str)
 
             # Interpolate progress within the package's range
             # Use logarithmic-ish curve: fast at start, slows down
@@ -3006,16 +3064,11 @@ def install_dependencies(
             pkg_end = _pkg_progress_end(i)
 
             if progress_callback:
-                if package_name == "torch":
-                    progress_callback(
-                        pkg_start,
-                        tr("Installing {package} (~180 MB)... ({done}/{total})").format(
-                            package=package_name, done=i + 1, total=total_packages))
-                else:
-                    progress_callback(
-                        pkg_start,
-                        tr("Installing {package}... ({done}/{total})").format(
-                            package=package_name, done=i + 1, total=total_packages))
+                progress_callback(
+                    pkg_start,
+                    tr("Installing {package}... ({done}/{total})").format(
+                        package=install_display_name(package_name),
+                        done=i + 1, total=total_packages))
 
             _log(f"[{i + 1}/{total_packages}] Installing {package_spec}...", Qgis.MessageLevel.Info)
 
@@ -3359,6 +3412,13 @@ def install_dependencies(
                             "retrying with --no-cache-dir...",
                             Qgis.MessageLevel.Warning
                         )
+                        # Bypassing the cache saves THIS package and leaves the
+                        # bad entry in place, so every later package in the same
+                        # run reads it again and fails the same way. The whole
+                        # cache goes instead. We hold the install lock, nothing
+                        # else reads these directories, and the wheels already
+                        # linked into the venv are unaffected.
+                        _clear_installer_caches()
                         if progress_callback:
                             progress_callback(
                                 pkg_start,
@@ -3497,10 +3557,11 @@ def install_dependencies(
                         )
 
                 if result.returncode == 0:
-                    _log(f"✓ Successfully installed {package_spec}", Qgis.MessageLevel.Success)
+                    _log(f"Successfully installed {package_spec}", Qgis.MessageLevel.Success)
                     if progress_callback:
                         progress_callback(
-                            pkg_end, tr("✓ {package} installed").format(package=package_name))
+                            pkg_end, tr("{package} installed").format(
+                                package=install_display_name(package_name)))
                 else:
                     error_msg = _scrub_credentials(
                         result.stderr or result.stdout or f"Return code {result.returncode}")
@@ -3536,10 +3597,11 @@ def install_dependencies(
                     if cancelled:
                         return False, "Installation cancelled"
                     if retried is not None and retried.returncode == 0:
-                        _log(f"✓ Successfully installed {package_spec}", Qgis.MessageLevel.Success)
+                        _log(f"Successfully installed {package_spec}", Qgis.MessageLevel.Success)
                         if progress_callback:
                             progress_callback(
-                                pkg_end, tr("✓ {package} installed").format(package=package_name))
+                                pkg_end, tr("{package} installed").format(
+                                    package=install_display_name(package_name)))
                         install_failed = False
                         install_error_msg = ""
                     elif retried is not None:
@@ -3621,8 +3683,9 @@ def install_dependencies(
                         "Please close and reopen QGIS, then retry."
                     )
 
-                # Check for disk-full errors: the 4 GB preflight can still
-                # miss a mid-extract ENOSPC (torch/CUDA wheels are large).
+                # Check for disk-full errors: the preflight above can
+                # still miss a disk that fills mid-extract, because the
+                # largest wheels expand well past their download size.
                 # Must run BEFORE the antivirus check below: a failed write
                 # from a full disk also surfaces as a Windows permission
                 # error, which that classifier would otherwise misattribute.
@@ -3776,7 +3839,7 @@ def install_dependencies(
 
         # Post-install numpy version safety net:
         # Check and force-downgrade if needed.
-        _repin_numpy(venv_dir)
+        _repin_numpy(venv_dir, cancel_check)
 
         # Everything below reports success, so prove first that what the run
         # installed is in the environment the plugin will import from. Packages
@@ -3797,10 +3860,11 @@ def install_dependencies(
             # list only means something to whoever reads the report.
             return False, _get_corrupt_venv_help()
 
+        record_degraded(venv_dir, degraded_packages)
         if degraded_packages:
             short = ", ".join(degraded_packages)
             if progress_callback:
-                progress_callback(100, tr("✓ Automatic mode ready"))
+                progress_callback(100, tr("Automatic mode ready"))
             _log("=" * 50, Qgis.MessageLevel.Warning)
             _log(
                 f"Installed everything except {short}. Automatic (cloud) mode "
@@ -3818,7 +3882,7 @@ def install_dependencies(
             )
 
         if progress_callback:
-            progress_callback(100, tr("✓ All dependencies installed"))
+            progress_callback(100, tr("All dependencies installed"))
 
         _log("=" * 50, Qgis.MessageLevel.Success)
         _log("All dependencies installed successfully!", Qgis.MessageLevel.Success)
@@ -3838,6 +3902,22 @@ def install_dependencies(
                     time.sleep(0.5)
                 except Exception:
                     break
+
+
+_dirs_made: set[str] = set()
+
+
+def _ensure_dir_once(path: str) -> None:
+    """makedirs, but only the first time this session asks for a directory.
+
+    Around twenty probe subprocesses run per install and each of them rebuilt
+    the same four directories. Anything that removes one under us is reported
+    by the write that follows, which is where the real error belongs.
+    """
+    if path in _dirs_made:
+        return
+    os.makedirs(path, exist_ok=True)
+    _dirs_made.add(path)
 
 
 def _apply_cache_containment(env: dict) -> None:
@@ -3861,7 +3941,7 @@ def _apply_cache_containment(env: dict) -> None:
     tmp_dir = os.path.join(PLUGIN_CACHE_DIR, "tmp")
     try:
         for path in (uv_cache, pip_cache, tmp_dir):
-            os.makedirs(path, exist_ok=True)
+            _ensure_dir_once(path)
     except OSError as e:
         _log(
             f"Cache containment skipped, using default locations: {e}",
@@ -3953,19 +4033,22 @@ def _get_clean_env_for_venv() -> dict:
 
 
 def _get_subprocess_kwargs() -> dict:
-    # Set cwd to PLUGIN_CACHE_DIR so the subprocess cannot accidentally discover
+    """The shared platform kwargs, plus the two the install needs.
+
+    The window-hiding half lives in subprocess_utils and is the same for every
+    child the plugin starts. Only the working directory and the closed stdin
+    are specific to an install, so they are layered here rather than written
+    out a second time.
+    """
+    # cwd is PLUGIN_CACHE_DIR so the subprocess cannot accidentally discover
     # the plugin package if launched from the plugin directory.
-    os.makedirs(PLUGIN_CACHE_DIR, exist_ok=True)
+    _ensure_dir_once(PLUGIN_CACHE_DIR)
+    kwargs = dict(_get_base_subprocess_kwargs())
     # Never inherit QGIS's stdin: a child that decides to prompt (pip asking
     # for proxy credentials) would otherwise block on a question the user
     # cannot see, for the whole package timeout.
-    kwargs = {"cwd": PLUGIN_CACHE_DIR, "stdin": subprocess.DEVNULL}
-    if sys.platform == "win32":
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startupinfo.wShowWindow = subprocess.SW_HIDE
-        kwargs["startupinfo"] = startupinfo
-        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+    kwargs["cwd"] = PLUGIN_CACHE_DIR
+    kwargs["stdin"] = subprocess.DEVNULL
     return kwargs
 
 
@@ -4027,7 +4110,14 @@ def verify_venv(
     venv_dir: str = None,
     progress_callback: Callable[[int, str], None] | None = None,
     include_local_model: bool = True,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> tuple[bool, str]:
+    """Check that every installed package really loads.
+
+    ``cancel_check`` is polled between packages and inside each probe, so
+    Cancel answers here too. Without it this phase ran to the end whatever the
+    user pressed, and on a slow machine that is most of the wait.
+    """
     if venv_dir is None:
         venv_dir = VENV_DIR
 
@@ -4051,6 +4141,9 @@ def verify_venv(
     unavailable_manual: list[str] = []
     total_packages = len(packages)
     for i, (package_name, _) in enumerate(packages):
+        if cancel_check and cancel_check():
+            _log("Verification cancelled by user", Qgis.MessageLevel.Warning)
+            return False, "Installation cancelled"
         if progress_callback:
             # Report progress for each package (0-100% within verification phase)
             percent = int((i / total_packages) * 100)
@@ -4065,15 +4158,11 @@ def verify_venv(
         pkg_timeout = _get_verification_timeout(package_name)
 
         try:
-            result = subprocess.run(  # nosec B603
-                cmd,
-                capture_output=True,
-                text=True,
-                encoding="utf-8", errors="replace",
-                timeout=pkg_timeout,
-                env=env,
-                **subprocess_kwargs
-            )
+            result = _run_with_cancel(
+                cmd, pkg_timeout, env, subprocess_kwargs, cancel_check)
+            if result.returncode == -1 and cancel_check and cancel_check():
+                _log("Verification cancelled by user", Qgis.MessageLevel.Warning)
+                return False, "Installation cancelled"
 
             if result.returncode != 0:
                 # A Python traceback puts the real cause on its LAST line, so
@@ -4081,7 +4170,7 @@ def verify_venv(
                 # the first 300 chars, which is only the traceback header and
                 # hid errors like "blocked by an application control policy" that
                 # live at the bottom, sending the user to a dead-end VC++
-                # message) (#bug-kees).
+                # message).
                 full_error = result.stderr or result.stdout or ""
                 error_detail = full_error[-400:] if full_error else ""
                 _log(
@@ -4131,7 +4220,7 @@ def verify_venv(
                 # but blocked from loading, so the fix is to whitelist the
                 # folder, NOT to reinstall or install a VC++ runtime. Checked
                 # BEFORE the DLL branch, which the same "DLL load failed" text
-                # would otherwise trigger (#bug-kees).
+                # would otherwise trigger.
                 if _is_app_control_error(full_error):
                     # Managed policy: keep the returned message short with the
                     # "application control" marker so the verify-failed dialog
@@ -4404,15 +4493,11 @@ def verify_venv(
                 Qgis.MessageLevel.Info
             )
             try:
-                result = subprocess.run(  # nosec B603
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8", errors="replace",
-                    timeout=pkg_timeout,
-                    env=env,
-                    **subprocess_kwargs
-                )
+                result = _run_with_cancel(
+                    cmd, pkg_timeout, env, subprocess_kwargs, cancel_check)
+                if result.returncode == -1 and cancel_check and cancel_check():
+                    _log("Verification cancelled by user", Qgis.MessageLevel.Warning)
+                    return False, "Installation cancelled"
                 if result.returncode != 0:
                     error_detail = (
                         result.stderr[:300] if result.stderr
@@ -4476,7 +4561,7 @@ def verify_venv(
             "Semi-Auto mode and the AI correction tool are off."
         )
 
-    _log("✓ Virtual environment verified successfully", Qgis.MessageLevel.Success)
+    _log("Virtual environment verified successfully", Qgis.MessageLevel.Success)
     return True, "Virtual environment ready"
 
 
@@ -4526,11 +4611,17 @@ def create_venv_and_install(
     # cleanup, venv rebuild) then runs while we exclusively hold the lock.
     lock = InstallLock(INSTALL_LOCK_FILE)
     if not lock.acquire():
-        busy = (
-            "Another QGIS window is installing the AI components. "
-            "Wait for it to finish, then try again."
-        )
-        _log(busy, Qgis.MessageLevel.Warning)
+        # Name how long it has been going. "Wait for it to finish" with no
+        # figure reads the same at one minute and at three hours, and the
+        # second one is the case where the user has to act.
+        age = lock_age_seconds(INSTALL_LOCK_FILE)
+        busy = tr("Another QGIS window is installing the AI components.")
+        if age is not None and age >= 60:
+            busy += " " + tr("It started {minutes} minutes ago.").format(
+                minutes=int(age // 60))
+        busy += " " + tr("Wait for it to finish, then try again.")
+        _log(f"Install lock held elsewhere (age {int(age or 0)}s)",
+             Qgis.MessageLevel.Warning)
         return False, busy
 
     try:
@@ -4754,6 +4845,15 @@ def _create_venv_and_install(
             )
 
             if not success:
+                # An unsupported Python is not a download that failed. A
+                # fallback interpreter at that version would build an
+                # environment whose packages cannot load in this process, so
+                # the reason has to reach the user instead of being swallowed.
+                from .python_manager import is_unsupported_python_version
+                py_unsupported, py_why = is_unsupported_python_version()
+                if py_unsupported:
+                    _log(py_why, Qgis.MessageLevel.Critical)
+                    return False, py_why
                 # Every platform gets the fallback, not only Windows: a Linux
                 # user behind a proxy that blocks the download host has a
                 # perfectly good python3 on PATH, and both create_venv and
@@ -4895,12 +4995,15 @@ def _create_venv_and_install(
 
     # Persist deps hash so future upgrades can detect spec changes
     _write_deps_hash()
+    # The environment just changed, so the remembered answer is stale.
+    from .local_model_cache import invalidate as _forget_local_model
+    _forget_local_model()
 
     # The wheels are in the venv now; the cache copies are pure overhead.
     _clear_installer_caches()
 
     if progress_callback:
-        progress_callback(100, tr("✓ All dependencies installed"))
+        progress_callback(100, tr("All dependencies installed"))
 
     return True, "Virtual environment ready"
 
@@ -5012,6 +5115,24 @@ def _quick_check_packages(venv_dir: str = None) -> tuple[bool, str]:
 
 def local_model_ready(venv_dir: str = None) -> tuple[bool, str]:
     """Are the packages Manual mode and the AI correction tool need installed?
+
+    The answer is kept for as long as site-packages carries the same
+    timestamp. The dock build, every review refresh and the click path all ask
+    this question, and each answer used to list the whole directory.
+    """
+    from .local_model_cache import cached_answer, remember
+
+    site_packages = get_venv_site_packages(venv_dir or VENV_DIR)
+    held = cached_answer(site_packages)
+    if held is not None:
+        return held
+    answer = _probe_local_model(venv_dir)
+    remember(site_packages, answer)
+    return answer
+
+
+def _probe_local_model(venv_dir: str = None) -> tuple[bool, str]:
+    """Walk site-packages and say whether the on-device packages are there.
 
     Separate from get_venv_status on purpose. That one answers "can the plugin
     run at all", and an environment missing only the local model still runs
@@ -5196,6 +5317,14 @@ def get_venv_status(allow_subprocess_probe: bool = True) -> tuple[bool, str]:
             )
             _write_deps_hash()
         python_version = get_python_full_version()
+        # An install that ended short recorded what it could not deliver.
+        # The environment still runs, so this stays a ready answer; it names
+        # what is missing so the state is not read as a complete install.
+        short = recorded_degraded_packages(VENV_DIR)
+        if short:
+            _log("get_venv_status: ready, short of " + ", ".join(short),
+                 Qgis.MessageLevel.Warning)
+            return True, f"Ready (Python {python_version}, without {', '.join(short)})"
         _log("get_venv_status: ready (quick check passed)", Qgis.MessageLevel.Success)
         return True, f"Ready (Python {python_version})"
     _log(f"get_venv_status: quick check failed: {msg}",

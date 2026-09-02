@@ -17,13 +17,14 @@ from ...core.review_defaults import (
 )
 from ...workers.live_stitch_thread import STITCH_JOIN_TIMEOUT_MS
 from .auto_results import _STITCH_DRAIN_BUDGET_S, _STITCH_WAIT_SLICE_MS
-from .shared import _AUTO_PUMP_BUDGET_S
+from .shared import auto_pump_budget
 
-# What the run-wide footprint alignment may cost the wait between the last
-# tile and the review. One object can take tens of milliseconds, so a dense run
-# would otherwise hold the finish screen for as long as it takes. The pass
-# improves shapes and never gates them: past this the rows it has not reached
-# keep their traced outline and the run goes on.
+# Last-resort budget for the run-wide footprint alignment, used only when the
+# pass answered no budget of its own. The live values, and which one a run
+# gets, are in review_align_offload: the pass runs off the interface thread
+# past an object floor, and what a budget guards there is a wait screen rather
+# than a frozen interface. Past it the rows the pass has not reached keep their
+# traced outline and the run goes on: it improves shapes, it never gates them.
 _ALIGN_PHASE_BUDGET_S = 10.0
 
 # How long the pump waits before asking the off-GUI refine thread again, once
@@ -65,6 +66,19 @@ class AutoFinalizeStepsMixin:
                     f"phase ({exc})",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning)
             except Exception:  # nosec B110
+                pass
+        # A dropped object is a paid result the user never sees. The first
+        # drop per phase per pass reaches telemetry with the exception class,
+        # never its text, so the field says which guard eats objects.
+        tracked = state.setdefault("drop_tracked", set())
+        if phase not in tracked:
+            tracked.add(phase)
+            try:
+                from ...core.telemetry_errors import track_plugin_error
+                track_plugin_error(stage="segment",
+                                   error_code=f"finalize_drop_{phase}",
+                                   message=type(exc).__name__)
+            except Exception:  # noqa: BLE001  # nosec B110
                 pass
 
     def _abort_auto_finalize(self, exc: Exception) -> None:
@@ -121,9 +135,20 @@ class AutoFinalizeStepsMixin:
             if (pending and run_id and str(pending.get("run_id") or "") == run_id):
                 recovered = run_autosave.load_pending_layer(pending)
                 if recovered:
-                    run_autosave.clear_pending()
-        except Exception:  # nosec B110
-            pass
+                    # Named run id: an anonymous clear no longer claims the
+                    # armed pointer, by design.
+                    run_autosave.clear_pending(run_id)
+        except Exception as recover_exc:  # noqa: BLE001
+            # The one copy of the billed results could not be put back on
+            # the map: the user is about to read "nothing salvaged", and we
+            # have to know that happened.
+            try:
+                from ...core.telemetry_errors import track_plugin_error
+                track_plugin_error(stage="segment",
+                                   error_code="finalize_autosave_recovery_failed",
+                                   message=type(recover_exc).__name__)
+            except Exception:  # noqa: BLE001  # nosec B110
+                pass
         if recovered:
             msg = tr("Something went wrong preparing the results. Your "
                      "detections were saved to the layer {name}.").format(
@@ -151,6 +176,15 @@ class AutoFinalizeStepsMixin:
         except Exception:  # nosec B110
             pass
 
+    def _show_finalize_drain_progress(self, done: int, total: int) -> None:
+        """Put "assembling N of M tiles" on the hand-over card. Best-effort."""
+        if self.dock_widget is None:
+            return
+        try:
+            self.dock_widget.set_auto_finalize_tiles(int(done), int(total))
+        except (RuntimeError, AttributeError):
+            pass
+
     def _mark_finalize_phase(self, state: dict, phase) -> None:
         """Charge the time since the last slice to the phase that spent it."""
         import time as _t
@@ -174,6 +208,19 @@ class AutoFinalizeStepsMixin:
         if not spent:
             return
         total = sum(spent.values())
+        # The same figures feed the run's telemetry: the finalize wall clock
+        # on the completed event, and the shape and snap phases (summed over
+        # the finalize and every reslice) on the review's export event.
+        try:
+            from .auto_client_profile import add_review_pass_seconds
+            if state.get("mode") != "reslice":
+                self._auto_finalize_s = float(total)
+            add_review_pass_seconds(
+                self, "shape_pass_s",
+                float(spent.get("filter", 0.0)) + float(spent.get("align", 0.0)))
+            add_review_pass_seconds(self, "snap_s", float(spent.get("snap", 0.0)))
+        except Exception:  # noqa: BLE001  # nosec B110
+            pass
         if total < 1.0:
             return  # nothing worth a log line
         parts = " ".join(f"{name} {secs:.1f}s"
@@ -215,7 +262,7 @@ class AutoFinalizeStepsMixin:
 
         from qgis.PyQt.QtCore import QTimer
 
-        deadline = _t.monotonic() + _AUTO_PUMP_BUDGET_S
+        deadline = _t.monotonic() + auto_pump_budget()
         # Time each phase separately. "Almost done - building the shapes..."
         # covers four different jobs (waiting for the stitcher's tail, the
         # redundancy sweep, measuring, shaping), and on a run big enough for the
@@ -228,21 +275,31 @@ class AutoFinalizeStepsMixin:
         # event loop keeps painting, and keep asking for a repaint so the last
         # objects appear as they land rather than all at once at the end.
         if state.get("phase") == "drain":
-            drain_until = state.get("drain_until")
-            if drain_until is None:
-                drain_until = _t.monotonic() + _STITCH_DRAIN_BUDGET_S
-                state["drain_until"] = drain_until
+            # Patience is measured from the LAST FINISHED FOLD, never from the
+            # start of the drain. A cap on the whole backlog once threw away
+            # every tile still queued behind it: those tiles were billed,
+            # converted, and gone. Only a fold that has stopped moving is
+            # given up on; a queue that keeps shrinking is waited out, however
+            # long it is, and the card says how far along it is.
+            folded, queued = self._auto_stitch_backlog()
+            now = _t.monotonic()
+            if state.get("drain_folded") != folded:
+                state["drain_folded"] = folded
+                state["drain_until"] = now + _STITCH_DRAIN_BUDGET_S
+                state["drain_total"] = max(
+                    int(state.get("drain_total", 0) or 0), folded + queued)
+                self._show_finalize_drain_progress(folded, state["drain_total"])
+            drain_until = state["drain_until"]
             if not self._finish_auto_stitcher(timeout_ms=_STITCH_WAIT_SLICE_MS):
-                now = _t.monotonic()
                 hard_until = state.get("drain_hard_until")
                 if hard_until is None and now >= drain_until:
-                    # Out of patience with the BACKLOG. Drop what is still
-                    # queued and keep what was already folded, which is what
-                    # the user was billed for.
+                    # No tile has folded for the whole window: the fold is
+                    # wedged, not slow. Drop what is still queued and keep
+                    # what was already folded.
                     QgsMessageLog.logMessage(
-                        "Auto detection: live stitcher did not finish in "
-                        f"{int(_STITCH_DRAIN_BUDGET_S)}s; finalizing what it "
-                        "folded", "AI Segmentation",
+                        "Auto detection: live stitcher folded no tile for "
+                        f"{int(_STITCH_DRAIN_BUDGET_S)}s with {queued} still "
+                        "queued; finalizing what it folded", "AI Segmentation",
                         level=Qgis.MessageLevel.Warning)
                     self._abort_auto_stitch_queue()
                     hard_until = now + STITCH_JOIN_TIMEOUT_MS / 1000.0
@@ -265,7 +322,36 @@ class AutoFinalizeStepsMixin:
                 self._request_auto_live_repaint()
                 QTimer.singleShot(0, self._step_auto_finalize_refine)
                 return
+            total = int(state.get("drain_total", 0) or 0)
+            self._show_finalize_drain_progress(total, total)
             self._finalize_drain_done(state)
+            return
+
+        # Phase -0.5 (finalize only, exemplar-only runs read as distinct
+        # objects): fold the retained raw fragments into a fresh merger. GEOS
+        # work per fragment, and a run can retain tens of thousands, so it is
+        # chunked like the sweep below.
+        if state.get("phase") == "remerge":
+            remerge = state["remerge"]
+            if state.get("remerge_t0") is None:
+                state["remerge_t0"] = _t.monotonic()
+            done = False
+            while not done and _t.monotonic() < deadline:
+                try:
+                    done = remerge.step(64)
+                except Exception as exc:  # noqa: BLE001 -- drop the fragment
+                    # step() advances its cursor before touching a fragment, so
+                    # retrying skips the failing one and always makes progress.
+                    self._log_finalize_drop(state, "remerge", "?", exc)
+            if not done:
+                QTimer.singleShot(0, self._step_auto_finalize_refine)
+                return
+            rows = remerge.result()
+            self._log_raw_fragment_remerge(
+                remerge, (_t.monotonic() - state["remerge_t0"]) * 1000)
+            state.pop("remerge", None)
+            state.pop("remerge_t0", None)
+            self._seed_finalize_sweep_phase(state, rows)
             return
 
         # Phase 0 (finalize only): the end-of-run redundancy sweep, time-sliced.
@@ -302,11 +388,13 @@ class AutoFinalizeStepsMixin:
             # It needs the WHOLE deduplicated set at once (the neighbour
             # consensus), which is why it lives here and not in the per-object
             # refine.
-            align = self._auto_footprint_align_sweep(merged_ided)
+            from .review_align_offload import begin_align_pass
+            align, align_budget = begin_align_pass(self, merged_ided)
             if align is not None:
                 state["phase"] = "align"
                 state["align"] = align
                 state["align_rows"] = merged_ided
+                state["align_budget_s"] = align_budget
                 QTimer.singleShot(0, self._step_auto_finalize_refine)
                 return
             self._seed_finalize_build_phase(state, merged_ided)
@@ -316,21 +404,26 @@ class AutoFinalizeStepsMixin:
         # time-sliced like the sweep. A systemic failure falls back to the
         # unaligned rows: the pass improves shapes, it never gates them.
         if state.get("phase") == "align":
+            from .review_align_offload import finish_align_pass, stop_align_thread
             align = state["align"]
+            budget = float(state.get("align_budget_s") or _ALIGN_PHASE_BUDGET_S)
             align_until = state.get("align_until")
             if align_until is None:
-                align_until = _t.monotonic() + _ALIGN_PHASE_BUDGET_S
+                align_until = _t.monotonic() + budget
                 state["align_until"] = align_until
             done = False
             try:
                 # One object per slice: a single alignment can cost tens of
                 # milliseconds and the deadline is only read between slices, so
                 # a bigger step overshoots the budget the whole pump shares.
+                # Off the interface thread the call is a short wait instead.
                 while not done and _t.monotonic() < deadline:
                     done = align.step(1)
             except Exception as exc:  # noqa: BLE001 -- keep the raw shapes
                 self._log_finalize_drop(state, "align", "?", exc)
-                self._seed_finalize_build_phase(state, state.pop("align_rows"))
+                stop_align_thread(self)
+                self._seed_finalize_build_phase(
+                    state, state.pop("align_rows"), align)
                 state.pop("align", None)
                 return
             if not done and _t.monotonic() >= align_until:
@@ -339,24 +432,26 @@ class AutoFinalizeStepsMixin:
                 # opens late is worse than a few unsquared corners.
                 QgsMessageLog.logMessage(
                     "Auto detection: footprint alignment ran out of its "
-                    f"{int(_ALIGN_PHASE_BUDGET_S)}s budget; keeping the shapes "
-                    "it had not reached as they are",
+                    f"{int(budget)}s budget; keeping the shapes it had not "
+                    "reached as they are",
                     "AI Segmentation", level=Qgis.MessageLevel.Info)
-                rows = align.result()
+                rows = finish_align_pass(
+                    self, align, state["align_rows"], timed_out=True)
                 state.pop("align", None)
                 state.pop("align_rows", None)
                 state.pop("align_until", None)
-                self._seed_finalize_build_phase(state, rows)
+                self._seed_finalize_build_phase(state, rows, align)
                 return
             if not done:
                 QTimer.singleShot(0, self._step_auto_finalize_refine)
                 return
             self._log_footprint_alignment(align)
-            rows = align.result()
+            rows = finish_align_pass(
+                self, align, state["align_rows"], timed_out=False)
             state.pop("align", None)
             state.pop("align_rows", None)
             state.pop("align_until", None)
-            self._seed_finalize_build_phase(state, rows)
+            self._seed_finalize_build_phase(state, rows, align)
             return
 
         # Phase 1 (finalize only): build the canonical (geom, score, area) set.
@@ -471,6 +566,27 @@ class AutoFinalizeStepsMixin:
             state["visible_order"] = []
             state["phase"] = "filter"
             QTimer.singleShot(0, self._step_auto_finalize_refine)
+            return
+
+        # Phase 3 (both modes): shared borders over the assembled visible set.
+        # It runs here, where every neighbour exists, instead of inside the
+        # per-object refine, and it is sliced because a set at the offered
+        # ceiling costs seconds and this is the last thing between the user and
+        # the review.
+        if state.get("phase") == "snap":
+            started = state["snap"]
+            done = False
+            while not done and _t.monotonic() < deadline:
+                done = started[0].step(64)
+            if not done:
+                QTimer.singleShot(0, self._step_auto_finalize_refine)
+                return
+            visible = self._finish_boundary_snap(state["snap_geoms"], started)
+            state.pop("snap", None)
+            state.pop("snap_geoms", None)
+            self._end_auto_finalize_pass(
+                state, visible, state.pop("snap_scores"),
+                state.pop("snap_ids"))
             return
 
         # Phase 2 (both modes): filter whole objects, then shape-refine the pass.
@@ -614,11 +730,27 @@ class AutoFinalizeStepsMixin:
             visible = [visible[i] for i in ranked]
             vis_scores = [vis_scores[i] for i in ranked]
             vis_ids = [vis_ids[i] for i in ranked]
-        # The visible set is complete: run the one whole-set operation here,
-        # where every neighbour exists, instead of inside the per-object
-        # refine above. Order and length are preserved, so the parallel score
-        # and id lists still line up.
-        visible = self._apply_boundary_snap(visible, params)
+        # The visible set is complete: the one whole-set operation runs on it
+        # here, sliced, in its own phase. Order and length are preserved, so
+        # the parallel score and id lists still line up.
+        answer, started = self._begin_boundary_snap(visible, params)
+        if started is not None:
+            state["phase"] = "snap"
+            state["snap"] = started
+            state["snap_geoms"] = visible
+            state["snap_scores"] = vis_scores
+            state["snap_ids"] = vis_ids
+            QTimer.singleShot(0, self._step_auto_finalize_refine)
+            return
+        self._end_auto_finalize_pass(state, answer, vis_scores, vis_ids)
+
+    def _end_auto_finalize_pass(self, state: dict, visible: list,
+                                vis_scores: list, vis_ids: list) -> None:
+        """Close a finished finalize or reslice pass: report what it cost and
+        what it dropped, drop the state, then hand the visible set to the
+        review (finalize) or swap it in (reslice)."""
+        from qgis.PyQt.QtCore import QTimer
+
         # The per-object guards logged only their first few drops: close the
         # pass with one honest total when more were eaten.
         self._log_finalize_phases(state, len(visible))
@@ -640,6 +772,12 @@ class AutoFinalizeStepsMixin:
         else:
             self._complete_auto_finalize(
                 visible, state["tiles_succeeded"], vis_scores, vis_ids)
+            # The review ready line is out: the run's log event closes here.
+            try:
+                from ...core.run_log_capture import send_run_log
+                send_run_log("completed")
+            except Exception:  # noqa: BLE001  # nosec B110
+                pass
             # Genuine live interactive finalize only (restore and headless call
             # _complete_auto_finalize directly, not through this pump): archive
             # the clean default export so a run closed without Finish is still
@@ -649,7 +787,6 @@ class AutoFinalizeStepsMixin:
             # event-loop turn runs it once the review is already interactive.
             # The method already no-ops when _auto_review is gone (teardown) and
             # is once-per-run, so deferring it needs no extra guard.
-            from qgis.PyQt.QtCore import QTimer
             QTimer.singleShot(0, self._archive_auto_default_export)
             # The confidence-drag preview cache is only wanted once the review
             # is on screen and a slider exists to drag, and until it is ready
@@ -659,10 +796,18 @@ class AutoFinalizeStepsMixin:
             # for, and the phase log charged its whole cost to "filter".
             self._start_build_preview_cache(state["pixel_size"])
 
-    def _seed_finalize_build_phase(self, state: dict, merged_ided: list) -> None:
+    def _seed_finalize_build_phase(self, state: dict, merged_ided: list,
+                                   align=None) -> None:
         """Seed the cooperative build phase from a deduplicated (and possibly
-        alignment-swept) merged set, and schedule the next slice."""
+        alignment-swept) merged set, and schedule the next slice.
+
+        ``align`` is the alignment pass these rows came out of, when one ran.
+        The rows it replaced no longer carry the shape the live stitch thread
+        built for them, so they are marked and the filter phase shapes them
+        itself; every other row is still seedable."""
         from qgis.PyQt.QtCore import QTimer
+        if align is not None:
+            self._note_stitch_shapes_dirty(getattr(align, "changed_fids", None))
         state["phase"] = "build"
         state["build_pending"] = list(merged_ided)
         state["total_build"] = len(merged_ided)
@@ -742,7 +887,7 @@ class AutoFinalizeStepsMixin:
 
         from qgis.PyQt.QtCore import QTimer
 
-        deadline = _t.monotonic() + _AUTO_PUMP_BUDGET_S
+        deadline = _t.monotonic() + auto_pump_budget()
         pending = state["pending"]
         out = state["out"]
         pixel_size = state["pixel_size"]

@@ -7,7 +7,6 @@ instance (`self._plugin`).
 from __future__ import annotations
 
 import os
-from datetime import datetime
 
 from qgis.core import (
     Qgis,
@@ -19,13 +18,18 @@ from qgis.core import (
     QgsProject,
     QgsVectorFileWriter,
     QgsVectorLayer,
+    QgsWkbTypes,
 )
 
-from .core.qt_compat import PolygonGeometry, field_type_double
+from .core.qt_compat import PolygonGeometry, field_type_string
 
 # QgsField type args (QGIS 4 rejects raw int, #25/#36): resolved once in
 # qt_compat (QVariant on QGIS 3, QMetaType on QGIS 4).
-_FIELD_TYPE_DOUBLE = field_type_double()
+_FIELD_TYPE_STRING = field_type_string()
+
+# What the class column says for a polygon a caller drew or traced by hand.
+# The same word the Semi-Auto save writes, so the two are one column.
+_HAND_DRAWN_CLASS = "manual"
 
 
 class SegmentationExportMixin:
@@ -78,6 +82,19 @@ class SegmentationExportMixin:
             if geom.type() != PolygonGeometry:
                 return {"_error": "Geometry must be a POLYGON or a MULTIPOLYGON."}
 
+            # The layer this writes into is a plain MultiPolygon, so a Z
+            # coordinate cannot be stored. Drop it here and say so in the
+            # answer, rather than letting the provider flatten it in silence
+            # and hand back a file whose heights vanished without a word.
+            dropped_z = bool(QgsWkbTypes.hasZ(geom.wkbType()))
+            if dropped_z:
+                try:
+                    geom.get().dropZValue()
+                except (RuntimeError, AttributeError, TypeError):
+                    # The provider flattens it anyway. The answer still says
+                    # the height did not reach the file.
+                    pass
+
             # A folder that is not there is a mistake, whichever path the
             # export then takes. Only the new-layer path writes a file, but a
             # caller who named a folder meant it, and appending elsewhere while
@@ -91,27 +108,29 @@ class SegmentationExportMixin:
             # Find existing segmentation layer to append to
             seg_group_name = f"{raster_name} (AI Segmentation)"
             root = QgsProject.instance().layerTreeRoot()
-
-            existing_layer = None
-            for lyr in QgsProject.instance().mapLayers().values():
-                if isinstance(lyr, QgsVectorLayer) and lyr.name().startswith("mask_"):
-                    node = root.findLayer(lyr.id())
-                    if node and node.parent() and node.parent().name() == seg_group_name:
-                        existing_layer = lyr
-                        break
+            existing_layer = self._append_target_layer(root, seg_group_name)
 
             from .core.layer_conventions import (
                 apply_output_conventions,
                 attribute_values_for_fields,
                 make_area_measurer,
                 make_committed_renderer,
+                measure_field,
                 repair_polygon,
                 round_measure,
                 to_multipolygon,
             )
             from .core.output_group_order import keep_group_above_imagery
+            from .core.output_metadata import (
+                output_timestamp_iso,
+                refresh_detection_count,
+            )
+            from .core.output_store import committed_color_for_prompt
 
-            timestamp = datetime.now().isoformat(timespec="seconds")
+            # One offset-aware ISO 8601 stamp, the same shape every export
+            # path writes. A naive local time cannot be placed on a clock by
+            # anyone who did not run the export.
+            timestamp = output_timestamp_iso()
 
             if existing_layer and existing_layer.dataProvider():
                 try:
@@ -134,6 +153,8 @@ class SegmentationExportMixin:
                     feature.setAttributes(attribute_values_for_fields(
                         existing_layer.fields(), g, existing_layer.crs(),
                         raster_name, timestamp,
+                        det_id=self._next_det_id(existing_layer),
+                        object_class=_HAND_DRAWN_CLASS,
                     ))
                     added = existing_layer.dataProvider().addFeatures([feature])
                     existing_layer.updateExtents()
@@ -146,11 +167,18 @@ class SegmentationExportMixin:
                                       f"'{existing_layer.name()}'.",
                             "appended": False,
                         }
-                    return {
+                    # The abstract carries a detection count, and an append
+                    # made it a lie. Recount it here rather than leave a
+                    # provenance block that contradicts the table.
+                    refresh_detection_count(existing_layer)
+                    answer = {
                         "layer_name": existing_layer.name(),
                         "file_path": existing_layer.source().split("|")[0],
                         "appended": True,
                     }
+                    if dropped_z:
+                        answer["dropped_z"] = True
+                    return answer
                 except Exception as e:
                     from qgis.core import QgsMessageLog
                     QgsMessageLog.logMessage(
@@ -182,14 +210,18 @@ class SegmentationExportMixin:
 
             temp_layer = QgsVectorLayer("MultiPolygon", layer_name, "memory")
             temp_layer.setCrs(crs_obj)
-            # Lean per-feature schema (the two geodesic measures); run-level
-            # provenance goes in the layer metadata, not per row. No class and
-            # no confidence: this call is handed an outline and nothing else,
-            # and a column that is empty on every row is worse than no column.
+            # The same five columns every export path writes, in the same
+            # order, so a layer made here appends to a layer made by a run and
+            # both open the same way. Confidence stays NULL: this call is
+            # handed an outline and no model scored it. Run-level provenance
+            # goes in the layer metadata, not per row.
             pr = temp_layer.dataProvider()
             pr.addAttributes([
-                QgsField("area_m2", _FIELD_TYPE_DOUBLE),
-                QgsField("perimeter_m", _FIELD_TYPE_DOUBLE),
+                QgsField("det_id", _FIELD_TYPE_STRING),
+                QgsField("class", _FIELD_TYPE_STRING),
+                measure_field("confidence", decimals=3),
+                measure_field("area_m2"),
+                measure_field("perimeter_m"),
             ])
             temp_layer.updateFields()
 
@@ -216,6 +248,9 @@ class SegmentationExportMixin:
                     "AI Segmentation", level=Qgis.MessageLevel.Warning,
                 )
             feature.setAttributes([
+                "1",
+                _HAND_DRAWN_CLASS,
+                None,
                 round_measure(area),
                 round_measure(perimeter),
             ])
@@ -252,16 +287,27 @@ class SegmentationExportMixin:
             if not result_layer.isValid():
                 return {"_error": "Created GeoPackage but layer is invalid"}
 
-            result_layer.setRenderer(make_committed_renderer())
+            # The per-imagery committed colour, the same one the dock gives a
+            # saved run. Without it every layer this path makes is the plain
+            # red outline and two of them are indistinguishable on the canvas.
+            result_layer.setRenderer(make_committed_renderer(
+                color=committed_color_for_prompt(raster_name or "")))
             # Style + provenance stored with the .gpkg (survives reloads).
-            apply_output_conventions(result_layer, raster_name)
+            apply_output_conventions(
+                result_layer, raster_name,
+                created_iso=timestamp,
+                source_crs_authid=str(crs_obj.authid() or ""),
+            )
 
             group = root.findGroup(seg_group_name)
             if group is None:
                 group = root.insertGroup(0, seg_group_name)
 
             QgsProject.instance().addMapLayer(result_layer, False)
-            group.addLayer(result_layer)
+            # Newest first, the same order the dock files a saved run in. With
+            # addLayer the newest result landed at the bottom of the group,
+            # under everything the caller made before it.
+            group.insertLayer(0, result_layer)
             # Same rule as the dock: results paint above the imagery they were
             # made from. A headless caller has no eyes on the canvas, so a
             # group left under an opaque basemap goes unnoticed for longer.
@@ -271,10 +317,69 @@ class SegmentationExportMixin:
             answer = {"layer_name": layer_name, "file_path": gpkg_path}
             if provenance_note:
                 answer["raster_name_note"] = provenance_note
+            if dropped_z:
+                answer["dropped_z"] = True
             return answer
 
         except Exception as e:
             return {"_error": f"Export failed: {str(e)}"}
+
+    @staticmethod
+    def _append_target_layer(root, seg_group_name: str):
+        """The one layer in a group that an append should go into, or None.
+
+        Walking the project's layer registry gave whichever layer happened to
+        register first, which changes between sessions and between project
+        loads: two calls in a row could file two polygons into two different
+        layers, in two different CRSs. The group's own children are ordered,
+        and the highest "mask_N" in it is the newest, so the choice is the
+        same every time.
+        """
+        group = root.findGroup(seg_group_name)
+        if group is None:
+            return None
+        candidates = []
+        try:
+            for node in group.findLayers():
+                layer = node.layer()
+                if (isinstance(layer, QgsVectorLayer)
+                        and layer.name().startswith("mask_")):
+                    candidates.append(layer)
+        except (RuntimeError, AttributeError):
+            return None
+        if not candidates:
+            return None
+
+        def _mask_number(layer) -> int:
+            try:
+                return int(layer.name().split("_")[1])
+            except (IndexError, ValueError):
+                return -1
+
+        candidates.sort(key=lambda lyr: (_mask_number(lyr), lyr.name()))
+        return candidates[-1]
+
+    @staticmethod
+    def _next_det_id(layer) -> str:
+        """The det_id one more row on this layer should carry.
+
+        One past the highest already there, so two appends never write the
+        same id. Falls back to the row count when the column cannot be read,
+        which is a layer written before the column existed.
+        """
+        try:
+            index = layer.fields().indexOf("det_id")
+            if index < 0:
+                return str(int(layer.featureCount()) + 1)
+            highest = 0
+            for value in layer.uniqueValues(index):
+                try:
+                    highest = max(highest, int(str(value)))
+                except (TypeError, ValueError):
+                    continue
+            return str(highest + 1)
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            return "1"
 
     @staticmethod
     def _raster_name_note(raster_name) -> str | None:

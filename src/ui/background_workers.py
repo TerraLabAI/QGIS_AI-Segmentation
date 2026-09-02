@@ -81,7 +81,7 @@ class DepsInstallWorker(QThread):
         activity = begin_keep_awake("AI Segmentation dependency install")
         try:
             if not self._shutdown_predictor():
-                self.done.emit(False, (
+                self.done.emit(False, tr(
                     "The local AI did not stop in time, so the install was "
                     "not started. Close and reopen QGIS, then try again."))
                 return
@@ -108,6 +108,11 @@ class DownloadWorker(QThread):
         super().__init__(parent)
 
     def run(self):
+        from ..core.power_inhibit import begin_keep_awake, end_keep_awake
+        # Same reason as the dependency install: a few hundred MB over a slow
+        # link outlives the idle timer, and a machine that sleeps mid-transfer
+        # costs the user the whole download.
+        activity = begin_keep_awake("AI Segmentation model download")
         try:
             from ..core.checkpoint_manager import download_checkpoint
             success, message = download_checkpoint(
@@ -116,6 +121,8 @@ class DownloadWorker(QThread):
             self.done.emit(success, message)
         except Exception as e:
             self.done.emit(False, str(e))
+        finally:
+            end_keep_awake(activity)
 
 
 class SetImageWorker(QThread):
@@ -186,6 +193,15 @@ class StartupCheckWorker(QThread):
         except Exception:
             # Logged internally; never block startup on legacy cleanup.
             pass  # nosec B110
+
+        try:
+            # Scratch files an interrupted install left in the cache. One pass
+            # per start, and it never blocks the check below.
+            from ..core.cache_paths import PLUGIN_CACHE_DIR
+            from ..core.install_temp_sweep import sweep_stale_install_temp_files
+            sweep_stale_install_temp_files(PLUGIN_CACHE_DIR)
+        except Exception:
+            pass  # nosec B110 - a leftover file is never worth a failed start
 
         try:
             from ..core.venv_manager import cleanup_old_libs, get_venv_status
@@ -339,15 +355,24 @@ class VerifyWorker(QThread):
     def __init__(self, include_local_model: bool = True, parent=None):
         super().__init__(parent)
         self.include_local_model = bool(include_local_model)
+        self._cancelled = False
+
+    def cancel(self):
+        """Ask the verification to stop at its next check."""
+        self._cancelled = True
 
     def run(self):
         try:
             from ..core.venv_manager import verify_venv
             is_valid, msg = verify_venv(
                 progress_callback=lambda pct, m: self.progress.emit(pct, m),
-                include_local_model=self.include_local_model)
+                include_local_model=self.include_local_model,
+                cancel_check=lambda: self._cancelled)
             if not is_valid:
                 self.done.emit(False, msg)
+                return
+            if self._cancelled:
+                self.done.emit(False, "Installation cancelled")
                 return
             if not self.include_local_model:
                 self.done.emit(True, "")

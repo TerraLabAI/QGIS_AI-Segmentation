@@ -56,7 +56,18 @@ class ExemplarsMixin:
         # inputs are locked in for that run.
         if self._auto_worker is not None or self._auto_review is not None:
             return
-        if self._auto_zone is None or self._auto_exemplar_store.is_full_for(int(label)):
+        if self._auto_zone is None:
+            return
+        self._sync_exemplar_store_tier()
+        store = self._auto_exemplar_store
+        if store.is_full_for(int(label)):
+            # Past the free ceiling but under the paid one: the click that
+            # would have armed the tool shows the Pro offer instead.
+            if store.is_full_on_free_only(int(label)) and self.dock_widget:
+                try:
+                    self.dock_widget.show_auto_exemplar_upsell()
+                except (RuntimeError, AttributeError):
+                    pass
             return
         from ..polygon_zone_maptool import PolygonZoneMapTool
         canvas = self.iface.mapCanvas()
@@ -158,18 +169,24 @@ class ExemplarsMixin:
         # Screen work reads the canvas, so it takes the canvas copy of whatever
         # the clip above left: both grab pixels through the live map.
         canvas_geom = self._exemplar_geom_in_canvas_crs(geom, canvas_geom)
-        thumb = self._capture_exemplar_thumbnail(
-            canvas_geom.boundingBox(), polygon=canvas_geom)
         eid = self._auto_exemplar_store.add(
-            QgsRectangle(rect), label, thumbnail=thumb, polygon=geom)
+            QgsRectangle(rect), label, thumbnail=None, polygon=geom)
         if eid is not None:
             band = self._make_exemplar_band_poly(canvas_geom, label)
             if band is not None:
                 self._exemplar_bands[eid] = band
-            self._refresh_exemplar_chips()
-            # Prebuild the model stamp now (the canvas already shows these pixels)
-            # so Detect never blocks on a per-exemplar render.
+            # Prebuild the model stamp now (the canvas already shows these
+            # pixels) so Detect never blocks on a per-exemplar render. It is
+            # also what the card ends up showing, so the canvas grab below is
+            # only paid for when no stamp could be built: that grab copies the
+            # whole window, and its picture was thrown away moments later.
             self._prebuild_exemplar_stamp(eid)
+            entry = self._auto_exemplar_store.get(eid)
+            if entry is not None and (entry.thumbnail is None
+                                      or entry.thumbnail.isNull()):
+                entry.thumbnail = self._capture_exemplar_thumbnail(
+                    canvas_geom.boundingBox(), polygon=canvas_geom)
+                self._refresh_exemplar_chips()
             try:
                 from ...core import telemetry_run_events
                 telemetry_run_events.track_exemplar_added(
@@ -241,10 +258,35 @@ class ExemplarsMixin:
 
     def _refresh_detail_band_after_exemplars(self) -> None:
         """Re-run the credit estimate so the Precision band picks up the drawn
-        examples. Guarded on its own: an example is stored either way, and a
-        hiccup in the estimate must not lose the draw the user just made."""
+        examples, and re-seed the grid off the new measurement. Guarded on its
+        own: an example is stored either way, and a hiccup in the estimate must
+        not lose the draw the user just made."""
         try:
             self._update_credit_estimate()
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            pass
+        # The drawn size also goes to the server run plan, which picks the
+        # tile from it. Refetch only when the measurement it last saw changed,
+        # and never mid-run: the plan is locked with the prompt then.
+        if self._auto_worker is not None or self._auto_review is not None:
+            return
+        try:
+            size = self._exemplar_size_for_plan()
+            # The local seed reads the same measurement synchronously, so the
+            # grid moves as the example is drawn instead of waiting on a
+            # network answer that may never come. Only when the measurement
+            # actually moved: re-seeding on every add and remove would fight a
+            # user who has already chosen their own level for this drawing.
+            # The re-seed itself keeps the user-lock rules; a typed word still
+            # decides on its own and never reads the drawn size here.
+            if size != getattr(self, "_auto_exemplar_seed_m", None):
+                self._auto_exemplar_seed_m = size
+                self._reseed_auto_detail_from_blob(
+                    self._resolved_auto_object_class())
+            rp = getattr(self, "_auto_run_plan", None)
+            seen = rp.get("exemplar_size_m") if isinstance(rp, dict) else None
+            if size != seen:
+                self._fetch_auto_run_plan(self._resolved_auto_object_class())
         except (RuntimeError, AttributeError, TypeError, ValueError):
             pass
 
@@ -427,6 +469,9 @@ class ExemplarsMixin:
         for band in self._exemplar_bands.values():
             self._remove_rubber_band(band)
         self._exemplar_bands.clear()
+        # No drawing left, so no measurement stands: the next one drawn is a
+        # change whatever its size.
+        self._auto_exemplar_seed_m = None
         # Disarm a still-active example draw tool.
         self._restore_maptool_after_exemplar()
         self._refresh_exemplar_chips()
@@ -559,9 +604,15 @@ class ExemplarsMixin:
             return
         self._exemplar_maptool = None
         # Same one-shot cleanup as the restore path: the tool is dropped here,
-        # so its rubber bands must leave the canvas scene with it.
+        # so its rubber bands and the tool itself must go with it. Without the
+        # delete, one tool object per abandoned draw stayed parented to the
+        # canvas for the rest of the QGIS session.
         try:
             tool.remove_bands_from_canvas()
+        except (RuntimeError, AttributeError):
+            pass
+        try:
+            tool.deleteLater()
         except (RuntimeError, AttributeError):
             pass
         self._maptool_before_exemplar = None
@@ -607,6 +658,23 @@ class ExemplarsMixin:
             self.iface.mapCanvas().scene().removeItem(band)
         except (RuntimeError, AttributeError):
             pass
+
+    def _sync_exemplar_store_tier(self) -> None:
+        """Tell the example store which plan's ceilings apply.
+
+        Known-free only, the same rule as the zone-cap card: before the usage
+        fetch lands the plan is unknown, not free, so a subscriber never meets
+        the offer while their account is still loading. Read off the dock,
+        which holds the last account snapshot.
+        """
+        dock = self.dock_widget
+        try:
+            known_free = (dock is not None
+                          and getattr(dock, "_auto_credits", None) is not None
+                          and not getattr(dock, "_auto_is_subscriber", False))
+        except (RuntimeError, AttributeError):
+            known_free = False
+        self._auto_exemplar_store.free_tier = bool(known_free)
 
     def _refresh_exemplar_chips(self) -> None:
         """Push the current exemplars to the dock chip strip."""

@@ -20,6 +20,21 @@ from .model_config import (
 )
 from .qt_compat import NoLessSafeRedirectPolicy, RedirectPolicyAttribute
 
+
+def tr(text: str) -> str:
+    """Translate one user-facing line, falling back to English.
+
+    The translator is imported inside the call, so this module keeps importing
+    with no translator loaded and a lookup can never break a download.
+    """
+    try:
+        from .i18n import tr as translate
+
+        return translate(text)
+    except Exception:  # noqa: BLE001 -- English is a fine answer here
+        return text
+
+
 CHECKPOINTS_DIR = os.path.join(PLUGIN_CACHE_DIR, "checkpoints")
 FEATURES_DIR = os.path.join(PLUGIN_CACHE_DIR, "features")
 
@@ -72,7 +87,14 @@ def get_checkpoint_path() -> str:
 
 
 def checkpoint_exists() -> bool:
-    return os.path.exists(get_checkpoint_path())
+    """Whether the model file is on disk. Creates nothing.
+
+    Joins the directory rather than asking for it: the getter above makes the
+    directory, and this question is asked on the click path and on every
+    refresh of the review panel, so going through it turned a read into a
+    filesystem write on a folder that may sit on a synced or network home.
+    """
+    return os.path.exists(os.path.join(CHECKPOINTS_DIR, SAM_CHECKPOINT_FILENAME))
 
 
 def verify_checkpoint_hash(filepath: str) -> bool:
@@ -170,14 +192,33 @@ def delete_checkpoint() -> bool:
     return True
 
 
-def _disk_space_preflight_hint(dest_dir: str, min_free_mb: float = 1024.0) -> str | None:
+#: Shipped headroom the model download asks for, in MB. The weights are a few
+#: hundred MB and the partial file sits beside them until the final swap, so
+#: the figure covers both. Retunable from the product configuration.
+CHECKPOINT_MIN_FREE_MB = 1024.0
+
+
+def resolved_checkpoint_min_free_mb() -> float:
+    """The free space the model download requires, server value when served."""
+    try:
+        from .server_dials import dial_in_range
+
+        return float(dial_in_range(
+            "install.disk.min_free_mb_checkpoint",
+            CHECKPOINT_MIN_FREE_MB, 256.0, 20480.0))
+    except Exception:  # noqa: BLE001 -- configuration is best-effort
+        return CHECKPOINT_MIN_FREE_MB
+
+
+def _disk_space_preflight_hint(
+        dest_dir: str, min_free_mb: float | None = None) -> str | None:
     """Return an error message if dest_dir has less than min_free_mb free.
 
-    Mirrors the venv install's 4GB preflight (venv_manager.py) so a full disk
-    fails clearly here too instead of an opaque mid-write error. The SAM
-    checkpoint is a few hundred MB; 1GB headroom covers it plus the ".tmp"
-    partial-download file that coexists with it during the swap.
+    Mirrors the venv install's own preflight (venv_manager.py) so a full disk
+    fails clearly here too instead of an opaque mid-write error.
     """
+    if min_free_mb is None:
+        min_free_mb = resolved_checkpoint_min_free_mb()
     try:
         os.makedirs(dest_dir, exist_ok=True)
         free_mb = shutil.disk_usage(dest_dir).free / (1024 ** 2)
@@ -186,12 +227,13 @@ def _disk_space_preflight_hint(dest_dir: str, min_free_mb: float = 1024.0) -> st
         return None
     if free_mb < min_free_mb:
         return (
-            f"Not enough free disk space to download the AI model: "
-            f"{free_mb:.0f} MB available at {dest_dir}, "
-            f"at least {min_free_mb:.0f} MB is required.\n\n"
-            "Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR "
-            "environment variable to a directory on a larger drive, "
-            "then restart QGIS."
+            tr("Not enough free disk space to download the AI model: "
+               "{free} MB available, at least {needed} MB is required.").format(
+                   free=f"{free_mb:.0f}", needed=f"{min_free_mb:.0f}")
+            + "\n\n"
+            + tr("Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR "
+                 "environment variable to a directory on a larger drive, "
+                 "then restart QGIS.")
         )
     return None
 
@@ -373,7 +415,50 @@ def _discard_partial_download(temp_path: str) -> None:
             "AI Segmentation", level=Qgis.MessageLevel.Warning)
 
 
+#: The download takes a lock of its own rather than the install lock: a model
+#: download and a dependency install are different jobs and must not block
+#: each other, while two QGIS windows fetching the same weights write into the
+#: same partial file and would interleave their bytes.
+_CHECKPOINT_LOCK_BASENAME = "checkpoint.lock"
+
+
+def checkpoint_lock_path() -> str:
+    """Where the one-download-at-a-time lock file lives."""
+    return os.path.join(CHECKPOINTS_DIR, _CHECKPOINT_LOCK_BASENAME)
+
+
 def download_checkpoint(
+    progress_callback: Callable[[int, str], None] | None = None
+) -> tuple[bool, str]:
+    """Download the model weights, one process at a time.
+
+    The cache directory is shared by every QGIS window and profile on the
+    machine, so this holds a lock for the whole transfer. A second window that
+    finds the lock taken stops here with a message instead of writing into the
+    same partial file.
+    """
+    from .install_lock import InstallBusyError, acquire_install_lock
+
+    try:
+        os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
+    except OSError:
+        pass  # nosec B110 - the download below reports the real problem
+    try:
+        lock = acquire_install_lock(checkpoint_lock_path())
+    except InstallBusyError:
+        QgsMessageLog.logMessage(
+            "Another process is already downloading the model",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning)
+        return False, tr(
+            "Another QGIS window is downloading the AI model. Wait for it to "
+            "finish, then try again.")
+    try:
+        return _download_checkpoint(progress_callback)
+    finally:
+        lock.release()
+
+
+def _download_checkpoint(
     progress_callback: Callable[[int, str], None] | None = None
 ) -> tuple[bool, str]:
     """
@@ -419,7 +504,7 @@ def download_checkpoint(
         return False, disk_hint
 
     if progress_callback:
-        progress_callback(0, "Connecting to download server...")
+        progress_callback(0, tr("Connecting to download server..."))
 
     from .install_config import (
         checkpoint_hard_timeout_ms,
@@ -475,11 +560,16 @@ def download_checkpoint(
                     "AI Segmentation", level=Qgis.MessageLevel.Info)
 
         # State container for progress tracking
+        # Rebuilt every attempt, which is what makes it the right place to
+        # keep the reply: the slots below read it from here instead of closing
+        # over a name the next attempt rebinds, so a late signal from an
+        # abandoned reply can never act on the live one.
         download_state = {
             "bytes_received": 0,
             "bytes_total": 0,
             "error": None,
             "file": None,
+            "reply": None,
             "resume_offset": resume_offset,
             "start_time": time.monotonic(),
         }
@@ -499,7 +589,10 @@ def download_checkpoint(
             actual_total = base + total if total > 0 else 0
             elapsed = max(0.1, time.monotonic() - download_state["start_time"])
             speed_mbs = (received / (1024 * 1024)) / elapsed if received > 0 else 0.0
-            retry_suffix = f" (retry {attempt}/{max_retries})" if attempt > 1 else ""
+            retry_suffix = ""
+            if attempt > 1:
+                retry_suffix = " " + tr("(retry {done}/{total})").format(
+                    done=attempt, total=max_retries)
 
             if actual_total > 0:
                 percent = int((actual_received / actual_total) * 90) + 5
@@ -508,23 +601,27 @@ def download_checkpoint(
                 remaining_bytes = max(0, (total - received))
                 eta_s = int(remaining_bytes / max(1.0, received / elapsed)) if received > 0 else 0
                 if eta_s >= 60:
-                    eta_str = f"~{eta_s // 60}m {eta_s % 60}s left"
+                    eta_str = tr("~{minutes}m {seconds}s left").format(
+                        minutes=eta_s // 60, seconds=eta_s % 60)
                 else:
-                    eta_str = f"~{eta_s}s left"
+                    eta_str = tr("~{seconds}s left").format(seconds=eta_s)
                 progress_callback(
                     min(percent, 95),
-                    f"Downloading: {mb_recv:.1f} / {mb_tot:.1f} MB "
-                    f"({speed_mbs:.1f} MB/s, {eta_str}){retry_suffix}")
+                    tr("Downloading: {done} / {total} MB ({speed} MB/s, {eta})").format(
+                        done=f"{mb_recv:.1f}", total=f"{mb_tot:.1f}",
+                        speed=f"{speed_mbs:.1f}", eta=eta_str) + retry_suffix)
             elif actual_received > 0:
                 mb_recv = actual_received / (1024 * 1024)
                 progress_callback(
                     50,
-                    f"Downloading: {mb_recv:.1f} MB ({speed_mbs:.1f} MB/s){retry_suffix}")
+                    tr("Downloading: {done} MB ({speed} MB/s)").format(
+                        done=f"{mb_recv:.1f}", speed=f"{speed_mbs:.1f}") + retry_suffix)
 
         def on_ready_read():
-            data = reply.readAll()
-            if download_state["file"] is None:
+            attempt_reply = download_state["reply"]
+            if attempt_reply is None or download_state["file"] is None:
                 return
+            data = attempt_reply.readAll()
             # A resume answered with HTTP 200 (not 206 Partial Content) means
             # the server or a proxy ignored the Range header and is sending
             # the FULL body; appending it to the partial corrupts the file,
@@ -534,7 +631,7 @@ def download_checkpoint(
             if download_state["resume_offset"] > 0 and not download_state.get("status_checked"):
                 download_state["status_checked"] = True
                 try:
-                    status = reply.attribute(
+                    status = attempt_reply.attribute(
                         QNetworkRequest.Attribute.HttpStatusCodeAttribute)
                 except (RuntimeError, AttributeError):
                     status = None
@@ -551,7 +648,7 @@ def download_checkpoint(
                             f"Cannot restart download file: {reset_err}")
                         download_state["file"] = None
                         try:
-                            reply.abort()
+                            attempt_reply.abort()
                         except (RuntimeError, AttributeError):
                             pass
                         return
@@ -570,12 +667,15 @@ def download_checkpoint(
                     pass  # nosec B110
                 download_state["file"] = None
                 try:
-                    reply.abort()
+                    attempt_reply.abort()
                 except (RuntimeError, AttributeError):
                     pass  # nosec B110
 
         def on_error(_error_code):
-            download_state["error"] = reply.errorString()
+            attempt_reply = download_state["reply"]
+            if attempt_reply is None:
+                return
+            download_state["error"] = attempt_reply.errorString()
 
         try:
             manager = QgsNetworkAccessManager.instance()
@@ -608,6 +708,7 @@ def download_checkpoint(
                 continue
 
             reply = manager.get(request)
+            download_state["reply"] = reply
 
             reply.downloadProgress.connect(on_download_progress)
             reply.readyRead.connect(on_ready_read)
@@ -658,13 +759,12 @@ def download_checkpoint(
             if progress_callback:
                 retry_msg = ""
                 if attempt > 1:
-                    retry_msg = f" (retry {attempt}/{max_retries})"
+                    retry_msg = " " + tr("(retry {done}/{total})").format(
+                        done=attempt, total=max_retries)
                 if resume_offset > 0:
-                    progress_callback(
-                        5, f"Resuming download...{retry_msg}")
+                    progress_callback(5, tr("Resuming download...") + retry_msg)
                 else:
-                    progress_callback(
-                        5, f"Download started...{retry_msg}")
+                    progress_callback(5, tr("Download started...") + retry_msg)
 
             loop.exec()
 
@@ -730,7 +830,7 @@ def download_checkpoint(
                         _consume_download_cancel()
                         return False, DOWNLOAD_CANCELLED_MESSAGE
                     if progress_callback:
-                        progress_callback(100, "Checkpoint downloaded successfully!")
+                        progress_callback(100, tr("Model downloaded."))
                     QgsMessageLog.logMessage(
                         f"Checkpoint downloaded to: {checkpoint_path}",
                         "AI Segmentation", level=Qgis.MessageLevel.Success)
@@ -762,9 +862,9 @@ def download_checkpoint(
                     _discard_partial_download(temp_path)
                     refused_urls.add(attempt_url)
                     refusal = {
-                        403: "the server refused access to the model file",
-                        404: "the model file is not at that address",
-                        410: "the model file has been removed from that address",
+                        403: tr("the server refused access to the model file"),
+                        404: tr("the model file is not at that address"),
+                        410: tr("the model file has been removed from that address"),
                     }[status_code]
                     if len(refused_urls) < len(download_urls):
                         # Another address serves the same file, and the digest
@@ -778,16 +878,17 @@ def download_checkpoint(
                     QgsMessageLog.logMessage(
                         f"Model download stopped: {refusal} (HTTP {status_code})",
                         "AI Segmentation", level=Qgis.MessageLevel.Critical)
-                    return False, (
-                        f"Model download failed: {refusal}. Retrying will not "
+                    return False, tr(
+                        "Model download failed: {reason}. Retrying will not "
                         "help. Update the plugin, or ask your IT administrator "
                         "whether the download is being filtered."
-                    )
+                    ).format(reason=refusal)
                 if attempt < max_retries:
                     wait = min(5 * (2 ** (attempt - 1)), 120)
                     if progress_callback:
                         progress_callback(
-                            5, f"Retry {attempt + 1}/{max_retries} in {wait}s...")
+                            5, tr("Retry {done}/{total} in {seconds}s...").format(
+                                done=attempt + 1, total=max_retries, seconds=wait))
                     _wait_or_cancel(wait)
                 continue
 
@@ -811,7 +912,8 @@ def download_checkpoint(
             if progress_callback:
                 mb_total = file_size / (1024 * 1024)
                 progress_callback(
-                    95, f"Verifying {mb_total:.1f} MB download...")
+                    95, tr("Checking the {size} MB download...").format(
+                        size=f"{mb_total:.1f}"))
 
             if not verify_checkpoint_hash(temp_path):
                 # Hash mismatch after full download: partial file was
@@ -834,7 +936,7 @@ def download_checkpoint(
                     # attempt.
                     digest_mismatches = 0
                 if digest_mismatches >= 2:
-                    return False, (
+                    return False, tr(
                         "The model file arrived complete twice and did not "
                         "match its checksum either time. Something between "
                         "this computer and the download is altering the file, "
@@ -863,7 +965,7 @@ def download_checkpoint(
                         pass
 
             if progress_callback:
-                progress_callback(100, "Checkpoint downloaded successfully!")
+                progress_callback(100, tr("Model downloaded."))
 
             QgsMessageLog.logMessage(
                 f"Checkpoint downloaded to: {checkpoint_path}",
@@ -888,16 +990,17 @@ def download_checkpoint(
     partial_mb = 0
     if os.path.exists(temp_path):
         partial_mb = os.path.getsize(temp_path) / (1024 * 1024)
-    firewall_hint = (
-        " A firewall or proxy may be blocking the download. "
-        "Check your network settings in QGIS (Settings > Options > Network)."
-    )
+    firewall_hint = " " + tr(
+        "A firewall or proxy may be blocking the download. Check your network "
+        "settings in QGIS (Settings > Options > Network).")
+    failed = tr("Download failed after {attempts} attempts: {reason}").format(
+        attempts=max_retries, reason=last_error)
     if partial_mb > 0:
-        return False, (
-            f"Download failed after {max_retries} attempts: {last_error}. "
-            f"Partial file ({partial_mb:.1f} MB) saved, will resume on next try.{firewall_hint}"
-        )
-    return False, f"Download failed after {max_retries} attempts: {last_error}{firewall_hint}"
+        resume = tr(
+            "Partial file ({size} MB) saved, it will resume on the next try."
+        ).format(size=f"{partial_mb:.1f}")
+        return False, f"{failed}. {resume}{firewall_hint}"
+    return False, f"{failed}{firewall_hint}"
 
 
 def cleanup_legacy_sam1_data():

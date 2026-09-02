@@ -49,6 +49,61 @@ def _is_deprioritized_group(name: str) -> bool:
     return (name or "").strip().lower() in _DEPRIORITIZED_GROUP_NAMES
 
 
+def _raster_tree_nodes(root=None):
+    """Every layer-tree node that holds a raster, in tree order."""
+    if root is None:
+        root = QgsProject.instance().layerTreeRoot()
+    nodes = []
+    for node in root.findLayers():
+        try:
+            layer = node.layer()
+        except RuntimeError:
+            continue
+        if layer is not None and isinstance(layer, QgsRasterLayer):
+            nodes.append(node)
+    return nodes
+
+
+def project_raster_presence() -> tuple[int, int]:
+    """(visible, hidden) counts of the valid rasters in the layer tree, read
+    from the project itself rather than from any combo's cached list. The
+    dock uses it to tell "no imagery loaded" from "imagery loaded but
+    unchecked", and to catch a combo whose list went stale."""
+    visible = hidden = 0
+    for node in _raster_tree_nodes():
+        try:
+            if not node.layer().isValid():
+                continue
+            if node.isVisible():
+                visible += 1
+            else:
+                hidden += 1
+        except RuntimeError:
+            continue
+    return visible, hidden
+
+
+def reveal_hidden_rasters() -> int:
+    """Check every valid raster that is unchecked, and its unchecked ancestor
+    groups, so the imagery shows on the map again. Returns how many rasters
+    were switched on."""
+    revealed = 0
+    for node in _raster_tree_nodes():
+        try:
+            if not node.layer().isValid() or node.isVisible():
+                continue
+            node.setItemVisibilityChecked(True)
+            parent = node.parent()
+            while parent is not None:
+                if not parent.itemVisibilityChecked():
+                    parent.setItemVisibilityChecked(True)
+                parent = parent.parent()
+            revealed += 1
+        except RuntimeError:
+            continue
+    return revealed
+
+
 class LayerTreeComboBox(QComboBox):
     """Drop-down that mirrors the QGIS Layer panel order with group headers.
 
@@ -70,6 +125,10 @@ class LayerTreeComboBox(QComboBox):
         # Any user pick, or any setLayer() from the code, ends that for good.
         self._pick_is_automatic = True
         self._view_tracking = True  # suspended while a segmentation session runs
+        # Rasters that were invalid when listed: a repaired source (the
+        # "unavailable layer" fixer, a network that came back) flips isValid
+        # without any project signal, so each one is watched once.
+        self._watched_invalid_ids = set()
 
         from qgis.PyQt.QtCore import QSize
         self.setIconSize(QSize(16, 16))
@@ -317,6 +376,18 @@ class LayerTreeComboBox(QComboBox):
             self._current_layer_id = new_id
             self.layerChanged.emit(layer)
 
+    def _watch_invalid_raster(self, layer) -> None:
+        """Relist once this raster's source changes: that is how a layer that
+        failed to open becomes valid later."""
+        try:
+            layer_id = layer.id()
+            if layer_id in self._watched_invalid_ids:
+                return
+            self._watched_invalid_ids.add(layer_id)
+            layer.dataSourceChanged.connect(self._schedule_refresh)
+        except (RuntimeError, AttributeError, TypeError):
+            pass  # nosec B110 - a layer mid-teardown is not worth watching
+
     def _has_visible_rasters(self, node):
         """Check if a tree node has any visible raster layer descendants."""
         for child in node.children():
@@ -344,6 +415,8 @@ class LayerTreeComboBox(QComboBox):
                 layer = child.layer()
                 if layer and isinstance(layer, QgsRasterLayer) and layer.isValid() and child.isVisible():
                     visible_children.append(child)
+                elif layer and isinstance(layer, QgsRasterLayer) and not layer.isValid():
+                    self._watch_invalid_raster(layer)
 
         depth_role = _IndentDelegate.DEPTH_ROLE
         for child in visible_children:

@@ -1541,6 +1541,18 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
         <translation>Muat imagery Anda sendiri</translation>
     </message>
     <message>
+        <source>Your imagery is hidden</source>
+        <translation>Imagery Anda tersembunyi</translation>
+    </message>
+    <message>
+        <source>It is unchecked in the Layers panel.</source>
+        <translation>Imagery ini tidak dicentang di panel Lapisan.</translation>
+    </message>
+    <message>
+        <source>Show it on the map</source>
+        <translation>Tampilkan di peta</translation>
+    </message>
+    <message>
         <source>Lower the Min size filter to show objects first.</source>
         <translation>Turunkan filter Ukuran min untuk menampilkan objek terlebih dahulu.</translation>
     </message>
@@ -2178,6 +2190,10 @@ Coba buka di QGIS untuk memastikan tampil, atau konversikan ke GeoTIFF (.tif) se
     <message>
         <source>How sure the AI is about each object. Lower shows more, higher keeps only the sure ones.</source>
         <translation>Seberapa yakin AI terhadap setiap objek. Nilai lebih rendah menampilkan lebih banyak, nilai lebih tinggi hanya menyisakan yang paling yakin.</translation>
+    </message>
+    <message>
+        <source>Closed forest: the AI takes it as one cover and does not separate its trees. For the forest as one area, re-run with "forest".</source>
+        <translation>Hutan lebat: AI memperlakukannya sebagai satu tutupan dan tidak memisahkan pohon-pohonnya. Untuk mendapatkan hutan sebagai satu area, jalankan lagi dengan "forest".</translation>
     </message>
     <message>
         <source>Identify new shape</source>
@@ -4771,6 +4787,856 @@ memblokir lingkungan AI lokal plugin.</translation>
     <message>
         <source>Open it yourself</source>
         <translation>Buka sendiri</translation>
+    </message>
+    <message>
+        <source>Personal, non-commercial use. A paid plan adds commercial use for one person.</source>
+        <translation>Penggunaan pribadi dan nonkomersial. Paket berbayar mencakup penggunaan komersial untuk satu orang.</translation>
+    </message>
+    <message>
+        <source>Finishing the current AI task, then the install starts.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Right angles is off: this QGIS does not carry the shapely geometry library it needs. Every other shape control still works.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Unavailable: this QGIS does not carry the shapely geometry library that squares the walls. A QGIS installed with its full package set carries it.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Report copied: paste it into your email</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Sign in to reopen, export or run this detection again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Check for Updates</source>
+        <translation>Periksa Pembaruan</translation>
+    </message>
+    <message>
+        <source>More from TerraLab...</source>
+        <translation>Lainnya dari TerraLab...</translation>
+    </message>
+    <message>
+        <source>BEFORE</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>AFTER</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>(more than {n} min left)</source>
+        <translation>(tersisa lebih dari {n} menit)</translation>
+    </message>
+    <message>
+        <source>(retry {done}/{total})</source>
+        <translation>(coba lagi {done}/{total})</translation>
+    </message>
+    <message>
+        <source>0 shown - raise the Max size filter to reveal them</source>
+        <translation>0 ditampilkan - naikkan filter Ukuran maks untuk menampilkannya</translation>
+    </message>
+    <message>
+        <source>1 charged</source>
+        <translation>1 dikenai biaya</translation>
+    </message>
+    <message>
+        <source>1 cloud detection</source>
+        <translation>1 deteksi cloud</translation>
+    </message>
+    <message>
+        <source>2. Send to support</source>
+        <translation>2. Kirim ke dukungan</translation>
+    </message>
+    <message>
+        <source>200 km² of Automatic a month, on zones of any size.</source>
+        <translation>200 km² Automatic per bulan, untuk zona berukuran berapa pun.</translation>
+    </message>
+    <message>
+        <source>200 km² of Automatic every month, on zones of any size</source>
+        <translation>200 km² Automatic setiap bulan, untuk zona berukuran berapa pun</translation>
+    </message>
+    <message>
+        <source>500 cloud objects every month in Semi-Auto</source>
+        <translation>500 objek cloud setiap bulan di Semi-Auto</translation>
+    </message>
+    <message>
+        <source>A firewall or proxy may be blocking the download. Check your network settings in QGIS (Settings &gt; Options &gt; Network).</source>
+        <translation>Firewall atau proxy mungkin memblokir unduhan. Periksa pengaturan jaringan di QGIS (Settings &gt; Options &gt; Network).</translation>
+    </message>
+    <message>
+        <source>Account settings</source>
+        <translation>Pengaturan akun</translation>
+    </message>
+    <message>
+        <source>Added to the project: {0}.</source>
+        <translation>Ditambahkan ke proyek: {0}.</translation>
+    </message>
+    <message>
+        <source>Advanced settings - name the object first</source>
+        <translation>Pengaturan lanjutan - beri nama objek terlebih dahulu</translation>
+    </message>
+    <message>
+        <source>All dependencies installed</source>
+        <translation>Semua dependensi terpasang</translation>
+    </message>
+    <message>
+        <source>Another QGIS window is downloading the AI model. Wait for it to finish, then try again.</source>
+        <translation>Jendela QGIS lain sedang mengunduh model AI. Tunggu hingga selesai, lalu coba lagi.</translation>
+    </message>
+    <message>
+        <source>Another QGIS window is installing the AI components.</source>
+        <translation>Jendela QGIS lain sedang memasang komponen AI.</translation>
+    </message>
+    <message>
+        <source>Building the shapes</source>
+        <translation>Membuat bentuk</translation>
+    </message>
+    <message>
+        <source>Cancelled before the model was asked for. Nothing was spent.</source>
+        <translation>Dibatalkan sebelum model diminta. Tidak ada yang dikenai biaya.</translation>
+    </message>
+    <message>
+        <source>Cancelled before the point was sent. Nothing was spent.</source>
+        <translation>Dibatalkan sebelum titik dikirim. Tidak ada yang dikenai biaya.</translation>
+    </message>
+    <message>
+        <source>Cancelled before the zone was sent. Nothing was spent.</source>
+        <translation>Dibatalkan sebelum zona dikirim. Tidak ada yang dikenai biaya.</translation>
+    </message>
+    <message>
+        <source>Cancelled while the model was loading. Nothing was spent.</source>
+        <translation>Dibatalkan saat model sedang dimuat. Tidak ada yang dikenai biaya.</translation>
+    </message>
+    <message>
+        <source>Cancelled. Kept the {0} object(s) already found, from the {1} tile(s) processed before the stop. The zone was charged when the run started, so the stop does not lower the bill. Added to the project: {2}.</source>
+        <translation>Dibatalkan. {0} objek yang sudah ditemukan dari {1} tile yang diproses sebelum penghentian tetap disimpan. Zona dikenai biaya saat proses dimulai, jadi penghentian tidak mengurangi tagihan. Ditambahkan ke proyek: {2}.</translation>
+    </message>
+    <message>
+        <source>Cancelled. The AI service had processed {0} tile(s) before the stop, and nothing was added to the project. Open the AI Segmentation panel and look for a run waiting for review before starting another one. Run '{1}' to see what is left on the plan.</source>
+        <translation>Dibatalkan. Layanan AI telah memproses {0} tile sebelum dihentikan, dan tidak ada yang ditambahkan ke proyek. Buka panel AI Segmentation dan cari proses yang menunggu peninjauan sebelum memulai proses baru. Jalankan '{1}' untuk melihat sisa kuota paket Anda.</translation>
+    </message>
+    <message>
+        <source>Cannot restart the download: {error}</source>
+        <translation>Tidak dapat memulai ulang unduhan: {error}</translation>
+    </message>
+    <message>
+        <source>Charged</source>
+        <translation>Dikenai biaya</translation>
+    </message>
+    <message>
+        <source>Check disk space and folder permissions, then try again.</source>
+        <translation>Periksa ruang disk dan izin folder, lalu coba lagi.</translation>
+    </message>
+    <message>
+        <source>Checking the {size} MB download...</source>
+        <translation>Memeriksa unduhan {size} MB...</translation>
+    </message>
+    <message>
+        <source>Click on the map to outline your zone.</source>
+        <translation>Klik pada peta untuk menggambar garis zona Anda.</translation>
+    </message>
+    <message>
+        <source>Click the object first. Save polygon keeps it in your session; Export writes all kept polygons to a layer.</source>
+        <translation>Klik objek terlebih dahulu. "Simpan poligon" menyimpannya dalam sesi Anda; "Ekspor" menulis semua poligon yang disimpan ke lapisan.</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>Tutup</translation>
+    </message>
+    <message>
+        <source>Cloud detections</source>
+        <translation>Deteksi cloud</translation>
+    </message>
+    <message>
+        <source>Connecting to download server...</source>
+        <translation>Menghubungkan ke server unduhan...</translation>
+    </message>
+    <message>
+        <source>Could not reach TerraLab. Your runs are still there.</source>
+        <translation>Tidak dapat menjangkau TerraLab. Proses Anda masih tersimpan.</translation>
+    </message>
+    <message>
+        <source>Could not reach TerraLab. Your saved runs are still there.</source>
+        <translation>Tidak dapat menjangkau TerraLab. Proses tersimpan Anda masih ada.</translation>
+    </message>
+    <message>
+        <source>Could not remove this run. Try again later.</source>
+        <translation>Tidak dapat menghapus proses ini. Coba lagi nanti.</translation>
+    </message>
+    <message>
+        <source>Date</source>
+        <translation>Tanggal</translation>
+    </message>
+    <message>
+        <source>Delete run</source>
+        <translation>Hapus proses</translation>
+    </message>
+    <message>
+        <source>Dense area {current}/{total} · no extra cost</source>
+        <translation>Area padat {current}/{total} · tanpa biaya tambahan</translation>
+    </message>
+    <message>
+        <source>Download failed after {attempts} attempts: {reason}</source>
+        <translation>Unduhan gagal setelah {attempts} percobaan: {reason}</translation>
+    </message>
+    <message>
+        <source>Download started...</source>
+        <translation>Unduhan dimulai...</translation>
+    </message>
+    <message>
+        <source>Downloading Python {version}...</source>
+        <translation>Mengunduh Python {version}...</translation>
+    </message>
+    <message>
+        <source>Downloading {package} ({size})... {elapsed}</source>
+        <translation>Mengunduh {package} ({size})... {elapsed}</translation>
+    </message>
+    <message>
+        <source>Downloading {package}... {elapsed}</source>
+        <translation>Mengunduh {package}... {elapsed}</translation>
+    </message>
+    <message>
+        <source>Downloading: {done} / {total} MB ({speed} MB/s, {eta})</source>
+        <translation>Mengunduh: {done} / {total} MB ({speed} MB/s, {eta})</translation>
+    </message>
+    <message>
+        <source>Downloading: {done} MB ({speed} MB/s)</source>
+        <translation>Mengunduh: {done} MB ({speed} MB/s)</translation>
+    </message>
+    <message>
+        <source>Draw a zone, name one kind of object, get all of them in one run. Runs on our servers and uses your cloud objects.</source>
+        <translation>Gambar zona, beri nama satu jenis objek, dapatkan semuanya dalam satu proses. Berjalan di server kami dan menggunakan objek cloud Anda.</translation>
+    </message>
+    <message>
+        <source>Drop points closer than this distance to a straight edge (0 = off).</source>
+        <translation>Hapus titik yang lebih dekat dari jarak ini ke tepi lurus (0 = nonaktif).</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;about {n} minutes to install&lt;/b&gt;</source>
+        <translation>Semuanya tetap di komputer ini {dot} &lt;b&gt;sekitar {n} menit untuk memasang&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;{gb} GB and about {n} minutes to install&lt;/b&gt;</source>
+        <translation>Semuanya tetap di komputer ini {dot} &lt;b&gt;{gb} GB dan sekitar {n} menit untuk memasang&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Export</source>
+        <translation>Ekspor</translation>
+    </message>
+    <message>
+        <source>Exported</source>
+        <translation>Diekspor</translation>
+    </message>
+    <message>
+        <source>Extracting Python...</source>
+        <translation>Mengekstrak Python...</translation>
+    </message>
+    <message>
+        <source>Failed</source>
+        <translation>Gagal</translation>
+    </message>
+    <message>
+        <source>Found nothing</source>
+        <translation>Tidak menemukan apa pun</translation>
+    </message>
+    <message>
+        <source>Found {0} object(s) across {1} processed tile(s). Run '{2}' to read what is left on the plan: the run is charged for the surface of its zone, so the tile count is not the cost.</source>
+        <translation>Menemukan {0} objek dari {1} tile yang diproses. Jalankan '{2}' untuk melihat sisa kuota paket Anda: proses ini dikenai biaya berdasarkan luas zonanya, sehingga jumlah tile bukan penentu biaya.</translation>
+    </message>
+    <message>
+        <source>Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR environment variable to a directory on a larger drive, then restart QGIS.</source>
+        <translation>Kosongkan ruang disk, atau atur variabel lingkungan AI_SEGMENTATION_CACHE_DIR ke direktori pada drive yang lebih besar, lalu mulai ulang QGIS.</translation>
+    </message>
+    <message>
+        <source>GeoJSON and KML are written in EPSG:4326. Shapefile shortens field names to 10 characters.</source>
+        <translation>GeoJSON dan KML ditulis dalam EPSG:4326. Shapefile memperpendek nama kolom menjadi 10 karakter.</translation>
+    </message>
+    <message>
+        <source>It downloads first, and takes about {n} minutes.</source>
+        <translation>Diunduh terlebih dahulu, dan membutuhkan waktu sekitar {n} menit.</translation>
+    </message>
+    <message>
+        <source>It downloads first.</source>
+        <translation>Diunduh terlebih dahulu.</translation>
+    </message>
+    <message>
+        <source>It downloads first: {gb} GB and about {n} minutes.</source>
+        <translation>Diunduh terlebih dahulu: {gb} GB dan sekitar {n} menit.</translation>
+    </message>
+    <message>
+        <source>It started {minutes} minutes ago.</source>
+        <translation>Dimulai {minutes} menit yang lalu.</translation>
+    </message>
+    <message>
+        <source>Keep clicking around the zone, at least 3 points.</source>
+        <translation>Terus klik di sekitar zona, minimal 3 titik.</translation>
+    </message>
+    <message>
+        <source>Layer is off screen</source>
+        <translation>Lapisan berada di luar layar</translation>
+    </message>
+    <message>
+        <source>Loading your runs...</source>
+        <translation>Memuat proses Anda...</translation>
+    </message>
+    <message>
+        <source>Local AI files</source>
+        <translation>File AI lokal</translation>
+    </message>
+    <message>
+        <source>Looking at ({0}, {1}) on {2}.</source>
+        <translation>Melihat ({0}, {1}) pada {2}.</translation>
+    </message>
+    <message>
+        <source>Looking for '{0}' on {1}.</source>
+        <translation>Mencari '{0}' pada {1}.</translation>
+    </message>
+    <message>
+        <source>Model download failed: {reason}. Retrying will not help. Update the plugin, or ask your IT administrator whether the download is being filtered.</source>
+        <translation>Unduhan model gagal: {reason}. Mencoba lagi tidak akan membantu. Perbarui plugin, atau tanyakan kepada administrator TI Anda apakah unduhan sedang disaring.</translation>
+    </message>
+    <message>
+        <source>Model downloaded.</source>
+        <translation>Model telah diunduh.</translation>
+    </message>
+    <message>
+        <source>No internet connection. Check your connection and try again.</source>
+        <translation>Tidak ada koneksi internet. Periksa koneksi Anda dan coba lagi.</translation>
+    </message>
+    <message>
+        <source>No run matches that search.</source>
+        <translation>Tidak ada proses yang cocok dengan pencarian tersebut.</translation>
+    </message>
+    <message>
+        <source>No run matches that search. Load older runs to look further back.</source>
+        <translation>Tidak ada proses yang cocok dengan pencarian tersebut. Muat proses yang lebih lama untuk melihat lebih jauh ke belakang.</translation>
+    </message>
+    <message>
+        <source>No runs yet. Your Automatic runs appear here, ready to reuse, restore or export.</source>
+        <translation>Belum ada proses. Proses Automatic Anda akan muncul di sini, siap digunakan kembali, dipulihkan, atau diekspor.</translation>
+    </message>
+    <message>
+        <source>Not enough free disk space to download the AI model: {free} MB available, at least {needed} MB is required.</source>
+        <translation>Ruang disk kosong tidak cukup untuk mengunduh model AI: {free} MB tersedia, minimal {needed} MB diperlukan.</translation>
+    </message>
+    <message>
+        <source>Nothing to export yet. Click an object and save it first.</source>
+        <translation>Belum ada yang bisa diekspor. Klik sebuah objek dan simpan terlebih dahulu.</translation>
+    </message>
+    <message>
+        <source>Objects</source>
+        <translation>Objek</translation>
+    </message>
+    <message>
+        <source>Outlined one object, score {0}.</source>
+        <translation>Menggambar garis 1 objek, skor {0}.</translation>
+    </message>
+    <message>
+        <source>Partial file ({size} MB) saved, it will resume on the next try.</source>
+        <translation>File sebagian ({size} MB) disimpan, akan dilanjutkan pada percobaan berikutnya.</translation>
+    </message>
+    <message>
+        <source>Points the map back at this run, ready to detect the same object again. Nothing is spent until you do.</source>
+        <translation>Mengarahkan peta kembali ke proses ini, siap mendeteksi objek yang sama lagi. Tidak ada biaya sampai Anda melakukannya.</translation>
+    </message>
+    <message>
+        <source>Preparing installation...</source>
+        <translation>Menyiapkan pemasangan...</translation>
+    </message>
+    <message>
+        <source>Preparing the imagery for the AI...</source>
+        <translation>Menyiapkan imagery untuk AI...</translation>
+    </message>
+    <message>
+        <source>Pro gives you 200 km² of Automatic a month, so you keep working.</source>
+        <translation>Pro memberi Anda 200 km² Automatic per bulan, sehingga Anda terus bisa bekerja.</translation>
+    </message>
+    <message>
+        <source>Pro gives you 500 cloud objects a month in Semi-Auto.</source>
+        <translation>Pro memberi Anda 500 objek cloud per bulan di Semi-Auto.</translation>
+    </message>
+    <message>
+        <source>Pro raises the month to 200 km² of Automatic.</source>
+        <translation>Pro menaikkan kuota bulanan menjadi 200 km² Automatic.</translation>
+    </message>
+    <message>
+        <source>Pro: 500 cloud objects a month in Semi-Auto with Cloud AI, and 200 km² of Automatic. Same AI, same free clicks and corrections, every machine you work on.</source>
+        <translation>Pro: 500 objek cloud per bulan di Semi-Auto dengan Cloud AI, dan 200 km² Automatic. AI yang sama, klik dan koreksi gratis yang sama, di setiap komputer yang Anda gunakan.</translation>
+    </message>
+    <message>
+        <source>Python {version} installed</source>
+        <translation>Python {version} terpasang</translation>
+    </message>
+    <message>
+        <source>QGIS would not open this layer for editing, so the manual tools could not start.</source>
+        <translation>QGIS tidak dapat membuka lapisan ini untuk diedit, sehingga alat manual tidak dapat dimulai.</translation>
+    </message>
+    <message>
+        <source>Raise the Max size filter to show objects first.</source>
+        <translation>Naikkan filter Ukuran maks untuk menampilkan objek terlebih dahulu.</translation>
+    </message>
+    <message>
+        <source>Remove this run from your history? Its detections stay stored, but it will not be listed here any more.</source>
+        <translation>Hapus proses ini dari riwayat Anda? Deteksinya tetap tersimpan, tetapi tidak akan ditampilkan di sini lagi.</translation>
+    </message>
+    <message>
+        <source>Reshaping the objects...</source>
+        <translation>Membentuk ulang objek...</translation>
+    </message>
+    <message>
+        <source>Resolution</source>
+        <translation>Resolusi</translation>
+    </message>
+    <message>
+        <source>Restored</source>
+        <translation>Dipulihkan</translation>
+    </message>
+    <message>
+        <source>Resuming download...</source>
+        <translation>Melanjutkan unduhan...</translation>
+    </message>
+    <message>
+        <source>Retry {done}/{total} in {seconds}s...</source>
+        <translation>Coba lagi {done}/{total} dalam {seconds} detik...</translation>
+    </message>
+    <message>
+        <source>Run again</source>
+        <translation>Jalankan lagi</translation>
+    </message>
+    <message>
+        <source>Save all {found}</source>
+        <translation>Simpan semua {found}</translation>
+    </message>
+    <message>
+        <source>Save the hidden objects too?</source>
+        <translation>Simpan juga objek yang disembunyikan?</translation>
+    </message>
+    <message>
+        <source>Save the {visible} shown</source>
+        <translation>Simpan {visible} yang ditampilkan</translation>
+    </message>
+    <message>
+        <source>Saved on this computer</source>
+        <translation>Disimpan di komputer ini</translation>
+    </message>
+    <message>
+        <source>Saved to {folder}. Save the project to keep your results beside it.</source>
+        <translation>Disimpan ke {folder}. Simpan proyek untuk menyimpan hasil Anda bersamanya.</translation>
+    </message>
+    <message>
+        <source>Session expired. Open the AI Segmentation panel and sign in again.</source>
+        <translation>Sesi telah berakhir. Buka panel AI Segmentation dan masuk kembali.</translation>
+    </message>
+    <message>
+        <source>Shared borders is off above {cap} shapes. This result has {count}.</source>
+        <translation>"Batas bersama" nonaktif di atas {cap} bentuk. Hasil ini memiliki {count}.</translation>
+    </message>
+    <message>
+        <source>Shared borders needs a position for the shapes and this result carries none.</source>
+        <translation>"Batas bersama" memerlukan posisi untuk bentuk, dan hasil ini tidak memilikinya.</translation>
+    </message>
+    <message>
+        <source>Sign in</source>
+        <translation>Masuk</translation>
+    </message>
+    <message>
+        <source>Sign in to keep detections here.</source>
+        <translation>Masuk untuk menyimpan deteksi di sini.</translation>
+    </message>
+    <message>
+        <source>Sign in to reopen, export or run this zone again.</source>
+        <translation>Masuk untuk membuka kembali, mengekspor, atau menjalankan ulang zona ini.</translation>
+    </message>
+    <message>
+        <source>Sign in to see every run on your account.</source>
+        <translation>Masuk untuk melihat semua proses di akun Anda.</translation>
+    </message>
+    <message>
+        <source>Sign in to see your past runs.</source>
+        <translation>Masuk untuk melihat proses Anda sebelumnya.</translation>
+    </message>
+    <message>
+        <source>Star a run or an object to keep it here.</source>
+        <translation>Beri bintang pada proses atau objek untuk menyimpannya di sini.</translation>
+    </message>
+    <message>
+        <source>Starred objects</source>
+        <translation>Objek berbintang</translation>
+    </message>
+    <message>
+        <source>State: {0}. Ready: {1}.</source>
+        <translation>Status: {0}. Siap: {1}.</translation>
+    </message>
+    <message>
+        <source>Status</source>
+        <translation>Status</translation>
+    </message>
+    <message>
+        <source>Stop</source>
+        <translation>Berhenti</translation>
+    </message>
+    <message>
+        <source>Stop reshaping here. The outlines already redrawn are kept.</source>
+        <translation>Hentikan pembentukan ulang di sini. Garis yang sudah digambar ulang tetap disimpan.</translation>
+    </message>
+    <message>
+        <source>Takes this run out of your history. Its detections stay stored.</source>
+        <translation>Mengeluarkan proses ini dari riwayat Anda. Deteksinya tetap tersimpan.</translation>
+    </message>
+    <message>
+        <source>That click could not be handled. Please try again.</source>
+        <translation>Klik tersebut tidak dapat diproses. Silakan coba lagi.</translation>
+    </message>
+    <message>
+        <source>That shape was not added. Adjust it with a click and try again.</source>
+        <translation>Bentuk tersebut tidak ditambahkan. Sesuaikan dengan klik dan coba lagi.</translation>
+    </message>
+    <message>
+        <source>The AI engine cannot load on Windows</source>
+        <translation>Mesin AI tidak dapat dimuat di Windows</translation>
+    </message>
+    <message>
+        <source>The AI is still loading. This session starts on its own as soon as it is ready.</source>
+        <translation>AI masih dimuat. Sesi ini akan dimulai secara otomatis begitu siap.</translation>
+    </message>
+    <message>
+        <source>The AI service answers this in one go, so the progress bar stays still and QGIS stays busy. This can take several minutes. Do not start it again. The zone is charged when the run starts; Cancel stops the run and keeps what was found.</source>
+        <translation>Layanan AI memproses ini sekaligus, sehingga bilah kemajuan tetap diam dan QGIS tetap sibuk. Ini bisa memakan waktu beberapa menit. Jangan mulai lagi. Zona dikenai biaya saat proses dimulai; Batal menghentikan proses dan menyimpan hasil yang sudah ditemukan.</translation>
+    </message>
+    <message>
+        <source>The AI service is waking up. Holding your spot...</source>
+        <translation>Layanan AI sedang aktif kembali. Tempat Anda tetap dipertahankan...</translation>
+    </message>
+    <message>
+        <source>The local AI did not stop in time, so the install was not started. Close and reopen QGIS, then try again.</source>
+        <translation>AI lokal tidak berhenti tepat waktu, sehingga pemasangan tidak dimulai. Tutup dan buka kembali QGIS, lalu coba lagi.</translation>
+    </message>
+    <message>
+        <source>The model file arrived complete twice and did not match its checksum either time. Something between this computer and the download is altering the file, usually a proxy or a security appliance. Ask your IT administrator to let the download through untouched.</source>
+        <translation>File model tiba dengan lengkap dua kali, dan checksum-nya tidak cocok pada kedua kalinya. Sesuatu di antara komputer ini dan sumber unduhan sedang mengubah file, biasanya proxy atau perangkat keamanan. Minta administrator TI Anda untuk membiarkan unduhan lewat tanpa perubahan.</translation>
+    </message>
+    <message>
+        <source>The model is not loaded yet. Waiting up to {0} seconds for it.</source>
+        <translation>Model belum dimuat. Menunggu hingga {0} detik.</translation>
+    </message>
+    <message>
+        <source>The object was outlined but saving it failed: {0}. The outline is still returned as POLYGON_WKT.</source>
+        <translation>Objek telah digambar garisnya, tetapi penyimpanannya gagal: {0}. Garis luar tetap dikembalikan sebagai POLYGON_WKT.</translation>
+    </message>
+    <message>
+        <source>The plugin requires Visual C++ Redistributables to run the local AI engine.
+
+Please download and install:
+https://aka.ms/vs/17/release/vc_redist.x64.exe
+
+After installation, restart QGIS and try again.</source>
+        <translation>Plugin ini memerlukan Visual C++ Redistributables untuk menjalankan mesin AI lokal.
+
+Silakan unduh dan pasang:
+https://aka.ms/vs/17/release/vc_redist.x64.exe
+
+Setelah pemasangan, mulai ulang QGIS dan coba lagi.</translation>
+    </message>
+    <message>
+        <source>The run finished but added no layer to the project. Look in the AI Segmentation panel: results waiting for review live there.</source>
+        <translation>Proses selesai tetapi tidak menambahkan lapisan ke proyek. Lihat panel AI Segmentation: hasil yang menunggu peninjauan ada di sana.</translation>
+    </message>
+    <message>
+        <source>This raster is outside the current map view, so clicks would land on nothing.</source>
+        <translation>Raster ini berada di luar tampilan peta saat ini, sehingga klik tidak akan berpengaruh.</translation>
+    </message>
+    <message>
+        <source>This run found nothing. Add the object yourself below, or use "Re-run the whole zone" with another word or a smaller zone.</source>
+        <translation>Proses ini tidak menemukan apa pun. Tambahkan objek sendiri di bawah, atau gunakan "Jalankan ulang seluruh zona" dengan kata lain atau zona yang lebih kecil.</translation>
+    </message>
+    <message>
+        <source>Today</source>
+        <translation>Hari ini</translation>
+    </message>
+    <message>
+        <source>Undated</source>
+        <translation>Tanpa tanggal</translation>
+    </message>
+    <message>
+        <source>Undo every correction of this round at once. The count is in the label, so you can see what goes. It asks once first.</source>
+        <translation>Batalkan semua koreksi pada putaran ini sekaligus. Jumlahnya ada di label, jadi Anda dapat melihat apa yang akan dihapus. Sistem akan bertanya sekali terlebih dahulu.</translation>
+    </message>
+    <message>
+        <source>Undo every correction? Confirm</source>
+        <translation>Batalkan semua koreksi? Konfirmasi</translation>
+    </message>
+    <message>
+        <source>Unknown error. Try again, or use Cloud AI instead.</source>
+        <translation>Kesalahan tidak diketahui. Coba lagi, atau gunakan Cloud AI sebagai gantinya.</translation>
+    </message>
+    <message>
+        <source>Verifying Python installation...</source>
+        <translation>Memverifikasi pemasangan Python...</translation>
+    </message>
+    <message>
+        <source>Wait for it to finish, then try again.</source>
+        <translation>Tunggu hingga selesai, lalu coba lagi.</translation>
+    </message>
+    <message>
+        <source>Yesterday</source>
+        <translation>Kemarin</translation>
+    </message>
+    <message>
+        <source>Your {n} free cloud detections are used up</source>
+        <translation>{n} deteksi cloud gratis Anda telah habis</translation>
+    </message>
+    <message>
+        <source>Zone</source>
+        <translation>Zona</translation>
+    </message>
+    <message>
+        <source>Zone too large - draw a smaller zone</source>
+        <translation>Zona terlalu besar - gambar zona yang lebih kecil</translation>
+    </message>
+    <message>
+        <source>Zone too large. Draw a zone of {max} tiles or fewer.</source>
+        <translation>Zona terlalu besar. Gambar zona dengan {max} tile atau kurang.</translation>
+    </message>
+    <message>
+        <source>Zoom to the layer first?</source>
+        <translation>Perbesar ke lapisan terlebih dahulu?</translation>
+    </message>
+    <message>
+        <source>the AI engine</source>
+        <translation>mesin AI</translation>
+    </message>
+    <message>
+        <source>the AI model</source>
+        <translation>model AI</translation>
+    </message>
+    <message>
+        <source>the model file has been removed from that address</source>
+        <translation>file model telah dihapus dari alamat tersebut</translation>
+    </message>
+    <message>
+        <source>the model file is not at that address</source>
+        <translation>file model tidak ada di alamat tersebut</translation>
+    </message>
+    <message>
+        <source>the server refused access to the model file</source>
+        <translation>server menolak akses ke file model</translation>
+    </message>
+    <message>
+        <source>{hidden} objects are hidden by the filters. Finish asks before it leaves them out.</source>
+        <translation>{hidden} objek disembunyikan oleh filter. "Selesai" akan bertanya sebelum mengecualikannya.</translation>
+    </message>
+    <message>
+        <source>{hidden} of the {found} objects found are hidden by the Confidence cutoff. They are not on screen, and Finish leaves them out.</source>
+        <translation>{hidden} dari {found} objek yang ditemukan disembunyikan oleh batas Confidence. Objek tersebut tidak ada di layar, dan "Selesai" akan mengecualikannya.</translation>
+    </message>
+    <message>
+        <source>{n} charged</source>
+        <translation>{n} dikenai biaya</translation>
+    </message>
+    <message>
+        <source>{n} cloud detections</source>
+        <translation>{n} deteksi cloud</translation>
+    </message>
+    <message>
+        <source>{n} free cloud detections left, back on {date}.</source>
+        <translation>{n} deteksi cloud gratis tersisa, kembali pada {date}.</translation>
+    </message>
+    <message>
+        <source>{n} free cloud detections left.</source>
+        <translation>{n} deteksi cloud gratis tersisa.</translation>
+    </message>
+    <message>
+        <source>{n} ha</source>
+        <translation>{n} ha</translation>
+    </message>
+    <message>
+        <source>{n} km2</source>
+        <translation>{n} km2</translation>
+    </message>
+    <message>
+        <source>{package} installed</source>
+        <translation>{package} terpasang</translation>
+    </message>
+    <message>
+        <source>{used} of {cap} computers in use.</source>
+        <translation>{used} dari {cap} komputer digunakan.</translation>
+    </message>
+    <message>
+        <source>~{minutes}m {seconds}s left</source>
+        <translation>~{minutes}m {seconds}s tersisa</translation>
+    </message>
+    <message>
+        <source>~{seconds}s left</source>
+        <translation>~{seconds}s tersisa</translation>
+    </message>
+    <message>
+        <source>Save the {visible} polygons shown as a layer.</source>
+        <translation>Simpan {visible} poligon yang ditampilkan sebagai layer.</translation>
+    </message>
+    <message>
+        <source>About a minute left</source>
+        <translation>Sekitar satu menit lagi</translation>
+    </message>
+    <message>
+        <source>About {m} min left</source>
+        <translation>Sekitar {m} menit lagi</translation>
+    </message>
+    <message>
+        <source>Dense area · no extra cost</source>
+        <translation>Area padat · tanpa biaya tambahan</translation>
+    </message>
+    <message>
+        <source>Less than a minute left</source>
+        <translation>Kurang dari satu menit lagi</translation>
+    </message>
+    <message>
+        <source>about {m} min</source>
+        <translation>sekitar {m} menit</translation>
+    </message>
+    <message>
+        <source>under a minute</source>
+        <translation>kurang dari satu menit</translation>
+    </message>
+    <message>
+        <source>{current} of {total} tiles</source>
+        <translation>{current} dari {total} tile</translation>
+    </message>
+    <message>
+        <source>{done} of {total} km²</source>
+        <translation>{done} dari {total} km²</translation>
+    </message>
+    <message>
+        <source>{km2} km² · {eta}</source>
+        <translation>{km2} km² · {eta}</translation>
+    </message>
+    <message>
+        <source>{pct}% done</source>
+        <translation>{pct}% selesai</translation>
+    </message>
+    <message>
+        <source>Free includes one example per run, and this run has it.</source>
+        <translation>Paket gratis mencakup satu contoh per proses, dan proses ini sudah memilikinya.</translation>
+    </message>
+    <message>
+        <source>Or run it with this one example.</source>
+        <translation>Atau jalankan dengan satu contoh ini.</translation>
+    </message>
+    <message>
+        <source>Pro takes up to {max} examples per run, look-alikes to exclude included, so the AI finds exactly what you mean.</source>
+        <translation>Pro menerima hingga {max} contoh per proses, termasuk objek serupa yang dikecualikan, sehingga AI menemukan persis apa yang Anda maksud.</translation>
+    </message>
+    <message>
+        <source>The AI finds every object that looks like your example. Free includes one example per run.</source>
+        <translation>AI menemukan setiap objek yang mirip dengan contoh Anda. Paket gratis mencakup satu contoh per proses.</translation>
+    </message>
+    <message>
+        <source>The AI finds every object that looks like your examples - you can draw up to {max}.</source>
+        <translation>AI menemukan setiap objek yang mirip dengan contoh-contoh Anda - Anda dapat menggambar hingga {max}.</translation>
+    </message>
+    <message>
+        <source>The AI finds every object that looks like your examples.</source>
+        <translation>AI menemukan setiap objek yang mirip dengan contoh-contoh Anda.</translation>
+    </message>
+    <message>
+        <source>Need more this month? Write to us and we set up a plan that fits your volume.</source>
+        <translation>Perlu lebih banyak bulan ini? Hubungi kami dan kami siapkan paket sesuai volume Anda.</translation>
+    </message>
+    <message>
+        <source>{left} of {cap} Semi-Auto objects left this month</source>
+        <translation>{left} dari {cap} objek Semi-Auto tersisa bulan ini</translation>
+    </message>
+    <message>
+        <source>Copy email</source>
+        <translation>Salin email</translation>
+    </message>
+    <message>
+        <source>Custom needs? Write to us: {email}</source>
+        <translation>Punya kebutuhan khusus? Hubungi kami: {email}</translation>
+    </message>
+    <message>
+        <source>Automatic is unavailable right now.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Describe what to find, show what it looks like, or do both. Both together is the most accurate.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Detect objects ({n} km² · {eta})</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Detect objects ({n} km²)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Draw a smaller zone</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Each tile covers a lot of ground at this precision. Raise the precision in Advanced settings for sharper detections.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Exclude {n}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Reference {n}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Semi-Auto still works until it comes back.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Semi-Auto still works, and Automatic comes back on {date}.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Size of each object</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The AI drops objects that look like this.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The AI looks for more objects like this.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Try again in a few minutes. Your zone and your settings are kept.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Type what to find, or draw an example of it.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>What you asked for</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>You used your Automatic surface for this month.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>and / or</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Building the shapes on this computer - still working, everything already found is kept...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>After an Automatic run, its technical log lines are sent too.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 </TS>

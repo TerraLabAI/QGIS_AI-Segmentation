@@ -8,6 +8,7 @@ the result and wakes it.
 from __future__ import annotations
 
 import logging
+import time
 
 from qgis.PyQt.QtCore import (
     QMutex,
@@ -60,6 +61,23 @@ class TileRenderBridge(QObject):
         # request_seq -> QImage|None once the render is done; None means not ready.
         self._results: dict[int, object] = {}
         self._done: set[int] = set()
+        # seq -> monotonic instant the render was requested, and seq -> how
+        # long it took. The worker reads the duration when it collects, so a
+        # render that ran slowly behind a deep prefetch still counts as slow
+        # even though nobody waited on it.
+        self._requested_at: dict[int, float] = {}
+        self._durations: dict[int, float] = {}
+        self._last_collected_duration = 0.0
+        # What the GUI thread itself owes this run. queue_s is emit to slot
+        # entry, which is the event loop's own backlog and so a direct readout
+        # of how busy the GUI thread was; slot_s is the slot body, which builds
+        # the extent and starts the async job. Neither is the render itself
+        # (that runs off the GUI thread), so a large queue_s means the run was
+        # waiting on the GUI thread rather than on imagery.
+        self._queue_s = 0.0
+        self._slot_s = 0.0
+        self._slot_count = 0
+        self._worst_queue_s = 0.0
         self._seq = 0
         self._cancelled = False
         # Resampling clone of a local raster, built once per run on the main
@@ -101,6 +119,11 @@ class TileRenderBridge(QObject):
         lookup and this is asked once per tile."""
         cached = self._run_crs_cache
         if cached is not None:
+            if isinstance(cached[0], Exception):
+                # The failure is kept as well as the success: a run naming a
+                # CRS this install cannot build used to rebuild it and raise
+                # again for every tile, on the GUI thread.
+                raise cached[0]
             return cached[0]
         from qgis.core import QgsCoordinateReferenceSystem
 
@@ -113,8 +136,10 @@ class TileRenderBridge(QObject):
         if authid:
             candidate = QgsCoordinateReferenceSystem(authid)
             if not candidate.isValid():
-                raise ValueError(
+                refusal = ValueError(
                     "the run's CRS cannot be built on this install: " + str(authid))
+                self._run_crs_cache = (refusal,)
+                raise refusal
             crs = candidate
         self._run_crs_cache = (crs,)
         return crs
@@ -123,13 +148,25 @@ class TileRenderBridge(QObject):
         """Build the tile's bbox_native as a QgsRectangle in the run CRS, from
         the global geo_transform. Identical math to
         AutoDetectionWorker._make_tile_transform (bbox_native), so the two never
-        diverge."""
+        diverge.
+
+        Raises when the geo_transform names no usable extent, for the same
+        reason _run_crs raises on a CRS it cannot build: a fallback would
+        render a 1x1 unit box at the CRS origin, and that picture is encoded,
+        submitted and billed as this tile."""
         from qgis.core import QgsRectangle
 
-        src_bbox = self._geo_transform.get("bbox", (0.0, 0.0, 1.0, 1.0))
-        img_shape = self._geo_transform.get("img_shape", (1, 1))
-        img_h, img_w = max(img_shape[0], 1), max(img_shape[1], 1)
-        src_minx, src_miny, src_maxx, src_maxy = src_bbox
+        src_bbox = self._geo_transform.get("bbox")
+        img_shape = self._geo_transform.get("img_shape")
+        if (not isinstance(src_bbox, (list, tuple)) or len(src_bbox) != 4
+                or not isinstance(img_shape, (list, tuple))
+                or len(img_shape) < 2):
+            raise ValueError("the run's geo_transform names no extent")
+        src_minx, src_miny, src_maxx, src_maxy = (float(v) for v in src_bbox)
+        img_h, img_w = int(img_shape[0]), int(img_shape[1])
+        if (img_h <= 0 or img_w <= 0
+                or src_maxx <= src_minx or src_maxy <= src_miny):
+            raise ValueError("the run's geo_transform names a degenerate extent")
         px_w = (src_maxx - src_minx) / img_w
         px_h = (src_maxy - src_miny) / img_h
         tile_minx = src_minx + tx * px_w
@@ -158,11 +195,24 @@ class TileRenderBridge(QObject):
             start_tile_render_job,
         )
 
+        slot_t0 = time.monotonic()
+        self._mutex.lock()
+        try:
+            asked_at = self._requested_at.get(seq)
+            if asked_at is not None:
+                waited = max(0.0, slot_t0 - asked_at)
+                self._queue_s += waited
+                self._worst_queue_s = max(self._worst_queue_s, waited)
+            self._slot_count += 1
+        finally:
+            self._mutex.unlock()
+
         if self._cancelled:
             # request_render drops the mutex before it emits, so a request can
             # still land here after the run was torn down. Building anything
             # now would reopen the raster for a run that is over.
             self._store_result(seq, None)
+            self._slot_s += time.monotonic() - slot_t0
             return
 
         started = False
@@ -188,6 +238,7 @@ class TileRenderBridge(QObject):
                 lambda img, s=seq: self._store_result(s, img),
                 timeout_ms=self._render_timeout_ms,
                 render_clone=self._render_clone,
+                clone_resolved=self._render_clone_built,
                 render_crs=self._run_crs(),
             )
         except Exception as exc:  # noqa: BLE001 - never break the handshake
@@ -195,13 +246,46 @@ class TileRenderBridge(QObject):
             started = False
         if not started:
             self._store_result(seq, None)
+        self._slot_s += time.monotonic() - slot_t0
 
-    def _store_result(self, seq: int, img) -> None:
-        """Store one render's outcome and wake every waiting collector."""
+    def gui_thread_summary(self) -> dict:
+        """What this run cost the GUI thread, and what it waited on it for.
+
+        ``queue_s`` is the total emit-to-slot delay over the run: the render
+        requests sat in the GUI thread's event queue for that long, which is
+        the plainest measure there is of the GUI thread being the run's
+        bottleneck. ``slot_s`` is the slot body, which is the only part that
+        runs ON the GUI thread; the render itself does not.
+        """
         self._mutex.lock()
         try:
+            return {
+                "renders": self._slot_count,
+                "queue_s": round(self._queue_s, 2),
+                "slot_s": round(self._slot_s, 2),
+                "worst_queue_s": round(self._worst_queue_s, 2),
+            }
+        finally:
+            self._mutex.unlock()
+
+    def _store_result(self, seq: int, img) -> None:
+        """Store one render's outcome and wake every waiting collector.
+
+        A render that lands after the bridge was cancelled is dropped rather
+        than stored: every collect_render exits at once once cancelled, so
+        nothing will ever take it, and a whole tile bitmap per outstanding
+        prefetch would sit here until the bridge itself is released.
+        """
+        self._mutex.lock()
+        try:
+            if self._cancelled:
+                self._cond.wakeAll()
+                return
             self._results[seq] = img
             self._done.add(seq)
+            started = self._requested_at.pop(seq, None)
+            if started is not None:
+                self._durations[seq] = max(0.0, time.monotonic() - started)
             self._cond.wakeAll()
         finally:
             self._mutex.unlock()
@@ -237,6 +321,19 @@ class TileRenderBridge(QObject):
         """
         self._render_clone = None
         self._render_clone_built = True
+        try:
+            from qgis.core import Qgis, QgsMessageLog
+
+            summary = self.gui_thread_summary()
+            if summary["renders"]:
+                QgsMessageLog.logMessage(
+                    "Auto detection: render bridge - {renders} request(s), "
+                    "{queue_s:.1f}s queued on the GUI thread (worst "
+                    "{worst_queue_s:.1f}s), {slot_s:.1f}s in the slot"
+                    .format(**summary),
+                    "AI Segmentation", level=Qgis.MessageLevel.Info)
+        except Exception:  # noqa: BLE001 - a log line must never end a run
+            pass  # nosec B110
 
     def request_render(self, tx: int, ty: int, tw: int, th: int,
                        out_w: int = 0, out_h: int = 0) -> int | None:
@@ -251,6 +348,7 @@ class TileRenderBridge(QObject):
                 return None
             seq = self._seq
             self._seq += 1
+            self._requested_at[seq] = time.monotonic()
         finally:
             self._mutex.unlock()
         # Emit OUTSIDE the lock so the queued slot can run on the main thread.
@@ -272,7 +370,30 @@ class TileRenderBridge(QObject):
                 self._cond.wait(self._mutex, 30000)
             img = self._results.pop(seq, None)
             self._done.discard(seq)
+            self._requested_at.pop(seq, None)
+            self._last_collected_duration = self._durations.pop(seq, 0.0)
             return img
+        finally:
+            self._mutex.unlock()
+
+    def last_render_duration(self) -> float:
+        """Called FROM THE WORKER THREAD, right after collect_render: how long
+        that render took from request to result, in seconds (0.0 when it was
+        never timed, for example a cancelled bridge)."""
+        self._mutex.lock()
+        try:
+            return float(self._last_collected_duration)
+        finally:
+            self._mutex.unlock()
+
+    def render_ready(self, seq: int) -> bool:
+        """Called FROM THE WORKER THREAD. True when this render has landed and
+        collect_render would return at once. A cancelled bridge answers True
+        for the same reason collect_render returns at once then: nothing is
+        worth waiting for any more."""
+        self._mutex.lock()
+        try:
+            return self._cancelled or seq in self._done
         finally:
             self._mutex.unlock()
 

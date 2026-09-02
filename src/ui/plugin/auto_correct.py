@@ -13,6 +13,11 @@ from qgis.core import QgsGeometry, QgsProject
 from qgis.PyQt.QtCore import QTimer
 
 from ...core.i18n import tr
+from ...core.interaction_dials import (
+    confirm_reset_ms,
+    correct_fold_look_ms,
+    correct_fold_max_looks,
+)
 from ...core.review_corrections import CorrectionJournal, JournalEntry, RetryLinkState
 from ...core.shape_edits import KIND_MERGE, KIND_REFINE, KIND_REMOVE, KIND_SPLIT, ShapeEdit
 from .auto_shape_edit import KIND_SELECT
@@ -183,10 +188,12 @@ class AutoCorrectMixin:
             self._correct_reenter_det_id = None
             return
         if (getattr(self, "_auto_finalize_state", None) is not None
-                and self._correct_reenter_looks < _FOLD_RESLICE_MAX_LOOKS):
+                and self._correct_reenter_looks
+                < correct_fold_max_looks(_FOLD_RESLICE_MAX_LOOKS)):
             self._correct_reenter_looks += 1
             QTimer.singleShot(
-                _FOLD_RESLICE_LOOK_MS, self._reenter_correct_session_after_fold)
+                correct_fold_look_ms(_FOLD_RESLICE_LOOK_MS),
+                self._reenter_correct_session_after_fold)
             return
         self._correct_reenter_det_id = None
         idx = self._object_index_for_det_id(det_id)
@@ -461,8 +468,13 @@ class AutoCorrectMixin:
         entries = self._auto_correct_journal.clear()
         if not entries:
             return
+        # Each entry is reverted in order, but the refresh they share is paid
+        # ONCE. Reverting on its own is cheap; the preview cache rebuild and
+        # the reslice behind every _after_shape_edit are whole-run passes, and
+        # a journal of forty corrections ran forty of each back to back.
         for entry in entries:
-            self._undo_entry(entry)
+            self._undo_entry(entry, defer_refresh=True)
+        self._after_shape_edit()
         self._refresh_correction_summary()
         try:
             from ...core import telemetry_run_events
@@ -471,17 +483,26 @@ class AutoCorrectMixin:
         except Exception:
             pass  # nosec B110
 
-    def _undo_entry(self, entry: JournalEntry) -> None:
-        """Reverse ONE journal entry's effect."""
+    def _undo_entry(self, entry: JournalEntry,
+                    defer_refresh: bool = False) -> None:
+        """Reverse ONE journal entry's effect.
+
+        ``defer_refresh`` reverts the state and skips the refresh, for a caller
+        unwinding several entries that will refresh once at the end. That
+        caller owes an ``_after_shape_edit()`` with no ``changed``: an undo can
+        pop appended rows, so an index collected before an earlier revert does
+        not name the same object afterwards.
+        """
         if entry.kind == KIND_REMOVE:
             # Remove only marked indices in _auto_correction_removed; undo drops
             # them back and reslices (no geometry was rewritten).
             for fid in entry.fids:
                 self._auto_correction_removed.discard(int(fid))
-            self._after_shape_edit(changed=())
+            if not defer_refresh:
+                self._after_shape_edit(changed=())
             return
         if entry.kind in (KIND_MERGE, KIND_SPLIT, KIND_REFINE):
-            self._revert_shape_edit_entry(entry)
+            self._revert_shape_edit_entry(entry, defer_refresh=defer_refresh)
 
     def _refresh_correction_summary(self) -> None:
         try:
@@ -505,29 +526,36 @@ class AutoCorrectMixin:
     # ------------------------------------------------------------------
 
     def _on_auto_retry_guarded(self) -> None:
-        """Adjust-and-run-again with edits in flight asks one inline confirm
-        (the link itself relabels; no modal). Empty journal = the original
-        one-click behavior."""
-        if (self._auto_review is None or self._auto_correct_journal.count == 0):
+        """Adjust and run again, asked ONCE.
+
+        _on_auto_retry_clicked raises the modal that confirms dropping a
+        billed result. The link relabelled for an inline confirm before it,
+        so the user answered the same question twice; that stage is gone and
+        the link goes straight to the modal.
+        """
+        self._auto_retry_guard.reset()
+        self._on_auto_retry_clicked()
+        # Any armed relabel left by another path goes with it, and the timer
+        # below puts the guard back cold.
+        try:
+            self.dock_widget.set_retry_confirm_pending(False)
+        except (RuntimeError, AttributeError):
+            pass
+        QTimer.singleShot(confirm_reset_ms(_RETRY_CONFIRM_RESET_MS), self._reset_retry_guard)
+
+    def _reset_retry_guard(self) -> None:
+        """Drop the armed confirm when the user lets it time out.
+
+        The label goes back with the state. Disarming on its own left the link
+        reading "Confirm" in the warm style over a guard that had already gone
+        cold, so the next click asked for the confirm a second time.
+        """
+        if self._auto_retry_guard.armed:
             self._auto_retry_guard.reset()
-            self._on_auto_retry_clicked()
-            return
-        if self._auto_retry_guard.activate():
             try:
                 self.dock_widget.set_retry_confirm_pending(False)
             except (RuntimeError, AttributeError):
                 pass
-            self._on_auto_retry_clicked()
-            return
-        try:
-            self.dock_widget.set_retry_confirm_pending(True)
-        except (RuntimeError, AttributeError):
-            pass
-        QTimer.singleShot(_RETRY_CONFIRM_RESET_MS, self._reset_retry_guard)
-
-    def _reset_retry_guard(self) -> None:
-        if self._auto_retry_guard.armed:
-            self._auto_retry_guard.reset()
 
     # ------------------------------------------------------------------
     # QGIS Advanced Digitizing bridge fold-back (seam owned by plan 1)
@@ -577,7 +605,15 @@ class AutoCorrectMixin:
                         det_id = int(raw_id) if raw_id is not None else None
                     except (KeyError, TypeError, ValueError):
                         det_id = None
-                features.append((QgsGeometry(geom), score, det_id))
+                from ...core.layer_conventions import repair_polygon
+
+                # A hand edit can leave a ring crossing itself. It looks right
+                # on the map and breaks every area and overlap test after it,
+                # so it is repaired here or left out.
+                repaired = repair_polygon(QgsGeometry(geom))
+                if repaired is None or repaired.isEmpty():
+                    continue
+                features.append((repaired, score, det_id))
         except (RuntimeError, AttributeError):
             return 0
         # The read above is the last thing that needs the Manual session's

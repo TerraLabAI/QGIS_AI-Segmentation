@@ -28,6 +28,25 @@ from __future__ import annotations
 # model reply cannot overflow the one-line note under the prompt box.
 _MAX_REASON_CHARS = 160
 
+# A rewritten prompt is a short object phrase, and it is put into the prompt box
+# and sent on to a paid run, so it gets the same cap.
+_MAX_REWRITE_CHARS = 160
+
+
+def _clean_served_phrase(value: str, max_chars: int) -> str:
+    """A server-authored phrase, capped and stripped of control characters.
+
+    The same gate every other served string goes through: the cap applies
+    before the scrub, so an over-long value is never fully copied. Anything
+    that goes wrong leaves nothing, which is the fallback path already.
+    """
+    try:
+        from .server_dials import clean_served_text
+
+        return clean_served_text(value, max_chars) or ""
+    except Exception:  # noqa: BLE001 -- an unscrubbed phrase is never used
+        return ""
+
 
 def sanitize_attribute_filters(raw: object) -> list[dict[str, str]]:
     """Keep only well-formed ``{"attribute": str, "value": str}`` entries.
@@ -72,9 +91,11 @@ def parse_prompt_rewrite(block: object) -> tuple[str, str, list[dict[str, str]]]
     filters = sanitize_attribute_filters(block.get("attribute_filters"))
     rewritten = block.get("rewritten")
     if isinstance(rewritten, str) and rewritten.strip():
-        return "rewrite", rewritten.strip(), filters
+        phrase = _clean_served_phrase(rewritten, _MAX_REWRITE_CHARS)
+        if phrase:
+            return "rewrite", phrase, filters
     if block.get("decline") is True:
         reason = block.get("reason")
-        reason = reason.strip()[:_MAX_REASON_CHARS] if isinstance(reason, str) else ""
+        reason = _clean_served_phrase(reason, _MAX_REASON_CHARS) if isinstance(reason, str) else ""
         return "decline", reason, filters
     return "none", "", filters

@@ -1,4 +1,4 @@
-"""A detection run from launch to teardown: the in-run read-only panel, the
+"""A detection run from launch to teardown: the in-run receipt card, the
 cancel feedback, and the value recap the Start page keeps afterwards.
 
 Part of AISegmentationDockWidget (see ai_segmentation_dockwidget.py);
@@ -14,7 +14,7 @@ from .styles import (
 
 
 class DockAutoRunLifecycleMixin:
-    """A detection run from launch to teardown: the in-run read-only panel, the
+    """A detection run from launch to teardown: the in-run receipt card, the
     cancel feedback, and the value recap the Start page keeps afterwards."""
 
     def set_auto_run_active(self, active: bool) -> None:
@@ -44,6 +44,7 @@ class DockAutoRunLifecycleMixin:
             # previous run's phase and slow-link note must not carry over.
             self._auto_wait_phase = "imagery"
             self._auto_link_slow = False
+            self._auto_link_local = False
         # The gear (Account Settings) and the help menu stay clickable during a
         # run. Neither blocks the GUI thread: the account dialog fetches on a
         # task thread, the help entries are local, and the one destructive
@@ -51,9 +52,9 @@ class DockAutoRunLifecycleMixin:
         # while a run is live (is_local_ai_busy covers _auto_worker).
         # Mirror AI Edit: while tiles are in flight, clear away the non-essential
         # params (detail, confidence, cost) and the Detect/Exit row so only the
-        # "Detecting X" label + progress + Cancel remain. They reappear when the
-        # run ends; if the run then enters review, set_auto_review_active
-        # re-hides them. The detail row honors the zone state on restore.
+        # receipt + progress + Cancel remain. They reappear when the run ends;
+        # if the run then enters review, set_auto_review_active re-hides them.
+        # The detail row honors the zone state on restore.
         self.auto_detect_row.setVisible(not (active or hold))
         # The confidence box stays hidden in the prompt step (post-run only).
         self.auto_settings_box.setVisible(False)
@@ -62,28 +63,27 @@ class DockAutoRunLifecycleMixin:
         self.auto_credit_cost_label.setVisible(
             self.auto_credit_cost_label.text() != ""
             if not (active or hold) else False)
-        # Keep the prompt card VISIBLE during a run, read-only (AI Edit pattern):
-        # the chosen object stays framed above the progress so the user always
-        # knows what is being detected, and the Library button stays clickable
-        # (view-only). It returns to editable when the run ends; if the run
-        # enters review, set_auto_review_active hides the whole card.
-        self.auto_prompt_card.setVisible(True)
-        self._set_auto_prompt_readonly(active or hold)
+        # A run takes no input, so the two setup cards go and the receipt takes
+        # their place: the word, the references, or both, in one card that
+        # cannot be typed into. The "and / or" separator goes with them, since
+        # it joins two choices and the choice is already made (the separator
+        # follows the example card on its own, see ExampleCardWithSeparator).
+        # The cards come back when the run ends; if the run enters review,
+        # set_auto_review_active keeps them away.
+        in_run = active or hold
+        self.auto_prompt_card.setVisible(not in_run)
+        if in_run:
+            self._refresh_auto_run_summary()
+        else:
+            self.auto_run_summary_card.setVisible(False)
         if active:
             self._go_to_auto_step(2)
         elif not hold:
             self._refresh_auto_layer_lock()
-        # Keep the drawn reference visible during a run, read-only: hide the
-        # add/exclude/remove affordances, keep the thumbnails browsable (click
-        # to enlarge). No reference drawn = the whole panel stays hidden. Done
-        # AFTER _go_to_auto_step, which force-hides the panel during a run - this
-        # is the deliberate in-run exception that keeps the reference on screen.
-        has_ref = self._EXEMPLARS_ENABLED and self._auto_positive_exemplars > 0
-        if active or hold:
-            self._set_exemplar_readonly(True)
-            self.auto_exemplar_panel.setVisible(has_ref)
+        # Done AFTER _go_to_auto_step, which drives the same panel.
+        if in_run:
+            self.auto_exemplar_panel.setVisible(False)
         else:
-            self._set_exemplar_readonly(False)
             self.auto_exemplar_panel.setVisible(
                 self._EXEMPLARS_ENABLED and self.auto_steps.currentIndex() == 2 and not self._auto_review_active)
         self._update_auto_detect_enabled()
@@ -128,6 +128,9 @@ class DockAutoRunLifecycleMixin:
             return
         self._auto_finalizing = finalizing
         if finalizing:
+            # A fresh hand-over knows nothing about its fold yet: a count left
+            # over from the last run must not show on this one's card.
+            self._auto_finalize_tiles = (0, 0)
             # A terminal that has something to say (out of credits, a failed
             # run) already put its banner up: one surface at a time, so leave
             # it alone and only hold the pre-run controls away.
@@ -137,31 +140,39 @@ class DockAutoRunLifecycleMixin:
         elif not self._auto_review_active:
             self.set_auto_run_active(False)
 
-    def _set_auto_prompt_readonly(self, readonly: bool) -> None:
-        """Lock the prompt card for the in-run read-only view: the text stays
-        crisp and readable (setReadOnly, not disable, so it never greys out),
-        the clear button is dropped, and the Library button stays clickable so
-        the user can browse the library view-only while tiles are in flight."""
+    def _refresh_auto_run_summary(self) -> None:
+        """Fill the in-run receipt from what the setup cards hold right now and
+        show it. Nothing given (no word, no reference) leaves the card away
+        rather than showing an empty header. Best-effort: a run must never die
+        on its own recap."""
         try:
-            self.auto_prompt_input.setReadOnly(readonly)
-            self.auto_prompt_input.setClearButtonEnabled(not readonly)
-            self.auto_library_btn.setEnabled(True)
-            self.auto_library_btn.setToolTip(
-                tr("Browse the library (view only while detecting).") if readonly
-                else tr("Browse ready-to-use objects with before / after previews."))
+            word = self.auto_prompt_input.text().strip()
+            items = (list(getattr(self, "_auto_exemplar_items", []))
+                     if self._EXEMPLARS_ENABLED else [])
+            chips = []
+            for idx, it in enumerate(items):
+                thumb = it[2] if len(it) > 2 else None
+                chips.append(self._make_exemplar_chip(
+                    it[0], it[1], idx + 1, thumb, removable=False))
+            self.auto_run_summary_card.set_run_recipe(word, chips)
+            self.auto_run_summary_card.setVisible(bool(word or chips))
         except (RuntimeError, AttributeError):
             pass
 
     # -- Optional-example section collapse ---------------------------------
 
-    def _refresh_auto_exemplar_explainer(self, armed: bool = False) -> None:
+    def _refresh_auto_exemplar_explainer(self, slot_taken: bool = False) -> None:
         """The one-line example tip shows only while the section is fresh: an
         armed draw (the instruction line) or an existing reference (the
         thumbnails) replaces it, so the card never stacks guidance. A tip the
-        user closed with its x stays closed (DismissibleHint persistence)."""
+        user closed with its x stays closed (DismissibleHint persistence).
+
+        ``slot_taken`` says something else already holds the card's one line;
+        it is not an armed state of its own.
+        """
         from .guidance import HINT_EXEMPLAR_TIP, is_hint_dismissed
         try:
-            show = not armed and not getattr(self, "_auto_exemplar_count", 0)
+            show = not slot_taken and not getattr(self, "_auto_exemplar_count", 0)
             show = show and not is_hint_dismissed(HINT_EXEMPLAR_TIP)
             # Same widget, one state: a canopy prompt gets the specific,
             # actionable variant (what to exclude) instead of the generic line.
@@ -170,10 +181,18 @@ class DockAutoRunLifecycleMixin:
                     tr("Shadows getting detected instead of trees? Use "
                        "'Exclude a look-alike' on one shadow - the AI "
                        "drops similar false positives."))
-            else:
+            elif self._auto_credits is not None and not self._auto_is_subscriber:
+                # Known free plan: say the ceiling up front, so the offer that
+                # meets the second example is never a surprise.
                 self.auto_exemplar_explainer.set_body_text(
                     tr("The AI finds every object that looks like your "
-                       "examples - you can draw up to 3."))
+                       "example. Free includes one example per run."))
+            else:
+                from ...core.exemplar_store import max_total
+                self.auto_exemplar_explainer.set_body_text(
+                    tr("The AI finds every object that looks like your "
+                       "examples - you can draw up to {max}.")
+                    .replace("{max}", str(max_total())))
             self.auto_exemplar_explainer.setVisible(show)
         except (RuntimeError, AttributeError):
             pass
@@ -184,31 +203,6 @@ class DockAutoRunLifecycleMixin:
         (armed draw, existing reference, flow reset) need nothing anymore."""
         self._auto_exemplar_expanded = True
         self.auto_exemplar_content.setVisible(True)
-
-    def _set_exemplar_readonly(self, readonly: bool) -> None:
-        """Swap the reference panel between its editable form and the in-run
-        read-only form: hide the header/hint/buttons, show a quiet caption, and
-        hide the per-thumbnail remove x while keeping the thumbnail click-to-
-        enlarge alive. Best-effort (the panel may not be built yet)."""
-        try:
-            self._auto_exemplar_header.setVisible(not readonly)
-            self.auto_exemplar_readonly_caption.setVisible(readonly)
-            self.auto_exemplar_edit_controls.setVisible(not readonly)
-            # In-run the collapse header is gone, so the content card must
-            # show on its own (it holds the caption + thumbnails); back in
-            # edit mode the user's collapse state resumes.
-            self.auto_exemplar_content.setVisible(
-                readonly or self._auto_exemplar_expanded)
-            layout = self._auto_exemplar_chips_layout
-            for i in range(layout.count()):
-                w = layout.itemAt(i).widget()
-                if w is None:
-                    continue
-                rb = getattr(w, "_remove_btn", None)
-                if rb is not None:
-                    rb.setVisible(not readonly)
-        except (RuntimeError, AttributeError):
-            pass
 
     def _on_auto_cancel_clicked(self) -> None:
         # Dock-side no-op: the plugin connects this same button to its real
@@ -296,9 +290,9 @@ class DockAutoRunLifecycleMixin:
             pass
 
     def _on_auto_recap_link(self, _href: str) -> None:
-        """Reveal the layer the last run exported to: make it the active layer
-        and frame it. A layer removed since the export resolves to nothing, so
-        the click is simply ignored."""
+        """Reveal the layer the last run exported to: make it the active layer,
+        show it selected in the Layers panel, and frame it. A layer removed
+        since the export resolves to nothing, so the click is simply ignored."""
         try:
             from qgis.core import QgsProject
             from qgis.utils import iface
@@ -307,6 +301,29 @@ class DockAutoRunLifecycleMixin:
             if layer is None or iface is None:
                 return
             iface.setActiveLayer(layer)
+            _show_layer_in_layers_panel(iface, layer)
             iface.zoomToActiveLayer()
         except Exception:  # nosec B110 -- a recap click must never raise
             pass
+
+
+def _show_layer_in_layers_panel(iface, layer) -> None:
+    """Bring the Layers panel on screen with ``layer`` as its current row.
+
+    Framing the layer alone tells the user nothing when the panel is closed
+    or sits behind another tab: the canvas moves and the new layer stays out
+    of sight. Reopen a closed panel, raise a tabified one, then select the row
+    so the eye lands on the layer the recap names.
+    """
+    try:
+        from qgis.PyQt.QtWidgets import QDockWidget
+        window = iface.mainWindow()
+        dock = window.findChild(QDockWidget, "Layers") if window is not None else None
+        if dock is not None:
+            dock.setVisible(True)
+            dock.raise_()
+        view = iface.layerTreeView()
+        if view is not None:
+            view.setCurrentLayer(layer)
+    except (RuntimeError, AttributeError, TypeError):
+        pass

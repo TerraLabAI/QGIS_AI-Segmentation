@@ -17,8 +17,10 @@ So the travel is now the band that is worth offering for THIS object:
 - the fine end stops where the object starts taking up too much of a tile for
   the model to still see it whole,
 - the coarse end stops where the object stops being big enough to spot,
-- and the band always contains the level the plugin itself recommends, so a
-  class whose objects are large simply has no travel past that level.
+- and the band always contains the level the plugin itself recommends, plus
+  a served headroom above it, so an automatic pick never sits at the top of
+  the travel and a class whose objects are large gets only that room past
+  its own level.
 
 Both ends are computed from the shared ``_grid_for_detail`` math, so they
 cannot disagree with the credit estimate, the grid preview or the seed.
@@ -57,6 +59,12 @@ class AutoDetailWindowMixin:
         re-asks on every debounced slider tick and each walk costs an
         ellipsoidal ground measurement per level.
         """
+        from ...core.detection_policy import (
+            detail_coarse_travel_ratio,
+            detail_fine_travel_ratio,
+            seed_headroom_levels,
+        )
+
         machine_max = self._max_useful_detail(layer, zone_in_layer)
         obj = (object_class or "").strip()
 
@@ -66,7 +74,8 @@ class AutoDetailWindowMixin:
         try:
             key = (
                 layer.id(), obj.lower(), machine_max, obj_m, floor_m,
-                self._free_run_tile_cap(),
+                self._free_run_tile_cap(), seed_headroom_levels(),
+                detail_coarse_travel_ratio(), detail_fine_travel_ratio(),
                 zone_in_layer.xMinimum(), zone_in_layer.yMinimum(),
                 zone_in_layer.xMaximum(), zone_in_layer.yMaximum(),
             )
@@ -108,8 +117,11 @@ class AutoDetailWindowMixin:
         if object_class:
             obj_m, _target_mupp = object_profile(object_class)
             floor_m = object_tile_floor_m(object_class)
-            plan = self._active_run_plan(object_class)
-            plan_obj_m = _positive_number(plan.get("object_size_m")) if plan else 0.0
+        # With no word the blob has nothing to say, but a plan fetched for the
+        # drawn examples is stored under the empty prompt and still applies.
+        plan = self._active_run_plan(object_class) if (object_class or self._run_plan_from_exemplar()) else None
+        if plan is not None:
+            plan_obj_m = _positive_number(plan.get("object_size_m"))
             if plan_obj_m:
                 # The floor is the guard-rail on the size, so the two come from
                 # ONE source or neither does. The plan carries the floor of the
@@ -163,6 +175,41 @@ class AutoDetailWindowMixin:
             return sides[mid]
         return (sides[mid - 1] + sides[mid]) / 2.0
 
+    def _exemplar_seed_target_mupp(self, layer, zone_in_layer) -> float:
+        """Target ground resolution (m/px) the drawn examples ask the seed for,
+        0.0 when nothing usable is drawn.
+
+        A run with no typed word has one description of its object: the
+        examples drawn on the user's own imagery. This turns that measurement
+        into the resolution the prompt-less seed walks to.
+
+        The tile never goes coarser than the resolution the seed already used
+        with no word, so a small example changes nothing and the grid stays
+        where it has always been. Above that floor the tile grows with the
+        object, so a large one is read whole rather than in fragments. How much
+        of a tile the object may take is the served `drawn_object_tile_frac`.
+
+        Reads the measurement once. Every failure answers 0.0, which leaves the
+        caller on the plain prompt-less default.
+        """
+        from ...core.detection_policy import drawn_object_tile_frac, zone_seed_mupp
+        from ...core.tile_manager import TILE_SIZE
+
+        try:
+            drawn_m = float(self._exemplar_object_size_m(layer, zone_in_layer))
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            return 0.0
+        if drawn_m <= 0:
+            return 0.0
+        try:
+            frac = drawn_object_tile_frac()
+            floor_tile_m = zone_seed_mupp() * TILE_SIZE
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            return 0.0
+        if frac <= 0 or floor_tile_m <= 0:
+            return 0.0
+        return max(floor_tile_m, drawn_m / frac) / TILE_SIZE
+
     def _walk_detail_window(
         self, layer, zone_in_layer, object_class: str,
         obj_m: float, floor_m: float, machine_max: int,
@@ -175,27 +222,34 @@ class AutoDetailWindowMixin:
         the finest level a free run can still afford.
         """
         from ...core.detection_policy import (
-            detail_max_object_tile_frac,
+            detail_coarse_travel_ratio,
+            detail_fine_travel_ratio,
             object_min_px,
             object_tile_ceiling_m,
+            seed_headroom_levels,
         )
         from ...core.tile_manager import TILE_SIZE
 
-        # The fine end is the share of a tile an object may take before the
-        # model starts judging it from a fragment. NOT the split-risk line the
-        # amber warning draws: that one marks where the pieces stop being
-        # stitchable, which is later, and stopping the slider there would leave
-        # the whole stretch in between, where the run is already paying more
-        # credits for a worse answer.
-        frac = detail_max_object_tile_frac()
-        if obj_m > 0 and 0 < frac <= 1:
-            floor_m = max(floor_m, obj_m / frac)
+        # Both ends are set on the plugin's own pick, as a ratio on the ground
+        # one tile covers: the coarse end where a tile covers that many times
+        # the recommended tile, the fine end where it covers that fraction of
+        # it. So the pick sits inside its band whatever the zone size, and the
+        # band is the same width in ground terms on a 1 km2 zone and a 1000 km2
+        # one. The object's served floor and ceiling still bound both ends.
+        recommended = self._recommended_detail_now(
+            layer, zone_in_layer, object_class)
+        rec_tile_m = 0.0
+        sized = self._grid_for_detail(layer, zone_in_layer, recommended)
+        if sized is not None and sized[3] != -1:
+            rec_tile_m = TILE_SIZE * self._mupp_to_meters(
+                layer, zone_in_layer, sized[2])
+        coarse_m = rec_tile_m * detail_coarse_travel_ratio()
+        if rec_tile_m > 0:
+            floor_m = max(floor_m, rec_tile_m / detail_fine_travel_ratio())
         min_px = object_min_px()
         # The coarse end also stops where the answer is known to die for this
-        # object. The object-size rule alone reads the tier's typical size and
-        # runs far past that point: it can offer a tile so coarse the object no
-        # longer comes back. Absent for a class with no ceiling served, which
-        # leaves that class the travel it has today.
+        # object: under the minimum pixels the object spans, and past the
+        # tile ceiling served for its class.
         ceiling_m = object_tile_ceiling_m(object_class) if object_class else 0.0
         free_cap = self._free_run_tile_cap()
 
@@ -212,26 +266,27 @@ class AutoDetailWindowMixin:
             ground_mupp = self._mupp_to_meters(layer, zone_in_layer, mupp)
             if ground_mupp <= 0:
                 break
+            tile_m = TILE_SIZE * ground_mupp
             if free_cap is None or tiles <= free_cap:
                 affordable = n
-            over_ceiling = (ceiling_m > 0
-                            and TILE_SIZE * ground_mupp > ceiling_m)
-            if (not coarsest and not over_ceiling
-                    and obj_m > 0 and obj_m / ground_mupp >= min_px):
+            over_ceiling = ceiling_m > 0 and tile_m > ceiling_m
+            px_ok = obj_m <= 0 or obj_m / ground_mupp >= min_px
+            travel_ok = coarse_m <= 0 or tile_m <= coarse_m
+            if (not coarsest and not over_ceiling and px_ok and travel_ok
+                    and (obj_m > 0 or coarse_m > 0)):
                 coarsest = n
-            if floor_m > 0 and TILE_SIZE * ground_mupp < floor_m:
+            if floor_m > 0 and tile_m < floor_m:
                 break
             finest = n
 
-        recommended = self._recommended_detail_now(
-            layer, zone_in_layer, object_class)
-        # The band must contain the plugin's own pick. A small zone can be
-        # narrower than the object's tile floor, so the fine end computed above
-        # comes back below the recommendation (or at 0); a slider that stops
-        # under the level the plugin recommends is broken, whatever the object.
-        finest = min(max(1, finest, recommended), machine_max)
-        # Never past the recommendation: raising the COARSE end raises what the
-        # cheapest run costs, and the seed is the most a default may spend.
+        # The band must contain the pick, with room above it: a small zone can
+        # be narrower than the object's tile floor, so the fine end computed
+        # above can come back at or below the recommendation. The top stays
+        # the served headroom past the pick wherever a finer level exists.
+        finest = min(max(1, finest, recommended + seed_headroom_levels()),
+                     machine_max)
+        # The coarse end never passes the pick: the pick is where the band is
+        # built from, so it is inside by construction.
         coarsest = min(coarsest or 1, recommended, finest)
         # And never past what a free run covers, so lowering Precision always
         # stays a way out of the premium gate rather than a dead end.

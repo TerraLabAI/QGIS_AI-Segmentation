@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from qgis.core import (
     QgsFeature,
     QgsGeometry,
@@ -7,10 +9,22 @@ from qgis.core import (
     QgsSpatialIndex,
 )
 
+from . import transport_dials as _td
+from .layer_conventions import repair_polygon
+
+logger = logging.getLogger(__name__)
+
 # Live objects below which _maybe_compact never rebuilds the spatial index: the
 # candidate scan is short whatever the index holds, and a rebuild per insert
 # would cost more than the scan it shortens.
 _COMPACT_MIN_LIVE = 64
+# How many absorbed children one keeper may hold, as a multiple of the minimum
+# a partition needs. The pool is read only at finalize, and a partition is read
+# from a handful of children, so the small tail can never be part of one while
+# it does hold a live geometry for the whole run.
+_ABSORBED_POOL_MULT = 8
+# One line per run when GEOS refuses a pair. Reset by each merger.
+_geos_failure_logged = False
 
 
 def _ios_and_span(g1: QgsGeometry, g2: QgsGeometry,
@@ -46,7 +60,14 @@ def _ios_and_span(g1: QgsGeometry, g2: QgsGeometry,
         bb = inter.boundingBox()
         span = max(bb.height(), bb.width())
         return ios, span
-    except Exception:
+    except Exception as exc:
+        # A GEOS refusal reads here as "no overlap", which silently ships one
+        # object as two. add() repairs on the way in so this should not fire;
+        # say so once when it does, rather than never.
+        global _geos_failure_logged
+        if not _geos_failure_logged:
+            _geos_failure_logged = True
+            logger.warning("IncrementalMerger: overlap test failed: %s", exc)
         return 0.0, 0.0
 
 
@@ -145,6 +166,9 @@ class IncrementalMerger:
         # when they turn out to account for it. Off (the default) nothing is
         # recorded and every output is byte-identical to before.
         self._restore_partitions = bool(restore_partitions)
+        # One GEOS-refusal line per run, not per pair.
+        global _geos_failure_logged
+        _geos_failure_logged = False
         self._absorbed: dict[int, list] | None = {} if restore_partitions else None
         self._part_inside = float(part_inside)
         self._part_max_frac = float(part_max_frac)
@@ -220,6 +244,11 @@ class IncrementalMerger:
         # _index.intersects()+_keepers.get(), so a retired fid still returned by
         # the index is skipped exactly as before.
         self._live_ids: dict[int, None] = {}
+        # The fids restore_absorbed_partitions() last touched: the coarse
+        # readings it retired plus the ids it minted for the parts. A consumer
+        # holding per-fid work computed before the restore can drop just these
+        # instead of dropping the whole set.
+        self.restored_fids: set[int] = set()
         # Change log for a live consumer. _dirty holds every fid whose geometry
         # was inserted or replaced since the last drain_changes(), _gone every
         # fid retired with nothing put back under it. A preview that folds this
@@ -289,6 +318,14 @@ class IncrementalMerger:
         return max(bb.width(), bb.height()) >= self._seam_min_dim
 
     def add(self, geom: QgsGeometry, score: float = 0.0) -> None:
+        if geom is None or geom.isEmpty():
+            return
+        # Every overlap test below runs through GEOS, and GEOS throws on a
+        # self-intersecting ring. The throw is caught as "no overlap", so the
+        # two halves of one object cut by a tile edge never match and the
+        # object ships twice. Repairing once here removes the whole class;
+        # an already-valid polygon is handed straight back.
+        geom = repair_polygon(geom)
         if geom is None or geom.isEmpty():
             return
         # Find every existing object this fragment overlaps enough to be part of.
@@ -481,12 +518,14 @@ class IncrementalMerger:
                 pool = []
                 for fid in matches:
                     pool.extend(self._absorbed.pop(fid, ()))
-                # Back to (geometry, score): the pool joins the pairs carried
-                # over from the matched keepers and _partition_of reads pairs.
-                pool.extend((g, s) for i, (g, s, _a) in enumerate(members)
+                # (wkb, score, area), not live geometry: this pool survives to
+                # finalize, which is already the run's memory peak, and a live
+                # QgsGeometry per skipped member is what made it grow with the
+                # run. _partition_of rehydrates the few it actually reads.
+                pool.extend((g.asWkb(), s, a) for i, (g, s, a) in enumerate(members)
                             if i and i not in contributing)
                 if pool:
-                    self._absorbed[primary_fid] = pool
+                    self._absorbed[primary_fid] = self._cap_pool(pool)
             self._insert(current, best_score, fid=primary_fid)
         elif matches:
             combined = geom
@@ -571,7 +610,8 @@ class IncrementalMerger:
         live = len(self._live_ids)
         # Under this the scan is short whatever the index holds, and rebuilding
         # per insert would cost more than it saves.
-        stale = live >= _COMPACT_MIN_LIVE and self._index_entries > 2 * live
+        stale = (live >= _td.merge_compact_min_live(_COMPACT_MIN_LIVE)
+                 and self._index_entries > 2 * live)
         if not stale and len(self._keepers) - live <= 4 * live:
             return
         self._keepers = {fid: self._keepers[fid] for fid in self._live_ids}
@@ -597,6 +637,32 @@ class IncrementalMerger:
         self._index = index
         self._index_entries = len(self._live_ids)
 
+    def _cap_pool(self, pool: list) -> list:
+        """Bound one keeper's absorbed pool, keeping the largest members."""
+        cap = max(1, self._part_min_children) * _td.merge_absorbed_pool_mult(_ABSORBED_POOL_MULT)
+        if len(pool) <= cap:
+            return pool
+        return sorted(pool, key=lambda t: -t[2])[:cap]
+
+    def _overlaps_taken(self, geom, bbox, area: float, taken: list) -> bool:
+        """True when this part overlaps one already picked past the sibling gate.
+
+        Uses the same cheap bbox pre-filter add() does: the real overlap can
+        never exceed the bbox overlap, so a pair the boxes already rule out
+        never pays for intersection().
+        """
+        for other, obox, oarea in taken:
+            iw = min(bbox.xMaximum(), obox.xMaximum()) - max(bbox.xMinimum(), obox.xMinimum())
+            ih = min(bbox.yMaximum(), obox.yMaximum()) - max(bbox.yMinimum(), obox.yMinimum())
+            if iw <= 0.0 or ih <= 0.0:
+                continue
+            min_area = min(area, oarea)
+            if min_area <= 0.0 or (iw * ih) / min_area < self._part_sibling_ios:
+                continue
+            if _ios_and_span(geom, other, a1=area, a2=oarea)[0] >= self._part_sibling_ios:
+                return True
+        return False
+
     def _partition_of(self, whole: QgsGeometry, parts: list) -> list:
         """The largest subset of ``parts`` that reads as a partition of
         ``whole``, or [] when there is none.
@@ -610,19 +676,24 @@ class IncrementalMerger:
         if whole_area <= 0.0:
             return []
         picked: list = []
-        for geom, score in sorted(parts, key=lambda t: -t[0].area()):
-            area = geom.area()
+        taken: list = []  # (geometry, bbox, area) of what picked holds
+        for wkb, score, area in sorted(parts, key=lambda t: -t[2]):
             if area <= 0.0 or area > self._part_max_frac * whole_area:
+                continue
+            geom = QgsGeometry()
+            geom.fromWkb(wkb)
+            if geom.isEmpty():
                 continue
             inter = geom.intersection(whole)
             if inter is None or inter.isEmpty():
                 continue
             if inter.area() / area < self._part_inside:
                 continue
-            if any(_ios_and_span(geom, p)[0] >= self._part_sibling_ios
-                   for p, _ps in picked):
+            bbox = geom.boundingBox()
+            if self._overlaps_taken(geom, bbox, area, taken):
                 continue
             picked.append((geom, score))
+            taken.append((geom, bbox, area))
         if len(picked) < self._part_min_children:
             return []
         covered = QgsGeometry(picked[0][0])
@@ -646,6 +717,7 @@ class IncrementalMerger:
         an incomplete set and keep the blob. A no-op unless the merger was
         built with restore_partitions=True.
         """
+        self.restored_fids = set()
         if not self._absorbed:
             return 0
         restored = 0
@@ -658,7 +730,13 @@ class IncrementalMerger:
             if not picked:
                 continue
             self._retire_keeper(fid)
+            self.restored_fids.add(fid)
             for geom, score in picked:
+                # The id _insert is about to mint, read before the call
+                # because it bumps the high-water mark. A part carries a fid
+                # nothing has ever seen, so a consumer keyed on fids from
+                # during the run cannot match it by accident.
+                self.restored_fids.add(self._next_id)
                 self._insert(QgsGeometry(geom), float(score))
             restored += 1
         self._absorbed.clear()

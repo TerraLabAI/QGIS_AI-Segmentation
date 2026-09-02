@@ -51,6 +51,7 @@ Call this on the main thread (it runs a Processing algorithm).
 """
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from .prompt_taxonomy import keyword_matches, normalize_prompt
@@ -407,79 +408,15 @@ def _run_snap(
     geoms: list[QgsGeometry], tolerance: float, crs: str | None,
     cut_to_partition: bool = True,
 ) -> SnapResult:
-    from qgis.core import QgsFeature, QgsGeometry, QgsVectorLayer
+    """The whole pass, run to the end. See ``boundary_snap_pass`` for the
+    stages: this drives the same cursor a sliced caller drives, so the blocking
+    and the sliced path can never give different answers."""
+    from .boundary_snap_pass import BoundarySnapPass
 
-    for geom in geoms:
-        if not isinstance(geom, QgsGeometry) or geom.isEmpty():
-            return _unchanged(geoms, "empty or non-geometry member")
-
-    area_before = _total_area(geoms)
-    if area_before <= 0.0:
-        return _unchanged(geoms, "zero input area")
-
-    tolerance = _axis_safe_tolerance(tolerance, geoms, crs)
-    if tolerance <= 0.0:
-        return _unchanged(geoms, "no tolerance")
-
-    # MultiPolygon, not Polygon: a merged object often arrives multipart, and a
-    # single-part memory provider takes only the first part of it, so the rest
-    # of the shape would vanish on the way through the snap.
-    layer = QgsVectorLayer(
-        f"MultiPolygon?crs={crs or _DEFAULT_CRS}", "boundary_snap", "memory"
-    )
-    if not layer.isValid():
-        return _unchanged(geoms, "working layer not created")
-    feats = []
-    for geom in geoms:
-        feat = QgsFeature()
-        feat.setGeometry(QgsGeometry(geom))
-        feats.append(feat)
-    if not layer.dataProvider().addFeatures(feats):
-        return _unchanged(geoms, "working layer not filled")
-    layer.updateExtents()
-
-    snapped = _run_snap_algorithm(layer, tolerance)
-    if snapped is None:
-        return _unchanged(geoms, "snap algorithm unavailable")
-    if len(snapped) != len(geoms):
-        return _unchanged(geoms, "snap dropped or added geometries")
-
-    # The algorithm keeps input order, but a wrong pairing would silently move
-    # every polygon somewhere else, so check each output still sits where its
-    # input did before anything downstream trusts the list.
-    for src, out in zip(geoms, snapped):
-        if not _same_place(src, out, tolerance):
-            return _unchanged(geoms, "output no longer matches its input")
-
-    if cut_to_partition:
-        partitioned, slivers = _cut_to_partition(snapped, tolerance)
-        if partitioned is None:
-            return _unchanged(geoms, "partition failed")
-    else:
-        # Snapped only: the borders already coincide, what is left uncut is the
-        # crossing sliver. Good enough to look at, never good enough to write.
-        partitioned, slivers = snapped, 0
-
-    area_after = _total_area(partitioned)
-    change = (area_after - area_before) / area_before
-    if abs(change) > _policy_value(boundary_snap_max_area_change,
-                                   _FALLBACK_MAX_AREA_CHANGE):
-        return _unchanged(geoms, f"area moved {change:.4f}, over the limit")
-    # A parcel small next to its neighbours can be swallowed whole without
-    # moving the total by much, so every polygon is checked on its own.
-    keep_share = _policy_value(boundary_snap_min_keep_share,
-                               _FALLBACK_MIN_KEEP_SHARE)
-    for src, out in zip(geoms, partitioned):
-        if out.area() < src.area() * keep_share:
-            return _unchanged(geoms, "a polygon lost too much of itself")
-    if all(_unchanged_geometry(s, o) for s, o in zip(geoms, partitioned)):
-        # Nothing was close enough to snap (neighbours further apart than the
-        # tolerance). Hand back the caller's own objects, not copies.
-        return _unchanged(geoms, "nothing within the tolerance")
-
-    return SnapResult(
-        partitioned, True, area_before, area_after, change, slivers, ""
-    )
+    pass_ = BoundarySnapPass(geoms, tolerance, crs, cut_to_partition)
+    while not pass_.step(4096):
+        pass
+    return pass_.result()
 
 
 def _unchanged_geometry(src: Any, out: Any) -> bool:
@@ -544,15 +481,26 @@ def _run_snap_algorithm(
 def _same_place(src: Any, out: Any, tolerance: float) -> bool:
     """Whether a snapped polygon still covers the polygon it came from.
 
-    A vertex may only travel up to the tolerance, so the two bounding boxes
-    must overlap once the source box is grown by it. Cheap, and it catches a
-    reordered or mispaired output list."""
+    A vertex may only travel up to the tolerance, so the source box grown by it
+    must still meet the output box AND the two centroids must sit within that
+    same allowance. The box test alone passes for two swapped neighbours, whose
+    boxes overlap anyway; the centroid is what tells them apart."""
     try:
         if out is None or out.isEmpty():
             return False
+        allowance = tolerance * 2.0
         box = src.boundingBox()
-        box.grow(tolerance * 2.0)
-        return box.intersects(out.boundingBox())
+        box.grow(allowance)
+        if not box.intersects(out.boundingBox()):
+            return False
+        src_centre = src.centroid()
+        out_centre = out.centroid()
+        if (src_centre is None or src_centre.isEmpty()
+                or out_centre is None or out_centre.isEmpty()):
+            return True
+        a = src_centre.asPoint()
+        b = out_centre.asPoint()
+        return math.hypot(b.x() - a.x(), b.y() - a.y()) <= allowance
     except Exception:  # noqa: BLE001 -- unreadable geometry fails the check
         return False
 
@@ -560,49 +508,17 @@ def _same_place(src: Any, out: Any, tolerance: float) -> bool:
 def _cut_to_partition(
     geoms: list[QgsGeometry], tolerance: float
 ) -> tuple[list[QgsGeometry] | None, int]:
-    """Turn snapped polygons into a real partition: no polygon keeps area an
-    earlier one already covers, and parts too small to be real are dropped.
+    """Turn snapped polygons into a real partition, in one call.
 
-    Order decides who keeps a contested sliver, so the same input always gives
-    the same output. Returns (geometries, slivers removed), or (None, 0) when
-    a polygon comes out empty (which would delete a parcel)."""
-    from qgis.core import QgsGeometry, QgsSpatialIndex
+    The logic is ``boundary_snap_pass.PartitionCutter``, which the sliced pass
+    steps; this runs the same cursor to the end. Returns (geometries, slivers
+    removed), or (None, 0) when the pass cannot be finished at all."""
+    from .boundary_snap_pass import PartitionCutter
 
-    index = QgsSpatialIndex()
-    # Feature ids start at 1 so index 0 is never mistaken for "not found".
-    kept: list[QgsGeometry] = []
-    slivers = 0
-    # A part smaller than a tolerance square cannot be a real parcel: it is
-    # what a moved boundary leaves behind.
-    min_part_area = tolerance * tolerance
-
-    for i, geom in enumerate(geoms):
-        current = QgsGeometry(geom)
-        if not current.isGeosValid():
-            fixed = current.makeValid()
-            if fixed is not None and not fixed.isEmpty():
-                current = fixed
-        for j in index.intersects(current.boundingBox()):
-            earlier = kept[j - 1]
-            if earlier is None or earlier.isEmpty():
-                continue
-            if not current.intersects(earlier):
-                continue
-            cut = current.difference(earlier)
-            if cut is None or cut.isEmpty():
-                return None, 0
-            current = cut
-        current, dropped = _drop_small_parts(current, min_part_area)
-        slivers += dropped
-        if current is None or current.isEmpty():
-            return None, 0
-        kept.append(current)
-        if not index.addFeature(i + 1, current.boundingBox()):
-            # Without this entry the next polygons are never cut against this
-            # one, so the result would silently stop being a partition.
-            return None, 0
-
-    return kept, slivers
+    cutter = PartitionCutter(geoms, tolerance)
+    while not cutter.step(4096):
+        pass
+    return cutter.result(), cutter.slivers
 
 
 def _drop_small_parts(geom: Any, min_area: float) -> tuple[Any, int]:

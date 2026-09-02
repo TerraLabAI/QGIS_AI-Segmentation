@@ -22,6 +22,7 @@ one. Cancel is polled, so it is answered during the transfer and not after it.
 from __future__ import annotations
 
 import os
+import time
 from contextlib import suppress
 from typing import Callable, NamedTuple
 
@@ -47,6 +48,10 @@ _CHUNK_BYTES = 256 * 1024
 #: How often Cancel is looked at while bytes are moving.
 _CANCEL_POLL_MS = 400
 
+#: Below this, a leftover part file is more likely an aborted handshake or a
+#: proxy error page than real data, so the transfer starts again from zero.
+_MIN_RESUME_BYTES = 1024 * 1024
+
 
 class StreamedDownload(NamedTuple):
     """What a transfer did. ``ok`` alone decides; the rest explains."""
@@ -56,6 +61,24 @@ class StreamedDownload(NamedTuple):
     http_status: int | None
     bytes_written: int
     cancelled: bool
+
+
+def sleep_unless_cancelled(seconds: float, cancel_check) -> bool:
+    """Wait in slices, answering Cancel while the clock runs. True if cancelled.
+
+    A plain sleep of a retry backoff leaves the Cancel button dead for the whole
+    wait, and every ladder here doubles, so the last one is long enough that the
+    install reads as frozen. The slice is short enough to feel immediate and
+    long enough not to spin.
+    """
+    deadline = time.monotonic() + max(0.0, float(seconds))
+    while True:
+        if cancel_check and cancel_check():
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(0.25, remaining))
 
 
 def _part_path(dest_path: str) -> str:
@@ -88,10 +111,21 @@ def stream_url_to_file(
     )
 
     part_path = _part_path(dest_path)
-    state = {"error": "", "cancelled": False, "written": 0, "file": None}
+    # Pick up where a broken transfer stopped. Without this a connection that
+    # drops at 90 percent costs the whole archive again, every time.
+    try:
+        on_disk = os.path.getsize(part_path)
+    except OSError:
+        on_disk = 0
+    resume_offset = on_disk if on_disk >= _MIN_RESUME_BYTES else 0
+    if on_disk and not resume_offset:
+        with suppress(OSError):
+            os.unlink(part_path)
+    state = {"error": "", "cancelled": False, "written": 0, "file": None,
+             "resume": resume_offset, "status_checked": False}
 
     try:
-        state["file"] = open(part_path, "wb")
+        state["file"] = open(part_path, "ab" if resume_offset else "wb")
     except OSError as err:
         return StreamedDownload(
             False,
@@ -100,6 +134,11 @@ def stream_url_to_file(
 
     request = QNetworkRequest(QUrl(url))
     request.setAttribute(RedirectPolicyAttribute, NoLessSafeRedirectPolicy)
+    if resume_offset:
+        from qgis.PyQt.QtCore import QByteArray
+        request.setRawHeader(
+            QByteArray(b"Range"),
+            QByteArray(f"bytes={resume_offset}-".encode("ascii")))
     if hasattr(request, "setTransferTimeout"):
         request.setTransferTimeout(max(1000, int(timeout_ms)))
 
@@ -112,6 +151,28 @@ def stream_url_to_file(
         handle = state["file"]
         if handle is None:
             return
+        # A resume answered with 200 rather than 206 means the range was
+        # ignored and the whole body is coming. Appending it would produce a
+        # file that only fails its checksum at the end, so start the part
+        # file again instead, once, on the first bytes.
+        if state["resume"] and not state["status_checked"]:
+            state["status_checked"] = True
+            status_now = None
+            if HttpStatusCodeAttribute is not None:
+                with suppress(RuntimeError, AttributeError):
+                    status_now = reply.attribute(HttpStatusCodeAttribute)
+            if status_now == 200:
+                try:
+                    handle.close()
+                    handle = open(part_path, "wb")
+                    state["file"] = handle
+                except OSError as err:
+                    state["error"] = tr(
+                        "Cannot restart the download: {error}").format(error=err)
+                    state["file"] = None
+                    _abort(reply)
+                    return
+                state["resume"] = 0
         try:
             while reply.bytesAvailable() > 0:
                 chunk = bytes(reply.read(_CHUNK_BYTES))
@@ -121,7 +182,8 @@ def stream_url_to_file(
                 state["written"] += len(chunk)
         except (OSError, RuntimeError) as err:
             state["error"] = tr(
-                "Cannot write download file: {error}").format(error=err)
+                "Cannot write download file: {error}").format(error=err) + " " + tr(
+                "Check disk space and folder permissions, then try again.")
             _abort(reply)
 
     def on_progress(received: int, total: int) -> None:
@@ -213,7 +275,9 @@ def stream_url_to_file(
             state["error"] = tr(
                 "Cannot close download file: {error}").format(error=err)
 
-    written = int(state["written"])
+    # The caller checks this against the size it expects, so it has to be
+    # the whole file and not just what this attempt added.
+    written = int(state["written"]) + int(state["resume"])
     if state["cancelled"] or state["error"]:
         return StreamedDownload(
             False, state["error"], status, written, bool(state["cancelled"]))

@@ -14,6 +14,11 @@ from qgis.core import (
 )
 
 from ...core.i18n import tr
+from ...core.interaction_dials import (
+    install_pipe_wait_turns,
+    vcredist_url,
+    warm_recent_manual_days,
+)
 from ...core.qt_compat import safe_disconnect
 from ...core.window_focus import bring_qgis_window_to_front
 from ..background_workers import DepsInstallWorker, DownloadWorker, VerifyWorker
@@ -44,6 +49,11 @@ _INSTALL_ATTEMPT_KEY = "TerraLab/ai_seg_install_attempts"
 # starts anyway. A crop encode round trip is seconds, so this covers a normal
 # one without letting a wedged worker postpone an install for good.
 _INSTALL_PIPE_WAIT_MAX = 8
+
+# Where the Windows runtime download lives. The translated sentence below
+# carries this address verbatim; a served replacement is swapped in at call
+# time so the source string and its translations stay as they are.
+_VCREDIST_URL = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
 
 
 def _bump_install_attempt() -> int:
@@ -183,7 +193,7 @@ class EnvSetupMixin:
             return
 
         if venv_ready:
-            self.dock_widget.set_dependency_status(True, "✓ " + tr("AI ready"))
+            self.dock_widget.set_dependency_status(True, tr("AI ready"))
             QgsMessageLog.logMessage(
                 "✓ Virtual environment verified successfully",
                 "AI Segmentation",
@@ -213,7 +223,8 @@ class EnvSetupMixin:
                     return
                 # Model missing but deps ok.
                 self.dock_widget.set_dependency_status(
-                    True, tr("Almost ready: the AI file is still missing."))
+                    True, tr("Almost ready: the AI file is still missing."),
+                    mark=False)
                 # A pending Refine handoff / background install is waiting on the
                 # model: download it now so the deferred import can complete,
                 # instead of stranding the user behind a manual Download button.
@@ -239,8 +250,10 @@ class EnvSetupMixin:
                 "AI Segmentation",
                 level=Qgis.MessageLevel.Info
             )
-            # Auto-trigger install for upgrades
-            if "need updating" in message:
+            # Auto-trigger install for upgrades. Read off the status code, so
+            # a reworded status cannot silently stop the update from starting.
+            from ..dock.setup_status_text import STATUS_NEEDS_UPDATE, setup_status_code
+            if setup_status_code(message) == STATUS_NEEDS_UPDATE:
                 self._on_install_requested()
 
     def _check_for_plugin_update(self):
@@ -515,7 +528,8 @@ class EnvSetupMixin:
             from qgis.PyQt.QtCore import QSettings
             ts = QSettings().value(
                 SETTINGS_KEY_LAST_MANUAL_SESSION_TS, 0, type=int)
-            return ts > 0 and (time.time() - ts) < days * 86400
+            window_days = warm_recent_manual_days(days)
+            return ts > 0 and (time.time() - ts) < window_days * 86400
         except Exception:  # noqa: BLE001 - heuristic only
             return False
 
@@ -550,11 +564,13 @@ class EnvSetupMixin:
             # other error path here uses: copy-logs + email, not a bare OK box)
             show_error_report(
                 self.iface.mainWindow(),
-                tr("PyTorch cannot load on Windows"),
-                tr("The plugin requires Visual C++ Redistributables to run PyTorch.\n\n"
+                tr("The AI engine cannot load on Windows"),
+                tr("The plugin requires Visual C++ Redistributables to run the "
+                   "local AI engine.\n\n"
                    "Please download and install:\n"
                    "https://aka.ms/vs/17/release/vc_redist.x64.exe\n\n"
-                   "After installation, restart QGIS and try again."),
+                   "After installation, restart QGIS and try again."
+                   ).replace(_VCREDIST_URL, vcredist_url(_VCREDIST_URL)),
                 error_code="pytorch_dll_error",
             )
         else:
@@ -620,6 +636,10 @@ class EnvSetupMixin:
                 else "background")
 
     def _on_install_requested(self, include_local_model: bool | None = None):
+        # The retry below comes back on a timer, so an unload between two tries
+        # lands here with no dock left to write to.
+        if self.dock_widget is None:
+            return
         # Which half of the install this is. Read once, here, and remembered
         # for the workers and for every status the run reports: the mode can
         # change while an install runs, and the answer must not change with it.
@@ -635,7 +655,7 @@ class EnvSetupMixin:
         # worker cannot postpone the install forever.
         if self._sam_pipe_busy():
             waited = getattr(self, "_install_pipe_waits", 0)
-            if waited < _INSTALL_PIPE_WAIT_MAX:
+            if waited < install_pipe_wait_turns(_INSTALL_PIPE_WAIT_MAX):
                 from functools import partial
 
                 from qgis.PyQt.QtCore import QTimer as _QTimer
@@ -644,6 +664,11 @@ class EnvSetupMixin:
                 # retry would read whatever mode the dock is on by then.
                 _QTimer.singleShot(1500, partial(
                     self._on_install_requested, include_local_model))
+                # The wait runs up to 12 s behind a button that went down on
+                # the click, so say what it is waiting for.
+                self.dock_widget.show_install_waiting_notice(
+                    tr("Finishing the current AI task, then the install "
+                       "starts."))
                 return
             QgsMessageLog.logMessage(
                 "Starting the install with the local AI pipe still busy: "
@@ -753,12 +778,12 @@ class EnvSetupMixin:
             # disk. The weights below belong to the on-device model, so this
             # stops here rather than downloading a file this mode never opens.
             self.dock_widget.set_dependency_status(
-                True, "✓ " + tr("Ready for Automatic mode"))
+                True, tr("Ready for Automatic mode"))
             self._refresh_activation_async()
             return
         if is_ready and model_ready:
             # Deps already installed, just need model download
-            self.dock_widget.set_dependency_status(True, "✓ " + tr("AI ready"))
+            self.dock_widget.set_dependency_status(True, tr("AI ready"))
             self._auto_download_checkpoint()
             return
 
@@ -773,7 +798,7 @@ class EnvSetupMixin:
             level=Qgis.MessageLevel.Info
         )
 
-        self.dock_widget.set_install_progress(0, "Preparing installation...")
+        self.dock_widget.set_install_progress(0, tr("Preparing installation..."))
 
         import time as _time
         self._install_t0 = _time.monotonic()
@@ -877,7 +902,7 @@ class EnvSetupMixin:
         self.dock_widget.set_activation_message(
             tr("You are signed in on this computer, but QGIS cannot read your "
                "sign-in until you enter its master password."),
-            is_error=False,
+            is_error=False, kind="warning",
         )
         if not getattr(self, "_locked_key_recheck_armed", False):
             self._locked_key_recheck_armed = True
@@ -1249,7 +1274,7 @@ class EnvSetupMixin:
             message = "{}\n\n{}".format(
                 message,
                 tr("You can also open this address by hand:\n{}").format(url))
-        self.dock_widget.set_activation_message(message, is_error=False)
+        self.dock_widget.set_activation_message(message, is_error=False, kind="info")
 
     def _on_pairing_timeout(self):
         if self.dock_widget:
@@ -1357,12 +1382,63 @@ class EnvSetupMixin:
 
     # --- Settings / sign out -------------------------------------------------
 
+    def _auto_run_in_flight(self) -> bool:
+        """True while an Automatic run is on the wire.
+
+        The account window is modal, and the dock's Cancel sits behind it. A
+        run the user cannot stop keeps spending, so the caller opens the window
+        without the modal block while this answers yes.
+        """
+        if getattr(self, "_auto_worker", None) is not None:
+            return True
+        try:
+            return bool(getattr(self.dock_widget, "_auto_run_active", False))
+        except (RuntimeError, AttributeError):
+            return False
+
+    def _show_sign_in_page(self) -> None:
+        """Put the dock back on its sign-in surface and say why.
+
+        The account window needs a signed-in account, so the session-expired
+        path used to end on a method that returned without a word. The panel
+        already owns the sign-in surface; this is the one call that shows it.
+        """
+        dock = self.dock_widget
+        if dock is None:
+            return
+        try:
+            dock.setVisible(True)
+            dock.raise_()
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110 - a hidden panel still gets the state below
+        try:
+            dock.set_activated_state(False)
+            dock.set_activation_message(
+                tr("Session expired. Sign in again to continue."), True)
+        except (RuntimeError, AttributeError):
+            try:
+                self.iface.messageBar().pushWarning(
+                    "AI Segmentation",
+                    tr("Session expired. Open the AI Segmentation panel and "
+                       "sign in again."))
+            except (RuntimeError, AttributeError):
+                pass  # nosec B110
+
     def _on_settings_clicked(self):
         from ...core.activation_manager import get_auth_header, get_auth_token, is_plugin_activated
         if not is_plugin_activated():
+            self._show_sign_in_page()
             return
         from ...api.terralab_client import TerraLabClient
         from ..account_settings_dialog import AccountSettingsDialog
+        existing = getattr(self, "_account_dialog", None)
+        if existing is not None:
+            try:
+                existing.raise_()
+                existing.activateWindow()
+                return
+            except (RuntimeError, AttributeError):
+                self._account_dialog = None
         client = TerraLabClient()
         dlg = AccountSettingsDialog(
             client=client,
@@ -1376,6 +1452,17 @@ class EnvSetupMixin:
         # This window reads the balance for its own card; the dock takes the
         # same payload instead of firing a second call and staying behind.
         dlg.usage_loaded.connect(self._on_account_usage_loaded)
+        if self._auto_run_in_flight():
+            # A modal window covers the dock, and the dock is where Cancel is.
+            # Open it alongside the run instead, and keep one reference so a
+            # second click raises this window rather than stacking another.
+            self._account_dialog = dlg
+            dlg.setModal(False)
+            dlg.finished.connect(lambda _r: setattr(self, "_account_dialog", None))
+            dlg.finished.connect(dlg.deleteLater)
+            dlg.show()
+            dlg.raise_()
+            return
         dlg.exec()
         # The window is a child of the QGIS main window, so C++ keeps it alive
         # after this method drops its only Python reference. Without this every
@@ -1620,8 +1707,10 @@ class EnvSetupMixin:
     def _on_deps_install_progress(self, percent: int, message: str):
         if not self.dock_widget:
             return
-        # Scale deps progress to 0-80% (model download gets 80-100%)
-        scaled = int(percent * 0.8)
+        # One band per phase, and no band overlaps another: packages 0-70,
+        # verification 70-80, model file 80-100. Overlapping bands made the
+        # bar go backwards between two phases of the same install.
+        scaled = int(percent * 0.7)
         self.dock_widget.set_install_progress(scaled, message)
 
     def _on_deps_install_finished(self, success: bool, message: str):
@@ -1633,7 +1722,7 @@ class EnvSetupMixin:
             # verification (broken torch DLL) is a FAILED install to the user,
             # so counting it completed here skewed the install funnel.
             # Run verification + device detection off main thread
-            self.dock_widget.set_install_progress(80, tr("Verifying installation..."))
+            self.dock_widget.set_install_progress(70, tr("Verifying installation..."))
             # A verify pass can run for minutes, and a repair install can
             # finish while one is still going. Reassigning the attribute would
             # drop the last reference to a live QThread, which aborts QGIS.
@@ -1670,7 +1759,8 @@ class EnvSetupMixin:
                 getattr(self.deps_install_worker, "_cancelled", False))
             _msg_lower_early = (message or "").lower()
             if (_cancelled or "installation cancelled" in _msg_lower_early or "download cancelled" in _msg_lower_early):
-                self.dock_widget.set_install_progress(100, "Cancelled")
+                self.dock_widget.set_install_progress(
+                    100, tr("Cancelled"), state="cancelled")
                 self.dock_widget.set_dependency_status(
                     False, tr("Installation cancelled"))
                 self._release_local_ai_install()
@@ -1682,8 +1772,10 @@ class EnvSetupMixin:
                 self._load_predictor()
                 return
 
-            self.dock_widget.set_install_progress(100, "Failed")
-            error_msg = message[:300] if message else tr("Unknown error")
+            self.dock_widget.set_install_progress(
+                100, tr("Failed"), state="failed")
+            error_msg = message[:300] if message else tr(
+                "Unknown error. Try again, or use Cloud AI instead.")
             self.dock_widget.set_dependency_status(False, tr("Installation failed"))
             # An install from the Automatic review can no longer finish.
             self._release_local_ai_install()
@@ -1960,8 +2052,8 @@ class EnvSetupMixin:
     def _on_verify_progress(self, percent: int, message: str):
         if not self.dock_widget:
             return
-        # Scale verify progress (0-100%) into the 80-95% range
-        scaled = 80 + int(percent * 0.15)
+        # Verification owns 70-80, which the model file picks up from.
+        scaled = 70 + int(percent * 0.1)
         self.dock_widget.set_install_progress(scaled, message)
 
     def _on_verify_finished(self, is_valid: bool, message: str):
@@ -2006,10 +2098,10 @@ class EnvSetupMixin:
             # cannot start, so name what is short instead.
             if model_ok:
                 self.dock_widget.set_dependency_status(
-                    True, "✓ " + tr("AI ready"))
+                    True, tr("AI ready"))
             else:
                 self.dock_widget.set_dependency_status(
-                    True, "✓ " + tr("Ready for Automatic mode"))
+                    True, tr("Ready for Automatic mode"))
                 # The warning belongs to the install that TRIED and could not.
                 # An install asked for by Automatic left the on-device AI out
                 # on purpose, and reporting that as a failure would name a loss
@@ -2040,14 +2132,27 @@ class EnvSetupMixin:
                 QgsMessageLog.logMessage(
                     f"Auto-download checkpoint failed: {e}",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning)
-                self.dock_widget.set_install_progress(100, "Failed")
+                self.dock_widget.set_install_progress(
+                    100, tr("Failed"), state="failed")
                 # ok=False: True hides the Install button, and this is exactly
                 # the state where the user needs it to try the file again.
                 self.dock_widget.set_dependency_status(
                     False, tr("Almost ready: the AI file did not download."))
                 self._release_local_ai_install()
         else:
-            self.dock_widget.set_install_progress(100, "Failed")
+            # A cancel comes back through the same channel as a real failure.
+            # It is the user's own decision, so wind it down quietly rather
+            # than open a failure dialog on it.
+            cancelled = bool(getattr(self._verify_worker, "_cancelled", False))
+            if cancelled or "installation cancelled" in (message or "").lower():
+                self.dock_widget.set_install_progress(
+                    100, tr("Cancelled"), state="cancelled")
+                self.dock_widget.set_dependency_status(
+                    False, tr("Installation cancelled"))
+                self._release_local_ai_install()
+                return
+            self.dock_widget.set_install_progress(
+                100, tr("Failed"), state="failed")
             self.dock_widget.set_dependency_status(
                 False, "{} {}".format(tr("Verification failed:"), message))
             self._release_local_ai_install()
@@ -2115,6 +2220,19 @@ class EnvSetupMixin:
                 "AI Segmentation",
                 level=Qgis.MessageLevel.Warning
             )
+        # The verification phase is the third part of the same install and
+        # can run for minutes on its own. Without this Cancel did nothing for
+        # the whole of it.
+        verify_worker = getattr(self, "_verify_worker", None)
+        if verify_worker is not None:
+            try:
+                if verify_worker.isRunning():
+                    verify_worker.cancel()
+                    QgsMessageLog.logMessage(
+                        "Verification cancelled by user",
+                        "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            except (RuntimeError, AttributeError):
+                pass  # nosec B110 - the worker is already gone
         if self.deps_install_worker and self.deps_install_worker.isRunning():
             self.deps_install_worker.cancel()
             try:
@@ -2155,7 +2273,7 @@ class EnvSetupMixin:
                 "not installed. Automatic mode is unaffected.",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning)
             self.dock_widget.set_dependency_status(
-                True, "✓ " + tr("Automatic mode ready"))
+                True, tr("Automatic mode ready"))
             # Nothing else is coming, so a review lane waiting on this install
             # has to be let go here or its banner holds the review for the rest
             # of the session.
@@ -2190,7 +2308,8 @@ class EnvSetupMixin:
             QgsMessageLog.logMessage(
                 f"Failed to start model download: {e}",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning)
-            self.dock_widget.set_install_progress(100, "Failed")
+            self.dock_widget.set_install_progress(
+                100, tr("Failed"), state="failed")
             # ok=False so the Install button stays on screen: the file is what
             # is missing, and nothing else offers a way to fetch it again.
             self.dock_widget.set_dependency_status(
@@ -2228,7 +2347,8 @@ class EnvSetupMixin:
             # download they deliberately stopped.
             if getattr(self, "_download_cancelled", False):
                 self._download_cancelled = False
-                self.dock_widget.set_install_progress(100, tr("Cancelled"))
+                self.dock_widget.set_install_progress(
+                    100, tr("Cancelled"), state="cancelled")
                 # ok=False: the user stopped the download themselves, and the
                 # Install button is how they change their mind.
                 self.dock_widget.set_dependency_status(
@@ -2236,7 +2356,8 @@ class EnvSetupMixin:
                 self._release_local_ai_install()
                 return
 
-            self.dock_widget.set_install_progress(100, "Failed")
+            self.dock_widget.set_install_progress(
+                100, tr("Failed"), state="failed")
             # ok=False so the Install button stays on screen: the file is what
             # is missing, and nothing else offers a way to fetch it again.
             self.dock_widget.set_dependency_status(

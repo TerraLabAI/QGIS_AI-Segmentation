@@ -44,6 +44,11 @@ _OVERRIDE_COERCE = {
     "ortho": bool,
 }
 
+# A dial tick costs a full-run pass, so the apply waits for the gesture to
+# settle, on the same interval as the shared Shapes controls. The values are
+# STORED on every tick (plain dict work): only the pass is deferred.
+_SHAPE_ONLY_APPLY_MS = 150
+
 
 class AutoShapeOverridesMixin:
     """Store, apply and publish the selected detection's own shape settings."""
@@ -54,6 +59,8 @@ class AutoShapeOverridesMixin:
         # canonical index -> {"points_pct": int, "simplify_px": float,
         # "ortho": bool}
         self._auto_shape_overrides: dict[int, dict] = {}
+        # Drops the object whose dials moved and are waiting on the debounce.
+        self._stop_shape_only_apply_timer()
 
     # ------------------------------------------------------------------
     # Store
@@ -86,8 +93,10 @@ class AutoShapeOverridesMixin:
     # ------------------------------------------------------------------
 
     def _on_shape_only_changed(self, values: dict) -> None:
-        """A per-shape control moved: store the values for the selected object,
-        drop only its cached geometry and re-derive the visible set.
+        """A per-shape control moved: store the values for the selected object
+        and arm the debounce that re-derives the visible set once the gesture
+        settles. Storing is dict work; the pass behind it is not, so a drag
+        that used to run one per tick now runs one per gesture.
 
         ``values`` is keyed by review param name (the dock's own map), so a
         control added on the dock side needs only a new key in _OVERRIDE_KEYS
@@ -113,10 +122,54 @@ class AutoShapeOverridesMixin:
         if not stored:
             return
         overrides[int(idx)] = stored
-        # A live Manual session shows its own editable copy, not the review
-        # layer, so the override has to reach that copy or the dial changes
-        # nothing the user can see. The session path repaints itself; the
-        # review layer is rebuilt when the session folds back on Save.
+        self._auto_shape_only_pending_idx = int(idx)
+        self._arm_shape_only_apply_timer()
+
+    def _arm_shape_only_apply_timer(self) -> None:
+        """(Re)start the per-shape debounce, so a drag applies once. Applies
+        straight away when there is no dock to own the timer."""
+        dock = getattr(self, "dock_widget", None)
+        if dock is None:
+            self._apply_shape_only_pending()
+            return
+        try:
+            from .shared import _debounce_timer
+            _debounce_timer(self, "_shape_only_apply_timer", dock,
+                            _SHAPE_ONLY_APPLY_MS,
+                            self._apply_shape_only_pending)
+        except (ImportError, RuntimeError, AttributeError, TypeError):
+            # A timer left over from a dock that has been destroyed raises on
+            # start. Drop it so the next gesture builds a live one, and apply
+            # this one now rather than losing it.
+            self._shape_only_apply_timer = None
+            self._apply_shape_only_pending()
+
+    def _stop_shape_only_apply_timer(self) -> None:
+        """Drop a pending apply, so a reset or a new run never lands the last
+        gesture on an object list that has moved under it."""
+        self._auto_shape_only_pending_idx = None
+        timer = getattr(self, "_shape_only_apply_timer", None)
+        if timer is None:
+            return
+        try:
+            timer.stop()
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _apply_shape_only_pending(self) -> None:
+        """The dials settled: re-derive the one object they belong to.
+
+        A live Manual session shows its own editable copy, not the review
+        layer, so the override has to reach that copy or the dial changes
+        nothing the user can see. The session path repaints itself; the review
+        layer is rebuilt when the session folds back on Save.
+        """
+        idx = getattr(self, "_auto_shape_only_pending_idx", None)
+        self._auto_shape_only_pending_idx = None
+        if idx is None or self._auto_review is None:
+            return
+        if idx < 0 or idx >= len(self._auto_objects):
+            return
         applied = False
         try:
             applied = bool(self._apply_shape_only_to_session(int(idx)))
@@ -130,6 +183,7 @@ class AutoShapeOverridesMixin:
         """Back to shared settings: forget this object's exception."""
         idx = getattr(self, "_correct_selected_idx", None)
         overrides = getattr(self, "_auto_shape_overrides", None)
+        self._stop_shape_only_apply_timer()
         if idx is None or not overrides or int(idx) not in overrides:
             return
         overrides.pop(int(idx), None)
@@ -208,6 +262,12 @@ class AutoShapeOverridesMixin:
         try:
             if geom.isEmpty():
                 return None
+            # The count comes off the abstract geometry, which knows it: the
+            # vertex iterator walked every point in Python for a number the
+            # panel refreshes on each selection and each dial move.
+            abstract = geom.constGet()
+            if abstract is not None:
+                return int(abstract.nCoordinates())
             return sum(1 for _v in geom.vertices())
         except (RuntimeError, AttributeError, TypeError):
             return None

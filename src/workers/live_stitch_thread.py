@@ -25,6 +25,8 @@ import time
 
 from qgis.PyQt.QtCore import QThread, pyqtSignal
 
+from ..core import transport_dials as _td
+
 logger = logging.getLogger(__name__)
 
 #: Upper bound on retained per-tile fragments (the count-vs-map re-group and the
@@ -162,6 +164,13 @@ class LiveStitchThread(QThread):
         # the geodesic measure walks every vertex.
         self._area_of: dict[int, tuple] = {}
         self._refiner = None
+        # Built on the stitch thread, alive only while it runs.
+        self._shape_pool = None
+        # fid -> (the keeper geometry it was built from, its shape), for the
+        # objects the current cycle shaped ahead of the delta loop. Read once
+        # and dropped: the geometry is held so a shape can never be paired with
+        # a reading the merger has moved on from.
+        self._shaped_ahead: dict[int, tuple] = {}
         # Built HERE, on the GUI thread, because make_area_measurer reads the
         # project's transform context and ellipsoid. The result is a value
         # class and travels; the read does not.
@@ -220,8 +229,9 @@ class LiveStitchThread(QThread):
         return out
 
     def pending(self) -> int:
-        """Tiles handed over but not folded yet."""
-        return self._inbox.qsize()
+        """Tiles handed over but not folded yet. The stop sentinel finish()
+        queues is not a tile, so it is not counted."""
+        return max(0, self._inbox.qsize() - (1 if self._stopping else 0))
 
     def finish(self) -> None:
         """Ask the thread to stop once it has folded everything queued.
@@ -286,22 +296,46 @@ class LiveStitchThread(QThread):
                 self._publish(self._drain_merger_changes(settle_all=True))
         except Exception:  # noqa: BLE001 - the thread body must never raise out
             logger.warning("LiveStitchThread: stopped on error", exc_info=True)
+        finally:
+            # The pool is this thread's alone and must not outlive it. Every
+            # exit runs through here, including the aborted one.
+            self._close_shape_pool()
 
     def _build_tools(self) -> None:
-        """Build the per-run refiner on THIS thread.
+        """Build the per-run refiner and its fan-out on THIS thread.
 
-        It resolves every server dial the run's shape preset needs, once,
-        instead of once per object. It reads nothing shared, so building it
-        here keeps the whole geometry path on one thread. The area measurer
-        cannot follow: it reads the project, so __init__ builds it.
+        The refiner resolves every server dial the run's shape preset needs,
+        once, instead of once per object. It reads nothing shared, so building
+        it here keeps the whole geometry path on one thread. The area measurer
+        cannot follow: it reads the project, so __init__ builds it, and this
+        runs on the stitch thread, so it must NOT be rebuilt here. A measurer
+        the GUI-thread build could not make stays None, and the area falls
+        back to the planar one.
         """
         from ..core.live_refine import LiveRefiner
+        from .stitch_shape_pool import (
+            DEFAULT_WORKERS,
+            MIN_BATCH,
+            ShapeFanout,
+        )
 
-        if self._measurer is None:
-            self._measurer = _build_area_measurer(self._crs_authid)
         self._refiner = LiveRefiner(
             self._params, self._pixel_size, self._metres_per_unit,
             self._unit_aspect)
+        self._shape_pool = ShapeFanout(
+            self._refiner.refine,
+            workers=_td.stitch_shape_workers(DEFAULT_WORKERS),
+            min_batch=_td.stitch_shape_min_batch(MIN_BATCH))
+
+    def _close_shape_pool(self) -> None:
+        """Stop the shape workers, once, from the thread that owns them."""
+        pool, self._shape_pool = self._shape_pool, None
+        if pool is not None:
+            try:
+                pool.close()
+            except Exception:  # noqa: BLE001 - a teardown must never raise out
+                logger.warning("LiveStitchThread: shape pool would not close",
+                               exc_info=True)
 
     def _wants_rescale(self, pixel_size: float) -> bool:
         """Whether this pixel size is worth rebuilding the shown shapes for.
@@ -318,7 +352,8 @@ class LiveStitchThread(QThread):
         widest = max(pixel_size, self._pixel_size)
         if widest <= 0:
             return False
-        return abs(pixel_size - self._pixel_size) / widest > _RESCALE_MIN_CHANGE
+        return (abs(pixel_size - self._pixel_size) / widest
+                > _td.stitch_rescale_min_change(_RESCALE_MIN_CHANGE))
 
     def _rescale(self, pixel_size: float) -> None:
         """Adopt the run's true detection pixel size and re-refine what is shown.
@@ -360,9 +395,15 @@ class LiveStitchThread(QThread):
             if self._retain_coverage:
                 self._note_coverage(geom)
             if self.raw_fragments is not None:
-                if len(self.raw_fragments) >= RAW_FRAGMENT_RETAIN_CAP:
+                if len(self.raw_fragments) >= _td.stitch_raw_fragment_retain_cap(RAW_FRAGMENT_RETAIN_CAP):
                     # Overflow: free the list and mark the review override
                     # unavailable. The map-likeness counters keep running.
+                    # Said out loud: past here an exemplar-only run that wanted
+                    # count grouping falls back to cover with nothing on screen
+                    # explaining why it came back as one blob.
+                    logger.warning(
+                        "LiveStitchThread: raw fragment retain ceiling reached; "
+                        "count grouping is no longer available for this run")
                     self.raw_fragments = None
                 else:
                     self.raw_fragments.append((wkb, float(score)))
@@ -375,8 +416,13 @@ class LiveStitchThread(QThread):
         self._publish(self._drain_merger_changes())
 
     def _publish(self, deltas: list) -> None:
-        """Hand a batch of deltas to the GUI, if there is anything in it."""
-        if not deltas:
+        """Hand a batch of deltas to the GUI, if there is anything in it.
+
+        Silent once aborted: the fold already running when abort() landed runs
+        to its end, and its queued emit would otherwise reach the GUI after
+        teardown.
+        """
+        if not deltas or self._aborted:
             return
         with self._lock:
             self._outbox.extend(deltas)
@@ -427,9 +473,16 @@ class LiveStitchThread(QThread):
             if self._shown.pop(fid, None) is not None:
                 out.append((DELTA_REMOVE, fid, None, 0.0))
         hot = set(changed)
-        for fid in changed:
-            waited = self._pending_shape.get(fid, 0) + 1
-            if waited >= _SHAPE_MAX_WAIT or settle_all:
+        max_wait = _td.stitch_shape_max_wait(_SHAPE_MAX_WAIT)
+        # Which of the changed objects this cycle owes a SHAPE to, decided
+        # before any delta is built so the whole batch can be shaped at once.
+        # Nothing in the loop below can move a later object into or out of this
+        # set: a delta only ever touches its own fid.
+        waits = [(fid, self._pending_shape.get(fid, 0) + 1) for fid in changed]
+        self._shape_ahead(
+            [fid for fid, waited in waits if waited >= max_wait or settle_all])
+        for fid, waited in waits:
+            if waited >= max_wait or settle_all:
                 self._pending_shape.pop(fid, None)
                 out.append(self._object_delta(fid, shaped=True))
             else:
@@ -438,10 +491,53 @@ class LiveStitchThread(QThread):
                     self._pending_shape[fid] = waited
                 else:
                     self._pending_shape.pop(fid, None)
-        for fid in [f for f in self._pending_shape if settle_all or f not in hot]:
+        settling = [f for f in self._pending_shape if settle_all or f not in hot]
+        self._shape_ahead(settling)
+        for fid in settling:
             self._pending_shape.pop(fid, None)
             out.append(self._object_delta(fid, shaped=True))
+        self._shaped_ahead.clear()
         return [d for d in out if d is not None]
+
+    def _shape_input(self, fid: int):
+        """The geometry a shaped delta for this object would refine, or None.
+
+        The same three gates _build_object_delta applies before it reaches the
+        refine, in the same order, so shaping ahead of the loop never builds a
+        shape the loop would not have asked for. Reading the area here also
+        fills the memo the loop reads back a moment later, on this thread.
+        """
+        geom, score = self._merger.keeper(fid)
+        if geom is None or geom.isEmpty():
+            return None
+        if not self._passes_filters(score, self._object_area(fid, geom)):
+            return None
+        if self._already_drawn(fid, geom, True):
+            return None
+        return geom
+
+    def _shape_ahead(self, fids: list) -> None:
+        """Build this cycle's shapes side by side, for the delta loop to read.
+
+        The refine is a pure function of the geometry and the run's dials, so
+        the answer does not depend on which worker got which object, and an
+        object whose refine raises comes back as None exactly as the loop's own
+        guard would have left it. A batch too small to be worth spreading is
+        shaped in place by the fan-out itself.
+        """
+        pool = self._shape_pool
+        if pool is None or not fids:
+            return
+        work = []
+        for fid in fids:
+            geom = self._shape_input(fid)
+            if geom is not None:
+                work.append((fid, geom))
+        if not work:
+            return
+        shapes = pool.map([geom for _fid, geom in work])
+        for (fid, geom), shape in zip(work, shapes):
+            self._shaped_ahead[fid] = (geom, shape)
 
     def _wants_shape(self, fid: int) -> bool:
         """Whether a later cycle still has a shape to build for this object.
@@ -497,10 +593,17 @@ class LiveStitchThread(QThread):
             return self._rescore_delta(fid, geom, score)
         shape = None
         if shaped:
-            try:
-                shape = self._refiner.refine(geom)
-            except Exception:  # noqa: BLE001 - draw the unshaped outline
-                shape = None
+            # _shape_ahead may already have built this one. It is only taken
+            # when it was built from the very geometry the merger just handed
+            # back, so a shape can never be paired with a different reading.
+            held = self._shaped_ahead.pop(fid, None)
+            if held is not None and held[0] is geom:
+                shape = held[1]
+            else:
+                try:
+                    shape = self._refiner.refine(geom)
+                except Exception:  # noqa: BLE001 - draw the unshaped outline
+                    shape = None
         refined = shaped and shape is not None and not shape.isEmpty()
         if not refined:
             # Either this object is still growing and gets its raw outline, or

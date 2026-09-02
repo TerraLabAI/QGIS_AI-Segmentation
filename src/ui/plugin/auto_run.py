@@ -20,6 +20,7 @@ from qgis.core import (
 )
 
 from ...core.i18n import tr
+from ...core.interaction_dials import cancel_watchdog_ms, lost_terminal_grace_s
 from ...core.telemetry_errors import slot_guard
 from .shared import (
     _RECALL_FLOOR,
@@ -52,6 +53,9 @@ _STALL_CHECK_INTERVAL_MS = 5000    # main-thread poll cadence
 # timeout on purpose: five minutes of silence is a hang to the person watching
 # it, whatever the code knows. Server-tunable (network.slow_notice_s).
 _SLOW_NOTICE_S = 20.0
+# Seconds after a worker has EXITED within which its terminal must reach the
+# main thread. Past it the emission was lost and the run winds down as a stall.
+_LOST_TERMINAL_GRACE_S = 15.0
 
 # How often the headless path asks its caller whether the user cancelled. The
 # caller sits inside a blocking event loop, so this timer is the only thing that
@@ -62,6 +66,32 @@ _HEADLESS_CANCEL_POLL_MS = 250
 # wind down and hand back what it salvaged. The soft cancel is cooperative and
 # has its own watchdog (_CANCEL_WATCHDOG_MS), so this window sits past it.
 _HEADLESS_CANCEL_GRACE_MS = _CANCEL_WATCHDOG_MS * 3
+
+# Worker signals the two watchdogs detach before they salvage a wedged run into
+# the review, by NAME so a worker that never grew one is skipped rather than
+# raising mid-teardown. 'cancelled' is deliberately absent: it stays wired so a
+# late real emission still releases the worker reference. Both lists used to be
+# written out separately and the second one had drifted, leaving a rescan mark
+# free to paint on the canvas the review had just taken over.
+_WIND_DOWN_DETACH = (
+    ("tile_completed", "_on_auto_tile_completed"),
+    ("progress", "_on_auto_progress"),
+    ("all_tiles_finished", "_on_auto_all_finished"),
+    ("warning", "_on_auto_warning"),
+    ("error", "_on_auto_error"),
+    ("credits_exhausted", "_on_auto_credits_exhausted"),
+    ("queue_state", "_on_auto_queue_state"),
+    ("run_phase", "_on_auto_run_phase"),
+    ("rescan_state", "_on_auto_rescan_state"),
+)
+# What the STALL watchdog detaches: the same set minus tile_completed. A wedged
+# worker is woken with requests still open on the service, and the service bills
+# a tile the moment it accepts one, so those answers are detections the user has
+# already paid for. Detaching the signal here threw them away. It stays wired
+# until the thread stops, and _finish_auto_stall_when_worker_stops drops it
+# right before the salvage. Derived from the list above so the two cannot drift.
+_STALL_WIND_DOWN_DETACH = tuple(
+    entry for entry in _WIND_DOWN_DETACH if entry[0] != "tile_completed")
 
 
 class AutoRunMixin:
@@ -174,14 +204,11 @@ class AutoRunMixin:
                 return
             if os.path.getsize(source) < 512 * 1024 * 1024:
                 return  # small file: full-res reads are cheap enough
-            from osgeo import gdal
-            ds = gdal.Open(source)
+            from ...core.raster_dataset_cache import acquire_gdal_dataset
+            ds = acquire_gdal_dataset(source)
             if ds is None or ds.RasterCount < 1:
                 return
-            try:
-                has_overviews = ds.GetRasterBand(1).GetOverviewCount() > 0
-            finally:
-                ds = None
+            has_overviews = ds.GetRasterBand(1).GetOverviewCount() > 0
             if not has_overviews:
                 self.iface.messageBar().pushInfo(
                     "AI Segmentation",
@@ -211,12 +238,10 @@ class AutoRunMixin:
         if low.startswith("/vsi") or "://" in low:
             return False
         try:
-            from osgeo import gdal
-        except ImportError:
-            return False
-        ds = None
-        try:
-            ds = gdal.Open(source)
+            # Through the session cache: the overview advice above reads the
+            # same file on the same click, and one open serves both facts.
+            from ...core.raster_dataset_cache import acquire_gdal_dataset
+            ds = acquire_gdal_dataset(source)
             if ds is None:
                 return False
             gt = ds.GetGeoTransform()
@@ -226,8 +251,6 @@ class AutoRunMixin:
             return (abs(gt[2]) / scale > 1e-3) or (abs(gt[4]) / scale > 1e-3)
         except Exception:  # noqa: BLE001 - never let a guard crash the run
             return False
-        finally:
-            ds = None
 
     def _offer_automatic_setup(self, reason: str) -> None:
         """Offer the light setup right where Automatic hits the wall.
@@ -285,8 +308,13 @@ class AutoRunMixin:
             except (RuntimeError, AttributeError):
                 banner = None
         if banner is not None:
+            from qgis.PyQt.QtCore import QEventLoop
             from qgis.PyQt.QtWidgets import QApplication
-            QApplication.processEvents()
+            # User input held back, like the probe's own nested loop: this
+            # runs before the Detect row is hidden, so a plain pump can deliver
+            # a queued second click straight back into the run setup.
+            QApplication.processEvents(
+                QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
         try:
             return self._online_imagery_verdict(layer, grid)
         finally:
@@ -295,6 +323,25 @@ class AutoRunMixin:
                     banner.setVisible(False)
                 except RuntimeError:
                     pass
+
+    def _abort_zone_outside_layer(self) -> None:
+        """Say the zone covers no ground on this layer: in the panel, to a
+        headless caller (which otherwise reads a generic "did not start") and
+        in the log. The caller returns straight after it."""
+        msg = tr(
+            "The zone is outside the selected raster layer. "
+            "Pick the right layer or redraw the zone."
+        )
+        self._headless_error = msg
+        try:
+            self.dock_widget.set_auto_status("error", msg)
+        except (RuntimeError, AttributeError):
+            pass
+        self._push_auto_warning(msg)
+        QgsMessageLog.logMessage(
+            "Auto detection: zone covers no ground on this layer; aborting",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning,
+        )
 
     def _start_auto_detection(self) -> None:
         """Start an automatic cloud detection run for the current zone + layer.
@@ -305,10 +352,23 @@ class AutoRunMixin:
         on the GUI thread; the per-tile encode does not, so pressing Detect no
         longer freezes the UI while many tiles are prepared.
         """
+        # Re-entry guard. The setup below pumps the event loop before the
+        # Detect row is hidden, so a queued second click could run a second
+        # setup whose worker the outer call then overwrites, orphaning a paid
+        # one. The busy guard below only sees a worker that already exists.
+        if getattr(self, "_auto_start_in_progress", False):
+            return
+        self._auto_start_in_progress = True
+        try:
+            self._start_auto_detection_body()
+        finally:
+            self._auto_start_in_progress = False
+
+    def _start_auto_detection_body(self) -> None:
+        """The body of _start_auto_detection, behind its re-entry guard."""
         import uuid as _uuid
 
         from ...core.activation_manager import get_auth_header, is_plugin_activated
-        from .shared import max_tiles_per_run_cap
 
         # The last result is NOT cleared here. Every guard below returns
         # without starting anything, and a caller polling auto_detect_status()
@@ -531,22 +591,7 @@ class AutoRunMixin:
             # only saves credits and must never be the thing that blocks a run.
             layer_extent = self._layer_extent_in_run_crs(layer, grid["crs"])
             if layer_extent is not None and not zone_rect.intersects(layer_extent):
-                msg = tr(
-                    "The zone is outside the selected raster layer. "
-                    "Pick the right layer or redraw the zone."
-                )
-                # The headless/MCP caller only sees a generic "did not start"
-                # unless the precise reason is handed back through this field.
-                self._headless_error = msg
-                try:
-                    self.dock_widget.set_auto_status("error", msg)
-                except (RuntimeError, AttributeError):
-                    pass
-                self._push_auto_warning(msg)
-                QgsMessageLog.logMessage(
-                    "Auto detection: zone does not intersect layer extent; aborting",
-                    "AI Segmentation", level=Qgis.MessageLevel.Warning,
-                )
+                self._abort_zone_outside_layer()
                 return
 
         # Which kind of source this run reads. Held for the worker (only an
@@ -615,8 +660,14 @@ class AutoRunMixin:
             before = len(tiles)
             tiles = self._tiles_in_polygon(
                 tiles, geo_bbox, pixel_w, pixel_h, layer, grid.get("crs"))
-            if len(tiles) > max_tiles_per_run_cap():
+            if len(tiles) > self._auto_zone_tile_cap():
                 tiles = None
+            elif not tiles:
+                # Nothing survived the polygon and extent cull, so there is no
+                # ground to detect on. The extent guard above fails open on a
+                # refused transform, which is how a zone gets this far.
+                self._abort_zone_outside_layer()
+                return
             elif len(tiles) != before:
                 QgsMessageLog.logMessage(
                     f"Auto detection: zone cull kept {len(tiles)} of {before} tiles",
@@ -624,9 +675,10 @@ class AutoRunMixin:
                 )
         if tiles is None:
             from .shared import zone_too_large_message
-            self._headless_error = zone_too_large_message(max_tiles_per_run_cap())
+            cap = self._auto_zone_tile_cap()
+            self._headless_error = zone_too_large_message(cap)
             QgsMessageLog.logMessage(
-                f"Auto detection: zone too large (exceeds {max_tiles_per_run_cap()} tiles)",
+                f"Auto detection: zone too large (exceeds {cap} tiles)",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
             )
             return
@@ -716,6 +768,18 @@ class AutoRunMixin:
         # ms) so _finalize's split still reads cleanly.
         self._auto_render_ms = 0
         self._auto_detect_t0 = _time.monotonic()
+        # From here to the review ready line, the plugin's own log lines are
+        # kept for the run's auto_run_log event (core.run_log_capture).
+        try:
+            from ...core.run_log_capture import start_run_log
+            start_run_log(self._auto_run_id or "")
+        except Exception:  # noqa: BLE001 -- the run does not need its log
+            pass  # nosec B110
+        # What the GUI thread itself spends drawing the live preview. The run
+        # summary already splits the worker's time; this is the one thread the
+        # split never covered, and it is the thread every other one waits on.
+        self._auto_live_draw_ms = 0.0
+        self._auto_live_draw_ticks = 0
         QgsMessageLog.logMessage(
             f"Auto detection: per-tile JIT render, zone {pixel_w}x{pixel_h}px, {len(tiles)} tile(s) "
             f"(provider={_provider_name_for_log(layer)})",
@@ -779,14 +843,14 @@ class AutoRunMixin:
             self._auto_run_id = None
             return
 
-        # Floor guard (single source of truth: detect_gate.can_detect, a
-        # TYPED PROMPT): belt-and-braces behind the empty-query guard
+        # Floor guard (single source of truth: detect_gate.can_detect, a word
+        # or a drawn example): belt-and-braces behind the empty-query guard
         # above, and the one gate the headless/MCP path reads (via
         # _headless_error). Blocks BEFORE any billable call.
         from ...core.detect_gate import can_detect
         positives = self._auto_exemplar_store.positives()
         if not can_detect(bool(prompt), positives):
-            msg = tr("Type what to find first. An example is optional.")
+            msg = tr("Type what to find, or draw an example of it.")
             try:
                 self.dock_widget.set_auto_run_active(False)
                 self.dock_widget.set_auto_status("error", msg)
@@ -1527,10 +1591,18 @@ class AutoRunMixin:
                 return None
             copy = geom
             if src != dst:
+                from ...core.qt_compat import geometry_op_succeeded
                 transform = QgsCoordinateTransform(
                     src, dst, QgsProject.instance().transformContext())
-                if copy.transform(transform) != 0:
+                if not geometry_op_succeeded(copy.transform(transform)):
                     return None
+            # A zone drawn across the antimeridian reprojects to longitudes
+            # past 180, which is not a WGS84 coordinate and is refused wholesale
+            # by the account service: the run then loses both its stored surface
+            # and the outline a later re-run needs. Fold it back into range, as
+            # the two pieces either side of the line.
+            from ...core.zone_antimeridian import fold_into_lonlat_range
+            copy = fold_into_lonlat_range(copy)
             wkt = copy.asWkt(7)
             if not wkt or len(wkt) > 100_000:
                 return None
@@ -1757,6 +1829,19 @@ class AutoRunMixin:
                 return
 
         self._auto_worker.start()
+        # The quote under Detect learns from this run's wall clock, measured
+        # from here to the review opening (core.run_pace_memory).
+        import time as _time
+        self._auto_run_started_mono = _time.monotonic()
+        # Fresh client profile for this run, and the run id on the log capture
+        # now that it is minted (auto_client_profile, run_log_capture).
+        try:
+            from ...core.run_log_capture import note_run_id
+            from .auto_client_profile import reset_run_profile
+            reset_run_profile(self)
+            note_run_id(self._auto_run_id or "")
+        except Exception:  # noqa: BLE001
+            pass  # nosec B110
         # Arm the stall watchdog for this run (see _on_auto_stall_check).
         self._start_auto_stall_watchdog()
         # Canvas preview jobs re-render (and on online basemaps re-FETCH) the
@@ -1821,7 +1906,14 @@ class AutoRunMixin:
         """Record that the run advanced, so the stall watchdog's window resets.
         Called from the progress and tile-completed handlers."""
         import time as _t
-        self._auto_last_progress_ts = _t.monotonic()
+        now = _t.monotonic()
+        last = getattr(self, "_auto_last_progress_ts", None)
+        if last is not None:
+            # The longest gap the bar ever sat still is what the user felt;
+            # it rides on the run's terminal event (auto_client_profile).
+            from .auto_client_profile import note_progress_gap
+            note_progress_gap(self, now - last)
+        self._auto_last_progress_ts = now
         # Clear the slow-link note on the answer itself, not on the next
         # watchdog tick: the tile the user was waiting for has landed, and a
         # sentence saying the link is slow must not outlive it by seconds.
@@ -1854,10 +1946,46 @@ class AutoRunMixin:
         from ...core.detection_policy import slow_notice_s
         slow = silent_for_s >= slow_notice_s(_SLOW_NOTICE_S)
         self._auto_link_slow_shown = slow
+        # Whose silence it is. Answers sitting with the converter, or a run
+        # folding its last tiles, is work on this machine: the card must not
+        # blame the connection for it. The first time a run says slow, the
+        # same reading goes out as auto_run_slow_notice.
+        local = False
+        if slow:
+            local = self._report_auto_slow_notice(silent_for_s)
         try:
-            self.dock_widget.set_auto_link_slow(slow)
+            self.dock_widget.set_auto_link_slow(slow, local=local)
         except (RuntimeError, AttributeError):
             pass
+
+    def _report_auto_slow_notice(self, silent_for_s: float) -> bool:
+        """Read what the worker is doing, send the once-per-run slow notice
+        event, and say whether the silence is this machine's own work."""
+        worker = getattr(self, "_auto_worker", None)
+        if worker is None:
+            return False
+        try:
+            from .auto_client_profile import slow_notice_state
+            state = slow_notice_state(self, worker)
+        except Exception:  # noqa: BLE001 -- a worker mid-teardown
+            return False
+        local = state.get("phase") in ("converting", "assembling")
+        if not getattr(self, "_auto_slow_notice_sent", False):
+            self._auto_slow_notice_sent = True
+            try:
+                from ...core.telemetry_run_profile import track_auto_run_slow_notice
+                track_auto_run_slow_notice(
+                    run_id=self._auto_run_id or "",
+                    silent_for_s=silent_for_s,
+                    tiles_answered=state["tiles_answered"],
+                    tiles_awaiting_conversion=state["tiles_awaiting_conversion"],
+                    inflight=state["inflight"],
+                    convert_pool=state["convert_pool"],
+                    phase=state["phase"],
+                )
+            except Exception:  # noqa: BLE001
+                pass  # nosec B110
+        return local
 
     def _on_auto_stall_check(self) -> None:
         """Watchdog tick. Says so on the card once a live run has been quiet for
@@ -1877,10 +2005,18 @@ class AutoRunMixin:
         import time as _t
 
         from ...core.detection_policy import stall_timeout_s
-        from ...core.run_watchdog import run_is_stalled
+        from ...core.run_watchdog import run_is_stalled, terminal_is_lost
         last = getattr(self, "_auto_last_progress_ts", None)
         if running and last is not None:
             self._note_auto_link_slow(_t.monotonic() - last)
+        grace_s = lost_terminal_grace_s(_LOST_TERMINAL_GRACE_S)
+        if terminal_is_lost(running, last, _t.monotonic(), grace_s):
+            # Only the terminal handlers null _auto_worker, so a lost emission
+            # leaves the panel at forever progress and this timer ticking for
+            # the rest of the session. Same wind-down as a stall.
+            self._stop_auto_stall_watchdog()
+            self._handle_auto_stall(worker, int(grace_s))
+            return
         timeout = stall_timeout_s(_STALL_TIMEOUT_S)
         if not run_is_stalled(running, last, _t.monotonic(), timeout):
             return
@@ -1889,9 +2025,12 @@ class AutoRunMixin:
         self._handle_auto_stall(worker, int(timeout))
 
     def _handle_auto_stall(self, worker, timeout_s: int) -> None:
-        """A run made no progress for the timeout: wake the wedged worker, then
-        salvage its billed partials into the review as a TIMEOUT (never a silent
-        forever-progress). Mirrors the cancel watchdog's safe wind-down."""
+        """A run made no progress for the timeout: wake the wedged worker, let it
+        read the tiles the service already billed, then salvage them into the
+        review as a TIMEOUT (never a silent forever-progress).
+
+        The stopped worker drains its open requests before it exits, so the
+        salvage waits for the thread rather than running on this turn."""
         if worker is None or self._auto_worker is not worker:
             return
         QgsMessageLog.logMessage(
@@ -1900,32 +2039,85 @@ class AutoRunMixin:
             "AI Segmentation", level=Qgis.MessageLevel.Warning,
         )
         # Mark the worker stalled so its own terminal (if it ever unwinds) stays
-        # silent, then wake it out of the blocked network call.
+        # silent, then wake it out of the blocked network call. The reason also
+        # decides worker-side whether the still-open requests are read before
+        # the sockets go, so it MUST be set before request_stop.
         try:
             worker._stop_reason = "stalled"
             worker.request_stop()
         except (RuntimeError, AttributeError):
             pass
         self._cancel_active_tile_render()
-        # Detach live-paint + result signals so the still-winding thread cannot
-        # repaint or double-finalize after we salvage; keep 'cancelled'
+        # Detach the live-paint and terminal signals so the still-winding thread
+        # cannot repaint the card or fire a second terminal; keep 'cancelled'
         # connected (it never fires for a stalled worker, but this mirrors the
-        # cancel watchdog and stays safe if the reason is ever cleared).
-        for sig, slot in (
-            (worker.tile_completed, self._on_auto_tile_completed),
-            (worker.progress, self._on_auto_progress),
-            (worker.all_tiles_finished, self._on_auto_all_finished),
-            (worker.warning, self._on_auto_warning),
-            (worker.error, self._on_auto_error),
-            (worker.credits_exhausted, self._on_auto_credits_exhausted),
-            (worker.queue_state, self._on_auto_queue_state),
-            (worker.run_phase, self._on_auto_run_phase),
-        ):
+        # cancel watchdog and stays safe if the reason is ever cleared), and keep
+        # 'tile_completed' so the drained billed tiles still reach the stitcher.
+        for sig_name, slot_name in _STALL_WIND_DOWN_DETACH:
             try:
-                sig.disconnect(slot)
-            except (TypeError, RuntimeError):
+                getattr(worker, sig_name).disconnect(getattr(self, slot_name))
+            except (TypeError, RuntimeError, AttributeError):
                 pass
-        self._on_auto_cancelled(reason="stalled")
+        self._finish_auto_stall_when_worker_stops(worker)
+
+    def _finish_auto_stall_when_worker_stops(self, worker) -> None:
+        """Salvage a stalled run ONCE, and only after its thread has stopped.
+
+        tile_completed stays wired through the wind-down, so the salvage cannot
+        run on the same turn as the stop: finalize builds the review from what
+        the stitcher holds, and a tile folded in behind it repaints over a review
+        that is already up. The thread's own finished signal says when nothing
+        more can be emitted; a still-wedged thread never sends it, so the same
+        bounded cap the cancel watchdog uses ends the wait either way.
+        """
+        state = {"done": False}
+
+        def _salvage() -> None:
+            # Both the signal and the timer can arrive; the first one wins.
+            if state["done"]:
+                return
+            state["done"] = True
+            # Nothing more may reach the GUI: the review is about to be built,
+            # and past this point a late tile has nowhere to land.
+            try:
+                worker.tile_completed.disconnect(self._on_auto_tile_completed)
+            except (TypeError, RuntimeError, AttributeError):
+                pass
+            if self._auto_worker is not worker:
+                # A new run took over while we waited: this one is no longer
+                # ours to finalize.
+                return
+            # finished() is emitted a hair before the native thread has fully
+            # stopped, and destroying a QThread in that window aborts QGIS.
+            # _on_auto_cancelled only anchors a worker that still reads as
+            # running, so anchor the finished one here (park joins, then frees).
+            try:
+                stopped = worker.isFinished() and not worker.isRunning()
+            except (RuntimeError, AttributeError):
+                stopped = False
+            if stopped:
+                park_orphaned_worker(worker)
+            self._on_auto_cancelled(reason="stalled")
+
+        try:
+            worker.finished.connect(_salvage)
+        except (RuntimeError, AttributeError):
+            # No finished signal to wait on (a plain object in a test): salvage
+            # now rather than leaving the run with no terminal at all.
+            _salvage()
+            return
+        try:
+            still_running = worker.isRunning()
+        except (RuntimeError, AttributeError):
+            still_running = False
+        if not still_running:
+            # Already out of run(): the lost-terminal arm of the watchdog, or a
+            # thread that exited between the tick and here. finished may have
+            # fired before the connect above, so do not wait for it.
+            _salvage()
+            return
+        from qgis.PyQt.QtCore import QTimer
+        QTimer.singleShot(cancel_watchdog_ms(_CANCEL_WATCHDOG_MS), _salvage)
 
     @slot_guard(stage="segment")
     def _on_auto_cancel_clicked(self) -> None:
@@ -1979,7 +2171,8 @@ class AutoRunMixin:
         # back on the prompt step at zero tiles).
         from qgis.PyQt.QtCore import QTimer
         QTimer.singleShot(
-            _CANCEL_WATCHDOG_MS, lambda w=worker: self._auto_cancel_watchdog(w))
+            cancel_watchdog_ms(_CANCEL_WATCHDOG_MS),
+            lambda w=worker: self._auto_cancel_watchdog(w))
 
     def _auto_cancel_watchdog(self, worker) -> None:
         """Fallback wind-down if a cooperative cancel never confirms. No-ops if
@@ -1988,25 +2181,16 @@ class AutoRunMixin:
             return
         QgsMessageLog.logMessage(
             "Auto detection: cancel watchdog forcing wind-down "
-            f"(worker did not confirm within {_CANCEL_WATCHDOG_MS}ms)",
+            f"(worker did not confirm within {cancel_watchdog_ms(_CANCEL_WATCHDOG_MS)}ms)",
             "AI Segmentation", level=Qgis.MessageLevel.Warning,
         )
         # Detach live-paint + result signals so the still-winding thread cannot
         # repaint after we finalize; keep 'cancelled' connected so its real
         # emission later still releases the worker ref (mirrors _stop path).
-        for sig, slot in (
-            (worker.tile_completed, self._on_auto_tile_completed),
-            (worker.progress, self._on_auto_progress),
-            (worker.all_tiles_finished, self._on_auto_all_finished),
-            (worker.warning, self._on_auto_warning),
-            (worker.error, self._on_auto_error),
-            (worker.credits_exhausted, self._on_auto_credits_exhausted),
-            (worker.queue_state, self._on_auto_queue_state),
-            (worker.run_phase, self._on_auto_run_phase),
-        ):
+        for sig_name, slot_name in _WIND_DOWN_DETACH:
             try:
-                sig.disconnect(slot)
-            except (TypeError, RuntimeError):
+                getattr(worker, sig_name).disconnect(getattr(self, slot_name))
+            except (TypeError, RuntimeError, AttributeError):
                 pass
         # If the thread is still executing (the very reason this watchdog
         # fired), _on_auto_cancelled must NOT be allowed to drop the last
@@ -2136,7 +2320,7 @@ class AutoRunMixin:
         non-polygon geometry leaves the rectangle alone. Returns the rectangle
         that was stored.
         """
-        from ...core.qt_compat import PolygonGeometry
+        from ...core.qt_compat import PolygonGeometry, geometry_op_succeeded
 
         shape = QgsGeometry(geom)
         # None means canvas numbers, and it only stays None while the
@@ -2150,7 +2334,7 @@ class AutoRunMixin:
                         and layer_crs != canvas_crs):
                     xform = QgsCoordinateTransform(
                         layer_crs, canvas_crs, QgsProject.instance())
-                    if shape.transform(xform) != 0:
+                    if not geometry_op_succeeded(shape.transform(xform)):
                         raise ValueError("zone transform failed")
             except Exception:  # noqa: BLE001 -- antimeridian, invalid CRS
                 # The shape never left the layer's CRS. Calling it canvas
@@ -2510,6 +2694,9 @@ class AutoRunMixin:
             # picks them up automatically in _start_auto_detection.
             self._clear_exemplars()
             if exemplars:
+                # The plan's ceilings apply to an agent's examples as well: the
+                # store refuses the extras, the same as a click would.
+                self._sync_exemplar_store_tier()
                 ex_layer = self._get_active_raster_layer()
                 ex_xform = None
                 if ex_layer is not None:
@@ -2568,8 +2755,15 @@ class AutoRunMixin:
             # Stored exactly like _on_auto_run_plan_ready, keyed on object_class
             # (which set_prompt_text put in the box, so _auto_run_ctx["prompt"]
             # matches it and _active_run_plan resolves during finalize).
+            # The drawn examples measure the object too, so an examples-only
+            # call still gets a plan, and its tile follows the drawn size.
             self._auto_run_plan = None
-            if object_class:
+            exemplar_size_m = None
+            try:
+                exemplar_size_m = self._exemplar_size_for_plan()
+            except (RuntimeError, AttributeError, TypeError, ValueError):
+                exemplar_size_m = None
+            if object_class or exemplar_size_m is not None:
                 try:
                     from ...core.activation_manager import get_auth_header
                     plan_auth = get_auth_header()
@@ -2577,9 +2771,20 @@ class AutoRunMixin:
                         from ...api.terralab_client import TerraLabClient
                         zone_area_m2, native_mupp = self._auto_run_plan_inputs()
                         plan = TerraLabClient().get_seg_run_plan(
-                            object_class, zone_area_m2, native_mupp, auth=plan_auth)
+                            object_class, zone_area_m2, native_mupp, auth=plan_auth,
+                            exemplar_size_m=exemplar_size_m)
                         if isinstance(plan, dict) and not plan.get("error"):
-                            self._auto_run_plan = {"prompt": object_class, "plan": plan}
+                            self._auto_run_plan = {
+                                "prompt": object_class, "plan": plan,
+                                "exemplar_size_m": exemplar_size_m}
+                            # Same grid as the dock: the plan's tile replaces the
+                            # blob seed above, unless the caller named the level.
+                            if detail is None:
+                                try:
+                                    self._auto_detail_user_locked = False
+                                    self._reseed_auto_detail_from_plan(object_class, plan)
+                                except (RuntimeError, AttributeError, TypeError, ValueError):
+                                    pass
                 except Exception:  # noqa: BLE001 -- planning is best-effort
                     pass  # nosec B110 -- fail-open to the cached-policy preset
 
@@ -2660,10 +2865,16 @@ class AutoRunMixin:
             # wait continues so the salvaged tiles reach _last_auto_result.
             cancel_state = {"asked": False, "deadline": 0.0}
             poll = self._arm_headless_cancel_poll(loop, should_cancel, cancel_state)
+            # Named and stopped below: an uncancelled singleShot holds a
+            # bound method of a finished loop for the whole window.
+            deadline_timer = QTimer(self.dock_widget)
+            deadline_timer.setSingleShot(True)
+            deadline_timer.timeout.connect(loop.quit)
             try:
-                QTimer.singleShot(timeout_s * 1000, loop.quit)
+                deadline_timer.start(timeout_s * 1000)
                 loop.exec()
             finally:
+                deadline_timer.stop()
                 self._disarm_headless_cancel_poll(poll)
 
             # Detach the local loop slots: the worker may still be alive (timeout
@@ -2686,10 +2897,17 @@ class AutoRunMixin:
                     # own watchdog own the rest, so the hard teardown must not
                     # run here: it would throw away the tiles already paid for.
                     return {"_error": "Cancelled", "cancelled": True}
-                # Timeout path: worker is still running (or silently died).
+                # Timeout path. The soft cancel, not the hard teardown that
+                # by contract keeps nothing: an overrun has billed tiles too.
+                salvaged = self._salvage_headless_timeout()
+                timed_out = f"Detection timed out after {timeout_s}s"
+                if salvaged is not None:
+                    salvaged = dict(salvaged)
+                    salvaged["_error"] = timed_out
+                    return salvaged
                 self._stop_auto_detection()
                 hard_stopped = True
-                return {"_error": f"Detection timed out after {timeout_s}s"}
+                return {"_error": timed_out}
 
             result = self._last_auto_result
             status = result.get("status")

@@ -111,27 +111,34 @@ class ZoneDeleteBadge(QgsMapCanvasItem):
         return QRectF(-r, -r, 2 * r, 2 * r)
 
     def paint(self, painter, option, widget):
-        if self._anchor is None:
+        """Draw the badge. Wrapped whole: an exception raised on a paint
+        reaches Qt as an abort and takes QGIS with it, so every failure here
+        draws nothing instead."""
+        try:
+            if self._anchor is None:
+                return
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            # Red on hover = a clear "this deletes the zone" affordance;
+            # disabled keeps its faded blue (no hover feedback while a run is
+            # in flight).
+            if self._enabled:
+                bg = self._HOVER_BG if self._hovered else self._BRAND_BLUE
+            else:
+                bg = self._DISABLED_BG
+            painter.setBrush(bg)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(QPointF(0, 0), self.RADIUS, self.RADIUS)
+            line_color = (
+                BADGE_X if self._enabled else QColor(255, 255, 255, 153)
+            )
+            pen = QPen(line_color, 2)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(pen)
+            d = self.RADIUS * 0.45
+            painter.drawLine(QPointF(-d, -d), QPointF(d, d))
+            painter.drawLine(QPointF(-d, d), QPointF(d, -d))
+        except Exception:  # noqa: BLE001 -- a paint that raises kills QGIS  # nosec B110
             return
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        # Red on hover = a clear "this deletes the zone" affordance; disabled
-        # keeps its faded blue (no hover feedback while a run is in flight).
-        if self._enabled:
-            bg = self._HOVER_BG if self._hovered else self._BRAND_BLUE
-        else:
-            bg = self._DISABLED_BG
-        painter.setBrush(bg)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(QPointF(0, 0), self.RADIUS, self.RADIUS)
-        line_color = (
-            BADGE_X if self._enabled else QColor(255, 255, 255, 153)
-        )
-        pen = QPen(line_color, 2)
-        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        painter.setPen(pen)
-        d = self.RADIUS * 0.45
-        painter.drawLine(QPointF(-d, -d), QPointF(d, d))
-        painter.drawLine(QPointF(-d, d), QPointF(d, -d))
 
 
 class ZoneBadgeClickFilter(QObject):

@@ -18,6 +18,7 @@ import time
 
 from qgis.PyQt.QtCore import QSettings
 
+from .. import transport_dials as _td
 from . import segmentation_presets as _fallback
 
 _CACHE_KEY = "AISegmentation/server_catalog_v1"
@@ -25,6 +26,17 @@ _CACHE_TS_KEY = "AISegmentation/server_catalog_v1_ts"
 _NEG_TS_KEY = "AISegmentation/server_catalog_v1_neg_ts"
 _CACHE_TTL_S = 3600          # success: 1h
 _NEG_TTL_S = 600             # failure: don't retry for 10 min
+
+# The catalogue is a list of short prompts and a few urls. Anything far past
+# that is not the catalogue, and QSettings writes it into an ini file the whole
+# profile re-reads, so it is refused rather than stored.
+_MAX_CATALOG_BYTES = 512 * 1024
+
+# The parsed catalogue, keyed on the timestamp it was stored under, so the
+# gallery does not re-parse the whole thing on the GUI thread every time it
+# asks. Replaced whole, and a caller may not edit what it gets back: the one
+# edit made on it, the sidebar emoji backfill, gives the same answer every time.
+_parsed_cache: tuple[str, dict] | None = None
 
 
 def base_url() -> str:
@@ -57,16 +69,24 @@ def _is_valid_catalog(data) -> bool:
 
 
 def _read_cache(settings: QSettings, *, ignore_ttl: bool = False) -> dict | None:
+    global _parsed_cache
     raw = settings.value(_CACHE_KEY)
     ts = settings.value(_CACHE_TS_KEY)
     if not raw:
         return None
     try:
         if not ignore_ttl:
-            if ts is None or (time.time() - float(ts)) >= _CACHE_TTL_S:
+            if ts is None or (time.time() - float(ts)) >= _td.catalog_ttl_s(_CACHE_TTL_S):
                 return None
+        stamp = str(ts)
+        held = _parsed_cache
+        if held is not None and held[0] == stamp:
+            return held[1]
         data = json.loads(raw)
-        return data if _is_valid_catalog(data) else None
+        if not _is_valid_catalog(data):
+            return None
+        _parsed_cache = (stamp, data)
+        return data
     except Exception:  # noqa: BLE001
         return None
 
@@ -85,7 +105,7 @@ def fetch_catalog(force: bool = False) -> dict | None:
         # Negative cache: skip the network if a recent fetch already failed.
         neg = settings.value(_NEG_TS_KEY)
         try:
-            if neg is not None and (time.time() - float(neg)) < _NEG_TTL_S:
+            if neg is not None and (time.time() - float(neg)) < _td.catalog_neg_ttl_s(_NEG_TTL_S):
                 return _read_cache(settings, ignore_ttl=True)
         except Exception:  # noqa: BLE001  # nosec B110
             pass
@@ -93,16 +113,17 @@ def fetch_catalog(force: bool = False) -> dict | None:
     resp = None
     try:
         from ...api.terralab_client import TerraLabClient
-        resp = TerraLabClient()._request(
-            "GET", "/api/ai-segmentation/presets", timeout_ms=10_000)
+        resp = TerraLabClient().get_segment_catalog(timeout_ms=10_000)
     except Exception:  # noqa: BLE001
         resp = None
 
     if _is_valid_catalog(resp):
         try:
-            settings.setValue(_CACHE_KEY, json.dumps(resp))
-            settings.setValue(_CACHE_TS_KEY, str(time.time()))
-            settings.remove(_NEG_TS_KEY)
+            payload = json.dumps(resp)
+            if len(payload.encode("utf-8")) <= _MAX_CATALOG_BYTES:
+                settings.setValue(_CACHE_KEY, payload)
+                settings.setValue(_CACHE_TS_KEY, str(time.time()))
+                settings.remove(_NEG_TS_KEY)
         except Exception:  # noqa: BLE001  # nosec B110
             pass
         return resp

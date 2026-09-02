@@ -7,14 +7,16 @@ until one of those came round. The case that matters is the one the plugin
 itself sets up: the panel says "subscribe", the user pays in a browser tab,
 comes back, and finds the same figure and the same refused Detect.
 
-Three hooks close it, all of them here:
+Two hooks close it, both of them here:
 
 - the QGIS window coming back to the front, which IS the return from the
   payment page;
 - a slow repeat while Automatic is on screen and QGIS is the active window,
-  for an account that changes from the other side (credits granted to a user);
-- one re-read before Detect is refused for want of credits, so a stale figure
-  can never be the reason a funded run is blocked.
+  for an account that changes from the other side (credits granted to a user).
+
+A third was written down and never built: a re-read taken at the moment Detect
+is refused for want of credits. Until it exists the figure a refusal is based
+on can be up to the idle gap old.
 
 Part of AISegmentationPlugin (see ai_segmentation_plugin.py); split out so
 agents and humans work on one concern per file. Methods are plain mixin
@@ -35,8 +37,6 @@ _WATCH_TICK_MS = 15_000
 # Alt-tabbing between QGIS and a browser must not become one request per
 # switch.
 _ACTIVATE_GAP_S = 10.0
-# A refusal is worth one read, not one per slider move.
-_UNDERFUNDED_GAP_S = 30.0
 # The generic client cadence when the server names none.
 _IDLE_GAP_S = 180
 

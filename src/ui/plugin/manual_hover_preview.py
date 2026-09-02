@@ -44,19 +44,33 @@ import time
 from qgis.core import QgsGeometry, QgsPointXY, QgsRectangle
 from qgis.PyQt.QtCore import QEvent, QObject, QTimer
 
+from ...core.interaction_dials import (
+    hover_recall_one_object_coverage,
+    hover_refusal_quiet_s,
+    hover_shape_budget_ms,
+    hover_shape_max_coverage,
+    route_memo_ms,
+)
 from ..canvas_palette import HOVER_PREVIEW_OUTLINE_WIDTH
 
 # How many times the loop may come back to a crop that is not ready yet before
 # it gives up and waits for the next real move. The crop is read and handed
 # over off the GUI thread, so the wait is real, and a cursor resting on ground
-# the session has never prepared must not poll for ever. Read with the tick
-# below: the two together are the ten seconds a preview waits for its pixels.
-_WAIT_TICKS_MAX = 100
+# the session has never prepared must not poll for ever. Read with the ticks
+# below: the three together are about two and a half seconds of waiting, on a
+# timer that slows down once the first second has passed with no answer.
+_WAIT_TICKS_MAX = 16
 
-# How long between those attempts. Nothing is moving, so this keeps up with
+# How long between the first attempts. Nothing is moving, so this keeps up with
 # nothing; it is how late an answer can be once the crop IS ready, and every
 # millisecond of it is dead time the cursor spends on a shape it could have.
 _WAIT_TICK_MS = 100
+
+# After this many fast ticks the crop is not simply a moment away, so the loop
+# backs off to the slower tick below and stops waking the GUI thread ten times
+# a second for an answer that is not coming.
+_WAIT_TICKS_FAST = 10
+_WAIT_TICK_SLOW_MS = 250
 
 # How far, in crop pixels, the cursor may sit from the pixel a preview was
 # asked about and still be read as resting on the same spot. An answer whose
@@ -91,9 +105,11 @@ _RECALL_ONE_OBJECT_COVERAGE = 0.1
 # mask never condemns the ones after it.
 _SHAPE_BUDGET_MS = 500.0
 
-# How many shaping costs the controller remembers, for reading off a live
-# session. Diagnostics only: nothing in the loop reads past the last one.
-_SHAPE_COSTS_KEPT = 50
+# How long the loop stands down after the service refuses one preview. An empty
+# balance, an expired key and a service that is out all read the same to the
+# next rest of the cursor, so without this a hand moving over the map asks the
+# same question and is refused every second or so, for the whole session.
+_REFUSAL_QUIET_S = 20.0
 
 # The share of the crop a mask may cover and still be worth shaping. Above it
 # the answer is not an object anybody is hovering, it is most of the scene, and
@@ -184,13 +200,20 @@ class HoverPreviewController:
         # session's own memo only holds the ACTIVE mask, so a hover answer and
         # a refine tick would otherwise pay the whole chain every time.
         self._hover_mask_memo: tuple | None = None
-        # The address a preview goes to, read once on attach.
+        # The address a preview goes to, and when it was last read.
         self._url: str | None = None
+        self._url_at = 0.0
+        # The debounce the loop arms its timer with, and when it was read.
+        self._debounce_ms = 0
+        self._debounce_at = 0.0
+        # The mode the dock has to be in, bound on attach so the gate does not
+        # import the dock module on every move of the mouse.
+        self._interactive_mode = None
+        # Nothing is asked before this monotonic stamp (see _note_failure).
+        self._quiet_until = 0.0
         # The headers one preview travels with, and when they were read.
         self._auth: dict | None = None
         self._auth_at = 0.0
-        # The last shaping costs in ms, newest last. Diagnostics only.
-        self._shape_costs: list = []
         # One line per failure class, so a service that refuses every preview
         # costs one line and not one per mouse move.
         self._reported: set[str] = set()
@@ -209,14 +232,14 @@ class HoverPreviewController:
         if canvas is None:
             return
         self._canvas = canvas
-        # Read once: it is the click route's own address, and resolving it
-        # builds a client, which is not work a mouse move should pay for.
+        # A new session asks again, whatever the last one was refused.
+        self._quiet_until = 0.0
         try:
-            from ...core.hover_preview_client import preview_refine_url
+            from ..ai_segmentation_dockwidget import Mode
 
-            self._url = preview_refine_url()
-        except Exception:  # noqa: BLE001 -- no address, no preview
-            self._url = None
+            self._interactive_mode = Mode.INTERACTIVE
+        except Exception:  # noqa: BLE001 -- no mode to compare, no preview
+            self._interactive_mode = None
         # Parented to the canvas: the plugin controller is not a QObject, and a
         # timer with no parent outlives the session that made it.
         self._timer = QTimer(canvas)
@@ -347,12 +370,32 @@ class HoverPreviewController:
         if not self._near_pending_point(here):
             self._wait_ticks = 0
         self._pending_point = here
+        debounce = self._debounce_ms_cached()
+        if debounce <= 0:
+            return
+        try:
+            self._timer.start(debounce)
+        except Exception:  # noqa: BLE001 -- an unreadable dial is no preview  # nosec B110
+            pass
+
+    def _debounce_ms_cached(self) -> int:
+        """How long the cursor must rest, re-read a few seconds apart.
+
+        This is asked on every single move of the mouse, and the dial behind it
+        reads the served configuration.
+        """
+        now = time.monotonic() * 1000.0
+        if self._debounce_ms and now - self._debounce_at < route_memo_ms(_ROUTE_MEMO_MS):
+            return self._debounce_ms
         try:
             from ...core.hover_preview_client import hover_preview_debounce_ms
 
-            self._timer.start(hover_preview_debounce_ms())
-        except Exception:  # noqa: BLE001 -- an unreadable dial is no preview  # nosec B110
-            pass
+            value = int(hover_preview_debounce_ms())
+        except Exception:  # noqa: BLE001 -- an unreadable dial is no preview
+            value = 0
+        self._debounce_ms = value
+        self._debounce_at = now
+        return value
 
     def _near_pending_point(self, point) -> bool:
         """Whether ``point`` rests on the same spot as the one already pending.
@@ -391,6 +434,10 @@ class HoverPreviewController:
     def _ask_for_preview(self) -> None:
         point = self._pending_point
         if point is None or not self._gates_open():
+            return
+        if time.monotonic() < self._quiet_until:
+            # The service refused a moment ago. Whatever the reason, it is not
+            # one the next rest of the cursor fixes.
             return
         # The expensive half, asked once per rest instead of once per move.
         if not self._route_gates_open():
@@ -478,7 +525,12 @@ class HoverPreviewController:
             found = self._remembered_answer_at(key, pixel)
             if found is None:
                 return False
-            asked, mask, score, logits, _wide = found
+            asked, mask, score, logits, _wide = found[:5]
+            if len(found) > 5 and found[5]:
+                # This crop has answered this spot, and the settings in force
+                # shaped that answer to nothing. Asking again buys the same
+                # mask and the same empty outline.
+                return True
             bounds, shape = key[1], key[2]
             if not self._draw_answer_mask(mask, bounds, shape):
                 return False
@@ -542,7 +594,7 @@ class HoverPreviewController:
             return False
 
     def _remember_answer(self, key: tuple, asked: tuple, mask, score,
-                         logits) -> None:
+                         logits, shaped_to_nothing: bool = False) -> None:
         """Keep one drawn answer under the crop it describes.
 
         A key that is not the one in hand empties the memory before anything
@@ -558,7 +610,8 @@ class HoverPreviewController:
                 self._recent_answers_key = key
                 self._recent_answers = []
             wide = self._mask_spans_crop(mask, key[2])
-            self._recent_answers.append((asked, mask, score, logits, wide))
+            self._recent_answers.append(
+                (asked, mask, score, logits, wide, bool(shaped_to_nothing)))
             del self._recent_answers[:-_RECENT_ANSWERS_KEPT]
         except Exception:  # noqa: BLE001 -- a memory that refuses holds nothing
             self._recent_answers = []
@@ -606,8 +659,10 @@ class HoverPreviewController:
         self._wait_ticks += 1
         if self._wait_ticks > _WAIT_TICKS_MAX or self._timer is None:
             return
+        interval = (_WAIT_TICK_MS if self._wait_ticks <= _WAIT_TICKS_FAST
+                    else _WAIT_TICK_SLOW_MS)
         try:
-            self._timer.start(_WAIT_TICK_MS)
+            self._timer.start(interval)
         except Exception:  # noqa: BLE001  # nosec B110
             pass
 
@@ -618,7 +673,7 @@ class HoverPreviewController:
         more than a hover should pay for on every rest.
         """
         now = time.monotonic() * 1000.0
-        if self._auth and now - self._auth_at < _ROUTE_MEMO_MS:
+        if self._auth and now - self._auth_at < route_memo_ms(_ROUTE_MEMO_MS):
             return self._auth
         try:
             from ...core.activation_manager import get_auth_header
@@ -633,10 +688,30 @@ class HoverPreviewController:
         self._auth_at = now
         return auth
 
+    def _preview_url(self) -> str | None:
+        """The address a preview goes to, re-read a few seconds apart.
+
+        Read once when the loop armed, one unreadable answer (a configuration
+        still cold, a dial not served yet) turned previews off for the whole
+        session, and nothing brought them back.
+        """
+        now = time.monotonic() * 1000.0
+        if self._url and now - self._url_at < route_memo_ms(_ROUTE_MEMO_MS):
+            return self._url
+        try:
+            from ...core.hover_preview_client import preview_refine_url
+
+            url = preview_refine_url()
+        except Exception:  # noqa: BLE001 -- no address, no preview
+            url = None
+        self._url = url or None
+        self._url_at = now
+        return self._url
+
     def _send(self, token: str, bounds: tuple, shape: tuple, col, row) -> None:
         from ...core.hover_preview_client import HoverPreviewCall, build_preview_body
 
-        url = self._url
+        url = self._preview_url()
         if not url:
             return
         auth = self._auth_headers()
@@ -701,6 +776,14 @@ class HoverPreviewController:
                 # map showed once can be shown again for free.
                 self._remember_answer((str(token or ""), bounds, shape),
                                       asked, mask, score, logits)
+            else:
+                # Nothing reached the map: the size window dropped it, or the
+                # refine tail emptied it. Remembered all the same, and marked,
+                # or a cursor resting on this object asks for it again on every
+                # rest and pays a round trip to be told the same thing.
+                self._remember_answer((str(token or ""), bounds, shape),
+                                      asked, mask, score, logits,
+                                      shaped_to_nothing=True)
         except Exception:  # noqa: BLE001 -- a preview never reaches the user
             self._note_failure("draw")
 
@@ -775,9 +858,7 @@ class HoverPreviewController:
             started = time.monotonic()
             outline = plugin._manual_outline_for(mask, info)
             cost_ms = (time.monotonic() - started) * 1000.0
-            self._shape_costs.append(cost_ms)
-            del self._shape_costs[:-_SHAPE_COSTS_KEPT]
-            if cost_ms > _SHAPE_BUDGET_MS:
+            if cost_ms > hover_shape_budget_ms(_SHAPE_BUDGET_MS):
                 self._slow_mask = mask
             if outline is None or outline.isEmpty():
                 outline = None
@@ -800,7 +881,7 @@ class HoverPreviewController:
             total = int(shape[0]) * int(shape[1])
             if total <= 0:
                 return False
-            return int(mask.sum()) > _SHAPE_MAX_COVERAGE * total
+            return int(mask.sum()) > hover_shape_max_coverage(_SHAPE_MAX_COVERAGE) * total
         except Exception:  # noqa: BLE001 -- an unmeasurable mask is not too wide
             return False
 
@@ -817,7 +898,7 @@ class HoverPreviewController:
             total = int(shape[0]) * int(shape[1])
             if total <= 0:
                 return True
-            return int(mask.sum()) > _RECALL_ONE_OBJECT_COVERAGE * total
+            return int(mask.sum()) > hover_recall_one_object_coverage(_RECALL_ONE_OBJECT_COVERAGE) * total
         except Exception:  # noqa: BLE001 -- an unmeasurable mask gets the strict rule
             return True
 
@@ -881,6 +962,12 @@ class HoverPreviewController:
         any failure the ghost comes down rather than lying about the click."""
         if self._torn_down:
             return
+        # The settings moved, so the two judgements made under the old ones no
+        # longer hold: the mask that busted the shaping budget may not under
+        # these, and an answer that shaped to nothing may shape to something.
+        self._slow_mask = None
+        self._recent_answers = [entry for entry in self._recent_answers
+                                if not (len(entry) > 5 and entry[5])]
         shown = self._shown
         overlay = self._overlay
         if shown is None or overlay is None or not overlay.has_preview():
@@ -933,6 +1020,9 @@ class HoverPreviewController:
         """
         from ...core.hover_preview_client import PREVIEW_BUSY_CODE, log_preview_note
 
+        # Every refusal buys the same quiet, named or not: an empty balance and
+        # a service that is out both answer the next rest exactly the same way.
+        self._quiet_until = time.monotonic() + hover_refusal_quiet_s(_REFUSAL_QUIET_S)
         named = _CODE_ALLOWED.sub("", (code or "").strip().upper())[:_CODE_CHARS_MAX]
         if not named:
             named = "REFUSED"
@@ -1021,10 +1111,9 @@ class HoverPreviewController:
         try:
             if getattr(plugin, "_headless", False):
                 return False
-            from ..ai_segmentation_dockwidget import Mode
-
+            mode = self._interactive_mode
             dock = plugin.dock_widget
-            if dock is None or getattr(dock, "_mode", None) != Mode.INTERACTIVE:
+            if mode is None or dock is None or getattr(dock, "_mode", None) != mode:
                 return False
             # A panel that is closed or tabbed away cannot show what the shape
             # under the cursor is, and a preview sends imagery to draw it.
@@ -1116,7 +1205,7 @@ class ManualHoverPreviewMixin:
             return False
         now = time.monotonic() * 1000.0
         memo = getattr(self, "_hover_route_memo", None)
-        if memo is not None and now - memo[0] < _ROUTE_MEMO_MS:
+        if memo is not None and now - memo[0] < route_memo_ms(_ROUTE_MEMO_MS):
             return memo[1]
         try:
             from ...core.hover_preview_client import hover_preview_offered

@@ -171,6 +171,25 @@ def _load_crop_profile() -> None:
         pass
 
 
+# How many uploads may pass between two writes of the crop profile. The write
+# reaches the settings store, which is a file, and it used to happen on every
+# single cloud click. What the profile holds is a running average, so a batch of
+# samples written together says the same thing as ten separate writes.
+_PROFILE_SAVE_EVERY = 10
+_uploads_since_save = 0
+
+
+def flush_crop_profile() -> None:
+    """Write what this session measured now, whatever the counter says.
+
+    Called when a session ends, so the samples taken since the last write leave
+    with it instead of being lost. Never raises.
+    """
+    global _uploads_since_save
+    _uploads_since_save = 0
+    _save_crop_profile()
+
+
 def _save_crop_profile() -> None:
     """Write what this session measured, so the next one opens calibrated."""
     try:
@@ -292,7 +311,7 @@ def note_crop_upload(sent_bytes: int, elapsed_s: float) -> None:
     Never raises. This runs beside a click, and a sample that cannot be used is
     not a failure to report: the estimate stays where it was.
     """
-    global _link_kbytes_s
+    global _link_kbytes_s, _uploads_since_save
     try:
         if sent_bytes < _UPLINK_MIN_SAMPLE_BYTES or elapsed_s <= 0:
             return
@@ -301,8 +320,13 @@ def note_crop_upload(sent_bytes: int, elapsed_s: float) -> None:
             held = _link_kbytes_s
             _link_kbytes_s = sample if held is None else (
                 _UPLINK_SMOOTHING * sample + (1.0 - _UPLINK_SMOOTHING) * held)
-        # One write per crop, and the crop is the slowest thing on this path.
-        _save_crop_profile()
+        # Not on every crop: the write is a file, and the figure it carries is
+        # a running average that says the same thing a batch later. The session
+        # end flushes whatever is left (see flush_crop_profile).
+        _uploads_since_save += 1
+        if _uploads_since_save >= _PROFILE_SAVE_EVERY:
+            _uploads_since_save = 0
+            _save_crop_profile()
     except Exception:  # noqa: BLE001 -- a bad sample must never break a click  # nosec B110
         pass
 

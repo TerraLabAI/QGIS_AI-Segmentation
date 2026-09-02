@@ -93,8 +93,14 @@ class ManualCloudPredictorMixin:
             # Auth read here, on the GUI thread. The crop goes out from
             # set_image, which the caller runs on a worker thread, and the key
             # store is not something to reach for from there.
+            # A ledger already open (this predictor is being rebuilt mid
+            # session) hands its id straight over; a fresh one is named once
+            # Start opens the ledger, in ``_start_manual_credit_session``.
+            ledger = getattr(self, "_manual_credit_ledger", None)
             self.predictor = CloudFirstPredictor(
-                CloudSamPredictor(auth=get_auth_header()),
+                CloudSamPredictor(
+                    auth=get_auth_header(),
+                    session_id=getattr(ledger, "session_id", None)),
                 local_source=lambda: getattr(self, "_local_predictor_held", None),
                 on_fallback=self._note_manual_cloud_fallback,
                 on_remote_answer=self._note_manual_cloud_answer,
@@ -131,6 +137,10 @@ class ManualCloudPredictorMixin:
         So the session ends here instead, and says why.
         """
         for step in (getattr(self, "_invalidate_manual_encode", None),
+                     # The ghost under the cursor is drawn on the route that
+                     # just closed. Left running it keeps asking, and every ask
+                     # is refused for an account that is no longer there.
+                     getattr(self, "_stop_hover_preview", None),
                      getattr(self, "_drop_cloud_correct_predictor", None),
                      # The ledger travelled with the account that just went
                      # away. Left open it keeps refusing Saves for credits no
@@ -142,6 +152,10 @@ class ManualCloudPredictorMixin:
                 step()
             except Exception:  # noqa: BLE001 -- teardown must never raise  # nosec B110
                 pass
+        # The route answer is held for a few seconds, and it was read while the
+        # account was still there. Dropped, or previews keep starting until it
+        # ages out.
+        self._hover_route_memo = None
         self._end_manual_session_with_no_predictor()
 
     def _end_manual_session_with_no_predictor(self) -> None:

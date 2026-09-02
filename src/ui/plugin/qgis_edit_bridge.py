@@ -52,6 +52,11 @@ import time
 
 from ...core.i18n import tr
 from ...core.qt_compat import QAction
+from .bridge_capture_state import (
+    live_capture_points,
+    report_editing_refused,
+    vertex_editor_docks,
+)
 
 # Snap tolerance in screen pixels, so it feels right at any imagery zoom (map
 # units would drift as the user zooms the raster). Verified live at QGIS 3.44.
@@ -332,6 +337,13 @@ class QgisEditBridgeMixin:
 
         canvas = self.iface.mapCanvas()
         self._qgis_bridge_prev_maptool = canvas.mapTool()
+        # The bridge makes the review layer the active one. Whatever was active
+        # before is the layer the user was working on, and leaving them on ours
+        # silently redirects their next Identify, Select or Zoom to layer.
+        try:
+            self._qgis_bridge_prev_layer = self.iface.activeLayer()
+        except (RuntimeError, AttributeError):
+            self._qgis_bridge_prev_layer = None
         self._save_bridge_editing_aids()
         if not self._expose_and_activate_bridge_layer(layer):
             self._restore_bridge_layer_presentation(layer)
@@ -550,12 +562,23 @@ class QgisEditBridgeMixin:
                 bbox = xform.transformBoundingBox(bbox)
             if bbox.isEmpty():
                 return
-            if canvas.extent().intersects(bbox):
+            view = canvas.extent()
+            if view.intersects(bbox):
                 return
-            pad = max(bbox.width(), bbox.height()) * 1.5 or 1.0
-            framed = QgsRectangle(
-                bbox.xMinimum() - pad, bbox.yMinimum() - pad,
-                bbox.xMaximum() + pad, bbox.yMaximum() + pad)
+            # Recentre, do not rescale: the user chose this zoom, and a padded
+            # box around one polygon throws it away and lands them somewhere
+            # they have to zoom back out of. Only a target that does not fit in
+            # the view they have gets the box.
+            if bbox.width() <= view.width() and bbox.height() <= view.height():
+                half_w, half_h = view.width() / 2.0, view.height() / 2.0
+                cx, cy = bbox.center().x(), bbox.center().y()
+                framed = QgsRectangle(cx - half_w, cy - half_h,
+                                      cx + half_w, cy + half_h)
+            else:
+                pad = max(bbox.width(), bbox.height()) * 1.5 or 1.0
+                framed = QgsRectangle(
+                    bbox.xMinimum() - pad, bbox.yMinimum() - pad,
+                    bbox.xMaximum() + pad, bbox.yMaximum() + pad)
             canvas.setExtent(framed)
             canvas.refresh()
         except (RuntimeError, AttributeError, TypeError, ImportError):
@@ -691,6 +714,13 @@ class QgisEditBridgeMixin:
         flagged manual so no filter can hide it. A no-op when there is no
         editable review layer."""
         if not getattr(self, "_qgis_bridge_active", False):
+            self.enter_qgis_edit_bridge()
+        if (not getattr(self, "_qgis_bridge_active", False)
+                and getattr(self, "_correct_selected_idx", None) is not None):
+            # The entry above refused because the selected polygon could not be
+            # held out of reach of the tools. What Add draws is new, so it needs
+            # no such polygon: open the session with nothing selected.
+            self._correct_selected_idx = None
             self.enter_qgis_edit_bridge()
         if not getattr(self, "_qgis_bridge_active", False):
             return  # no editable layer / entry failed; enter already reported it
@@ -867,6 +897,13 @@ class QgisEditBridgeMixin:
             except Exception:  # noqa: BLE001
                 pass  # nosec B110
             try:
+                # Same reason as the watch above: mapToolSet stays wired to
+                # this controller otherwise, and an unload after this path
+                # leaves the canvas calling into a dead object.
+                self._disconnect_bridge_tool_messages()
+            except Exception:  # noqa: BLE001
+                pass  # nosec B110
+            try:
                 self._set_bridge_shape_tools_visible(True)
             except Exception:  # noqa: BLE001
                 pass  # nosec B110
@@ -1022,6 +1059,7 @@ class QgisEditBridgeMixin:
             self._clear_bridge_isolation()
             self._restore_bridge_layer_presentation(layer)
             self._disconnect_bridge_layer_watch()
+            self._disconnect_bridge_tool_messages()
             # The next session may own a polygon, so the three shape tools come
             # back on the panel whatever this one was.
             self._set_bridge_shape_tools_visible(True)
@@ -1083,7 +1121,13 @@ class QgisEditBridgeMixin:
         it in the Layers panel, so the user can remove it there. Nothing else
         would notice: the bridge would stay open, its poll ticking, with
         snapping, topological editing and the selection colour still forced on
-        the project until the user pressed Save."""
+        the project until the user pressed Save.
+
+        Idempotent: a second connect over a live watch leaves two connections
+        behind one flag, and the disconnect below then drops only one of
+        them."""
+        if getattr(self, "_qgis_bridge_layer_watch", False):
+            return
         self._qgis_bridge_layer_watch = False
         try:
             from qgis.core import QgsProject
@@ -1509,7 +1553,7 @@ class QgisEditBridgeMixin:
         this is the way back from a mis-drawn split or a dragged-away corner."""
         if not getattr(self, "_qgis_bridge_active", False):
             return
-        if int(getattr(self, "_qgis_bridge_prev_points", 0) or 0) > 0:
+        if self._bridge_live_capture_points() > 0:
             self._bridge_undo_capture_vertex()
             return
         stack = getattr(self, "_qgis_bridge_undo_stack", None)
@@ -1537,11 +1581,16 @@ class QgisEditBridgeMixin:
         Escape, mid-edit, was the old behaviour and it asked to save 77
         detections when the user only wanted to drop a two-point line.
         Returns True (Escape consumed)."""
-        if int(getattr(self, "_qgis_bridge_prev_points", 0) or 0) > 0:
+        if self._bridge_live_capture_points() > 0:
             self._bridge_cancel_capture()
             return True
         self.finish_qgis_edit_bridge()
         return True
+
+    def _bridge_live_capture_points(self) -> int:
+        """Points in the line being traced, asked of the tool rather than of
+        the poll (see bridge_capture_state)."""
+        return live_capture_points(self, _bridge_capture_points)
 
     def _bridge_cancel_capture(self) -> None:
         """Drop the capture line in progress, keeping the tool armed.
@@ -1731,6 +1780,10 @@ class QgisEditBridgeMixin:
             return
         geom = QgsGeometry(base) if pct >= 100 else self._bridge_thin_geometry(
             base, pct)
+        # Thinning can cross a ring over itself: invisible on the map, and
+        # fatal to every area and overlap test that reads the shape later.
+        from ...core.layer_conventions import repair_polygon
+        geom = repair_polygon(geom) if geom is not None else None
         if geom is None or geom.isEmpty():
             geom = QgsGeometry(base)
         feature = self._bridge_feature_for_det_id(layer, det_id)
@@ -2117,15 +2170,26 @@ class QgisEditBridgeMixin:
             return False
 
     def _restore_bridge_layer_presentation(self, layer) -> None:
-        """Put the review layer back into its non-editing private state."""
+        """Put the review layer back into its non-editing private state, and
+        the user's own layer back in front."""
+        previous = getattr(self, "_qgis_bridge_prev_layer", None)
+        self._qgis_bridge_prev_layer = None
         flags = getattr(self, "_qgis_bridge_layer_flags", None)
-        if layer is None or flags is None:
-            return
         try:
-            if self._is_layer_valid(layer):
+            if layer is not None and flags is not None and self._is_layer_valid(layer):
                 layer.setFlags(flags)
         except (RuntimeError, AttributeError, TypeError):
             pass
+        try:
+            if previous is not None and self._is_layer_valid(previous):
+                self.iface.setActiveLayer(previous)
+        except (RuntimeError, AttributeError, TypeError):
+            pass
+
+    def _report_bridge_editing_refused(self, reason: str) -> None:
+        """Say that the layer would not open for editing (see
+        bridge_capture_state)."""
+        report_editing_refused(self, tr, reason)
 
     def _snapshot_bridge_layer(self, layer) -> dict[int, bytes]:
         """Return the pre-edit geometry for every uniquely identified feature."""
@@ -2249,8 +2313,10 @@ class QgisEditBridgeMixin:
             pass
         try:
             if not layer.isEditable() and not layer.startEditing():
+                self._report_bridge_editing_refused("refused")
                 return False
-        except (RuntimeError, AttributeError):
+        except (RuntimeError, AttributeError) as err:
+            self._report_bridge_editing_refused(type(err).__name__)
             return False
         self._suppress_bridge_attribute_form(layer)
         try:
@@ -2568,21 +2634,9 @@ class QgisEditBridgeMixin:
         return False
 
     def _bridge_vertex_editor_docks(self) -> list:
-        """Find the optional QGIS Vertex Editor dock without relying on locale."""
-        try:
-            from qgis.PyQt.QtWidgets import QDockWidget
-            docks = self.iface.mainWindow().findChildren(QDockWidget)
-        except (RuntimeError, AttributeError, TypeError):
-            return []
-        found = []
-        for dock in docks:
-            try:
-                key = f"{dock.objectName()} {dock.windowTitle()}".lower()
-            except (RuntimeError, AttributeError):
-                continue
-            if "vertex" in key and ("editor" in key or "dock" in key):
-                found.append(dock)
-        return found
+        """The QGIS Vertex Editor docks, found once and held (see
+        bridge_capture_state)."""
+        return vertex_editor_docks(self)
 
     def _arm_bridge_vertex_tool(self, layer) -> None:
         """Compatibility wrapper retained for older tests/controller paths."""
@@ -2599,12 +2653,22 @@ class QgisEditBridgeMixin:
                 pass
 
     def _restore_bridge_map_tool(self) -> None:
-        """Return the map tool the user had before we armed the vertex tool."""
+        """Return the map tool the user had before we armed the vertex tool.
+
+        A canvas that held NO tool when the session opened is restored to no
+        tool. Returning early there left the vertex tool this bridge armed
+        alive on the canvas, so every later click went on digitizing a layer
+        the review had already taken back.
+        """
         prev = self._qgis_bridge_prev_maptool
-        if prev is None:
-            return
         try:
-            self.iface.mapCanvas().setMapTool(prev)
+            canvas = self.iface.mapCanvas()
+            if prev is not None:
+                canvas.setMapTool(prev)
+            else:
+                current = canvas.mapTool()
+                if current is not None:
+                    canvas.unsetMapTool(current)
         except (RuntimeError, AttributeError):
             pass
 
@@ -2663,6 +2727,12 @@ class QgisEditBridgeMixin:
                 "AI Segmentation", message,
                 level=Qgis.MessageLevel.Warning, duration=6)
         except (RuntimeError, AttributeError):
+            pass
+        # The banner is where the user is looking, and it was still saying the
+        # shape had been updated.
+        try:
+            self._bridge_feedback(message, "warning")
+        except (RuntimeError, AttributeError, TypeError):
             pass
 
     # ------------------------------------------------------------------

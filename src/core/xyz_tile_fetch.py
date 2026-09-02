@@ -22,34 +22,51 @@ Two halves, deliberately split by thread:
 
 Anything this module cannot serve returns None, and the caller reads that as
 "read the layer the way you always did".
+
+Who reaches this module: the Semi-Auto click crop, through
+`core/feature_encoder.py` and `ui/plugin/manual_crops.py`, and nothing else.
+An Automatic run does NOT come through here. Its per-tile imagery is a
+`QgsMapRendererParallelJob` over the user's layer
+(`cloud_detection.start_tile_render_job`), so the pixels come from the QGIS
+provider and its own tile cache, not from the pool and the cache below.
 """
 from __future__ import annotations
 
 import contextlib
 import http.client
 import math
+import ssl
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 import numpy as np
+
+from . import transport_dials as _td
 
 # Web Mercator, which is the CRS every XYZ basemap is served in. Half the span
 # of the projected world in map units, and the map units one pixel covers at
 # zoom 0 on a 256 px tile.
 WEB_MERCATOR_HALF_SPAN = 20037508.342789244
 BASE_METERS_PER_PIXEL = 156543.03392804097
+# The tile side those two are quoted for. A layer may serve a larger one.
+_BASE_TILE_PX = 256
 
 # Tiles fetched at once, and attempts per tile. The ceiling is what a tile
 # host will answer in parallel without throttling the whole crop, and each
 # worker holds one connection, so this is also how many sockets a crop opens.
+# The width is the client fallback only: the server can widen or narrow it
+# per fleet (see set_parallel_tile_requests), because on a cold zone the
+# basemap host is what paces a run, and a 1008 px crop is 16 to 25 tiles.
 # A third attempt is the last one worth making: a tile the first two lost is
 # lost.
-_PARALLEL_TILE_REQUESTS = 8
+_PARALLEL_TILE_REQUESTS = 16
+_PARALLEL_TILE_REQUESTS_MAX = 64
 _TILE_ATTEMPTS = 3
 _TILE_TIMEOUT_S = 6.0
 
@@ -95,12 +112,20 @@ _MAX_REDIRECT_HOPS = 2
 
 _USER_AGENT = "Mozilla/5.0 QGIS AI Segmentation"
 
-# Failures counted per layer source. A host that will not serve this module
-# but will serve QGIS must stop costing a wasted attempt per click; a network
-# that dropped one crop must not disable direct fetching for the session. So
-# it takes two failures in a row, and one success clears the count.
-_failures_by_source: dict[str, int] = {}
+# Failures counted per layer source, with the time of the last one. A host that
+# will not serve this module but will serve QGIS must stop costing a wasted
+# attempt per click; a network that dropped one crop must not disable direct
+# fetching for the session. So it takes two failures in a row, and one success
+# clears the count.
+#
+# The time is what makes "for the session" true. Without it the block seals
+# itself shut: nothing calls the direct path any more, so nothing can report the
+# success that would clear the count, and a couple of dropped crops cost the
+# fast path until QGIS restarts. After the cool-down one crop tries again, and
+# either clears the count or restarts the wait.
+_failures_by_source: dict[str, tuple[int, float]] = {}
 _FAILURES_BEFORE_GIVING_UP = 2
+_RETRY_BLOCKED_SOURCE_AFTER_S = 300.0
 
 
 @dataclass(frozen=True)
@@ -131,19 +156,121 @@ def direct_tile_fetch_available(layer) -> bool:
     """Can this layer's imagery be read by downloading its tiles?
 
     False once this source has failed twice running, so a host that refuses
-    this module costs two attempts, not one per click.
+    this module costs two attempts, not one per click. True again once the
+    cool-down has passed, so the block is a pause and not a life sentence.
     """
     try:
         source = layer.source()
     except (AttributeError, RuntimeError):
         return False
-    return _failures_by_source.get(source, 0) < _FAILURES_BEFORE_GIVING_UP
+    count, last_failure = _failures_by_source.get(source, (0, 0.0))
+    if count < _td.xyz_failures_before_giving_up(_FAILURES_BEFORE_GIVING_UP):
+        return True
+    return (time.monotonic() - last_failure
+            >= _td.xyz_retry_blocked_source_after_s(_RETRY_BLOCKED_SOURCE_AFTER_S))
+
+
+# The tile transport, shared by every crop of the session. Built on first use
+# and dropped at unload; see _crop_pool.
+_shared_pool_lock = threading.Lock()
+_shared_pool = None
+_shared_connections = None
+_shared_pool_width = _PARALLEL_TILE_REQUESTS
+# Whether a run has named the width; until then the served default applies
+# when the pool is first built.
+_shared_pool_width_named = False
+
+# Tiles already fetched this session, by URL. Neighbouring crops of one run
+# overlap (the grid strides at 0.8 of a tile), so about a third of the tiles a
+# run asks for were fetched for the crop next door moments earlier; on a cold
+# zone every one of those is a second's wait on the imagery host. Blank
+# verdicts are kept too, they are the host's answer for that tile. Bounded by
+# bytes and by count, oldest out first, dropped at unload.
+_TILE_CACHE_MAX_BYTES = 48 * 1024 * 1024
+_TILE_CACHE_MAX_ENTRIES = 4000
+_tile_cache_lock = threading.Lock()
+_tile_cache: OrderedDict = OrderedDict()
+_tile_cache_bytes = 0
+
+
+def _tile_cache_get(url: str):
+    """The cached outcome for this tile URL, or None."""
+    with _tile_cache_lock:
+        hit = _tile_cache.get(url)
+        if hit is not None:
+            _tile_cache.move_to_end(url)
+        return hit
+
+
+def _tile_cache_put(url: str, outcome: str, payload) -> None:
+    """Keep a served tile (or a blank verdict) for the crops that follow."""
+    global _tile_cache_bytes
+    size = len(payload) if payload else 0
+    max_bytes = _td.xyz_cache_max_bytes(_TILE_CACHE_MAX_BYTES)
+    max_entries = _td.xyz_cache_max_entries(_TILE_CACHE_MAX_ENTRIES)
+    if size > max_bytes // 8:
+        return
+    with _tile_cache_lock:
+        if url in _tile_cache:
+            return
+        _tile_cache[url] = (outcome, payload)
+        _tile_cache_bytes += size
+        while _tile_cache and (
+                _tile_cache_bytes > max_bytes
+                or len(_tile_cache) > max_entries):
+            _old_url, (_o, old_payload) = _tile_cache.popitem(last=False)
+            _tile_cache_bytes -= len(old_payload) if old_payload else 0
+
+
+def clear_tile_cache() -> None:
+    """Drop every cached tile. Called at unload, and by anything that knows the
+    imagery under a source changed."""
+    global _tile_cache_bytes
+    with _tile_cache_lock:
+        _tile_cache.clear()
+        _tile_cache_bytes = 0
+
+
+def parallel_tile_requests() -> int:
+    """How many tiles one crop fetches at once, as currently configured."""
+    return _shared_pool_width
+
+
+def set_parallel_tile_requests(width) -> None:
+    """Resize the shared tile pool for the crops that follow.
+
+    Called once per run with the served value. A width outside 1..64 or not a
+    number leaves the pool as it is. When the width changes, the pool and its
+    kept connections are dropped and rebuilt on the next crop; a crop in
+    flight on the old pool finishes on it.
+
+    The one caller today is `AutoDetectionWorker.__init__`, and an Automatic
+    run never fetches a tile through this module (see the module docstring),
+    so what this width really paces is the Semi-Auto clicks that follow in the
+    same session. Widening it does not make an Automatic run render faster.
+    """
+    global _shared_pool_width, _shared_pool_width_named
+    try:
+        wanted = int(width)
+    except (TypeError, ValueError):
+        return
+    if not 1 <= wanted <= _td.xyz_parallel_max(_PARALLEL_TILE_REQUESTS_MAX):
+        return
+    with _shared_pool_lock:
+        _shared_pool_width_named = True
+        if wanted == _shared_pool_width:
+            return
+        _shared_pool_width = wanted
+        rebuild = _shared_pool is not None
+    if rebuild:
+        _close_crop_pool()
 
 
 def note_direct_tile_fetch_failed(source_key: str) -> None:
-    """Count one failed fetch against this source."""
+    """Count one failed fetch against this source, and restart its cool-down."""
     if source_key:
-        _failures_by_source[source_key] = _failures_by_source.get(source_key, 0) + 1
+        count = _failures_by_source.get(source_key, (0, 0.0))[0]
+        _failures_by_source[source_key] = (count + 1, time.monotonic())
 
 
 def note_direct_tile_fetch_succeeded(source_key: str) -> None:
@@ -153,8 +280,50 @@ def note_direct_tile_fetch_succeeded(source_key: str) -> None:
 
 
 def forget_direct_tile_fetch_failures() -> None:
-    """Let every source be tried again. Called when the plugin unloads."""
+    """Let every source be tried again, and drop the shared tile transport.
+    Called when the plugin unloads."""
     _failures_by_source.clear()
+    _close_crop_pool()
+    clear_tile_cache()
+
+
+def _crop_pool():
+    """The tile worker pool and its kept connections, built once and reused.
+
+    Both used to be built per crop, and a connection's key carries the thread
+    that opened it, so nothing survived the call: every crop on the same host
+    paid a fresh handshake per worker, which is exactly the cost the kept
+    connections exist to remove. One pool means the same worker threads, so
+    their connections are still theirs on the next crop.
+    """
+    global _shared_pool, _shared_connections, _shared_pool_width
+    with _shared_pool_lock:
+        if _shared_pool is None:
+            if not _shared_pool_width_named:
+                _shared_pool_width = _td.xyz_parallel(_PARALLEL_TILE_REQUESTS)
+            _shared_pool = ThreadPoolExecutor(
+                max_workers=_shared_pool_width,
+                thread_name_prefix="xyztile")
+            _shared_connections = _TileConnections()
+        return _shared_pool, _shared_connections
+
+
+def _close_crop_pool() -> None:
+    """Drop the shared pool and close every connection it kept.
+
+    Never leave a socket or a worker thread behind at unload; the next crop
+    builds both again.
+    """
+    global _shared_pool, _shared_connections
+    with _shared_pool_lock:
+        pool, connections = _shared_pool, _shared_connections
+        _shared_pool = None
+        _shared_connections = None
+    if connections is not None:
+        connections.close_all()
+    if pool is not None:
+        with contextlib.suppress(Exception):  # a pool already gone needs nothing
+            pool.shutdown(wait=False)
 
 
 def xyz_crop_request(layer, extent, out_px: int) -> XyzCropRequest | None:
@@ -180,13 +349,14 @@ def xyz_crop_request(layer, extent, out_px: int) -> XyzCropRequest | None:
     span = bounds[2] - bounds[0]
     if span <= 0 or out_px <= 0:
         return None
-    zoom = tile_zoom_for_resolution(span / out_px, zmin, zmax)
+    zoom = tile_zoom_for_resolution(span / out_px, zmin, zmax, tile_px)
 
     tile_range, window = tile_grid_for_extent(bounds, zoom, tile_px)
-    while zoom > zmin and _tiles_in(tile_range) > _MAX_TILES_PER_CROP:
+    max_tiles = _td.xyz_max_tiles_per_crop(_MAX_TILES_PER_CROP)
+    while zoom > zmin and _tiles_in(tile_range) > max_tiles:
         zoom -= 1
         tile_range, window = tile_grid_for_extent(bounds, zoom, tile_px)
-    if _tiles_in(tile_range) > _MAX_TILES_PER_CROP:
+    if _tiles_in(tile_range) > max_tiles:
         return None
 
     return XyzCropRequest(
@@ -197,12 +367,21 @@ def xyz_crop_request(layer, extent, out_px: int) -> XyzCropRequest | None:
 
 
 def tile_zoom_for_resolution(map_units_per_pixel: float, zmin: int,
-                             zmax: int) -> int:
+                             zmax: int, tile_px: int = _BASE_TILE_PX) -> int:
     """Zoom whose own pixel is closest to the resolution asked for, clamped to
-    what the service publishes."""
+    what the service publishes.
+
+    ``tile_px`` is the layer's own tile side. A high-DPI layer carries twice
+    the pixels over the same ground, so its zoom-0 pixel is already twice as
+    fine; reading the 256 px constant for it picks a level one too deep, which
+    is four times the tiles and four times the bytes for the same ground, all
+    thrown away again in the resize.
+    """
     if map_units_per_pixel <= 0:
         return zmax
-    zoom = int(round(math.log2(BASE_METERS_PER_PIXEL / map_units_per_pixel)))
+    side = max(1, int(tile_px or _BASE_TILE_PX))
+    base = (2.0 * WEB_MERCATOR_HALF_SPAN) / side
+    zoom = int(round(math.log2(base / map_units_per_pixel)))
     return max(zmin, min(zmax, zoom))
 
 
@@ -252,11 +431,17 @@ def fetch_xyz_crop(request: XyzCropRequest, cancel_check=None):
     A crop nobody waits on any more stops paying for the rest of its tiles
     instead of running the whole range down to the deadline.
     """
-    tiles, missing, blank, cancelled = _download_tiles(request, cancel_check)
+    tiles, missing, blank, cancelled, throttled = _download_tiles(
+        request, cancel_check)
     if cancelled:
         return None, "crop_error_online_cancelled"
     if missing:
-        return None, "crop_error_online_fetch_failed"
+        # Named apart from a plain loss: "the host is rate-limiting you" and
+        # "the tiles never arrived" ask the user for different things, and
+        # collapsing both into one code left a throttled user with a slow
+        # click and no explanation.
+        return None, ("crop_error_online_throttled" if throttled
+                      else "crop_error_online_fetch_failed")
     if blank:
         # Even one blank tile leaves an untagged black hole in the mosaic,
         # since a blank tile is skipped rather than painted. The caller falls
@@ -310,7 +495,7 @@ def _parse_layer_source(layer):
 def _headers_from_uri(uri) -> dict[str, str]:
     """Request headers the layer carries, plus the agent every tile host wants
     to see. A host that turns away an unnamed client refuses every tile."""
-    headers = {"User-Agent": _USER_AGENT}
+    headers = {"User-Agent": _td.xyz_user_agent(_USER_AGENT)}
     for name, key in (("Referer", "http-header:referer"),
                       ("Referer", "referer")):
         try:
@@ -341,7 +526,7 @@ def _qgis_proxy_settings() -> dict[str, str]:
         # itself whichever proxy would otherwise carry it, and the machine
         # publishes one of its own that the fallback opener finds alone.
         proxies: dict[str, str] = {}
-        skipped = _proxy_exclusions()
+        skipped = _proxy_exclusions(settings)
         if skipped:
             proxies["no"] = skipped
         proxy_type = settings.value("proxy/proxyType", "", type=str) or ""
@@ -398,16 +583,19 @@ def _proxy_authority(host: str) -> str:
     return text
 
 
-def _proxy_exclusions() -> str:
+def _proxy_exclusions(settings=None) -> str:
     """The hosts QGIS is told to reach without the proxy, comma separated.
 
     Empty when the user listed none. QGIS stores whole URLs and urllib reads
-    host names, so only the host part of each entry is kept.
+    host names, so only the host part of each entry is kept. ``settings`` is
+    the caller's own store when it already has one, so a crop builds one
+    QgsSettings rather than two.
     """
     try:
         from qgis.core import QgsSettings
 
-        raw = QgsSettings().value("proxy/noProxyUrls", [])
+        store = QgsSettings() if settings is None else settings
+        raw = store.value("proxy/noProxyUrls", [])
         if isinstance(raw, str):
             raw = [raw]
         hosts: list[str] = []
@@ -451,41 +639,38 @@ def _os_proxies() -> dict[str, str]:
     return usable
 
 
-def _os_proxy_configured() -> bool:
-    """Whether the machine publishes a proxy this crop can travel through.
-
-    urllib's own opener reads that setting and routes through it. A connection
-    opened by hand does not, and on a network that only lets the proxy out
-    that is every tile lost.
-    """
-    return bool(_os_proxies())
-
-
 def _download_tiles(request: XyzCropRequest, cancel_check=None):
     """Fetch every tile in the range in parallel.
 
-    Returns (payloads, missing, blank, cancelled): one entry per tile in
-    row-major order, each either the bytes of an image or None; how many
-    failed for a reason that may pass; how many the host answered as carrying
-    no imagery; and whether the caller gave up part way.
+    Returns (payloads, missing, blank, cancelled, throttled): one entry per
+    tile in row-major order, each either the bytes of an image or None; how
+    many failed for a reason that may pass; how many the host answered as
+    carrying no imagery; whether the caller gave up part way; and how many of
+    the failures were the host asking for less traffic.
     """
     left, top, right, bottom = request.tile_range
     coordinates = [(x, y)
                    for y in range(top, bottom + 1)
                    for x in range(left, right + 1)]
     proxies, direct = _crop_route(request)
-    opener = _opener_for(proxies, direct)
+    # Asked once per crop. On macOS the answer comes from the system
+    # configuration store, which is not a cheap read, and both the opener and
+    # the connection-reuse decision below want it.
+    os_proxies = {} if direct else _os_proxies()
+    opener = _opener_for(proxies, direct, os_proxies)
     # Every tile of a crop comes from one host, so one connection per worker
     # thread carries all of them and the handshake is paid once instead of
     # once per tile. A proxy is the exception: tunnelling through one is
     # urllib's job, so a proxied crop keeps the opener. That covers both the
     # proxy QGIS holds and the one the machine publishes to every program,
     # which the opener finds by itself and a raw connection walks past.
-    proxied = bool(proxies) or (not direct and _os_proxy_configured())
-    connections = None if proxied else _TileConnections()
-    waves = max(1, math.ceil(len(coordinates) / _PARALLEL_TILE_REQUESTS))
+    proxied = bool(proxies) or bool(os_proxies)
+    pool, kept = _crop_pool()
+    connections = None if proxied else kept
+    waves = max(1, math.ceil(len(coordinates) / _shared_pool_width))
     deadline = time.monotonic() + min(
-        _TILE_DEADLINE_CAP_S, _TILE_TIMEOUT_S * _TILE_ATTEMPTS * waves)
+        _td.xyz_deadline_cap_s(_TILE_DEADLINE_CAP_S),
+        _td.xyz_timeout_s(_TILE_TIMEOUT_S) * _td.xyz_attempts(_TILE_ATTEMPTS) * waves)
 
     def fetch(coordinate):
         # Polled before each tile as well as inside its attempts, so a crop
@@ -496,26 +681,30 @@ def _download_tiles(request: XyzCropRequest, cancel_check=None):
         url = tile_url_for(request.template, request.zoom, x, y)
         if url is None:
             return ("missing", None)
+        cached = _tile_cache_get(url)
+        if cached is not None:
+            return cached
         if connections is not None and _split_tile_url(url) is not None:
-            return _fetch_one_tile_kept(connections, url, request.headers,
-                                        deadline, cancel_check)
-        return _fetch_one_tile(opener, url, request.headers, deadline,
-                               cancel_check)
+            outcome = _fetch_one_tile_kept(connections, url, request.headers,
+                                           deadline, cancel_check)
+        else:
+            outcome = _fetch_one_tile(opener, url, request.headers, deadline,
+                                      cancel_check)
+        if outcome[0] in ("ok", "blank"):
+            _tile_cache_put(url, outcome[0], outcome[1])
+        return outcome
 
-    workers = min(_PARALLEL_TILE_REQUESTS, max(1, len(coordinates)))
-    try:
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            results = list(pool.map(fetch, coordinates))
-    finally:
-        # The pool has joined here, so no thread can still hold a socket.
-        if connections is not None:
-            connections.close_all()
+    # The pool is shared, so the connections opened on its threads are still
+    # theirs on the next crop: that is the whole point of keeping them.
+    results = list(pool.map(fetch, coordinates))
 
     payloads = [payload for _outcome, payload in results]
-    missing = sum(1 for outcome, _p in results if outcome == "missing")
+    missing = sum(1 for outcome, _p in results
+                  if outcome in ("missing", "throttled"))
+    throttled = sum(1 for outcome, _p in results if outcome == "throttled")
     blank = sum(1 for outcome, _p in results if outcome == "blank")
     cancelled = any(outcome == "cancelled" for outcome, _p in results)
-    return payloads, missing, blank, cancelled
+    return payloads, missing, blank, cancelled, throttled
 
 
 def _gave_up(cancel_check) -> bool:
@@ -569,40 +758,71 @@ def _host_skips_proxy(host: str, skipped: str) -> bool:
     return False
 
 
-def _opener_for(proxies: dict[str, str], direct: bool):
+def _opener_for(proxies: dict[str, str], direct: bool,
+                os_proxies: dict[str, str] | None = None):
     """The opener a crop's tiles travel through.
 
     A crop with nothing configured still travels through the proxy the machine
     publishes to every program, which is what it wants and exactly what a host
-    on the exclusion list must not get.
+    on the exclusion list must not get. ``os_proxies`` is that published set
+    when the caller has already read it, so one crop asks the machine once.
     """
+    https = urllib.request.HTTPSHandler(context=_tls_context())
     if proxies:
-        return urllib.request.build_opener(urllib.request.ProxyHandler(proxies))
+        return urllib.request.build_opener(
+            urllib.request.ProxyHandler(proxies), https)
     if direct:
-        return urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    return urllib.request.build_opener(
-        urllib.request.ProxyHandler(_os_proxies()))
+        return urllib.request.build_opener(
+            urllib.request.ProxyHandler({}), https)
+    return urllib.request.build_opener(urllib.request.ProxyHandler(
+        _os_proxies() if os_proxies is None else os_proxies), https)
+
+
+_tls_lock = threading.Lock()
+_shared_tls_context: ssl.SSLContext | None = None
+
+
+def _tls_context() -> ssl.SSLContext:
+    """The one TLS context every tile connection shares.
+
+    Left to itself, http.client builds a fresh default context for every
+    connection it opens, and building one means loading the machine's whole
+    trust store. On Windows that store is read certificate by certificate and
+    costs a few hundred milliseconds each time, so a crop that opens one
+    socket per worker thread spent seconds on trust stores before the first
+    tile moved. Built once, on the first crop, and shared from then on: a
+    context is safe to share across connections and threads.
+    """
+    global _shared_tls_context
+    with _tls_lock:
+        if _shared_tls_context is None:
+            _shared_tls_context = ssl.create_default_context()
+        return _shared_tls_context
 
 
 def _fetch_one_tile(opener, url: str, headers: dict[str, str], deadline: float,
                     cancel_check=None):
     """One tile, retried. Returns ("ok", bytes), ("blank", None) when the host
     says it has no imagery there, ("cancelled", None), or ("missing", None)."""
-    for attempt in range(_TILE_ATTEMPTS):
+    throttled = False
+    attempts = _td.xyz_attempts(_TILE_ATTEMPTS)
+    timeout_s = _td.xyz_timeout_s(_TILE_TIMEOUT_S)
+    max_bytes = _td.xyz_max_tile_bytes(_MAX_TILE_BYTES)
+    for attempt in range(attempts):
         if _gave_up(cancel_check):
             return ("cancelled", None)
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            return ("missing", None)
+            return _lost_tile_outcome(cancel_check, throttled)
         retry_after = None
         try:
             appeal = urllib.request.Request(url, headers=headers)
             with opener.open(  # nosec B310 -- the template comes from the layer
-                    appeal, timeout=min(_TILE_TIMEOUT_S, remaining)) as reply:
+                    appeal, timeout=min(timeout_s, remaining)) as reply:
                 # One byte past the ceiling is enough to know the body is over
                 # it, and the rest of it is never pulled down the wire.
-                payload = reply.read(_MAX_TILE_BYTES + 1)
-            if len(payload) > _MAX_TILE_BYTES:
+                payload = reply.read(max_bytes + 1)
+            if len(payload) > max_bytes:
                 return ("missing", None)
             return ("ok", payload)
         except Exception as err:  # noqa: BLE001 -- a lost tile is retried below
@@ -612,11 +832,20 @@ def _fetch_one_tile(opener, url: str, headers: dict[str, str], deadline: float,
                     # answer.
                     return ("blank", None)
                 if err.code in _THROTTLE_STATUSES:
+                    throttled = True
                     retry_after = _retry_after_seconds(
                         _header_of(err, "Retry-After"))
         if not _pause_before_retry(attempt, retry_after, deadline, cancel_check):
             break
-    return ("cancelled", None) if _gave_up(cancel_check) else ("missing", None)
+    return _lost_tile_outcome(cancel_check, throttled)
+
+
+def _lost_tile_outcome(cancel_check, throttled: bool):
+    """What a tile that never arrived is called: a cancel, a host asking for
+    less traffic, or a plain loss."""
+    if _gave_up(cancel_check):
+        return ("cancelled", None)
+    return ("throttled", None) if throttled else ("missing", None)
 
 
 def _pause_before_retry(attempt: int, retry_after, deadline: float,
@@ -628,7 +857,7 @@ def _pause_before_retry(attempt: int, retry_after, deadline: float,
     deadline, since a host that asks for a long one must not take the whole
     budget with it.
     """
-    if attempt + 1 >= _TILE_ATTEMPTS:
+    if attempt + 1 >= _td.xyz_attempts(_TILE_ATTEMPTS):
         return False
     left = deadline - time.monotonic()
     if left <= 0:
@@ -675,10 +904,12 @@ def _tile_backoff_pause(attempt: int, retry_after=None) -> float:
     """
     import random  # noqa: PLC0415 -- only needed once a tile has failed
 
-    base = _TILE_BACKOFF_S[min(attempt, len(_TILE_BACKOFF_S) - 1)]
+    ladder = _td.xyz_backoff_s(_TILE_BACKOFF_S)
+    base = ladder[min(attempt, len(ladder) - 1)]
     if retry_after is not None:
-        base = max(base, min(float(retry_after), _MAX_RETRY_AFTER_S))
-    return base * (1.0 + random.random() * _TILE_BACKOFF_SPREAD)  # nosec B311
+        base = max(base, min(float(retry_after),
+                             _td.xyz_max_retry_after_s(_MAX_RETRY_AFTER_S)))
+    return base * (1.0 + random.random() * _td.xyz_backoff_spread(_TILE_BACKOFF_SPREAD))  # nosec B311
 
 
 class _TileConnections:
@@ -705,9 +936,11 @@ class _TileConnections:
         if connection is not None:
             _hold_to_deadline(connection, timeout)
             return connection, key, True
-        connection_class = (http.client.HTTPSConnection if scheme == "https"
-                            else http.client.HTTPConnection)
-        connection = connection_class(host, timeout=timeout)
+        if scheme == "https":
+            connection = http.client.HTTPSConnection(
+                host, timeout=timeout, context=_tls_context())
+        else:
+            connection = http.client.HTTPConnection(host, timeout=timeout)
         with self._lock:
             self._open[key] = connection
         return connection, key, False
@@ -765,19 +998,23 @@ def _fetch_one_tile_kept(connections: _TileConnections, url: str,
                          cancel_check=None):
     """One tile over this thread's kept connection. Same attempts, same
     verdicts and same back-off as the opener path."""
-    for attempt in range(_TILE_ATTEMPTS):
+    throttled = False
+    timeout_s = _td.xyz_timeout_s(_TILE_TIMEOUT_S)
+    for attempt in range(_td.xyz_attempts(_TILE_ATTEMPTS)):
         if _gave_up(cancel_check):
             return ("cancelled", None)
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            return ("missing", None)
+            return _lost_tile_outcome(cancel_check, throttled)
         outcome, retry_after = _tile_over_connection(
-            connections, url, headers, min(_TILE_TIMEOUT_S, remaining))
+            connections, url, headers, min(timeout_s, remaining))
         if outcome is not None:
             return outcome
+        if retry_after is not None:
+            throttled = True
         if not _pause_before_retry(attempt, retry_after, deadline, cancel_check):
             break
-    return ("cancelled", None) if _gave_up(cancel_check) else ("missing", None)
+    return _lost_tile_outcome(cancel_check, throttled)
 
 
 def _tile_over_connection(connections: _TileConnections, url: str,
@@ -805,7 +1042,9 @@ def _tile_over_connection(connections: _TileConnections, url: str,
             # The host has answered. Asking again returns the same answer.
             return ("blank", None), None
         if status in _THROTTLE_STATUSES:
-            return None, _retry_after_seconds(asked_wait)
+            # Never None on this branch, so the caller can tell a throttle from
+            # a plain retry even when the host named no wait of its own.
+            return None, (_retry_after_seconds(asked_wait) or 0.0)
         if status not in _REDIRECT_STATUSES or not location:
             return None, None
         target = urllib.parse.urljoin(url, location)
@@ -842,13 +1081,14 @@ def _read_over_connection(connections: _TileConnections, url: str,
         try:
             connection.request("GET", path, headers=headers)
             reply = connection.getresponse()
-            payload = reply.read(_MAX_TILE_BYTES + 1)
+            max_bytes = _td.xyz_max_tile_bytes(_MAX_TILE_BYTES)
+            payload = reply.read(max_bytes + 1)
         except Exception:  # noqa: BLE001 -- see the docstring
             connections.drop(key)
             if reused and issue == 0:
                 continue
             return None
-        oversized = len(payload) > _MAX_TILE_BYTES
+        oversized = len(payload) > max_bytes
         if reply.will_close or oversized:
             connections.drop(key)
         return (reply.status, reply.getheader("Location") or "",
@@ -920,5 +1160,9 @@ def _qimage_to_rgb_array(image) -> np.ndarray:
     buffer = image.constBits()
     buffer.setsize(image.sizeInBytes())
     flat = np.frombuffer(bytes(buffer), dtype=np.uint8)
-    stride = image.bytesPerLine() // 3
-    return flat.reshape(height, stride, 3)[:, :width, :].copy()
+    # Format_RGB888 pads every row to a 4 byte boundary, so bytesPerLine is
+    # not always divisible by 3 and a stride in pixels does not exist. Reshape
+    # on the byte count, then cut each row to the pixels it carries.
+    bytes_per_line = image.bytesPerLine()
+    return flat.reshape(height, bytes_per_line)[:, :width * 3].reshape(
+        height, width, 3).copy()

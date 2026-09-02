@@ -50,7 +50,6 @@ from .styles import (
     _CARD_CHILD_BTN_RESET_QSS,
     _SUBCARD_MARGINS,
     _SUBCARD_QSS,
-    _msg_card_qss,
 )
 from .ui_refresh import format_quota_count
 from .upsell_card import UpsellCard
@@ -278,6 +277,7 @@ class DockManualEngineMixin:
         """Write the box, its tint, its line and its offer for the state now."""
         cloud = self._manual_cloud_route_picked()
         low = cloud and self._manual_engine_credits_low()
+        pro_contact = cloud and self._manual_pro_ceiling_objects_low()
         try:
             # Written from the stored answer, never from a user click, so the
             # write must not come back as one.
@@ -296,7 +296,7 @@ class DockManualEngineMixin:
             # An empty box is still a bordered rectangle under the cards. Both
             # of its children can be gone now, so the box goes with them.
             self.manual_engine_note_box.setVisible(bool(note) or privacy)
-            self._write_manual_low_credit_line(low)
+            self._write_manual_low_credit_line(low, pro_contact)
         except (RuntimeError, AttributeError):
             pass  # nosec B110 -- teardown
         if low:
@@ -371,6 +371,37 @@ class DockManualEngineMixin:
         except Exception:  # noqa: BLE001 -- a tint must never break a paint
             return False
 
+    def _manual_pro_ceiling_objects_low(self) -> bool:
+        """True when a subscriber's Semi-Auto objects are inside the served
+        low share of the month, and still above zero (zero is the wall).
+
+        The subscriber twin of _manual_engine_credits_low: the same seat,
+        and a mail to us instead of an offer for the plan they already pay
+        for. Off with the served switch, or on a legacy count.
+        """
+        try:
+            from ...core.pro_ceiling import (
+                pro_ceiling_enabled,
+                pro_ceiling_low_fraction,
+            )
+
+            if not getattr(self, "_auto_is_subscriber", False):
+                return False
+            if not pro_ceiling_enabled():
+                return False
+            env = getattr(self, "_quota_envelopes", None)
+            if env is None or not env.has_objects_gauge():
+                return False
+            left = env.objects_remaining
+            if left is None:
+                left = max(0, int(env.objects_cap) - int(env.objects_used))
+            cap = int(env.objects_cap)
+            if cap <= 0:
+                return False
+            return 0 < int(left) <= cap * pro_ceiling_low_fraction()
+        except Exception:  # noqa: BLE001 -- a tint must never break a paint
+            return False
+
     def _paint_manual_engine_card(self) -> None:
         """The note box, quiet in every state.
 
@@ -385,12 +416,10 @@ class DockManualEngineMixin:
         (`manual_engine_low_line`), so the balance and the description stop
         competing for one box.
         """
-        kind = ""
-        if kind == self._manual_engine_card_tinted:
+        if self._manual_engine_card_tinted == "":
             return
-        self._manual_engine_card_tinted = kind
-        qss = (_msg_card_qss("manualEngineNote", kind) if kind
-               else _SUBCARD_QSS.format(name="manualEngineNote")
+        self._manual_engine_card_tinted = ""
+        qss = (_SUBCARD_QSS.format(name="manualEngineNote")
                + "QLabel { background: transparent; border: none; }")
         try:
             self.manual_engine_note_box.setStyleSheet(
@@ -465,7 +494,14 @@ class DockManualEngineMixin:
             return
         self._on_manual_low_credit_link(url)
 
-    def _write_manual_low_credit_line(self, low: bool) -> None:
+    def _on_pro_contact_objects_low(self) -> None:
+        """The subscriber's button on the running-low card: copy our address."""
+        line = getattr(self, "manual_engine_low_line", None)
+        self._on_pro_contact_clicked(
+            "objects_low", getattr(line, "button", None))
+
+    def _write_manual_low_credit_line(self, low: bool,
+                                      pro_contact: bool = False) -> None:
         """The running-low card under the engine note. Never raises.
 
         The fact carries the numbers and nothing else: how many are left, out
@@ -473,14 +509,34 @@ class DockManualEngineMixin:
         offering to "get more credits", because what is on the other side is a
         paid plan and the wording that hid it was the one thing users had to
         click to find out.
+
+        ``pro_contact`` is the subscriber's version of the same card: the
+        count, our address, and a button that copies it, the way the
+        Automatic surface note does.
         """
         line = getattr(self, "manual_engine_low_line", None)
         if line is None:
             return
         try:
-            if not low:
+            if not low and not pro_contact:
                 line.setVisible(False)
                 return
+            if pro_contact:
+                env = self._quota_envelopes
+                objects_left = (env.objects_remaining
+                                if env.objects_remaining is not None
+                                else max(0, env.objects_cap - env.objects_used))
+                title = dial_copy(
+                    "pro_ceiling.low_title_objects",
+                    tr("{left} of {cap} Semi-Auto objects left this month"))
+                title = (title.replace("{left}", format_quota_count(objects_left))
+                              .replace("{cap}", format_quota_count(env.objects_cap)))
+                body, cta = self._pro_ceiling_copy()
+                line.route_cta(self._on_pro_contact_objects_low)
+                line.set_text(title, body, cta, detail=self._pro_ceiling_detail())
+                line.setVisible(True)
+                return
+            line.route_cta(self._on_manual_low_credit_cta)
             reset_day = getattr(self, "_auto_reset_display", "")
             cta = dial_copy("upsell.cta", tr("Upgrade to Pro"))
             env = getattr(self, "_quota_envelopes", None)
@@ -526,7 +582,7 @@ class DockManualEngineMixin:
             # moves without waiting for a plugin release.
             body = dial_copy(
                 "upsell.low_body_objects",
-                tr("Pro gives you 2,000 cloud objects a month in Semi-Auto."))
+                tr("Pro gives you 500 cloud objects a month in Semi-Auto."))
             line.set_text(title, body, cta)
             line.setVisible(True)
         except (RuntimeError, AttributeError):
@@ -540,16 +596,14 @@ class DockManualEngineMixin:
         could have warned about. The floor is the served one, the same number
         the install itself checks.
         """
-        # The minutes move by serving the sentence, not by rewriting it. These
-        # two shipped strings are the lookup keys for eleven translations, so
-        # they keep their exact wording, ten included; a served line is free to
-        # quote another figure, in any language. {n} is filled anyway, so a
-        # served value may carry the placeholder instead of a literal.
+        # The minutes come from the served figure through {n}, so one deploy
+        # changes what every installed version says. A served sentence may
+        # carry the placeholder or a literal of its own.
         minutes = str(local_install_minutes())
         fallback = _fill_engine_line(
             dial_copy("engine.install_line_no_disk",
                       tr("Everything stays on this computer {dot} <b>about "
-                         "10 minutes to install</b>")),
+                         "{n} minutes to install</b>")),
             n=minutes)
         # `resolved_min_free_gb_full`, not `min_free_gb_full`: the second name
         # belongs to install_config and never existed here, so this import
@@ -567,7 +621,7 @@ class DockManualEngineMixin:
         return _fill_engine_line(
             dial_copy("engine.install_line",
                       tr("Everything stays on this computer {dot} <b>{gb} GB "
-                         "and about 10 minutes to install</b>")),
+                         "and about {n} minutes to install</b>")),
             gb=f"{gb:g}", n=minutes)
 
     def _refresh_manual_engine_card_enabled(self) -> None:

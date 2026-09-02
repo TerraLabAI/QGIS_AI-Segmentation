@@ -83,18 +83,30 @@ class ReviewRefineThread(QThread):
         """
         self._live_stamp = stamp
 
-    def submit(self, det_idx: int, stamp, refiner, geom) -> bool:
+    def submit(self, det_idx: int, stamp, refiner, geom, seq: int = 0,
+               spec: tuple | None = None) -> bool:
         """Hand one object over. Returns at once; False when the thread is
         winding down and the caller must shape it itself.
+
+        ``spec`` is what ``workers.review_refine_pool`` rebuilds the refiner
+        from on a child interpreter. This thread holds the refiner itself, so
+        it takes the argument for the one call site the two share and reads
+        nothing from it.
 
         ``stamp`` is the refine cache's shape key at the moment of the hand
         over. It comes back untouched, which is what lets the review drop an
         answer computed for settings the user has since moved off.
+
+        ``seq`` names which VERSION of this object was handed over. A hand edit
+        rewrites one object without changing any shape setting, so the stamp
+        alone cannot tell the answer for the shape before the edit from the
+        answer for the shape after it. It comes back untouched too.
         """
         if self._aborted or self._stopping:
             return False
         try:
-            job = (int(det_idx), stamp, refiner, detached_review_geom(geom))
+            job = (int(det_idx), stamp, int(seq), refiner,
+                   detached_review_geom(geom))
         except (AttributeError, RuntimeError, TypeError, ValueError):
             return False
         self._inbox.put(job)
@@ -103,10 +115,10 @@ class ReviewRefineThread(QThread):
     def take_results(self) -> list:
         """Every shape finished since the last call, oldest first.
 
-        Each entry is ``(det_idx, stamp, geometry, error)``; ``geometry`` is
-        None when even the repair left nothing, and ``error`` is the exception
-        the refine raised, for the caller to log. Called from the GUI thread
-        only.
+        Each entry is ``(det_idx, stamp, seq, geometry, error)``; ``geometry``
+        is None when even the repair left nothing, and ``error`` is the
+        exception the refine raised, for the caller to log. Called from the GUI
+        thread only.
         """
         with self._lock:
             out = self._outbox
@@ -116,7 +128,16 @@ class ReviewRefineThread(QThread):
     def finish(self) -> None:
         """Ask the thread to stop once it has shaped everything queued.
 
-        Idempotent: the cooperative wait calls it once per slice.
+        Idempotent.
+
+        NOTHING in the review calls this, and that is on purpose. The review
+        keeps one thread for the whole review and reuses it pass after pass, so
+        a pass that ends with nothing outstanding has no reason to stop it: the
+        next control move would pay to start another one. Every path that
+        really abandons the work uses ``abort`` instead, which drops the queue
+        rather than draining it. This stays as the graceful counterpart for a
+        caller that must let the queue finish, and so the two ways to stop are
+        both spelled out in one place.
         """
         if self._stopping:
             return
@@ -160,7 +181,7 @@ class ReviewRefineThread(QThread):
                     break
                 if self._aborted:
                     continue
-                det_idx, stamp, refiner, geom = item
+                det_idx, stamp, seq, refiner, geom = item
                 live = self._live_stamp
                 if live is not None and stamp != live:
                     # Stale settings. Answer nothing: the GUI clears its own
@@ -172,6 +193,6 @@ class ReviewRefineThread(QThread):
                 except Exception as exc:  # noqa: BLE001 - one bad object only
                     shaped, err = None, exc
                 with self._lock:
-                    self._outbox.append((det_idx, stamp, shaped, err))
+                    self._outbox.append((det_idx, stamp, seq, shaped, err))
         except Exception:  # noqa: BLE001 - the thread body must never raise out
             logger.warning("ReviewRefineThread: stopped on error", exc_info=True)

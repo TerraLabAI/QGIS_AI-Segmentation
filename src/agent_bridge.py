@@ -424,6 +424,8 @@ def _safe_guide(handle) -> str:
         answer = getter()
     except Exception:  # noqa: BLE001 - the bridge must never break a caller
         return ""
+    # AI Segmentation's guide() returns a plain string; AI Edit's returns a
+    # dict with a "text" key. Both facades share this one reader.
     text = answer.get("text") if isinstance(answer, dict) else answer
     return str(text).strip() if text else ""
 

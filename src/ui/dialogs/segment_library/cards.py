@@ -1,4 +1,7 @@
-"""Gallery card widgets: template card, local-recent card, history run card.
+"""Gallery card widgets: the template card and the local-recent card.
+
+The history run card is not here: it lives in run_card.py, beside the day
+header it shares a grid with.
 
 Card anatomy mirrors AI Edit's library cards: a 175px before/after preview,
 a compact single-line footer (title + chevron that becomes "Use ->" on
@@ -6,7 +9,7 @@ hover), and the leaf-green lift on hover.
 """
 from __future__ import annotations
 
-from qgis.PyQt.QtCore import QPoint, Qt, QTimer, pyqtSignal
+from qgis.PyQt.QtCore import QPoint, Qt, pyqtSignal
 from qgis.PyQt.QtGui import QPixmap
 from qgis.PyQt.QtWidgets import (
     QFrame,
@@ -23,18 +26,15 @@ from ....core import qt_compat as QtC
 from ....core.i18n import tr
 from ....core.presets.segmentation_presets import pick_label
 from ...before_after_slider import BeforeAfterSlider
+from ...dock.font_scale import scale_px_length
 from ...template_demo_loader import TemplateDemoLoader
 from .common import (
     _CARD_HOVER,
     _CARD_NORMAL,
     _META_QSS,
-    _OVERLAY_BADGE_QSS,
     _STAR_BTN_QSS,
     _build_use_hint,
     _demo_url,
-    _fmt_count,
-    _iso_norm,
-    _relative_when,
     _set_use_hint,
 )
 
@@ -53,6 +53,17 @@ _TITLE_QSS = (
 )
 # Shared preview height: every card in the grid aligns at the image edge.
 _PREVIEW_H = 175
+# Smallest a card may get before the grid drops a column.
+_CARD_MIN_W = 200
+
+
+def _preview_height() -> int:
+    """The shared preview band, at the user's UI font scale.
+
+    A fixed box holding scaled text has to grow with it, or the footer under
+    the image is clipped at any scale above 100%.
+    """
+    return scale_px_length(_PREVIEW_H)
 
 
 class _PresetCard(QFrame):
@@ -73,7 +84,7 @@ class _PresetCard(QFrame):
         self.setObjectName("card")
         self.setStyleSheet(_CARD_NORMAL)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setMinimumWidth(200)
+        self.setMinimumWidth(scale_px_length(_CARD_MIN_W))
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         lay = QVBoxLayout(self)
@@ -82,7 +93,7 @@ class _PresetCard(QFrame):
 
         self.slider = BeforeAfterSlider(
             self, auto_loop=False, show_badges=False, handle_grab_only=True)
-        self.slider.setFixedHeight(_PREVIEW_H)
+        self.slider.setFixedHeight(_preview_height())
         self.slider.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.slider.set_placeholder_text(tr("Loading..."))
@@ -97,6 +108,7 @@ class _PresetCard(QFrame):
         footer.setContentsMargins(10, 8, 10, 10)
         footer.setSpacing(6)
         title = QLabel(pick_label(preset.get("label"), preset.get("prompt", "")))
+        title.setTextFormat(QtC.PlainText)
         title.setStyleSheet(_TITLE_QSS)
         footer.addWidget(title)
         footer.addStretch()
@@ -214,7 +226,7 @@ class _RecentCard(QFrame):
         # "before" half is declared absent and the thumbnail paints full bleed.
         self._thumb = BeforeAfterSlider(
             self, auto_loop=False, show_badges=False, handle_grab_only=True)
-        self._thumb.setFixedHeight(_PREVIEW_H)
+        self._thumb.setFixedHeight(_preview_height())
         self._thumb.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._thumb.set_placeholder_text(tr("No preview"))
@@ -234,6 +246,7 @@ class _RecentCard(QFrame):
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 0, 0)
         title = QLabel(entry.get("label") or entry.get("prompt", ""))
+        title.setTextFormat(QtC.PlainText)
         title.setStyleSheet(_TITLE_QSS)
         title_row.addWidget(title, 1)
         self._hint = _build_use_hint(self)
@@ -243,6 +256,7 @@ class _RecentCard(QFrame):
         meta = entry.get("_meta") or ""
         if meta:
             meta_lbl = QLabel(meta)
+            meta_lbl.setTextFormat(QtC.PlainText)
             meta_lbl.setStyleSheet(_META_QSS)
             footer.addWidget(meta_lbl)
 
@@ -258,6 +272,7 @@ class _RecentCard(QFrame):
         if has_zone:
             again_btn = QPushButton(tr("Run again here"))
             again_btn.setStyleSheet(_RECENT_ACTION_QSS)
+            again_btn.setAutoDefault(False)
             again_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             again_btn.setToolTip(
                 busy_tip if self._view_only
@@ -268,6 +283,7 @@ class _RecentCard(QFrame):
             actions.addWidget(again_btn)
         new_zone_btn = QPushButton(tr("Same object, new zone"))
         new_zone_btn.setStyleSheet(_RECENT_ACTION_QSS)
+        new_zone_btn.setAutoDefault(False)
         new_zone_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         new_zone_btn.setToolTip(
             busy_tip if self._view_only
@@ -298,210 +314,5 @@ class _RecentCard(QFrame):
         # would fire twice (see _PresetCard.mouseReleaseEvent).
         pt = QtC.event_pos(ev)
         if not self._thumb.geometry().contains(QPoint(int(pt.x()), int(pt.y()))):
-            self._fire()
-        super().mouseReleaseEvent(ev)
-
-
-# The two halves of a run card's comparison, in loader terms. "input" is the
-# imagery exactly as it was sent; "preview" is the same tile with the detected
-# masks painted on. The names are the artifact types the image route serves.
-_RUN_BEFORE = "input"
-_RUN_AFTER = "preview"
-
-
-class _RunCard(QFrame):
-    """One history run card: input/result comparison + prompt + stats + star.
-
-    The preview band shows what the run was run ON as much as what it produced:
-    a card that only shows masks is unreadable, since every run of the same
-    object looks alike once the imagery underneath is hidden.
-    """
-
-    opened = pyqtSignal(dict)
-    star_toggled = pyqtSignal(dict, bool)
-
-    def __init__(self, run: dict, view: str, parent=None):
-        super().__init__(parent)
-        self._run = run
-        self._view = view
-        self._requested = False
-        self._missing: set[str] = set()
-        self.setObjectName("card")
-        self.setStyleSheet(_CARD_NORMAL)
-        self.setMinimumWidth(200)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(0)
-
-        # Same shape as AI Edit's gallery cards: no idle animation, no badges,
-        # and the divider only grabs on its handle so the card stays clickable.
-        # The labelled before/after lives in the detail popup the card opens.
-        self.slider = BeforeAfterSlider(
-            self, auto_loop=False, show_badges=False, handle_grab_only=True)
-        self.slider.setFixedHeight(_PREVIEW_H)
-        self.slider.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.slider.set_placeholder_text(tr("Loading..."))
-        self.slider.clicked.connect(self._fire)
-        lay.addWidget(self.slider)
-
-        # Object count rides on the image, which frees the footer for the prompt
-        # and the date and puts the number where the eye already is.
-        self._count_badge = QLabel(self.slider)
-        self._count_badge.setStyleSheet(_OVERLAY_BADGE_QSS)
-        self._count_badge.setAttribute(QtC.WA_TransparentForMouseEvents, True)
-        objects = int(run.get("objects") or 0)
-        self._count_badge.setText(
-            tr("1 object") if objects == 1
-            else tr("{n} objects").format(n=_fmt_count(objects)))
-        self._count_badge.adjustSize()
-        self._count_badge.move(8, _PREVIEW_H - self._count_badge.height() - 8)
-
-        body_wrap = QWidget(self)
-        body = QVBoxLayout(body_wrap)
-        body.setContentsMargins(10, 8, 10, 10)
-        body.setSpacing(3)
-
-        # A run with no prompt was driven by boxes drawn on the map, so name it
-        # for what it was rather than for its age.
-        prompt = (run.get("prompt") or "").strip()
-        if not prompt:
-            prompt = (tr("Drawn examples") if run.get("has_exemplars")
-                      else tr("Older detection"))
-        title_row = QHBoxLayout()
-        title_row.setContentsMargins(0, 0, 0, 0)
-        title = QLabel(prompt)
-        title.setStyleSheet(_TITLE_QSS)
-        title_row.addWidget(title, 1)
-        self.star_btn = QToolButton()
-        self.star_btn.setCheckable(True)
-        self.star_btn.setStyleSheet(_STAR_BTN_QSS)
-        self.star_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.star_btn.setToolTip(tr("Keep this detection in Favorites"))
-        self.set_favorite(bool(run.get("is_favorite")))
-        # Legacy day-bucket pseudo-runs have no server row to star.
-        if not run.get("run_id"):
-            self.star_btn.setVisible(False)
-        self.star_btn.clicked.connect(self._on_star_clicked)
-        title_row.addWidget(self.star_btn)
-        body.addLayout(title_row)
-
-        # One credit per tile, so printing both numbers says the same thing
-        # twice. The run detail carries the full billing breakdown.
-        meta_bits = [tr("{tiles} cloud detections").format(
-            tiles=_fmt_count(run.get("tiles")))]
-        tiles = int(run.get("tiles") or 0)
-        credits = int(run.get("credits") or 0)
-        if credits != tiles:
-            meta_bits.append(
-                tr("{credits} charged").format(credits=_fmt_count(credits)))
-        when = _relative_when(_iso_norm(
-            run.get("started_at") or run.get("created_at")))
-        if when:
-            meta_bits.append(when)
-        meta = QLabel("  ·  ".join(meta_bits))
-        meta.setStyleSheet(_META_QSS)
-        body.addWidget(meta)
-
-        lay.addWidget(body_wrap)
-
-    # ---- artifacts -------------------------------------------------------
-
-    def request_artifacts(self, loader: TemplateDemoLoader, urls: dict,
-                          variant: str | None = None) -> None:
-        """Fetch the comparison halves. Idempotent, so a re-scroll is free.
-
-        ``urls`` maps "input"/"preview" to (url, headers); a half with no URL is
-        marked missing at once rather than left spinning. ``variant`` names the
-        size being asked for, so the card copy and the full one cached by the
-        detail popup do not overwrite each other.
-
-        A finished run's archived tile is written once and never rewritten, so
-        these are cached as immutable: no expiry, and no revalidation traffic.
-        """
-        if self._requested:
-            return
-        self._requested = True
-        key = self.artifact_key()
-        if not key:
-            self.mark_missing(_RUN_BEFORE)
-            self.mark_missing(_RUN_AFTER)
-            return
-        for which in (_RUN_BEFORE, _RUN_AFTER):
-            entry = urls.get(which)
-            if not entry or not entry[0]:
-                self.mark_missing(which)
-                continue
-            loader.request(key, which, entry[0], headers=entry[1],
-                           variant=variant, immutable=True)
-
-    def artifact_key(self) -> str:
-        """Cache/routing key for this run's images (the archived tile's id)."""
-        return str(self._run.get("preview_request_id") or "")
-
-    def adopt_run(self, run: dict) -> None:
-        """Take the freshly synced payload for the run this card already shows.
-
-        Called when a sync returns a page the grid is already painting: the
-        cards are kept, so they must stop carrying the copy the disk cache
-        handed them at open time.
-        """
-        self._run = run
-
-    def set_image(self, which: str, pixmap: QPixmap) -> None:
-        if which == _RUN_BEFORE:
-            self.slider.set_before(pixmap)
-        elif which == _RUN_AFTER:
-            self.slider.set_after(pixmap)
-
-    def mark_missing(self, which: str) -> None:
-        if which not in (_RUN_BEFORE, _RUN_AFTER):
-            return
-        self._missing.add(which)
-        self.slider.mark_unavailable(
-            "before" if which == _RUN_BEFORE else "after")
-        if {_RUN_BEFORE, _RUN_AFTER} <= self._missing:
-            self.slider.set_placeholder_text(tr("No preview"))
-
-    # ---- interaction -----------------------------------------------------
-
-    def _on_star_clicked(self, checked: bool) -> None:
-        self.set_favorite(checked)  # glyph follows the optimistic flip at once
-        self.star_toggled.emit(self._run, checked)
-
-    def set_favorite(self, fav: bool) -> None:
-        self.star_btn.blockSignals(True)
-        self.star_btn.setChecked(fav)
-        self.star_btn.setText("★" if fav else "☆")
-        self.star_btn.blockSignals(False)
-
-    def _fire(self) -> None:
-        # Deferred: opening the detail rebuilds the grid, and destroying the card
-        # from inside its own signal handler aborts QGIS on Qt6.
-        QTimer.singleShot(0, self._do_fire)
-
-    def _do_fire(self) -> None:
-        from qgis.PyQt import sip
-
-        if sip.isdeleted(self) is True:
-            return
-        self.opened.emit(self._run)
-
-    def enterEvent(self, ev):  # noqa: N802 - Qt signature
-        self.setStyleSheet(_CARD_HOVER)
-        super().enterEvent(ev)
-
-    def leaveEvent(self, ev):  # noqa: N802 - Qt signature
-        self.setStyleSheet(_CARD_NORMAL)
-        super().leaveEvent(ev)
-
-    def mouseReleaseEvent(self, ev):  # noqa: N802 - Qt signature
-        # The slider emits its own click; without this guard a release over it
-        # would open the detail twice (see _PresetCard.mouseReleaseEvent).
-        pt = QtC.event_pos(ev)
-        if not self.slider.geometry().contains(QPoint(int(pt.x()), int(pt.y()))):
             self._fire()
         super().mouseReleaseEvent(ev)

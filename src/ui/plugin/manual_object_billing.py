@@ -60,6 +60,15 @@ class ManualObjectBillingMixin:
                 f"Semi-Auto: the object ledger did not open ({err})",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning)
             return
+        # The predictor may already be in the slot from before the ledger
+        # opened, so its clicks carry no id yet. Name it now, so the
+        # account's own history can group them under the object they save.
+        try:
+            setter = getattr(getattr(self, "predictor", None), "set_session_id", None)
+            if setter is not None:
+                setter(self._manual_credit_ledger.session_id)
+        except Exception:  # noqa: BLE001 -- naming a session never breaks Start  # nosec B110
+            pass
         # The gate below judges against the balance the plugin already holds, so
         # a session that starts on a figure from an hour ago would refuse a Save
         # the account can afford. One read at Start, off the GUI thread.
@@ -223,27 +232,31 @@ class ManualObjectBillingMixin:
         Informational only, and strictly best-effort: any failure answers {}
         and the charge goes out exactly as before. A caller that holds the
         saved shape passes it; otherwise the saved list is searched. GUI
-        thread only (the area measurer reads the project)."""
+        thread only (the area measurer reads the project).
+
+        Every miss says why in the log. A silent {} is what made a build that
+        never sent the two figures impossible to tell apart from one that tried
+        and could not."""
         try:
             import math
 
             # A pixel-grid session sits on no ellipsoid, so neither figure
             # means anything there.
             if getattr(self, "_is_non_georeferenced_mode", False):
+                self._say_charge_has_no_surface(
+                    "the session is not georeferenced")
                 return {}
             if geom is None:
                 geom, entry_crs = self._saved_polygon_for_charge(det_id)
                 if not crs_authid:
                     crs_authid = entry_crs
             if geom is None or geom.isEmpty():
+                self._say_charge_has_no_surface("the saved object has no shape")
                 return {}
-            if not crs_authid:
-                crs_authid = self._manual_charge_crs_authid()
-            from qgis.core import QgsCoordinateReferenceSystem
-
-            crs = (QgsCoordinateReferenceSystem(str(crs_authid))
-                   if crs_authid else None)
-            if crs is None or not crs.isValid():
+            crs = self._manual_charge_crs(crs_authid)
+            if crs is None:
+                self._say_charge_has_no_surface(
+                    "the session CRS did not resolve")
                 return {}
             from ...core.layer_conventions import make_area_measurer
 
@@ -251,12 +264,55 @@ class ManualObjectBillingMixin:
             area = float(make_area_measurer(crs).measureArea(geom))
             if math.isfinite(area) and area > 0:
                 extras["area_m2"] = round(area, 1)
+            else:
+                self._say_charge_has_no_surface(
+                    f"the measured area is {area}")
             wkt = self._polygon_wgs84_wkt(geom, crs)
-            if wkt and len(wkt) <= self._CHARGE_WKT_MAX_CHARS:
+            if not wkt:
+                self._say_charge_has_no_surface(
+                    "the outline did not reach EPSG:4326")
+            elif len(wkt) > self._CHARGE_WKT_MAX_CHARS:
+                self._say_charge_has_no_surface(
+                    f"the outline is {len(wkt)} characters, over the "
+                    f"{self._CHARGE_WKT_MAX_CHARS} a charge carries")
+            else:
                 extras["polygon_wkt"] = wkt
             return extras
-        except Exception:  # noqa: BLE001 -- extras never touch the charge
+        except Exception as err:  # noqa: BLE001 -- extras never touch the charge
+            self._say_charge_has_no_surface(f"they could not be built ({err})")
             return {}
+
+    def _say_charge_has_no_surface(self, reason: str) -> None:
+        """Log why a charged object travels without its area or its outline."""
+        try:
+            QgsMessageLog.logMessage(
+                f"Semi-Auto: the saved object carries no ground surface, {reason}",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+        except Exception:  # noqa: BLE001 -- a log line never breaks a charge
+            pass  # nosec B110
+
+    def _manual_charge_crs(self, crs_authid=None):
+        """The CRS the saved shape sits in, valid, or None.
+
+        The authid comes first because that is what the session recorded. A
+        custom or unregistered CRS has no usable authid, so the live layer's
+        own CRS object answers for it, rather than the charge losing both
+        figures over a missing code."""
+        from qgis.core import QgsCoordinateReferenceSystem
+
+        if not crs_authid:
+            crs_authid = self._manual_charge_crs_authid()
+        if crs_authid:
+            crs = QgsCoordinateReferenceSystem(str(crs_authid))
+            if crs.isValid():
+                return crs
+        try:
+            layer = getattr(self, "_current_layer", None)
+            if layer is not None and layer.crs().isValid():
+                return layer.crs()
+        except RuntimeError:
+            return None
+        return None
 
     def _saved_polygon_for_charge(self, det_id):
         """(geometry, crs_authid) of the newest saved entry carrying this id,
@@ -300,12 +356,14 @@ class ManualObjectBillingMixin:
             QgsProject,
         )
 
+        from ...core.qt_compat import geometry_op_succeeded
+
         wgs84 = QgsCoordinateReferenceSystem("EPSG:4326")
         out = QgsGeometry(geom)
         if crs.authid() != wgs84.authid():
             transform = QgsCoordinateTransform(
                 crs, wgs84, QgsProject.instance().transformContext())
-            if int(out.transform(transform)) != 0:
+            if not geometry_op_succeeded(out.transform(transform)):
                 return None
         # 7 decimals of a degree resolve to about a centimetre.
         return out.asWkt(7) or None

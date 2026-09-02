@@ -22,8 +22,14 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
-from ...core.activation_manager import has_tos_accepted, has_tos_locked
+from ...core.activation_manager import (
+    get_consent_terms_url,
+    get_privacy_url,
+    has_tos_accepted,
+    has_tos_locked,
+)
 from ...core.i18n import tr
+from ...core.pro_ceiling import pro_ceiling_contact_email
 from ...core.review_defaults import (
     AUTO_DEFAULT_CONFIDENCE as _AUTO_DEFAULT_CONFIDENCE,
 )
@@ -54,12 +60,14 @@ from ...core.review_defaults import (
 from ...core.server_dials import dial_copy
 from ...core.tile_manager import MAX_DETAIL_LEVEL
 from ..layer_tree_combobox import LayerTreeComboBox
+from .auto_run_summary import AutoRunSummaryCard
 from .cloud_notice_line import build_cloud_notice_line
 from .guidance import (
     BLUE_TINT,
     GREEN_TINT,
     HINT_EXEMPLAR_DRAW_BOX,
     HINT_EXEMPLAR_TIP,
+    HINT_INPUT_RULE,
     HINT_PROMPT_TREE_OR_FOREST,
     HINT_RERUN_SAME_SETUP,
     HINT_START_AUTO,
@@ -91,7 +99,6 @@ from .styles import (
     _micro_header,
     _msg_card_qss,
     _msg_label_qss,
-    _step_dial,
 )
 from .upsell_card import UpsellCard
 from .widgets import (
@@ -101,6 +108,37 @@ from .widgets import (
     make_shortcut_hint,
     native_key,
 )
+
+
+class ExampleCardWithSeparator(QWidget):
+    """The example card, plus one companion widget that follows its visibility.
+
+    The card is shown and hidden from four places (the flow step change, the
+    run start, the run end, the review opening and closing). The quiet
+    "and / or" separator that sits above it has to come and go with it, so it
+    is mirrored here instead of at every call site: a place that is added
+    later cannot leave the separator alone on screen above a card that is
+    gone. Parent-driven hiding needs no mirror, because the separator sits in
+    the same layout and gets the same treatment.
+    """
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._companion = None
+
+    def set_companion(self, widget) -> None:
+        """Name the widget that shows and hides with this card."""
+        self._companion = widget
+
+    def setVisible(self, visible: bool) -> None:  # noqa: N802 (Qt override)
+        super().setVisible(visible)
+        companion = self._companion
+        if companion is None:
+            return
+        try:
+            companion.setVisible(visible)
+        except RuntimeError:
+            self._companion = None
 
 
 class DockAutoBuildMixin:
@@ -158,7 +196,7 @@ class DockAutoBuildMixin:
             # wall must not leave the build-time line saying something else.
             dial_copy(
                 "trial.exhausted_no_count",
-                tr("Your free detections are used up")),
+                tr("Your free cloud detections are used up")),
             # ONE line, and it answers the question this wall raises: the
             # month ran out of surface, so what does Pro give instead. The two
             # lines here before it sold small objects and run history, neither
@@ -176,8 +214,13 @@ class DockAutoBuildMixin:
                 tr("39 EUR a month, cancel anytime.")),
             star=dial_copy(
                 "upsell.bullet_quota",
-                tr("300 km² of Automatic every month, on zones of any size")),
+                tr("200 km² of Automatic every month, on zones of any size")),
         )
+        # Under the offer, in grey: many who hit this wall have a need no
+        # plan names, and the address is one click to copy. Refilled by
+        # _refresh_auto_upsell_title once the served copy lands.
+        self._auto_upsell_wall = _wall
+        _wall.set_contact_email(pro_ceiling_contact_email())
         upsell_layout.addWidget(_wall)
 
         # The free way out, under a hairline and in grey: named so nobody
@@ -212,6 +255,12 @@ class DockAutoBuildMixin:
         self.auto_upsell_card.setSizePolicy(
             _QSizePolicy.Policy.Preferred, _QSizePolicy.Policy.Maximum)
         auto_layout.addWidget(self.auto_upsell_card)
+
+        # B. The takeover, for every gate that refuses a run for a reason no
+        # control on this page can clear (auto_run_block.py). It sits in the
+        # upsell card's seat and takes the page the same way, so the two
+        # refusals a user can meet in Automatic read as one family.
+        self._setup_auto_run_block(auto_layout)
 
         # C. Controls section - a 3-step flow. Each step is a page of a
         # QStackedWidget so the user never sees the next step's controls
@@ -381,7 +430,7 @@ class DockAutoBuildMixin:
             "font-size: 13px; font-weight: bold; color: palette(text);")
         _hero_layout.addWidget(self._auto_zone_title)
         self._auto_zone_hint = QLabel(
-            tr("Click on the map to outline the area to scan."))
+            tr("Click on the map to outline your zone."))
         self._auto_zone_hint.setWordWrap(True)
         self._auto_zone_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._auto_zone_hint.setStyleSheet(
@@ -418,6 +467,13 @@ class DockAutoBuildMixin:
         # A reference image narrows what the model looks for, which is wrong
         # often enough that requiring one cost more runs than it saved.
 
+        # The in-run receipt. It sits FIRST because during a run it replaces
+        # the two setup cards below it: they take no input once the tiles are
+        # flying, and an empty box the user cannot type in says nothing about
+        # what is running. Filled and shown by set_auto_run_active.
+        self.auto_run_summary_card = AutoRunSummaryCard()
+        _s3_layout.addWidget(self.auto_run_summary_card)
+
         # --- Card 1: describe what to find (the text prompt). ---
         self.auto_prompt_card = QWidget()
         self.auto_prompt_card.setObjectName("autoPromptCard")
@@ -427,12 +483,14 @@ class DockAutoBuildMixin:
         _prompt_card_layout = QVBoxLayout(self.auto_prompt_card)
         _prompt_card_layout.setContentsMargins(*_CARD_MARGINS)
         _prompt_card_layout.setSpacing(6)
-        # Step 1 header: a filled step dial + bold title (design-system D11
-        # ordered-step treatment), read top to bottom as a checklist.
+        # Bold title, no step dial. A numbered dial says "do this one first",
+        # and that order no longer exists: a typed word runs on its own and so
+        # does a drawn example (see core/detect_gate.can_detect). The two
+        # input cards are alternatives joined by the "and / or" separator
+        # below, so neither carries a number.
         _prompt_hdr_row = QHBoxLayout()
         _prompt_hdr_row.setContentsMargins(0, 0, 0, 0)
         _prompt_hdr_row.setSpacing(6)
-        _prompt_hdr_row.addWidget(_step_dial(1, "active"))
         self._auto_prompt_header = QLabel(tr("Describe what to find"))
         self._auto_prompt_header.setStyleSheet(
             "font-size: 12px; font-weight: bold; color: palette(text);")
@@ -506,15 +564,33 @@ class DockAutoBuildMixin:
 
         _s3_layout.addWidget(self.auto_prompt_card)
 
-        # --- Example card, step 2 of the default path (prompt + example is
-        # the model's most accurate mode, so it is numbered like its siblings,
-        # no longer marked Optional). The title stays a plain noun ("Add an
-        # example") and the button inside keeps the map verb ("Draw on the
-        # map"), so no two lines repeat each other. The explainer under the
-        # header says why/how; it yields to the armed instruction or the drawn
-        # thumbnails. Gated behind _EXEMPLARS_ENABLED. Skipping it costs
-        # nothing: Detect is green on the prompt alone.
-        self.auto_exemplar_panel = QWidget()
+        # The joint between the two input cards: quiet, centred, no box. It
+        # replaces the step numbers, and the reader gets the whole rule from
+        # three words: describe it, show it, or do both. The one piece of text
+        # outside a card on this page, on purpose: it joins the two cards, so
+        # putting it inside either one would make it that card's own line.
+        self.auto_input_joiner = QLabel(tr("and / or"))
+        self.auto_input_joiner.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.auto_input_joiner.setStyleSheet(
+            "font-size: 11px; color: rgba(128, 128, 128, 0.95);"
+            " background: transparent; border: none;")
+        self.auto_input_joiner.setContentsMargins(0, 2, 0, 2)
+        self.auto_input_joiner.setVisible(False)
+        _s3_layout.addWidget(self.auto_input_joiner)
+
+        # --- Example card. No step dial and no "(optional)" chip: an example
+        # is a second way to say what to find, not a step after the word and
+        # not a nicety. It answers what a typed word cannot: an object with no
+        # common name, and a name the user has only in their own language.
+        # The title
+        # stays a plain noun ("Show what it looks like") and the button inside
+        # keeps the map verb ("Draw on the map"), so no two lines repeat each
+        # other. The explainer under the header says why/how; it yields to the
+        # armed instruction or the drawn thumbnails. Gated behind
+        # _EXEMPLARS_ENABLED. Skipping it costs nothing: Detect is green on
+        # the prompt alone, and drawing alone is a run too.
+        self.auto_exemplar_panel = ExampleCardWithSeparator()
+        self.auto_exemplar_panel.set_companion(self.auto_input_joiner)
         self.auto_exemplar_panel.setObjectName("autoExemplarCard")
         self.auto_exemplar_panel.setAttribute(
             Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -524,32 +600,21 @@ class DockAutoBuildMixin:
         _ex_outer.setContentsMargins(*_CARD_MARGINS)
         _ex_outer.setSpacing(6)
 
-        # Header row: step dial + bold title, the same ordered-step treatment
-        # as the describe and detail cards. Wrapped in one widget so the
-        # in-run read-only swap can hide the whole header at once.
+        # Header row: the bold title alone, wrapped in one widget so the
+        # header has a single handle.
         self._auto_exemplar_expanded = True
         self._auto_exemplar_header = QWidget()
         _ex_hdr_row = QHBoxLayout(self._auto_exemplar_header)
         _ex_hdr_row.setContentsMargins(0, 0, 0, 0)
         _ex_hdr_row.setSpacing(6)
-        _ex_hdr_row.addWidget(_step_dial(2, "active"))
-        # "Show what it looks like" pairs with step 1's "Describe what to
-        # find" (words, then visuals) and says the PURPOSE - point the AI at
-        # a real instance - where "Add an example" read as one abstract
-        # attachment. The tip below carries the plural (up to 3).
+        # "Show what it looks like" pairs with "Describe what to find" (words
+        # or visuals) and says the PURPOSE - point the AI at a real instance -
+        # where "Add an example" read as one abstract attachment. The tip
+        # below carries the plural (up to 3).
         _ex_title = QLabel(tr("Show what it looks like"))
         _ex_title.setStyleSheet(
             "font-size: 12px; font-weight: bold; color: palette(text);")
         _ex_hdr_row.addWidget(_ex_title)
-        # Marked optional right on the title, because the step number beside it
-        # says the opposite. Detect needs the word above and nothing here (see
-        # core/detect_gate.can_detect), and a user who reads step 2 as a thing
-        # they owe stops on a card they could have walked past. Quiet weight:
-        # it qualifies the title, it is not a second title.
-        _ex_optional = QLabel(tr("(optional)"))
-        _ex_optional.setStyleSheet(
-            "font-size: 11px; color: rgba(128, 128, 128, 0.95);")
-        _ex_hdr_row.addWidget(_ex_optional)
         _ex_hdr_row.addStretch(1)
         # Quality dots: two small dots that fill lime as positive examples are
         # drawn, so the "aim for two" goal (the model's strongest mode) reads
@@ -566,23 +631,14 @@ class DockAutoBuildMixin:
         _ex_hdr_row.addWidget(self.auto_exemplar_quality_dots)
         _ex_outer.addWidget(self._auto_exemplar_header)
 
-        # Card content (editing controls + thumbnails), always visible; the
-        # container survives so the in-run read-only swap keeps working.
+        # Card content (editing controls + thumbnails), always visible.
         self.auto_exemplar_content = QWidget()
         _ex_card_col = QVBoxLayout(self.auto_exemplar_content)
         _ex_card_col.setContentsMargins(0, 0, 0, 0)
         _ex_card_col.setSpacing(6)
 
-        # Read-only caption, shown during a run: the reference stays on
-        # screen (browsable) but every editing affordance is gone.
-        self.auto_exemplar_readonly_caption = QLabel(tr("Your reference"))
-        self.auto_exemplar_readonly_caption.setStyleSheet(
-            "font-size: 11px; color: palette(text);")
-        self.auto_exemplar_readonly_caption.setVisible(False)
-        _ex_card_col.addWidget(self.auto_exemplar_readonly_caption)
         # All the editing controls (draw/exclude buttons + armed line) live in
-        # one container so a single toggle removes them for the read-only
-        # in-run variant, leaving just the reference thumbnails.
+        # one container, so the card has one seam to work on.
         self.auto_exemplar_edit_controls = QWidget()
         _ex_edit_col = QVBoxLayout(self.auto_exemplar_edit_controls)
         _ex_edit_col.setContentsMargins(0, 0, 0, 0)
@@ -603,12 +659,11 @@ class DockAutoBuildMixin:
         _ex_inc_style = _btn_toggle_qss(
             (67, 160, 71), "palette(text)", "#06210b")
         # The exclude button is the red counterpart: it drops false positives
-        # by pointing at a look-alike the model should NOT return. It is a bonus
-        # refinement, unlocked ONLY once two positive examples exist (a single
-        # reference is too weak to refine, and reference-image detection needs a
-        # pair to work well): it starts HIDDEN and set_exemplars reveals it at
-        # two positives. Quiet even then, so the primary flow stays one green
-        # button.
+        # by pointing at a look-alike the model should NOT return. It is a
+        # refinement of a positive, so it starts HIDDEN and set_exemplars
+        # reveals it once the first positive exists (exclude_available). Quiet
+        # even then, so the primary flow stays one green button. On the free
+        # plan the click shows the Pro offer instead of arming.
         _ex_exc_style = _btn_toggle_qss(
             (229, 57, 53), "#e57373", "#2a0606", weight=600, quiet=True)
         _ex_mode_row = QHBoxLayout()
@@ -633,7 +688,7 @@ class DockAutoBuildMixin:
             tr("Mark a false positive to drop things like it."))
         self.auto_ex_exc_btn.clicked.connect(
             lambda: self.auto_add_exemplar_requested.emit(0))
-        # Hidden until two positive examples exist (set_exemplars reveals it).
+        # Hidden until a positive example exists (set_exemplars reveals it).
         self.auto_ex_exc_btn.setVisible(False)
         _ex_mode_row.addWidget(self.auto_ex_exc_btn, 0)
         self._refresh_exemplar_button_labels()
@@ -645,8 +700,7 @@ class DockAutoBuildMixin:
         # _refresh_auto_exemplar_explainer).
         self.auto_exemplar_explainer = DismissibleHint(
             HINT_EXEMPLAR_TIP,
-            tr("The AI finds every object that looks like your examples - "
-               "you can draw up to 3."),
+            tr("The AI finds every object that looks like your examples."),
             tint=BLUE_TINT,
         )
         _ex_edit_col.addWidget(self.auto_exemplar_explainer)
@@ -694,6 +748,11 @@ class DockAutoBuildMixin:
         self.auto_exemplar_quality_line.setWordWrap(True)
         self.auto_exemplar_quality_line.setVisible(False)
         _ex_edit_col.addWidget(self.auto_exemplar_quality_line)
+
+        # Kept so the free plan's offer card (exemplar_upsell.py) can be added
+        # under the controls on first refusal, without rebuilding the card.
+        self._auto_exemplar_edit_layout = _ex_edit_col
+        self._auto_exemplar_upsell_card = None
         _ex_card_col.addWidget(self.auto_exemplar_edit_controls)
 
         # Reference thumbnail strip: one card per drawn example (AI-Edit
@@ -811,19 +870,10 @@ class DockAutoBuildMixin:
         _detail_lbl.setStyleSheet(
             "font-size: 12px; font-weight: bold; color: palette(text);")
         _adv_layout.addWidget(_detail_lbl)
-        # Right under the surface it contradicts: the drawn zone is bigger than
-        # the km² the account has left this month. The same offer card as every
-        # other Pro CTA in the dock (upsell_card.py), in its "full" variant,
-        # and it greys Detect the same way it always did. Driven by
-        # set_auto_km2_block; hidden whenever the account did not tell us both
-        # figures, so an unknown envelope never refuses a run.
-        self.auto_km2_block = UpsellCard(
-            "autoKm2Block", "full", self._on_upgrade_clicked)
-        # The button keeps its old attribute name: the upgrade handler tells
-        # this surface apart by the sender's identity.
-        self.auto_km2_block_upgrade = self.auto_km2_block.button
-        self.auto_km2_block.setVisible(False)
-        _detail_outer.addWidget(self.auto_km2_block)
+        # The monthly surface wall used to sit here, under the surface it
+        # contradicts. It moved into the takeover (auto_run_block.py): a card
+        # that owns the page cannot be a child of a control the takeover
+        # hides. auto_credits.set_auto_km2_block still fills it.
         # Always-on subtitle under the title: what the control does, once, in
         # the muted-hint style. It sits ABOVE the slider so it never stacks with
         # the state hint under it (_refresh_auto_detail_hint), which says what
@@ -894,12 +944,10 @@ class DockAutoBuildMixin:
         _fine_lbl.setStyleSheet("font-size: 10px; color: palette(text);")
         _slider_row.addWidget(_fine_lbl)
         _adv_layout.addWidget(self.auto_detail_slider_row)
-        # One-line plain-language hint instead of a m/px figure. Starts on the
-        # gated wording (slider disabled above); _apply_auto_detail_gate swaps
-        # it once a prompt or an example exists.
-        self.auto_detail_hint = QLabel(
-            tr("Name the object (or draw an example) first - Precision "
-               "then tunes itself to it."))
+        # One-line plain-language hint instead of a m/px figure. Empty at
+        # build: the fold body is hidden until an object is named, and the fold
+        # head carries the reason (_apply_auto_detail_gate).
+        self.auto_detail_hint = QLabel("")
         self.auto_detail_hint.setWordWrap(True)
         self.auto_detail_hint.setStyleSheet(
             "font-size: 10px; color: palette(text);")
@@ -910,8 +958,6 @@ class DockAutoBuildMixin:
         # Object-aware slider verdict (state, object word), pushed by the
         # plugin from the credit-estimate chokepoint; None until known.
         self._auto_detail_feedback = None
-        self.auto_detail_hint.linkActivated.connect(
-            self._on_detail_cap_upgrade_link)
         _adv_layout.addWidget(self.auto_detail_hint)
 
         # Conditional amber warning, shown by set_auto_detail_gsd_warning when
@@ -944,10 +990,10 @@ class DockAutoBuildMixin:
         self.auto_detail_warning.setVisible(False)
         _detail_outer.insertWidget(1, self.auto_detail_warning)
         self.auto_detail_row.setVisible(False)
-        # Gated (whole card disabled + dimmed) until the object is defined
-        # (typed prompt or drawn example): the default is object-aware, so an
-        # adjustment made before naming the object got thrown away by the
-        # prompt-commit re-seed. See _apply_auto_detail_gate (driven from
+        # Head greyed and body hidden until the object is named, by a word or
+        # by a drawn example: the Precision default is computed from the
+        # object, so an adjustment made before there is one got thrown away by
+        # the re-seed. See _apply_auto_detail_gate (driven from
         # _update_auto_detect_enabled).
         self._apply_auto_detail_gate(False)
 
@@ -1004,16 +1050,10 @@ class DockAutoBuildMixin:
         # accepting in one mode reflects in the other, and the row disappears
         # forever once consent is sealed by the first Detect here or the first
         # Manual Start.
-        _tos_terms_url = (
-            "https://terra-lab.ai/terms-of-use"
-            "?utm_source=qgis&utm_medium=plugin"
-            "&utm_campaign=ai-segmentation&utm_content=consent_terms_auto"
-        )
-        _tos_privacy_url = (
-            "https://terra-lab.ai/privacy-policy"
-            "?utm_source=qgis&utm_medium=plugin"
-            "&utm_campaign=ai-segmentation&utm_content=consent_privacy_auto"
-        )
+        # Served addresses, read when the row is built; the UTM names the
+        # Automatic consent row as the touchpoint.
+        _tos_terms_url = get_consent_terms_url("consent_terms_auto")
+        _tos_privacy_url = get_privacy_url("consent_privacy_auto")
         self.auto_tos_container = QWidget()
         _auto_tos_row = QHBoxLayout(self.auto_tos_container)
         _auto_tos_row.setContentsMargins(0, 0, 0, 0)
@@ -1063,18 +1103,42 @@ class DockAutoBuildMixin:
         self.auto_exit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.auto_exit_btn.clicked.connect(self.auto_exit_requested.emit)
         _detect_row.addWidget(self.auto_exit_btn, 0)
+        # The buttons, then the rule of the two inputs. What the run will
+        # take (the surface and one duration) rides in the button label
+        # itself: it is what the click is about, and a figure inside the
+        # control needs no caption under it. A column, so every visibility
+        # rule written for the row carries what follows it.
+        _detect_col = QVBoxLayout()
+        _detect_col.setContentsMargins(0, 0, 0, 0)
+        _detect_col.setSpacing(4)
+        _detect_col.addLayout(_detect_row)
+        # The rule of the two input cards, read at the end of the setup: this
+        # is where the user decides whether they have given the run enough,
+        # and it is the one place both cards are behind them. A boxed blue tip
+        # like every other piece of guidance, closable for good once it is
+        # known, never a loose caption under a control. It repeats the two
+        # card titles WORD FOR WORD, because a tip that renames what it points
+        # at ("type a name", "a word") leaves the reader hunting for the box
+        # it means.
+        self.auto_input_rule_hint = DismissibleHint(
+            HINT_INPUT_RULE,
+            tr("Describe what to find, show what it looks like, or do "
+               "both. Both together is the most accurate."),
+            tint=BLUE_TINT,
+        )
+        _detect_col.addWidget(self.auto_input_rule_hint)
         # The prompt page stays uncluttered: no keyboard legend here (the
         # Detect/Exit buttons speak for themselves). auto_detect_row remains a
         # QWidget so the existing show/hide (run active, review) still works.
         self.auto_detect_row = QWidget()
-        self.auto_detect_row.setLayout(_detect_row)
+        self.auto_detect_row.setLayout(_detect_col)
         _s3_layout.addWidget(self.auto_detect_row)
 
         # 9. Progress card: an information-rich framed card (same card family as
         # the step cards) so a long tiled run always shows real movement - tile
         # count, live found count and percent - instead of a bare bar that reads
-        # as dead. The prompt card + reference stay visible above it, so the user
-        # keeps full context of what is being detected. Never timer-animated:
+        # as dead. The receipt card above it names what is being detected, so
+        # the two together answer what and how far. Never timer-animated:
         # only real state changes repaint it.
         self.auto_progress_card = QWidget()
         self.auto_progress_card.setObjectName("autoProgressCard")

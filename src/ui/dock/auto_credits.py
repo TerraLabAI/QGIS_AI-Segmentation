@@ -136,6 +136,18 @@ class DockAutoCreditsMixin:
             self.set_auto_credit_estimate(self._auto_est_credits)
         self._update_full_ui()
 
+    def _set_credit_cost_style(self, qss: str) -> None:
+        """Write the cost row's stylesheet only when it changes: the row
+        refreshes on every tick of a Precision drag, and a QSS write forces a
+        re-polish each time."""
+        if getattr(self, "_auto_credit_cost_qss", None) == qss:
+            return
+        self._auto_credit_cost_qss = qss
+        try:
+            self.auto_credit_cost_label.setStyleSheet(qss)
+        except (RuntimeError, AttributeError):
+            pass
+
     def _auto_zone_too_large_text(self) -> str:
         """The cost row's refusal, read from the served ``zone.too_large`` id.
 
@@ -144,10 +156,12 @@ class DockAutoCreditsMixin:
         row sits in the Detail header, where a longer sentence cannot wrap and
         widens the dock. Never raises: a slider move calls it.
         """
-        fallback = tr("Zone too large - reduce the selection area")
+        fallback = tr("Zone too large - draw a smaller zone")
         try:
             from ..plugin.shared import max_tiles_per_run_cap, zone_too_large_message
-            return zone_too_large_message(max_tiles_per_run_cap(), fallback)
+            return zone_too_large_message(
+                max_tiles_per_run_cap(getattr(self, "_auto_zone_km2", None)),
+                fallback)
         except Exception:  # noqa: BLE001 -- served copy is best-effort
             return fallback
 
@@ -160,8 +174,9 @@ class DockAutoCreditsMixin:
         the ceiling. Never raises: a slider move calls it.
 
         Four served ids, one per form: free or subscriber, ceiling known or
-        not. ``max_tiles_per_run_cap()`` is the same on every plan, so this
-        refusal fires at the same size for everyone. A free zone is separately
+        not. The ceiling is the same on every plan and follows the zone drawn,
+        so this refusal fires at the same size for everyone. A free zone is
+        separately
         bounded by its own km² cap, which is why the free form still talks
         about precision. No shipped sentence quotes the ceiling, because it is
         a tile count and the user is charged by surface. The {cap} fill stays
@@ -172,7 +187,8 @@ class DockAutoCreditsMixin:
         """
         try:
             from ..plugin.shared import max_tiles_per_run_cap
-            cap = int(max_tiles_per_run_cap())
+            cap = int(max_tiles_per_run_cap(
+                getattr(self, "_auto_zone_km2", None)))
         except Exception:  # noqa: BLE001 -- a tooltip must never break a paint
             cap = 0
         # Known-free only. Before the usage fetch lands the tier is UNKNOWN,
@@ -241,9 +257,11 @@ class DockAutoCreditsMixin:
                 label.setVisible(False)
             except (RuntimeError, AttributeError):
                 pass
+            self.refresh_auto_run_estimate()
             return
         try:
             label.setText(self._auto_cost_row_text(km2))
+            label.setVisible(bool(label.text()))
             label.setToolTip(tr(
                 "Automatic is counted by surface. Precision changes how finely "
                 "the zone is scanned, never the price. A run never costs more "
@@ -259,30 +277,86 @@ class DockAutoCreditsMixin:
         self._update_auto_detect_enabled()
 
     def _auto_cost_row_text(self, km2: float) -> str:
-        """The Precision header's right-hand figure: the surface, and how long
-        the run takes when that is long enough to be worth saying.
+        """The Advanced settings header's right-hand figure: nothing.
 
-        The two belong on one row because they answer the same question and
-        pull opposite ways. Precision never moves the price, which the tooltip
-        has always said; what it does move is the wait, and until now nothing
-        on screen said so. A user raising the slider could see the bill stay
-        flat and had no way to learn the run had gone from one minute to
-        twenty until it was running.
-
-        Deliberately blunt and prefixed with a tilde: it is a band from a
-        typical run to a slow one, and a run that lands outside it has to read
-        as an estimate that missed, not as a promise broken. Under the served
-        floor it renders nothing at all, so a short run keeps a row with one
-        figure on it.
+        The surface and the duration both sit under the Detect button now
+        (see refresh_auto_run_estimate). They used to be here as well, so the
+        same figure showed twice one line apart. Kept as a method so the two
+        call sites stay one place to change.
         """
-        from ...core.run_eta import friendly_run_eta
-        from .ui_refresh import format_km2_surface
+        return ""
 
-        surface = tr("{n} km²").format(n=format_km2_surface(km2))
-        # -1 is the over-the-cap sentinel and None is "not estimated yet";
-        # friendly_run_eta answers "" to both, and to anything malformed.
-        eta = friendly_run_eta(getattr(self, "_auto_est_credits", None))
-        return f"{surface} · ~{eta}" if eta else surface
+    def refresh_auto_run_estimate(self) -> None:
+        """What the run will take, written inside the Detect button.
+
+        "Detect objects (4.1 km2)", then "Detect objects (4.1 km2 - about 9
+        min)". Both figures belong to the click, so they belong to the button:
+        one read says what happens, over how much ground, and for how long. A
+        caption under the button said the same thing in a second place, and a
+        number floating under a control reads as a stray note rather than as
+        part of it.
+
+        The surface shows as soon as there is a zone. The duration joins it
+        only once there is an object in the prompt box and a tile count that
+        fits the cap: the tile count follows the object (the seed picks a
+        finer grid for a car than for a field), so before one is typed the
+        duration would be for the wrong object. One figure, no band: the run's
+        own progress line takes over the moment it starts.
+        """
+        btn = getattr(self, "auto_detect_btn", None)
+        if btn is None:
+            return
+        try:
+            km2 = getattr(self, "_auto_zone_km2", None)
+            tiles = getattr(self, "_auto_est_credits", None)
+            prompt = ""
+            box = getattr(self, "auto_prompt_input", None)
+            if box is not None:
+                prompt = (box.text() or "").strip()
+            busy = self._auto_run_active or self._auto_review_active
+            if busy or km2 is None or km2 <= 0:
+                btn.setText(tr("Detect objects"))
+                return
+            from ...core.run_eta import friendly_run_eta_about
+            from .ui_refresh import format_km2_surface
+            surface = format_km2_surface(km2)
+            eta = (friendly_run_eta_about(
+                tiles, seconds_per_tile=self._auto_quote_pace())
+                if prompt and tiles is not None and tiles > 0 else "")
+            btn.setText(
+                tr("Detect objects ({n} km² · {eta})").format(
+                    n=surface, eta=eta)
+                if eta else
+                tr("Detect objects ({n} km²)").format(n=surface))
+        except (RuntimeError, AttributeError):
+            pass
+
+    def set_auto_own_pace(self, seconds_per_tile: float | None) -> None:
+        """Remember a measured pace for this account or machine, and requote.
+
+        Two sources call it: the run plan, when the server has seen enough of
+        the account's runs (core.run_eta.own_pace_seconds_per_tile), and the
+        end of a run on this machine (core.run_pace_memory). It belongs to
+        the link and the computer, not to the prompt, so it is kept across
+        prompt edits until the next measurement replaces it. None leaves the
+        fleet dial in charge, which is what a first run and an older server
+        get.
+        """
+        self._auto_own_pace_s = seconds_per_tile
+        self.refresh_auto_run_estimate()
+
+    def _auto_quote_pace(self) -> float | None:
+        """Seconds per tile for the quote: this machine's own finished runs
+        first (they include the shaping after the last tile), then whatever
+        set_auto_own_pace was last given, then None for the fleet dial."""
+        try:
+            from ...core.run_pace_memory import own_machine_pace
+            local = own_machine_pace()
+        except Exception:  # noqa: BLE001 -- a settings read must never block the label
+            local = None
+        if local is not None:
+            return local
+        return getattr(self, "_auto_own_pace_s", None)
 
     def set_auto_km2_block(self, zone_km2: float | None,
                            left_km2: float = 0.0) -> None:
@@ -321,7 +395,7 @@ class DockAutoCreditsMixin:
             # brace in a served sentence cannot raise on the draw path.
             body = dial_copy(
                 "km2_block.message",
-                tr("Pro raises the month to 300 km² of Automatic."))
+                tr("Pro raises the month to 200 km² of Automatic."))
             title = dial_copy(
                 "km2_block.title",
                 tr("This zone is {zone} km². You have {left} km² left in Automatic this "
@@ -344,15 +418,29 @@ class DockAutoCreditsMixin:
                     "km2_block.escape", tr("Or draw a smaller zone."))
             fill = (lambda text: text.replace("{zone}", zone)  # noqa: E731
                     .replace("{left}", left).replace("{date}", reset_day))
-            card.set_text(
-                fill(title),
-                fill(body) if free_user else None,
-                dial_copy("upsell.cta", tr("Upgrade to Pro")),
-                escape=fill(escape),
-            )
-            # The button is the one part a subscriber must not see. The way out
-            # stays: it is the only move they have left on this card.
-            self.auto_km2_block_upgrade.setVisible(free_user)
+            # A subscriber cannot buy past this card, so the button sells
+            # nothing: it copies our address instead, when the server allows.
+            # Free accounts keep the offer, word for word.
+            from ...core.pro_ceiling import pro_ceiling_enabled
+            pro_contact = (self._auto_is_subscriber
+                           and self._auto_credits is not None
+                           and pro_ceiling_enabled())
+            if pro_contact:
+                body, cta = self._pro_ceiling_copy()
+                card.route_cta(self._on_pro_contact_km2_block)
+                card.set_text(fill(title), body, cta, escape=fill(escape),
+                              detail=self._pro_ceiling_detail())
+            else:
+                card.route_cta(self._on_upgrade_clicked)
+                card.set_text(
+                    fill(title),
+                    fill(body) if free_user else None,
+                    dial_copy("upsell.cta", tr("Upgrade to Pro")),
+                    escape=fill(escape),
+                )
+            # The offer button is the one part a subscriber must not see. The
+            # way out stays: it is the only move they have left on this card.
+            self.auto_km2_block_upgrade.setVisible(free_user or pro_contact)
             card.setVisible(True)
         except (RuntimeError, AttributeError):
             return
@@ -381,7 +469,7 @@ class DockAutoCreditsMixin:
         self._auto_est_credits = credits
         if credits < 0:
             self.auto_credit_cost_label.setText(self._auto_zone_too_large_text())
-            self.auto_credit_cost_label.setStyleSheet(scale_qss_font_px(
+            self._set_credit_cost_style(scale_qss_font_px(
                 f"color: {ERROR_TEXT}; font-size: 11px;"))
             # By how much. The row can only fit "Zone too large", so the
             # tooltip carries the two numbers that say what a smaller zone has
@@ -390,7 +478,7 @@ class DockAutoCreditsMixin:
                 self._auto_zone_too_large_tooltip())
             self._auto_zone_too_large = True
         else:
-            self.auto_credit_cost_label.setStyleSheet(scale_qss_font_px(
+            self._set_credit_cost_style(scale_qss_font_px(
                 "color: palette(text); font-size: 11px;"))
             self._auto_zone_too_large = False
             # The surface reaches the row first and the tile count lands here,
@@ -403,9 +491,11 @@ class DockAutoCreditsMixin:
                     self._auto_cost_row_text(km2))
             self.auto_credit_cost_label.setVisible(
                 bool(self.auto_credit_cost_label.text()))
+            self.refresh_auto_run_estimate()
             self._update_auto_detect_enabled()
             return
         self.auto_credit_cost_label.setVisible(True)
+        self.refresh_auto_run_estimate()
         self._update_auto_detect_enabled()
 
     def set_auto_zone_rejected(self, area_km2: float | None) -> None:
@@ -493,13 +583,20 @@ class DockAutoCreditsMixin:
         has some left; a fully exhausted balance shows the wall instead). The
         share comes from credit_gate, so this note appears at the moment the
         footer credit ring turns amber.
-        Subscribers never see it: the footer credit ring owns their balance.
+        A subscriber sees it only on the surface gauge, inside the served
+        low share (core.pro_ceiling), and its button writes to us instead.
         The card lives on the step-0 page, so it only shows on Start.
         """
         remaining = self._auto_credits
         total = self._auto_credits_total
         show = self._mode == Mode.AUTOMATIC and self._plugin_activated
-        show = show and not self._auto_is_subscriber
+        # A subscriber gets their own line, on the surface gauge only: the
+        # same slot, and a mail to us instead of an offer for the plan they
+        # already pay for. Off with the served switch, or on a legacy count.
+        pro_contact = False
+        if show and self._auto_is_subscriber:
+            pro_contact = self._pro_ceiling_km2_low()
+            show = pro_contact
         # The line sits at the foot of the dock now, not on the step-0 page, so
         # the page no longer hides it when the user moves on. Kept to Start on
         # purpose: mid-run and in the review the balance is not a decision.
@@ -509,7 +606,9 @@ class DockAutoCreditsMixin:
             pass  # nosec B110 -- no stack yet means no run either
         env = getattr(self, "_quota_envelopes", None)
         km2_gauge = env is not None and env.has_km2_gauge()
-        if km2_gauge:
+        if pro_contact:
+            km2_left = self._auto_km2_left()
+        elif km2_gauge:
             # The line prints a surface, so it has to be decided on one too.
             # The ceiling below counts detections and means nothing here, and
             # the wallet figure it reads is not what this card shows.
@@ -537,6 +636,19 @@ class DockAutoCreditsMixin:
             line = self._build_auto_low_credit_line()
             if line is None:
                 return
+        if pro_contact:
+            from .ui_refresh import format_km2_left, format_km2_surface
+            title = dial_copy(
+                "pro_ceiling.low_title_km2",
+                tr("{left} of {cap} km² left in Automatic this month"))
+            title = (title.replace("{left}", format_km2_left(km2_left))
+                          .replace("{cap}", format_km2_surface(env.km2_cap)))
+            body, cta = self._pro_ceiling_copy()
+            line.route_cta(self._on_pro_contact_low_credit)
+            line.set_text(title, body, cta, detail=self._pro_ceiling_detail())
+            line.setVisible(True)
+            return
+        line.route_cta(self._auto_low_credit_upgrade_cta)
         # Naming the renewal day turns "you are running out" into a choice
         # between waiting and paying. The date-free wording stays for servers
         # that send no period_end.
@@ -562,11 +674,11 @@ class DockAutoCreditsMixin:
             if reset_day:
                 title = dial_copy(
                     "upsell.low_title_count_reset",
-                    tr("{n} free detections left, back on {date}."))
+                    tr("{n} free cloud detections left, back on {date}."))
             else:
                 title = dial_copy(
                     "upsell.low_title_count",
-                    tr("{n} free detections left."))
+                    tr("{n} free cloud detections left."))
             title = (title.replace("{n}", str(remaining))
                           .replace("{date}", reset_day))
         # Same rule as the Semi-Auto twin: the count says what is running out,
@@ -574,7 +686,7 @@ class DockAutoCreditsMixin:
         # allowance moves without waiting for a plugin release.
         body = dial_copy(
             "upsell.low_body_km2",
-            tr("Pro gives you 300 km² of Automatic a month, so you keep "
+            tr("Pro gives you 200 km² of Automatic a month, so you keep "
                "working."))
         line.set_text(title, body, dial_copy("upsell.cta",
                                              tr("Upgrade to Pro")))
@@ -605,13 +717,34 @@ class DockAutoCreditsMixin:
         layout = getattr(self, "low_credit_slot", None)
         if layout is None:
             return None
-        card = UpsellCard(
-            "autoLowCreditNote", "compact",
+        # Kept on self: the card is re-routed between this offer and the
+        # subscriber's contact button as the account changes.
+        self._auto_low_credit_upgrade_cta = (
             lambda: self._on_low_credit_link_activated(
                 self._build_upgrade_url("plugin_low_credit_note")))
+        card = UpsellCard(
+            "autoLowCreditNote", "compact", self._auto_low_credit_upgrade_cta)
         layout.addWidget(card)
         self._auto_low_credit_line = card
         return card
+
+    def _pro_ceiling_km2_low(self) -> bool:
+        """True when a subscriber's Automatic surface is inside the served
+        low share of the month, and still above zero (zero is the wall)."""
+        from ...core.pro_ceiling import pro_ceiling_enabled, pro_ceiling_low_fraction
+        if not pro_ceiling_enabled():
+            return False
+        env = getattr(self, "_quota_envelopes", None)
+        if env is None or not env.has_km2_gauge():
+            return False
+        km2_left = self._auto_km2_left()
+        if km2_left is None:
+            return False
+        try:
+            cap = float(env.km2_cap)
+        except (TypeError, ValueError):
+            return False
+        return 0 < km2_left <= cap * pro_ceiling_low_fraction()
 
     def _on_low_credit_link_activated(self, url: str) -> None:
         """Upgrade button on the low-credit note: same destination as the

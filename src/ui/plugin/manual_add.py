@@ -210,8 +210,11 @@ class ManualAddMixin:
             QgsMessageLog.logMessage(
                 f"AI Add: keep failed ({exc})",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            self._say_add_keep_did_not_land()
             return False
         kept = bool(self.saved_polygons) and self.saved_polygons[-1] is not before_last
+        if not kept:
+            self._say_add_keep_did_not_land()
         self._refresh_ai_add_keep_button()
         if kept:
             self._ai_add_kept_count = getattr(self, "_ai_add_kept_count", 0) + 1
@@ -222,6 +225,18 @@ class ManualAddMixin:
                 except (RuntimeError, AttributeError, TypeError):
                     pass
         return kept
+
+    def _say_add_keep_did_not_land(self) -> None:
+        """The user pressed Keep on an outline that is still on screen and
+        nothing was added. Silence there reads as a dead button."""
+        try:
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation",
+                tr("That shape was not added. Adjust it with a click and try "
+                   "again."),
+                level=Qgis.MessageLevel.Warning, duration=6)
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110 -- a message must never cost the gesture
 
     def _route_save_add_mode(self) -> bool:
         """The Save gesture (S, or the lane's Keep button) while Add is armed.

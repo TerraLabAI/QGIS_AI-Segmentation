@@ -8,6 +8,7 @@ from qgis.core import Qgis, QgsBlockingNetworkRequest, QgsMessageLog
 from qgis.PyQt.QtCore import QByteArray, QUrl
 from qgis.PyQt.QtNetwork import QNetworkReply, QNetworkRequest
 
+from ..core import transport_dials as _td
 from ..core.i18n import tr
 from .request_compression import (
     answer_refused_the_body,
@@ -167,7 +168,7 @@ def server_reached_recently() -> bool:
     if stamp is None:
         return False
     age = time.monotonic() - stamp
-    return 0.0 <= age <= _SERVER_CONTACT_TTL_S
+    return 0.0 <= age <= _td.server_contact_ttl_s(_SERVER_CONTACT_TTL_S)
 
 
 def _apply_redirect_policy(req: QNetworkRequest, has_auth: bool) -> None:
@@ -209,10 +210,35 @@ def _parse_json_body(raw_body: str, allow_list: bool = False):
 # answer and stands.
 _WORTH_ASKING_AGAIN_CODES = ("TIMEOUT", "NO_INTERNET")
 
+# A rate limiter answers 429 and usually says how long to wait. Asking again
+# after that wait is what turns one refused read into an answer; the cap is
+# there because a read nobody is waiting on still holds a task thread.
+_RATE_LIMITED_STATUS = 429
+_RETRY_AFTER_MAX_S = 10.0
+# The statuses on which a named wait is an instruction rather than noise: too
+# many requests, and service unavailable. A service that answers one of these
+# with a Retry-After is handing the request back with a time to bring it again,
+# so the wait is worth carrying to whoever paces the retry.
+_HANDOFF_STATUSES = (429, 503)
+# Sanity ceiling on the parsed value. The consumers clamp it again against their
+# own budget; this only stops an absurd header from travelling at all.
+_RETRY_AFTER_HINT_MAX_S = 300.0
+
 # One retry, spread over this window so a fleet that lost the same link does
 # not come back in step and finish the server off.
 _RETRY_PAUSE_MIN_S = 0.3
 _RETRY_PAUSE_MAX_S = 0.8
+
+
+def _may_pack_body(method: str, path: str, body: bytes | None) -> bool:
+    """Whether this request body may travel gzipped.
+
+    Only the inference service inflates one, and it is the only host reached
+    through an absolute URL here. The website routes take a relative path and
+    read a packed body as an invalid one, so the shape of the path is the test.
+    """
+    return bool(method == "POST" and body
+                and path.startswith(("http://", "https://")))
 
 
 def _worth_asking_again(answer, http_status: int | None) -> bool:
@@ -220,10 +246,139 @@ def _worth_asking_again(answer, http_status: int | None) -> bool:
     get past. Only ever consulted about a GET."""
     if http_status is not None and 500 <= http_status < 600:
         return True
+    if http_status == _RATE_LIMITED_STATUS:
+        return True
     if http_status is not None:
         return False
     return (isinstance(answer, dict)
             and answer.get("code") in _WORTH_ASKING_AGAIN_CODES)
+
+
+def _parse_retry_after_header(raw: str) -> float | None:
+    """``Retry-After`` read as seconds, in either form the header allows: a
+    delta in seconds, or an HTTP-date. None when it is absent or in neither
+    form, which is not an error: it only means nobody named a wait."""
+    text = (raw or "").strip()
+    if not text:
+        return None
+    hint_max = _td.retry_after_hint_max_s(_RETRY_AFTER_HINT_MAX_S)
+    try:
+        return max(0.0, min(float(text), hint_max))
+    except (TypeError, ValueError):
+        pass
+    try:
+        import datetime  # noqa: PLC0415 -- only the date form needs it
+        from email.utils import parsedate_to_datetime  # noqa: PLC0415
+
+        when = parsedate_to_datetime(text)
+        if when is None:
+            return None
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=datetime.timezone.utc)
+        left = (when - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+        return max(0.0, min(left, hint_max))
+    except Exception:  # noqa: BLE001 -- an unreadable date is no hint at all
+        return None
+
+
+def _retry_after_hint(reply) -> float | None:
+    """The wait this reply put on the wire, or None when it carried none."""
+    try:
+        raw = bytes(reply.rawHeader(b"Retry-After")).decode("ascii", "ignore")
+    except Exception:  # noqa: BLE001 -- no usable hint is not an error
+        return None
+    return _parse_retry_after_header(raw)
+
+
+def _note_retry_after(answer, reply):
+    """Carry a hand-off answer's ``Retry-After`` into the dict its caller reads.
+
+    The blocking path reads the header off the reply it owns. Nobody owns the
+    replies on the concurrent paths long enough for that, so the wait has to
+    travel inside the answer or it is lost, and a run then paces a bounce on a
+    ladder of its own while the service is telling it when to come back.
+
+    Only on the two statuses that mean "come back in N seconds": on anything
+    else the header says nothing a caller should pace on. ``retry_after_header``
+    says the wait came off the wire, which is what tells a service handing the
+    request on from one that named no wait at all. A body that named its own
+    wait keeps it: the server is the better judge of its own queue.
+    """
+    if not isinstance(answer, dict) or "error" not in answer:
+        return answer
+    if _http_status_of(reply) not in _HANDOFF_STATUSES:
+        return answer
+    hint = _retry_after_hint(reply)
+    if hint is None:
+        return answer
+    answer = dict(answer)
+    answer["retry_after_header"] = True
+    try:
+        from_body = float(answer.get("retry_after") or 0.0)
+    except (TypeError, ValueError):
+        from_body = 0.0
+    if from_body <= 0.0:
+        answer["retry_after"] = hint
+    return answer
+
+
+# The in-flight width a response may ask the client to run at. The service
+# knows how much capacity is up behind it, which the client cannot see, so it
+# names a width per answer and the run follows it. Bounded on the way in: a
+# header outside this band is not a width any client should open.
+_WINDOW_HINT_MIN = 1
+_WINDOW_HINT_MAX = 16
+
+
+def _window_hint(reply) -> int | None:
+    """The in-flight width this reply asked for, or None when it named none.
+
+    None is not an error: almost every answer carries no such header, and one
+    that carries an unreadable or out-of-band value is read the same way as one
+    that carries nothing.
+    """
+    try:
+        raw = bytes(reply.rawHeader(b"X-Window-Hint")).decode("ascii", "ignore")
+    except Exception:  # noqa: BLE001 -- no usable hint is not an error
+        return None
+    try:
+        value = int(raw.strip())
+    except (TypeError, ValueError):
+        return None
+    if _WINDOW_HINT_MIN <= value <= _td.window_hint_ceiling(_WINDOW_HINT_MAX):
+        return value
+    return None
+
+
+def _note_window_hint(answer, reply):
+    """Carry an accepted answer's ``X-Window-Hint`` into the dict its caller
+    reads.
+
+    Nobody owns the replies on the concurrent paths long enough to read a
+    header off them, so the width has to travel inside the answer or it is
+    lost. Only on a 200: a refusal says nothing about how wide the service can
+    be served. An absent header adds no key at all, so an answer from a service
+    that names no width is the same dict it has always been.
+    """
+    if not isinstance(answer, dict) or "error" in answer:
+        return answer
+    if _http_status_of(reply) != 200:
+        return answer
+    hint = _window_hint(reply)
+    if hint is None:
+        return answer
+    answer = dict(answer)
+    answer["window_hint"] = hint
+    return answer
+
+
+def _retry_after_s(reply) -> float:
+    """The wait a rate limiter asked for, in seconds, bounded. 0 when it sent
+    none."""
+    hint = _retry_after_hint(reply)
+    if hint is None:
+        return 0.0
+    return min(hint, _td.retry_after_max_s(_RETRY_AFTER_MAX_S))
 
 
 def _retry_pause_s() -> float:
@@ -231,7 +386,7 @@ def _retry_pause_s() -> float:
     import random  # noqa: PLC0415 -- only needed once a request has failed
 
     return random.uniform(  # nosec B311 -- spreading a retry, not security
-        _RETRY_PAUSE_MIN_S, _RETRY_PAUSE_MAX_S)
+        *_td.retry_pause_window_s((_RETRY_PAUSE_MIN_S, _RETRY_PAUSE_MAX_S)))
 
 
 def _note_skipped_tuning(what: str, answer) -> None:
@@ -246,6 +401,48 @@ def _note_skipped_tuning(what: str, answer) -> None:
         return
     _log_warning(f"Ran without the {what} "
                  f"({answer.get('code') or 'no code'})")
+
+
+def _named_error_text(body: dict) -> str:
+    """The sentence a refusal body carries, or "" when it carries none.
+
+    A route that answers in its own shape names the reason under one of these
+    keys. ``detail`` may hold a list of field problems rather than a sentence,
+    so it is rendered rather than dropped, and the result is bounded because it
+    can reach a message bar.
+    """
+    for key in ("error", "message", "detail"):
+        value = body.get(key)
+        if isinstance(value, str):
+            if value.strip():
+                return value.strip()[:400]
+            continue
+        if value:
+            return str(value)[:400]
+    return ""
+
+
+def _error_shaped(body: dict, fallback_code: str, fallback_msg: str) -> dict:
+    """A refusal body in the ``{"error", "code"}`` shape every caller reads.
+
+    Every refusal goes through here, including one that already names its own
+    error: a body that carried a sentence but no ``code`` used to reach the
+    caller as it stood, and the classes that branch on a code then had only the
+    translated sentence to read, which they cannot match on.
+
+    Callers tell a failure from a success by the presence of an ``error`` key,
+    so a refusal that names its reason under another key must not be handed
+    back untouched: a run reads it as an answer, skips the tile as one with no
+    request id, and the sentence the server sent is never shown. Everything the
+    body carried is kept, so a caller reading ``code`` or the quota fields still
+    finds them.
+    """
+    answer = dict(body)
+    if "error" not in answer:
+        answer["error"] = _named_error_text(body) or fallback_msg
+    if not answer.get("code"):
+        answer["code"] = fallback_code
+    return answer
 
 
 def _unreadable_answer() -> dict:
@@ -265,17 +462,47 @@ def _unreadable_answer() -> dict:
     }
 
 
-# The private network managers, one per thread, shared by every client
-# instance on that thread. Callers build a TerraLabClient per request (they are
-# cheap and hold no state), so a cache living on the instance handed every one
-# of them a manager of its own: a fresh name lookup, connection and TLS
-# handshake for a call that repeats on a timer. Keyed here instead, the second
-# call on a thread reuses the socket the first one left open.
+# How many requests to one host a single network manager will actually put on
+# the wire at once. Qt's HTTP/1.1 stack holds this many sockets per host per
+# manager and queues everything past it INSIDE the client, where it is
+# invisible to the service: measured on a loopback stand-in, a window of 12 or
+# 16 driven through one manager opened exactly 6 connections, finished in the
+# same wall time as a window of 6, and only stretched every request's measured
+# latency by the time it had spent queued. A manager per six keeps a served
+# in-flight width real (see _predict_manager_count).
+_CONNECTIONS_PER_MANAGER = 6
+
+# The private network managers per thread, shared by every client instance on
+# that thread. Callers build a TerraLabClient per request (they are cheap and
+# hold no state), so a cache living on the instance handed every one of them a
+# manager of its own: a fresh name lookup, connection and TLS handshake for a
+# call that repeats on a timer. Keyed here instead, the second call on a thread
+# reuses the socket the first one left open.
+#
+# The value is a LIST, not one manager: see _CONNECTIONS_PER_MANAGER. Requests
+# go round-robin over it, so a run asked to keep N in flight opens N sockets
+# instead of six. A thread that only ever makes one call at a time uses the
+# first entry and never opens the rest.
 #
 # Kept in step with _THREAD_NAM_WATCHED, which remembers the threads whose end
 # has already been armed to drop their entry (see _retain_thread_nam).
 _THREAD_NAMS: dict = {}
+_THREAD_NAM_CURSOR: dict = {}
 _THREAD_NAM_WATCHED: set = set()
+
+
+def _predict_manager_count() -> int:
+    """How many private managers this thread needs to serve the widest window.
+
+    Sized from the same served ceiling the window hint is clamped to, so
+    raising that dial widens the client for real instead of filling Qt's own
+    queue. One manager is always enough for a client that never runs a window.
+    """
+    try:
+        ceiling = _td.window_hint_ceiling(_WINDOW_HINT_MAX)
+    except Exception:  # noqa: BLE001 -- a dial must never break a request
+        ceiling = _WINDOW_HINT_MAX
+    return max(1, -(-int(ceiling) // _CONNECTIONS_PER_MANAGER))
 
 
 def _drop_thread_nam() -> None:
@@ -290,6 +517,7 @@ def _drop_thread_nam() -> None:
 
         thread = QThread.currentThread()
         _THREAD_NAMS.pop(thread, None)
+        _THREAD_NAM_CURSOR.pop(thread, None)
         _THREAD_NAM_WATCHED.discard(thread)
     except Exception:  # noqa: BLE001 -- a teardown must never raise  # nosec B110
         pass
@@ -312,16 +540,23 @@ def _qobject_alive(obj) -> bool:
 
 
 def _http_status_of(reply) -> int | None:
-    """HTTP status code of a reply, or None. Never raises (Qt can return an
-    invalid/non-numeric attribute, which int() would choke on)."""
+    """HTTP status code of a reply, or None. Never raises.
+
+    Qt can return an invalid or non-numeric attribute, which int() would choke
+    on, and a reply whose C++ half is already gone raises RuntimeError on the
+    read itself. The read is inside the guard for that second case: in
+    request_many this is called between two appends that have to stay in step,
+    and a raise there left one spec carrying two results and shifted every
+    later answer onto the wrong tile.
+    """
     if reply is None or _HTTP_STATUS_ATTR is None:
         return None
-    attr = reply.attribute(_HTTP_STATUS_ATTR)
-    if attr is None:
-        return None
     try:
+        attr = reply.attribute(_HTTP_STATUS_ATTR)
+        if attr is None:
+            return None
         return int(attr)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, RuntimeError):
         return None
 
 
@@ -431,7 +666,7 @@ def _classify_qt_error(
             if service_reachable:
                 return "SERVICE_WARMING", dial_copy(
                     "network.service_waking_up",
-                    tr("The AI service is waking up. Holding your spot…"),
+                    tr("The AI service is waking up. Holding your spot..."),
                 )
             # Nothing has answered for longer than any legitimate wait, and this
             # request got nothing either. That is the NO_INTERNET contract: the
@@ -528,6 +763,9 @@ class TerraLabClient:
             direct = ""
         self.detection_direct = bool(direct)
         self.detection_base_url = (direct or self.base_url).rstrip("/")
+        # Seconds the last answer asked us to wait before asking again. Set by
+        # a 429 and read by the one GET retry.
+        self._pending_retry_after_s = 0.0
 
     @staticmethod
     def _direct_detection_allowed() -> bool:
@@ -546,7 +784,9 @@ class TerraLabClient:
 
     @staticmethod
     def _read_base_url() -> str:
-        return TerraLabClient._read_env_value("TERRALAB_BASE_URL", "https://terra-lab.ai")
+        from ..core.env_local import terralab_base_url
+
+        return terralab_base_url()
 
     @staticmethod
     def _read_detection_base_url() -> str:
@@ -569,16 +809,9 @@ class TerraLabClient:
 
     @staticmethod
     def _read_env_value(name: str, default: str) -> str:
-        import os
-        plugin_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        env_path = os.path.join(plugin_dir, ".env.local")
-        if os.path.isfile(env_path):
-            with open(env_path, encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith(f"{name}="):
-                        return line.split("=", 1)[1].strip().strip('"').strip("'")
-        return default
+        from ..core.env_local import env_local_value
+
+        return env_local_value(name, default)
 
     def _resolve_url(self, path_or_url: str) -> str:
         """A spec/path may be an absolute URL (the direct detection route) or a
@@ -596,15 +829,9 @@ class TerraLabClient:
         HTTP to a non-local host. Only reachable via a hand-edited .env.local
         override; shipped defaults are HTTPS. Localhost stays allowed for dev.
         """
-        if not url.startswith("http://"):
-            return
-        try:
-            from urllib.parse import urlparse
+        from ..core.server_dials import cleartext_remote_url
 
-            host = (urlparse(url).hostname or "").lower()
-        except Exception:  # noqa: BLE001 - unparsable URL: treat as unsafe
-            host = ""
-        if host not in ("localhost", "127.0.0.1", "::1", ""):
+        if cleartext_remote_url(url):
             raise ValueError(
                 "Refusing to send an authenticated request over plain HTTP to a "
                 "remote host (the key would travel in cleartext). Use HTTPS."
@@ -684,10 +911,9 @@ class TerraLabClient:
         it pins the session to plain bytes on the way through.
         """
         payload, packed = packed_request_body(body)
-        answer, http_status, body_was_json = self._refine_once_while_drawing(
+        answer, http_status, _body_was_json = self._refine_once_while_drawing(
             payload, packed, auth, cancel_check)
-        if answer is not None and packed and answer_refused_the_body(
-                answer, http_status, body_was_json):
+        if answer is not None and packed and answer_refused_the_body(http_status):
             _log_warning("A compressed request body was refused; sending "
                          "them plain for the rest of the session")
             note_gzip_request_refused()
@@ -708,6 +934,8 @@ class TerraLabClient:
             from .click_transport import ClickPostAbandoned
         except Exception:  # noqa: BLE001 -- the ordinary path still answers
             return None, None, False
+        # Everything that can decline the wait is settled BEFORE the send, so
+        # None never has to describe a request that already went out.
         try:
             from qgis.core import QgsApplication
             from qgis.PyQt.QtCore import QThread
@@ -719,14 +947,26 @@ class TerraLabClient:
                 return None, None, False
             from .click_transport import post_and_keep_painting
 
+            url = self._resolve_url(self._detection_refine_url())
+            timeout_ms = self._submit_timeout()
+        except Exception:  # noqa: BLE001 -- the ordinary path still answers
+            return None, None, False
+        try:
             taken = post_and_keep_painting(
-                self._resolve_url(self._detection_refine_url()), body, auth,
-                self._submit_timeout(), _apply_redirect_policy,
+                url, body, auth, timeout_ms, _apply_redirect_policy,
                 cancel_check=cancel_check, packed=packed)
         except ClickPostAbandoned as gone:
             return self._refine_abandoned(gone), None, False
-        except Exception:  # noqa: BLE001 -- the ordinary path still answers
-            return None, None, False
+        except Exception:  # noqa: BLE001 -- unclassifiable, and the request may be out
+            # post_and_keep_painting answers None while nothing has been sent
+            # and raises ClickPostAbandoned once the request is on the wire, so
+            # anything else escaping it says nothing about which side of the
+            # send it happened on. Reported as abandoned: the caller's fallback
+            # would send the same click again, and two operations on one crop
+            # is the one outcome this path exists to prevent.
+            _log_warning("The click wait ended in an unexpected way; "
+                         "the click is not being re-sent")
+            return self._refine_abandoned(ClickPostAbandoned()), None, False
         if taken is None:
             return None, None, False
         raw, http_status, qt_error = taken
@@ -738,10 +978,13 @@ class TerraLabClient:
             if http_status is not None and http_status >= 400 and raw_body:
                 try:
                     parsed = _parse_json_body(raw_body)
-                    if parsed is not None:
-                        return parsed, http_status, True
-                except Exception:  # noqa: BLE001  # nosec B110
-                    pass
+                except Exception:  # noqa: BLE001 - fall through to the classifier
+                    parsed = None
+                if parsed is not None:
+                    code, msg = _classify_qt_error(
+                        qt_error, "", http_status,
+                        service_reachable=server_reached_recently())
+                    return _error_shaped(parsed, code, msg), http_status, True
             code, msg = _classify_qt_error(
                 qt_error, "", http_status,
                 service_reachable=server_reached_recently())
@@ -758,10 +1001,9 @@ class TerraLabClient:
             if error_body is None:
                 return ({"error": f"Server error (HTTP {http_status})",
                          "code": "SERVER_ERROR"}, http_status, False)
-            if "error" in error_body:
-                return error_body, http_status, True
-            return ({"error": error_body.get("detail", raw_body[:200]),
-                     "code": "SERVER_ERROR"}, http_status, True)
+            return (_error_shaped(
+                error_body, "SERVER_ERROR",
+                f"Server error (HTTP {http_status})"), http_status, True)
         if not raw_body:
             return {}, http_status, False
         try:
@@ -813,11 +1055,9 @@ class TerraLabClient:
         )
 
     def _detection_run_export_url(self) -> str:
-        """Absolute URL for the end-of-run export summary. Same host split as
-        the predict call."""
-        if self.detection_direct:
-            return f"{self.detection_base_url}/run-export"
-        return f"{self.detection_base_url}/api/ai-segmentation/run-export"
+        """Absolute URL for the end-of-run export summary. Direct only: the
+        backend has no route of its own for it (see ``post_run_export_body``)."""
+        return f"{self.detection_base_url}/run-export"
 
     def post_run_export_body(self, body: bytes, auth: dict) -> dict:
         """Send the finished run's export summary (review settings + the final
@@ -830,10 +1070,20 @@ class TerraLabClient:
         Additive and best-effort: callers fire-and-forget from a background
         task; a server without the route degrades to {"error", "code"} and the
         user's local export is never affected. Off-GUI-thread only.
+
+        Only the one-hop route answers it. On the backend route there is no
+        such endpoint, so the body is not sent at all rather than spent on a
+        404 whose only effect is a warning in the log.
         """
+        if not self.detection_direct:
+            QgsMessageLog.logMessage(
+                "Run export summary not sent: this route does not take one",
+                "AI Segmentation", level=Qgis.MessageLevel.Info)
+            return {"error": "run export not available on this route",
+                    "code": "NOT_AVAILABLE"}
         return self._request(
             "POST", self._detection_run_export_url(), auth=auth, body=body,
-            timeout_ms=_TIMEOUT_RUN_EXPORT,
+            timeout_ms=_td.run_export_timeout_ms(_TIMEOUT_RUN_EXPORT),
         )
 
     def _submit_timeout(self) -> int:
@@ -872,6 +1122,11 @@ class TerraLabClient:
         ``area_m2`` and ``polygon_wkt`` are additive, optional and purely
         informational: an unencodable value falls back to the bare body, so
         the charge itself can never be lost to them.
+
+        The build is named in an ``x-plugin-version`` header rather than a body
+        field. Older builds sent neither figure, and with nothing on the request
+        to tell them apart the server cannot say which rows are old and which
+        are a fault. A header keeps the body the shape the route already reads.
         """
         fields: dict = {
             "session_id": str(session_id), "polygon_index": int(polygon_index)}
@@ -887,20 +1142,29 @@ class TerraLabClient:
                  "polygon_index": int(polygon_index)},
                 allow_nan=False,
             ).encode("utf-8")
+        headers = dict(auth or {})
+        try:
+            from ..core.request_context import plugin_version
+
+            version = plugin_version()
+            if version:
+                headers["x-plugin-version"] = version
+        except Exception:  # noqa: BLE001 -- a header never costs a charge
+            pass  # nosec B110
         return self._request(
-            "POST", "/api/ai-segmentation/save-polygon", auth=auth, body=body,
-            timeout_ms=_TIMEOUT_INTERACTIVE, require_body=True,
+            "POST", "/api/ai-segmentation/save-polygon", auth=headers, body=body,
+            timeout_ms=_td.interactive_timeout_ms(_TIMEOUT_INTERACTIVE), require_body=True,
         )
 
     def get_usage(self, auth: dict) -> dict:
         return self._request(
-            "GET", "/api/plugin/usage", auth=auth, timeout_ms=_TIMEOUT_INTERACTIVE,
+            "GET", "/api/plugin/usage", auth=auth, timeout_ms=_td.interactive_timeout_ms(_TIMEOUT_INTERACTIVE),
             require_body=True,
         )
 
     def get_account(self, auth: dict) -> dict:
         return self._request(
-            "GET", "/api/plugin/account", auth=auth, timeout_ms=_TIMEOUT_INTERACTIVE,
+            "GET", "/api/plugin/account", auth=auth, timeout_ms=_td.interactive_timeout_ms(_TIMEOUT_INTERACTIVE),
             require_body=True,
         )
 
@@ -914,10 +1178,10 @@ class TerraLabClient:
         """
         account, usage = self.request_many([
             {"method": "GET", "path": "/api/plugin/account",
-             "auth": auth, "timeout_ms": _TIMEOUT_INTERACTIVE,
+             "auth": auth, "timeout_ms": _td.interactive_timeout_ms(_TIMEOUT_INTERACTIVE),
              "require_body": True},
             {"method": "GET", "path": "/api/plugin/usage",
-             "auth": auth, "timeout_ms": _TIMEOUT_INTERACTIVE,
+             "auth": auth, "timeout_ms": _td.interactive_timeout_ms(_TIMEOUT_INTERACTIVE),
              "require_body": True},
         ])
         return account, usage
@@ -966,9 +1230,16 @@ class TerraLabClient:
         from ..core.request_context import config_query
 
         return self._request(
-            "GET", config_query(product), timeout_ms=_TIMEOUT_INTERACTIVE,
+            "GET", config_query(product), timeout_ms=_td.interactive_timeout_ms(_TIMEOUT_INTERACTIVE),
             require_body=True,
         )
+
+    def get_segment_catalog(self, timeout_ms: int | None = None) -> dict:
+        """Fetch the segment-library catalogue. Public, no auth."""
+        if timeout_ms is None:
+            timeout_ms = _td.interactive_timeout_ms(_TIMEOUT_INTERACTIVE)
+        return self._request(
+            "GET", "/api/ai-segmentation/presets", timeout_ms=timeout_ms)
 
     def translate_prompt(self, text: str, auth: dict | None = None) -> dict:
         """Resolve a short object prompt to its English equivalent (the server
@@ -981,7 +1252,7 @@ class TerraLabClient:
         body = json.dumps({"text": text}).encode("utf-8")
         answer = self._request(
             "POST", "/api/plugin/translate-prompt", auth=auth, body=body,
-            timeout_ms=_TIMEOUT_TRANSLATE, require_body=True,
+            timeout_ms=_td.translate_timeout_ms(_TIMEOUT_TRANSLATE), require_body=True,
         )
         _note_skipped_tuning("prompt translation", answer)
         return answer
@@ -992,6 +1263,7 @@ class TerraLabClient:
         zone_area_m2: float | None,
         native_mupp: float | None,
         auth: dict | None = None,
+        exemplar_size_m: float | None = None,
     ) -> dict:
         """Server-computed run plan for one committed prompt: target resolution,
         recall floors, confidence and review shape defaults.
@@ -1002,15 +1274,22 @@ class TerraLabClient:
         pass the activation Bearer to land on the per-key rate budget)."""
         from ..core.request_context import plugin_version
 
-        body = json.dumps({
+        payload: dict = {
             "prompt": prompt,
             "zone_area_m2": zone_area_m2,
             "native_mupp": native_mupp,
             "plugin_version": plugin_version() or "unknown",
-        }).encode("utf-8")
+        }
+        # Ground size (m) of the drawn examples, when there are any: lets the
+        # server plan a run with no text, or a finer tile than the typed word's
+        # class when the drawing is much smaller. Sent only when measured, so
+        # a request without examples is byte-identical to before.
+        if exemplar_size_m is not None and exemplar_size_m > 0:
+            payload["exemplar_size_m"] = float(exemplar_size_m)
+        body = json.dumps(payload).encode("utf-8")
         answer = self._request(
             "POST", "/api/plugin/seg-run-plan", auth=auth, body=body,
-            timeout_ms=_TIMEOUT_TRANSLATE, require_body=True,
+            timeout_ms=_td.translate_timeout_ms(_TIMEOUT_TRANSLATE), require_body=True,
         )
         _note_skipped_tuning("run plan", answer)
         return answer
@@ -1045,7 +1324,7 @@ class TerraLabClient:
             params.append("deleted=true")
         path = "/api/ai-segmentation/history?" + "&".join(params)
         return self._request(
-            "GET", path, auth=auth, timeout_ms=_TIMEOUT_API, require_body=True)
+            "GET", path, auth=auth, timeout_ms=_td.api_timeout_ms(_TIMEOUT_API), require_body=True)
 
     def get_seg_run_detail(
         self,
@@ -1069,14 +1348,14 @@ class TerraLabClient:
         else:
             return {"error": "missing run identifier", "code": "CLIENT_ERROR"}
         return self._request(
-            "GET", path, auth=auth, timeout_ms=_TIMEOUT_API, require_body=True)
+            "GET", path, auth=auth, timeout_ms=_td.api_timeout_ms(_TIMEOUT_API), require_body=True)
 
     def set_seg_run_favorite(self, auth: dict, run_id: str, is_favorite: bool) -> dict:
         """Star / unstar a run (server-stored, cross-device)."""
         body = json.dumps({"run_id": run_id, "is_favorite": bool(is_favorite)}).encode("utf-8")
         return self._request(
             "POST", "/api/ai-segmentation/history/favorite",
-            auth=auth, body=body, timeout_ms=_TIMEOUT_INTERACTIVE,
+            auth=auth, body=body, timeout_ms=_td.interactive_timeout_ms(_TIMEOUT_INTERACTIVE),
         )
 
     def delete_seg_run(self, auth: dict, run_id: str) -> dict:
@@ -1084,7 +1363,7 @@ class TerraLabClient:
         body = json.dumps({"run_id": run_id}).encode("utf-8")
         return self._request(
             "POST", "/api/ai-segmentation/history/delete",
-            auth=auth, body=body, timeout_ms=_TIMEOUT_INTERACTIVE,
+            auth=auth, body=body, timeout_ms=_td.interactive_timeout_ms(_TIMEOUT_INTERACTIVE),
         )
 
     def undelete_seg_run(self, auth: dict, run_id: str) -> dict:
@@ -1092,7 +1371,7 @@ class TerraLabClient:
         body = json.dumps({"run_id": run_id}).encode("utf-8")
         return self._request(
             "POST", "/api/ai-segmentation/history/undelete",
-            auth=auth, body=body, timeout_ms=_TIMEOUT_INTERACTIVE,
+            auth=auth, body=body, timeout_ms=_td.interactive_timeout_ms(_TIMEOUT_INTERACTIVE),
         )
 
     def fetch_run_masks(self, auth: dict, request_id: str) -> dict | list:
@@ -1107,7 +1386,7 @@ class TerraLabClient:
         path = "/api/ai-segmentation/image/{}?type=masks&stream=1".format(
             quote(str(request_id), safe=""))
         return self._request(
-            "GET", path, auth=auth, timeout_ms=_TIMEOUT_API, allow_list=True,
+            "GET", path, auth=auth, timeout_ms=_td.api_timeout_ms(_TIMEOUT_API), allow_list=True,
             require_body=True)
 
     def poll_pairing(self, code: str, timeout_ms: int = 10_000) -> dict:
@@ -1219,13 +1498,14 @@ class TerraLabClient:
     #                    request)
     #   native_mupp      the run's ground meters per pixel (sent once, same
     #                    request)
-    #   clean_image      the un-stamped tile image, present only when reference
-    #                    stamps were composited into the sent tile
+    #   clean_image      the un-stamped tile image at archive size (half the
+    #                    linear size), present only when reference stamps were
+    #                    composited into the sent tile
     _PREDICT_EXTRA_FIELDS = (
         "return_semantic", "charge_tiles", "mask_scale",
         "plugin_version", "policy_rev", "prompt_mode", "basemap",
         "zone_geojson", "zone_wkt", "zone_km2", "native_mupp",
-        "clean_image",
+        "clean_image", "tiles_total",
     )
 
     @classmethod
@@ -1366,7 +1646,7 @@ class TerraLabClient:
         # caller's event loop; only the manager differs. `nam` is kept in the
         # signature for backward compatibility with the worker call site.
         del nam
-        return self._predict_nam().post(req, QByteArray(body))
+        return self._next_predict_nam().post(req, QByteArray(body))
 
     def parse_reply(self, reply) -> dict:
         """Public wrapper around the finished-reply parser, for callers that
@@ -1429,7 +1709,7 @@ class TerraLabClient:
 
         path = f"/api/ai-segmentation/predict/status?request_id={quote(request_id, safe='')}"
         return self._request(
-            "GET", path, auth=auth, timeout_ms=_TIMEOUT_POLL_DETECTION
+            "GET", path, auth=auth, timeout_ms=_td.poll_detection_timeout_ms(_TIMEOUT_POLL_DETECTION)
         )
 
     def get_detection_status_many(
@@ -1449,7 +1729,7 @@ class TerraLabClient:
                 "method": "GET",
                 "path": f"/api/ai-segmentation/predict/status?request_id={quote(rid, safe='')}",
                 "auth": auth,
-                "timeout_ms": _TIMEOUT_POLL_DETECTION,
+                "timeout_ms": _td.poll_detection_timeout_ms(_TIMEOUT_POLL_DETECTION),
             }
             for rid in request_ids
         ]
@@ -1507,24 +1787,32 @@ class TerraLabClient:
         once more, the same rule the one-at-a-time path follows: a batched read
         is idempotent, and one lost packet should not cost the user their
         balance. ``retry_reads`` is how that second batch says it is the last.
-        A POST is never re-sent: the far side may already have acted on it.
+        A POST is never re-sent: the far side may already have acted on it. The
+        one exception is a POST whose compressed body the server could not read
+        at all. That one it never acted on, so it goes out again plain, once,
+        and the first refusal pins the session to plain bytes.
         """
         from qgis.PyQt.QtCore import QEventLoop, QTimer
 
         if not specs:
             return []
 
-        nam = self._predict_nam()
+        # Spread over the manager pool from slot 0, so a batch wider than six
+        # really is that wide on the wire (see _CONNECTIONS_PER_MANAGER) while
+        # a one-spec batch keeps landing on the same warm socket.
         loop = QEventLoop()
         replies = []
-        max_timeout = _TIMEOUT_API
-        for spec in specs:
-            timeout_ms = spec.get("timeout_ms", _TIMEOUT_API)
+        packed_flags: list[bool] = []
+        max_timeout = _td.api_timeout_ms(_TIMEOUT_API)
+        for slot, spec in enumerate(specs):
+            nam = self._predict_nam_at(slot // _CONNECTIONS_PER_MANAGER)
+            timeout_ms = spec.get("timeout_ms", max_timeout)
             max_timeout = max(max_timeout, timeout_ms)
             body = spec.get("body") or b""
             packed = False
-            if spec.get("method") == "POST" and body:
+            if _may_pack_body(spec.get("method", ""), spec["path"], body):
                 body, packed = packed_request_body(body)
+            packed_flags.append(packed)
             req = self._make_qnetwork_request(
                 spec.get("auth"), timeout_ms, spec["path"], packed)
             if spec.get("method") == "POST":
@@ -1548,15 +1836,6 @@ class TerraLabClient:
             else:
                 reply.finished.connect(_on_one_finished)
 
-        if remaining[0] <= 0:
-            results = [
-                self._parse_reply(r, require_body=bool(s.get("require_body")))
-                for s, r in zip(specs, replies)
-            ]
-            for r in replies:
-                r.deleteLater()
-            return results
-
         # Safety net: setTransferTimeout already bounds each reply, but a wedged
         # NAM could still stall the loop, so cap the whole batch defensively. A
         # stoppable timer (not singleShot) so it is cancelled right after exec()
@@ -1566,7 +1845,6 @@ class TerraLabClient:
         safety_timer.setSingleShot(True)
         safety_timer.setInterval(max_timeout + 5_000)
         safety_timer.timeout.connect(loop.quit)
-        safety_timer.start()
         # Cancellation net: poll the stop predicate on this loop's own thread so a
         # request_stop() during a long submit quits the loop within ~0.25s (the
         # shutdown-crash guard; see the docstring). Kept in a local so it stays
@@ -1581,19 +1859,30 @@ class TerraLabClient:
                 return False
 
         abort_timer = None
-        if should_abort is not None:
-            abort_timer = QTimer()
-            abort_timer.setInterval(250)
-            abort_timer.timeout.connect(
-                lambda: loop.quit() if _already_aborting() else None)
-            abort_timer.start()
-        # Skip the loop entirely if the stop landed before we blocked (quit()
-        # is a no-op before exec(), so guard here instead).
-        if not _already_aborting():
-            loop.exec()
-        if abort_timer is not None:
-            abort_timer.stop()
+        # Every reply may already have finished before the connect loop above
+        # reached it. Rare, but the batch must then skip only the wait, not the
+        # reading below it: taking a second exit here left that batch without
+        # the plain re-send and without the read retry the docstring promises.
+        if remaining[0] > 0:
+            safety_timer.start()
+            if should_abort is not None:
+                abort_timer = QTimer()
+                abort_timer.setInterval(250)
+                abort_timer.timeout.connect(
+                    lambda: loop.quit() if _already_aborting() else None)
+                abort_timer.start()
+            # Skip the loop entirely if the stop landed before we blocked
+            # (quit() is a no-op before exec(), so guard here instead).
+            if not _already_aborting():
+                loop.exec()
+            if abort_timer is not None:
+                abort_timer.stop()
         safety_timer.stop()
+        # Both were built with no parent, so nothing else would ever free them
+        # and a long run makes one pair per batch.
+        safety_timer.deleteLater()
+        if abort_timer is not None:
+            abort_timer.deleteLater()
 
         results = []
         statuses: list[int | None] = []
@@ -1620,6 +1909,21 @@ class TerraLabClient:
                 reply.deleteLater()
             except RuntimeError:
                 pass  # nosec B110 - already destroyed, nothing left to release
+        # A body the server could not read is a body it never acted on, so the
+        # same POST is safe to send once more plain. The first refusal pins the
+        # session to plain bytes, which is what keeps the re-send unpacked.
+        refused = [i for i, packed in enumerate(packed_flags)
+                   if packed and specs[i].get("method") == "POST"
+                   and answer_refused_the_body(statuses[i])]
+        if refused and not _already_aborting():
+            _log_warning("A compressed request body was refused; sending "
+                         "them plain for the rest of the session")
+            note_gzip_request_refused()
+            plain = self.request_many(
+                [specs[i] for i in refused], should_abort=should_abort,
+                retry_reads=False)
+            for slot, answer in zip(refused, plain):
+                results[slot] = answer
         if retry_reads and not _already_aborting():
             again = [i for i, spec in enumerate(specs)
                      if spec.get("method") != "POST"
@@ -1656,36 +1960,80 @@ class TerraLabClient:
 
         The cache is module-level, not per instance: callers build a client per
         request, and a per-instance cache made every one of them pay a fresh
-        connection and TLS handshake."""
-        from qgis.PyQt.QtCore import QThread
+        connection and TLS handshake.
 
-        nams = _THREAD_NAMS
-        thread = QThread.currentThread()
-        nam = nams.get(thread)
+        A thread holds a POOL of them, because one manager only ever puts six
+        requests to a host on the wire (see _CONNECTIONS_PER_MANAGER). This
+        returns the FIRST, so a caller that sends one request at a time keeps
+        landing on the same warm socket; the concurrent paths spread across the
+        pool themselves (_predict_nam_at)."""
+        return self._predict_nam_at(0)
+
+    def _predict_nam_at(self, slot: int):
+        """The pool manager at ``slot``, built on first use.
+
+        Slots are filled lazily: a session that never runs a wide window pays
+        for one manager, and the extra ones cost nothing until a request is
+        actually put on them.
+        """
+        pool = self._predict_nam_pool()
+        slot %= len(pool)
+        nam = pool[slot]
         if nam is not None and not _qobject_alive(nam):
             # The C++ manager went away while this cache still pointed at it
             # (see acquire_predict_nam). Posting on the dead wrapper raises
             # RuntimeError, and so does every reply already made by it, so
-            # rebuild instead and let the caller retry its request.
+            # rebuild it and let the caller retry its request.
             nam = None
         if nam is None:
             nam = self._new_private_nam()
-            nams[thread] = nam
+            pool[slot] = nam
         return nam
 
-    def acquire_predict_nam(self):
-        """Return this thread's private manager for a caller that will keep a
-        strong reference to it for as long as its replies must stay readable.
+    def _predict_nam_pool(self) -> list:
+        """This thread's manager slots, sized once and reused after.
 
-        Every reply is a CHILD of the manager, so destroying the manager
-        destroys every reply still in flight at once, and the next read of one
-        raises RuntimeError on a dead wrapper. The manager is Python-owned with
-        no parent, so the per-thread cache above is otherwise its only owner: a
-        pop, an overwrite, or a cyclic-GC pass on the cache would take a whole
-        run's in-flight tiles down together. A caller holding the returned
-        object for its run cannot be caught by that.
+        The list identity is stable for the life of the thread, so a caller
+        holding it (see acquire_predict_nam) keeps every manager that is later
+        built into it alive too.
         """
-        return self._predict_nam()
+        from qgis.PyQt.QtCore import QThread
+
+        thread = QThread.currentThread()
+        pool = _THREAD_NAMS.get(thread)
+        if not pool:
+            pool = [None] * _predict_manager_count()
+            _THREAD_NAMS[thread] = pool
+            _THREAD_NAM_CURSOR[thread] = 0
+        return pool
+
+    def _next_predict_nam(self):
+        """The manager the next concurrent request goes on, round-robin.
+
+        Only the paths that keep several requests in flight call this: spread
+        one-at-a-time traffic and every other call would open a cold socket.
+        """
+        from qgis.PyQt.QtCore import QThread
+
+        thread = QThread.currentThread()
+        slot = _THREAD_NAM_CURSOR.get(thread, 0)
+        _THREAD_NAM_CURSOR[thread] = slot + 1
+        return self._predict_nam_at(slot)
+
+    def acquire_predict_nam(self):
+        """Return this thread's private managers for a caller that will keep a
+        strong reference to them for as long as its replies must stay readable.
+
+        Every reply is a CHILD of the manager that made it, so destroying a
+        manager destroys every reply still in flight on it at once, and the
+        next read of one raises RuntimeError on a dead wrapper. The managers
+        are Python-owned with no parent, so the per-thread cache above is
+        otherwise their only owner: a pop, an overwrite, or a cyclic-GC pass on
+        the cache would take a whole run's in-flight tiles down together. A
+        caller holding the returned object for its run cannot be caught by
+        that. The caller never posts on it, so the list shape is all it needs.
+        """
+        return self._predict_nam_pool()
 
     def _new_private_nam(self):
         """Create a private QNetworkAccessManager configured like the QGIS one
@@ -1780,6 +2128,7 @@ class TerraLabClient:
 
         thread = QThread.currentThread()
         _THREAD_NAMS.pop(thread, None)
+        _THREAD_NAM_CURSOR.pop(thread, None)
         _THREAD_NAM_WATCHED.discard(thread)
 
     def retain_thread_nam(self) -> bool:
@@ -1892,17 +2241,33 @@ class TerraLabClient:
         waits on these replies, so the run loop above owns the retry, and by
         the time it re-sends the tile nothing is packed any more: that re-send
         IS the one uncompressed retry.
+
+        A refusal that named its own wait keeps it (see _note_retry_after): the
+        caller retries later and out of reach of this reply, so the header has
+        to travel in the answer. An accepted answer that named an in-flight
+        width keeps it the same way (see _note_window_hint).
         """
-        answer, body_was_json = self._parse_reply_once(reply, require_body)
+        answer, _body_was_json = self._parse_reply_once(reply, require_body)
+        # An error answer carries the status it came with, so the run can
+        # count how many 429s and 503s it waited through. Additive: nothing
+        # else reads the key.
+        if isinstance(answer, dict) and "error" in answer:
+            status = _http_status_of(reply)
+            if status is not None:
+                answer = dict(answer)
+                answer["http_status"] = int(status)
         if _reply_was_packed(reply) and answer_refused_the_body(
-                answer, _http_status_of(reply), body_was_json):
+                _http_status_of(reply)):
             _log_warning("A compressed request body was refused; sending "
                          "them plain for the rest of the session")
             note_gzip_request_refused()
-            if isinstance(answer, dict):
+            # Only when the refusal named no code of its own: the server's own
+            # answer is the better one, and overwriting it hid every reason a
+            # 400 can carry behind one generic class.
+            if isinstance(answer, dict) and not answer.get("code"):
                 answer = dict(answer)
                 answer["code"] = "SERVER_ERROR"
-        return answer
+        return _note_window_hint(_note_retry_after(answer, reply), reply)
 
     def _parse_reply_once(self, reply,
                           require_body: bool = False) -> tuple[dict, bool]:
@@ -1930,10 +2295,17 @@ class TerraLabClient:
             if http_status is not None and http_status >= 400 and raw_body:
                 try:
                     parsed = _parse_json_body(raw_body)
-                    if parsed is not None:
-                        return parsed, True
-                except Exception:
-                    pass  # nosec B110
+                except Exception:  # noqa: BLE001 - fall through to the classifier
+                    parsed = None
+                if parsed is not None:
+                    # Qt reports an error for every 4xx, so this branch and not
+                    # the status-only one below is where a refusal with a body
+                    # of its own lands. Shaped, or it reads as a success.
+                    code, msg = _classify_qt_error(
+                        qt_error, reply.errorString(), http_status,
+                        service_reachable=server_reached_recently(),
+                    )
+                    return _error_shaped(parsed, code, msg), True
             code, msg = _classify_qt_error(
                 qt_error, reply.errorString(), http_status,
                 service_reachable=server_reached_recently(),
@@ -1951,12 +2323,9 @@ class TerraLabClient:
             if error_body is None:
                 return ({"error": f"Server error (HTTP {http_status})",
                          "code": "SERVER_ERROR"}, False)
-            if "error" in error_body:
-                return error_body, True
-            return ({
-                "error": error_body.get("detail", raw_body[:200]),
-                "code": "SERVER_ERROR",
-            }, True)
+            return (_error_shaped(
+                error_body, "SERVER_ERROR",
+                f"Server error (HTTP {http_status})"), True)
 
         if not raw_body:
             if require_body:
@@ -1981,7 +2350,7 @@ class TerraLabClient:
         path: str,
         auth: dict | None = None,
         body: bytes | None = None,
-        timeout_ms: int = _TIMEOUT_API,
+        timeout_ms: int | None = None,
         allow_list: bool = False,
         require_body: bool = False,
         wall_clock: bool = False,
@@ -2016,17 +2385,15 @@ class TerraLabClient:
         and asking twice for the same thing changes nothing on the far side. A
         POST is never re-sent here: the far side may already have acted on the
         first one."""
+        if timeout_ms is None:
+            timeout_ms = _td.api_timeout_ms(_TIMEOUT_API)
         payload, packed = body, False
-        # Only the inference service inflates a gzipped body, and it is the
-        # only host reached through an absolute URL here. The website routes
-        # take a relative path and read a packed body as an invalid one.
-        if method == "POST" and body and path.startswith(("http://", "https://")):
+        if _may_pack_body(method, path, body):
             payload, packed = packed_request_body(body)
-        answer, http_status, body_was_json = self._request_once(
+        answer, http_status, _body_was_json = self._request_once(
             method, path, auth, payload, packed, timeout_ms, allow_list,
             require_body, wall_clock)
-        if packed and answer_refused_the_body(answer, http_status,
-                                              body_was_json):
+        if packed and answer_refused_the_body(http_status):
             _log_warning("A compressed request body was refused; sending "
                          "them plain for the rest of the session")
             note_gzip_request_refused()
@@ -2034,7 +2401,9 @@ class TerraLabClient:
                 method, path, auth, body, False, timeout_ms, allow_list,
                 require_body, wall_clock)
         if method == "GET" and _worth_asking_again(answer, http_status):
-            time.sleep(_retry_pause_s())
+            # A rate limiter that said how long to wait is obeyed; everything
+            # else takes the spread-out pause.
+            time.sleep(self._pending_retry_after_s or _retry_pause_s())
             answer, _, _ = self._request_once(
                 method, path, auth, payload, packed, timeout_ms, allow_list,
                 require_body, wall_clock)
@@ -2059,7 +2428,13 @@ class TerraLabClient:
         a ``Content-Encoding`` header on the request. The last item is what
         tells a body the route never read from a route that read it and
         disagreed with it."""
-        url = self._resolve_url(path)
+        self._pending_retry_after_s = 0.0
+        try:
+            url = self._resolve_url(path)
+        except ValueError as err:
+            # A refused address is a client-side refusal, not an exception for
+            # a caller typed to a dict.
+            return ({"error": str(err), "code": "CLIENT_ERROR"}, None, False)
         req = QNetworkRequest(QUrl(url))
         req.setRawHeader(b"Content-Type", b"application/json")
         if packed:
@@ -2098,6 +2473,8 @@ class TerraLabClient:
             http_status = _http_status_of(reply)
             if http_status is not None:
                 note_server_contact()
+            if http_status == _RATE_LIMITED_STATUS and reply is not None:
+                self._pending_retry_after_s = _retry_after_s(reply)
             if reply is not None and http_status is not None and http_status >= 400:
                 # A misbehaving gateway/proxy can return a non-UTF-8 body; decode
                 # leniently so a garbled error page never crashes the worker loop.
@@ -2105,10 +2482,12 @@ class TerraLabClient:
                 if raw:
                     try:
                         parsed = _parse_json_body(raw)
-                        if parsed is not None:
-                            return parsed, http_status, True
-                    except Exception:
-                        pass  # nosec B110
+                    except Exception:  # noqa: BLE001 - fall through to the classifier
+                        parsed = None
+                    if parsed is not None:
+                        code, msg = _classify_network_error(blocker)
+                        return (_error_shaped(parsed, code, msg),
+                                http_status, True)
             code, msg = _classify_network_error(blocker)
             return {"error": msg, "code": code}, http_status, False
 
@@ -2116,6 +2495,8 @@ class TerraLabClient:
         http_status = _http_status_of(reply)
         raw_body = bytes(reply.content()).decode("utf-8", "replace")
         note_server_contact()
+        if http_status == _RATE_LIMITED_STATUS:
+            self._pending_retry_after_s = _retry_after_s(reply)
 
         if http_status is not None and http_status >= 400:
             # Status only: error bodies can echo request URLs/details and the
@@ -2128,12 +2509,9 @@ class TerraLabClient:
             if error_body is None:
                 return ({"error": f"Server error (HTTP {http_status})",
                          "code": "SERVER_ERROR"}, http_status, False)
-            if "error" in error_body:
-                return error_body, http_status, True
-            return ({
-                "error": error_body.get("detail", raw_body[:200]),
-                "code": "SERVER_ERROR",
-            }, http_status, True)
+            return (_error_shaped(
+                error_body, "SERVER_ERROR",
+                f"Server error (HTTP {http_status})"), http_status, True)
 
         if not raw_body:
             if require_body:

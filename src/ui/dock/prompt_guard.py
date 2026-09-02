@@ -6,6 +6,8 @@ import re
 import time
 import unicodedata
 
+from ...core.surface_dials import multi_object_pattern
+
 # ---------------------------------------------------------------------------
 # Prompt guard rail for the Automatic (cloud) text box.
 #
@@ -62,34 +64,24 @@ _PROMPT_COMMAND_WORDS_FALLBACK = {
 # Each list here is a short generic core, not a copy of the served one (24, 12
 # and 16 entries there). The server stays the place to tune the vocabulary; the
 # client only guarantees the guard exists at all.
-_PROMPT_ABSTRACT_FALLBACK = {
-    "thing", "things", "stuff", "object", "objects", "item", "items",
-    "anything", "everything", "area", "areas", "zone", "zones",
-}
+_PROMPT_ABSTRACT_FALLBACK = {"thing", "things", "stuff"}
 # Words that describe how something looks, which the model cannot ground.
-_PROMPT_SUBJECTIVE_FALLBACK = {
-    "nice", "beautiful", "good", "bad", "ugly", "pretty", "interesting",
-}
+_PROMPT_SUBJECTIVE_FALLBACK = {"nice", "beautiful", "ugly"}
 # Words that place one object relative to another: the model reads one object,
 # not a relation between two.
-_PROMPT_REFERENTIAL_FALLBACK = {
-    "near", "next", "behind", "between", "around", "beside", "above",
-    "below", "inside", "outside", "without", "except",
-}
+_PROMPT_REFERENTIAL_FALLBACK = {"near", "between", "behind"}
 
 # English nouns that end in s and are already singular. Without them the bare
 # plural rewrite, which runs whether or not a policy is loaded, turns "species"
 # into "specie", "series" into "sery" and "lens" into "len", and ships the
 # non-word to the model. Kept short and generic; the served list is where the
 # vocabulary is tuned.
-_PROMPT_PLURAL_KEEP_FALLBACK = {
-    "species", "series", "lens", "premises", "works", "woods", "crossroads",
-    "headquarters",
-}
+_PROMPT_PLURAL_KEEP_FALLBACK = {"species", "series", "lens"}
 
 # Separators that mean "several objects at once" - the cloud model grounds ONE
-# concept per run, so "building, tree" quietly biases toward garbage.
-_MULTI_OBJECT_RE = re.compile(r"[,;/+&]| and | or ")
+# concept per run, so "building, tree" quietly biases toward garbage. The
+# served list replaces this one; the regex is built from it at call time.
+_MULTI_OBJECT_SEPARATORS = (",", ";", "/", "+", "&", " and ", " or ")
 
 # Leading articles in the supported languages, stripped before the silent
 # translation lookup so "la piscine" resolves like "piscine".
@@ -204,14 +196,18 @@ def _build_prompt_tables(policy: dict) -> dict:
 _EMPTY_TABLES = _build_prompt_tables({})
 
 _TABLES_CACHE: dict | None = None
-_TABLES_CACHE_POLICY_ID: int | None = None
+# The policy dict the cache was built from. The OBJECT, not its id(): a freed
+# dict's address is handed straight back to the next one, so an id alone can
+# match a different policy and serve the wrong word sets for the session.
+_TABLES_CACHE_POLICY: dict | None = None
 
 
 def _prompt_tables() -> dict:
     """The guard's word sets for the current policy. Rebuilt only when the
-    policy dict object changes identity (never per call), so this is cheap
-    enough to call on every keystroke."""
-    global _TABLES_CACHE, _TABLES_CACHE_POLICY_ID
+    policy dict object changes (never per call), so this is cheap enough to
+    call on every keystroke. The cache holds a reference to that dict, so the
+    comparison cannot be fooled by a reused address."""
+    global _TABLES_CACHE, _TABLES_CACHE_POLICY
     try:
         from ...core.detection_policy import prompt_policy
 
@@ -220,11 +216,10 @@ def _prompt_tables() -> dict:
         return _EMPTY_TABLES
     if not policy:
         return _EMPTY_TABLES
-    pid = id(policy)
-    if _TABLES_CACHE is not None and pid == _TABLES_CACHE_POLICY_ID:
+    if _TABLES_CACHE is not None and policy is _TABLES_CACHE_POLICY:
         return _TABLES_CACHE
     _TABLES_CACHE = _build_prompt_tables(policy)
-    _TABLES_CACHE_POLICY_ID = pid
+    _TABLES_CACHE_POLICY = policy
     return _TABLES_CACHE
 
 
@@ -793,12 +788,13 @@ def validate_prompt(text: str) -> tuple[bool, str | None, str | None]:
     # on it - (True, "multi_first", token) - and the dock shows a light
     # non-blocking nudge to run the rest separately. The hard block remains
     # only when no usable leading object can be extracted.
-    if _MULTI_OBJECT_RE.search(" " + norm + " "):
+    multi_re = multi_object_pattern(_MULTI_OBJECT_SEPARATORS)
+    if multi_re.search(" " + norm + " "):
         # Split the SAME padded string the search matched: a mid-typing
         # trailing connector ("cars and") only matches with the padding, so
         # splitting the bare norm would return the whole prompt unchanged and
         # the recursion below would never terminate.
-        first = re.split(r"[,;/+&]| and | or ", " " + norm + " ")[0].strip()
+        first = multi_re.split(" " + norm + " ")[0].strip()
         first_words = [w for w in first.split(" ") if w]
         if first and first != norm:
             f_ok, f_reason, f_sugg = validate_prompt(first)

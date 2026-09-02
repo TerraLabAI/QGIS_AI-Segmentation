@@ -298,6 +298,32 @@ def _lock_is_stale(path: str, content: str, self_pid: int | None = None) -> bool
     return _file_older_than(path, _STALE_AGE_S)
 
 
+def lock_age_seconds(lock_path: str | None = None) -> float | None:
+    """How long the current holder has held the lock, in seconds.
+
+    Read from the moment the holder recorded, falling back to the file's own
+    timestamp when the record is unreadable. None when there is no lock. The
+    caller uses it to say how long the other window has been going, which is
+    the one thing a person waiting on it wants to know.
+    """
+    path = lock_path or default_install_lock_path()
+    try:
+        with open(path, encoding="utf-8") as handle:
+            content = handle.read()
+    except OSError:
+        return None
+    parts = content.strip().split()
+    if len(parts) >= 2:
+        try:
+            return max(0.0, time.time() - float(parts[1]))
+        except (TypeError, ValueError):
+            pass
+    try:
+        return max(0.0, time.time() - os.path.getmtime(path))
+    except OSError:
+        return None
+
+
 class InstallLock:
     """Exclusive, cross-process file lock.
 

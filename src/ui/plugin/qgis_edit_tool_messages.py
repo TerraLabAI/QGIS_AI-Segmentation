@@ -29,7 +29,12 @@ class QgisEditToolMessagesMixin:
     def _connect_bridge_tool_messages(self) -> None:
         """Follow the canvas tool while the bridge is open and bind each one's
         messages. Bound per tool rather than once: the dock arms four different
-        native tools over one session, and each is a fresh QgsMapTool."""
+        native tools over one session, and each is a fresh QgsMapTool.
+
+        Idempotent: a second connect over a live relay leaves two mapToolSet
+        connections behind one flag, and the disconnect then drops one."""
+        if getattr(self, "_bridge_message_conn", False):
+            return
         self._bridge_message_tool = None
         try:
             canvas = self.iface.mapCanvas()

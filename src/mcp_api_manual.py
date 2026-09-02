@@ -19,6 +19,8 @@ from qgis.core import (
     QgsRasterLayer,
 )
 
+from .mcp_api_guard import gui_thread_only
+
 # How close to the ceiling a window has to land to count as held there. The
 # ceiling is one exact number and a window that reaches it was clamped, so
 # anything but floating-point slack would be a coincidence.
@@ -33,6 +35,7 @@ _CAPPED_RETRY_FACTOR = 8.0
 class SegmentationManualMixin:
     """Outline one object from points a caller supplies, and save it."""
 
+    @gui_thread_only
     def detect(
         self,
         x: float,
@@ -84,9 +87,17 @@ class SegmentationManualMixin:
         if not (math.isfinite(px) and math.isfinite(py)):
             return {"_error": f"x and y must be finite numbers, got ({x}, {y})."}
 
+        # bool("false") is True, so a string here would silently discard
+        # unsaved polygons for a caller trying to keep them.
+        from .mcp_api import coerce_bool_param
+        discard_unsaved, bool_err = coerce_bool_param("discard_unsaved", discard_unsaved)
+        if bool_err:
+            return bool_err
+
         return self._detect_from_points(
             [(px, py)], [], layer_name, discard_unsaved, output_dir)
 
+    @gui_thread_only
     def detect_points(
         self,
         positive: list[list[float]],
@@ -150,6 +161,12 @@ class SegmentationManualMixin:
         neg, err = self._points_as_pairs(negative or [], "negative")
         if err:
             return err
+        # bool("false") is True, so a string here would silently discard
+        # unsaved polygons for a caller trying to keep them.
+        from .mcp_api import coerce_bool_param
+        discard_unsaved, bool_err = coerce_bool_param("discard_unsaved", discard_unsaved)
+        if bool_err:
+            return bool_err
         return self._detect_from_points(
             pos, neg, layer_name, discard_unsaved, output_dir)
 

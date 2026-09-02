@@ -8,11 +8,16 @@ locale** (the cloud model's open vocabulary is English-trained). Only the ``labe
 and the optional ``search_terms`` are polyglot, so a French user reads "Bâtiment"
 and finds it by typing "immeuble", while the box still receives "building".
 
-This module is the offline fallback catalogue. When the server catalogue is
-reachable (see ``segmentation_presets_client``) it is merged on top, but the
-shapes are identical so the gallery renders either source the same way. The
-object set + strong/weak flags are aerial-imagery object classes phrased under
-the model's "short noun phrase" rule.
+This module is the offline fallback catalogue, and it is deliberately short:
+only the Popular tab (``TOP_PICKS``). The full catalogue is served (see
+``segmentation_presets_client``), cached on disk after the first fetch, and
+reused across sessions with no expiry on the gallery's read, so a returning
+user sees the served list even offline. Only a first launch that never reached
+the server sees this one. The shapes are identical so the gallery renders
+either source the same way, and a served category the fallback lacks still
+gets its emoji from ``_CATEGORY_EMOJI`` below. The object set + strong/weak
+flags are aerial-imagery object classes phrased under the model's "short noun
+phrase" rule.
 
 Two sets of strings here are frozen and must never be reworded: every ``prompt``
 (the billed, routed token) and every preset ``id`` (keys the demo images and the
@@ -110,35 +115,15 @@ _CAT_L10N: dict[str, dict] = {
 }
 
 # Keyed lookup, so the order of this table is free and does not track the
-# catalogue order below.
+# catalogue order below. Popular presets only, like the catalogue itself.
 _PRESET_L10N: dict[str, dict] = {
     "building": _l("Gebäude", "Edificio", "Gebouw", "Budynek", "Bangunan", "建物", "建筑", "建築"),
     "house": _l("Haus", "Casa", "Huis", "Dom", "Rumah", "住宅", "房屋", "房屋"),
-    "rooftop": _l("Dach", "Tetto", "Dak", "Dach", "Atap", "屋根", "屋顶", "屋頂"),
-    "warehouse": _l("Lagerhaus", "Magazzino", "Pakhuis", "Magazyn", "Gudang", "倉庫", "仓库", "倉庫"),
-    "greenhouse": _l("Gewächshaus", "Serra", "Kas", "Szklarnia", "Rumah kaca", "温室", "温室", "溫室"),
-    "shed": _l("Schuppen", "Capannone", "Schuur", "Szopa", "Gubuk", "小屋", "棚屋", "棚舍"),
-    "silo": _l("Silo", "Silo", "Silo", "Silo", "Silo", "サイロ", "筒仓", "穀倉"),
-    "storage_tank": _l(
-        "Speichertank", "Serbatoio", "Opslagtank", "Zbiornik", "Tangki penyimpanan", "タンク", "储罐", "儲存槽"
-    ),
     "road": _l("Straße", "Strada", "Weg", "Droga", "Jalan", "道路", "道路", "道路"),
     "car": _l("Auto", "Auto", "Auto", "Samochód", "Mobil", "車", "汽车", "汽車"),
-    "truck": _l("Lastwagen", "Camion", "Vrachtwagen", "Ciężarówka", "Truk", "トラック", "卡车", "卡車"),
-    "train": _l("Zug", "Treno", "Trein", "Pociąg", "Kereta", "列車", "火车", "火車"),
     "parking_lot": _l(
         "Parkplatz", "Parcheggio", "Parkeerplaats", "Parking", "Tempat parkir", "駐車場", "停车场", "停車場"
     ),
-    "bridge": _l("Brücke", "Ponte", "Brug", "Most", "Jembatan", "橋", "桥梁", "橋"),
-    "roundabout": _l("Kreisverkehr", "Rotatoria", "Rotonde", "Rondo", "Bundaran", "ロータリー", "环岛", "圓環"),
-    "runway": _l("Landebahn", "Pista", "Startbaan", "Pas startowy", "Landasan pacu", "滑走路", "跑道", "跑道"),
-    "sidewalk": _l("Gehweg", "Marciapiede", "Stoep", "Chodnik", "Trotoar", "歩道", "人行道", "人行道"),
-    "airplane": _l("Flugzeug", "Aereo", "Vliegtuig", "Samolot", "Pesawat", "飛行機", "飞机", "飛機"),
-    "boat": _l("Boot", "Barca", "Boot", "Łódź", "Perahu", "ボート", "小船", "小船"),
-    "shipping_container": _l(
-        "Container", "Contenitore", "Zeecontainer", "Kontener", "Kontainer", "コンテナ", "集装箱", "貨櫃"
-    ),
-    "dock": _l("Kai", "Molo", "Dock", "Dok", "Dermaga", "埠頭", "码头", "碼頭"),
     "solar_panel": _l(
         "Solarpanel",
         "Pannello solare",
@@ -149,94 +134,8 @@ _PRESET_L10N: dict[str, dict] = {
         "太阳能板",
         "太陽能板",
     ),
-    "wind_turbine": _l(
-        "Windkraftanlage",
-        "Turbina eolica",
-        "Windmolen",
-        "Turbina wiatrowa",
-        "Turbin angin",
-        "風力発電機",
-        "风力发电机",
-        "風力發電機",
-    ),
-    "crane": _l("Kran", "Gru", "Kraan", "Żuraw", "Derek", "クレーン", "起重机", "吊車"),
-    "quarry": _l("Steinbruch", "Cava", "Groeve", "Kamieniołom", "Tambang terbuka", "採石場", "采石场", "採石場"),
-    "construction_site": _l(
-        "Baustelle", "Cantiere", "Bouwplaats", "Plac budowy", "Lokasi konstruksi", "建設現場", "建筑工地", "工地"
-    ),
-    "bare_ground": _l(
-        "Freifläche", "Suolo nudo", "Kale grond", "Gołe podłoże", "Tanah terbuka", "裸地", "裸地", "裸露地面"
-    ),
     "swimming_pool": _l("Schwimmbecken", "Piscina", "Zwembad", "Basen", "Kolam renang", "プール", "游泳池", "游泳池"),
-    "tennis_court": _l(
-        "Tennisplatz",
-        "Campo da tennis",
-        "Tennisbaan",
-        "Kort tenisowy",
-        "Lapangan tenis",
-        "テニスコート",
-        "网球场",
-        "網球場",
-    ),
-    "soccer_field": _l(
-        "Fußballplatz",
-        "Campo da calcio",
-        "Voetbalveld",
-        "Boisko piłkarskie",
-        "Lapangan sepak bola",
-        "サッカー場",
-        "足球场",
-        "足球場",
-    ),
-    "running_track": _l(
-        "Laufbahn", "Pista", "Hardloopbaan", "Bieżnia", "Lintasan lari", "トラック", "田径跑道", "田徑道"
-    ),
-    "stadium": _l("Stadion", "Stadio", "Stadion", "Stadion", "Stadion", "スタジアム", "体育场", "體育場"),
     "tree": _l("Baum", "Albero", "Boom", "Drzewo", "Pohon", "樹木", "树木", "樹木"),
-    "tree_canopy": _l(
-        "Baumkronen", "Chioma arborea", "Boomkruinen", "Korony drzew", "Tajuk pohon", "樹冠", "树冠", "樹冠"
-    ),
-    "bush": _l("Strauch", "Cespuglio", "Struik", "Krzak", "Semak", "灌木", "灌木", "灌木"),
-    "vineyard": _l("Weinberg", "Vigneto", "Wijngaard", "Winnica", "Kebun anggur", "ぶどう畑", "葡萄园", "葡萄園"),
-    "farm_field": _l("Acker", "Campo agricolo", "Akker", "Pole uprawne", "Lahan pertanian", "農地", "农田", "農田"),
-    "lawn": _l("Rasenfläche", "Prato", "Gazon", "Trawnik", "Halaman berumput", "芝地", "草坪", "草坪"),
-    "hedge": _l("Hecke", "Siepe", "Haag", "Żywopłot", "Pagar tanaman", "生垣", "绿篱", "綠籬"),
-    "orchard": _l("Obstanlage", "Frutteto", "Boomgaard", "Sad", "Kebun buah", "果樹園", "果园", "果園"),
-    "crop_field": _l(
-        "Kulturfläche",
-        "Campo coltivato",
-        "Landbouwperceel",
-        "Uprawa rolna",
-        "Ladang tanaman",
-        "耕作地",
-        "作物田",
-        "作物田",
-    ),
-    "soil": _l("Bodenfläche", "Terreno", "Bodem", "Gleba", "Tanah", "土壌", "土壤", "土壤"),
-    "stone": _l("Stein", "Pietra", "Steen", "Kamień", "Batu", "岩石", "石块", "石塊"),
-    "pond": _l("Teich", "Stagno", "Vijver", "Staw", "Kolam", "池", "池塘", "池塘"),
-    "river": _l("Fluss", "Fiume", "Rivier", "Rzeka", "Sungai", "河川", "河流", "河流"),
-    "roof": _l(
-        "Dachfläche",
-        "Copertura edilizia",
-        "Dakvlak",
-        "Pokrycie dachowe",
-        "Atap bangunan",
-        "建物屋根",
-        "屋面",
-        "建築屋面",
-    ),
-    "driveway": _l("Zufahrt", "Accesso carrabile", "Oprit", "Podjazd", "Jalan masuk", "進入路", "车道", "車道"),
-    "water_tower": _l(
-        "Wasserturm",
-        "Torre piezometrica",
-        "Watertoren",
-        "Wieża ciśnień",
-        "Menara air",
-        "配水塔",
-        "水塔",
-        "水塔",
-    ),
 }
 
 
@@ -278,9 +177,10 @@ def category_emoji(key: str) -> str:
 # by aerial-imagery object datasets. Discrete countable objects are browsed by
 # family, not by GIS use-domain (that taxonomy fits continuous land cover, not
 # objects). Categories run most-asked-for first, and so do the presets inside
-# each one. An object earns a card by being asked for, so this list is curated
-# rather than exhaustive; the few weak/continuous classes carry weak=True so
-# the UI can flag them.
+# each one. Only the Popular presets ship here; every category keeps its label
+# row (even with no preset) so a served catalogue that names it renders the
+# same way. The few weak/continuous classes carry weak=True so the UI can flag
+# them.
 _CATEGORIES: list[dict] = [
     _cat(
         "buildings",
@@ -290,22 +190,7 @@ _CATEGORIES: list[dict] = [
         "Edifícios e telhados",
         [
             _p("building", "building", "Building", "Bâtiment", "Edificio", "Edifício"),
-            _p("rooftop", "rooftop", "Rooftop", "Toiture", "Tejado", "Telhado"),
             _p("house", "house", "House", "Maison", "Casa", "Casa"),
-            _p("warehouse", "warehouse", "Warehouse", "Entrepôt", "Almacén", "Galpão"),
-            _p("greenhouse", "greenhouse", "Greenhouse", "Serre", "Invernadero", "Estufa"),
-            _p("shed", "shed", "Shed", "Cabanon", "Cobertizo", "Galpão pequeno"),
-            _p("silo", "silo", "Silo", "Silo", "Silo", "Silo"),
-            _p(
-                "storage_tank",
-                "storage tank",
-                "Storage tank",
-                "Réservoir",
-                "Tanque de almacenamiento",
-                "Tanque de armazenamento",
-            ),
-            _p("roof", "roof", "Roof", "Toit", "Cubierta", "Cobertura"),
-            _p("water_tower", "water tower", "Water tower", "Château d'eau", "Torre de agua", "Torre de água"),
         ],
     ),
     _cat(
@@ -316,12 +201,6 @@ _CATEGORIES: list[dict] = [
         "Árvores e vegetação",
         [
             _p("tree", "tree", "Tree", "Arbre", "Árbol", "Árvore"),
-            _p("tree_canopy", "tree canopy", "Tree canopy", "Canopée", "Dosel arbóreo", "Dossel arbóreo", weak=True),
-            _p("bush", "bush", "Bush", "Buisson", "Arbusto", "Arbusto"),
-            _p("grass", "grass", "Grass", "Herbe", "Hierba", "Grama", weak=True),
-            _p("vegetation", "vegetation", "Vegetation", "Végétation", "Vegetación", "Vegetação", weak=True),
-            _p("lawn", "lawn", "Lawn", "Pelouse", "Césped", "Gramado", weak=True),
-            _p("hedge", "hedge", "Hedge", "Haie", "Seto", "Sebe"),
         ],
     ),
     _cat(
@@ -333,12 +212,6 @@ _CATEGORIES: list[dict] = [
         [
             _p("road", "road", "Road", "Route", "Carretera", "Estrada"),
             _p("parking_lot", "parking lot", "Parking lot", "Parking", "Estacionamiento", "Estacionamento"),
-            _p("sidewalk", "sidewalk", "Sidewalk", "Trottoir", "Acera", "Calçada"),
-            _p("bridge", "bridge", "Bridge", "Pont", "Puente", "Ponte"),
-            _p("roundabout", "roundabout", "Roundabout", "Rond-point", "Rotonda", "Rotatória"),
-            _p("runway", "runway", "Runway", "Piste", "Pista", "Pista"),
-            _p("dock", "dock", "Dock", "Quai", "Muelle", "Doca"),
-            _p("driveway", "driveway", "Driveway", "Allée carrossable", "Acceso vehicular", "Acesso de garagem"),
         ],
     ),
     _cat(
@@ -349,13 +222,6 @@ _CATEGORIES: list[dict] = [
         "Água e solo",
         [
             _p("water", "water", "Water", "Eau", "Agua", "Água", weak=True),
-            _p("bare_ground", "bare ground", "Bare ground", "Sol nu", "Suelo desnudo", "Solo exposto", weak=True),
-            _p("rock", "rock", "Rock", "Roche", "Roca", "Rocha"),
-            _p("quarry", "quarry", "Quarry", "Carrière", "Cantera", "Pedreira"),
-            _p("soil", "soil", "Soil", "Terrain nu", "Tierra", "Solo", weak=True),
-            _p("stone", "stone", "Stone", "Pierre", "Piedra", "Pedra"),
-            _p("pond", "pond", "Pond", "Mare", "Estanque", "Lagoa"),
-            _p("river", "river", "River", "Rivière", "Río", "Rio", weak=True),
         ],
     ),
     _cat(
@@ -366,8 +232,6 @@ _CATEGORIES: list[dict] = [
         "Veículos",
         [
             _p("car", "car", "Car", "Voiture", "Coche", "Carro"),
-            _p("truck", "truck", "Truck", "Camion", "Camión", "Caminhão"),
-            _p("train", "train", "Train", "Train", "Tren", "Trem"),
         ],
     ),
     _cat(
@@ -376,27 +240,7 @@ _CATEGORIES: list[dict] = [
         "Parcelles et cultures",
         "Parcelas y cultivos",
         "Talhões e culturas",
-        [
-            # No weak flag on the two parcel presets. `weak` does two unrelated
-            # jobs: it shows a "fuzzy edges" note in the library, and it routes
-            # the prompt to MAP merging in _default_merge_separate. A parcel
-            # has its own boundary and is counted one by one, so the MAP route
-            # is wrong here, and it is what shipped a whole farm as a single
-            # object. Losing the note on these two costs a hint line; keeping
-            # the flag cost the layer.
-            _p(
-                "farm_field",
-                "farm field",
-                "Farm field",
-                "Parcelle agricole",
-                "Parcela agrícola",
-                "Talhão agrícola",
-            ),
-            _p("field", "field", "Field", "Champ", "Campo", "Campo"),
-            _p("vineyard", "vineyard", "Vineyard", "Vigne", "Viñedo", "Vinhedo"),
-            _p("orchard", "orchard", "Orchard", "Verger", "Huerto frutal", "Pomar"),
-            _p("crop_field", "crop field", "Crop field", "Culture", "Terreno de cultivo", "Área de cultivo"),
-        ],
+        [],
     ),
     _cat(
         "energy",
@@ -406,7 +250,6 @@ _CATEGORIES: list[dict] = [
         "Energia solar e eólica",
         [
             _p("solar_panel", "solar panel", "Solar panel", "Panneau solaire", "Panel solar", "Painel solar"),
-            _p("wind_turbine", "wind turbine", "Wind turbine", "Éolienne", "Aerogenerador", "Turbina eólica"),
         ],
     ),
     _cat(
@@ -417,19 +260,6 @@ _CATEGORIES: list[dict] = [
         "Esporte e lazer",
         [
             _p("swimming_pool", "swimming pool", "Swimming pool", "Piscine", "Piscina", "Piscina"),
-            _p("tennis_court", "tennis court", "Tennis court", "Court de tennis", "Pista de tenis", "Quadra de tênis"),
-            _p(
-                "soccer_field", "soccer field", "Soccer field", "Terrain de foot", "Campo de fútbol", "Campo de futebol"
-            ),
-            _p(
-                "running_track",
-                "running track",
-                "Running track",
-                "Piste d'athlétisme",
-                "Pista de atletismo",
-                "Pista de atletismo",
-            ),
-            _p("stadium", "stadium", "Stadium", "Stade", "Estadio", "Estádio"),
         ],
     ),
     _cat(
@@ -438,10 +268,7 @@ _CATEGORIES: list[dict] = [
         "Avions et bateaux",
         "Aviones y barcos",
         "Aviões e barcos",
-        [
-            _p("airplane", "airplane", "Airplane", "Avion", "Avión", "Avião"),
-            _p("boat", "boat", "Boat", "Bateau", "Bote", "Barco"),
-        ],
+        [],
     ),
     _cat(
         "industry",
@@ -449,13 +276,7 @@ _CATEGORIES: list[dict] = [
         "Industrie et chantiers",
         "Industria y obras",
         "Indústria e obras",
-        [
-            _p("construction_site", "construction site", "Construction site", "Chantier", "Obra", "Canteiro de obras"),
-            _p("crane", "crane", "Crane", "Grue", "Grúa", "Guindaste"),
-            _p(
-                "shipping_container", "shipping container", "Shipping container", "Conteneur", "Contenedor", "Contêiner"
-            ),
-        ],
+        [],
     ),
 ]
 
@@ -488,8 +309,17 @@ def pick_label(field, fallback: str = "") -> str:
 
 
 def fallback_categories() -> list[dict]:
-    """The offline catalogue (ordered domains, each with its presets)."""
-    return _CATEGORIES
+    """The offline catalogue (ordered domains, each with its presets).
+
+    A category with no shipped preset is a label row kept for the served
+    catalogue, not a sidebar entry: an empty group in the gallery reads as a
+    bug, so it is left out here.
+    """
+    return _FALLBACK_CATEGORIES
+
+
+# Built once: a caller tells the shipped list from a served one by identity.
+_FALLBACK_CATEGORIES: list[dict] = [cat for cat in _CATEGORIES if cat["presets"]]
 
 
 def catalog_revision() -> str:

@@ -28,6 +28,11 @@ from __future__ import annotations
 from qgis.core import Qgis, QgsMessageLog
 
 from ...core.i18n import tr
+from ...core.interaction_dials import (
+    restore_align_budget_s,
+    restore_align_max_objects,
+    restore_confidence_floor,
+)
 from ...core.layer_conventions import crs_measures_in_ground_metres
 from ...core.qt_compat import (
     field_type_double,
@@ -41,16 +46,13 @@ from .run_zone_clip import (
     zone_polygon_from_wkt,
 )
 
-# Whole-tile blob guard in SEPARATE (count) mode; mirrors the worker's
-# _MAX_TILE_COVERAGE (auto_detection_worker.py). Kept as a local constant so
-# the core layer never imports the QThread worker module.
-_MAX_TILE_COVERAGE = 0.55
-
-# Anti-sliver floor in detection pixels per side; mirrors the worker's
-# _MIN_KEEP_PX, and kept local for the same reason as the guard above.
-_MIN_KEEP_PX = 1.5
-
+# Generic fallback only: the restore reads the served per-class start
+# confidence (review_presets.review_start_confidence_default) at call time.
 _DEFAULT_START_CONFIDENCE = 0.30
+
+# A stored threshold at or under this is the recall floor, not a cutoff the
+# user chose. Served under detection_policy.review.restore_confidence_floor.
+_RESTORE_CONFIDENCE_FLOOR = 0.15
 
 # The project values ``export_decoded_run`` needs, read on the GUI thread.
 # A direct Export writes its file on the library's fetch thread, where
@@ -330,6 +332,13 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
     )
     from ...core.tile_manager import OVERLAP_FRACTION, TILE_SIZE
 
+    # The whole-tile blob guard and the anti-sliver floor, taken from the
+    # worker rather than copied: a restore has to agree with the live run it
+    # replays, and two copies of a tuned pair drift the day one side moves.
+    # Imported here, not at module level, because the worker module is heavy;
+    # the sibling auto_exemplar_grouping.py reads them the same way.
+    from ...workers.auto_detection_worker import _MAX_TILE_COVERAGE, _MIN_KEEP_PX
+
     crs_authid = run.get("crs_authid") or (tiles[0].get("crs_authid") if tiles else None) or "EPSG:4326"
     gsd = _run_gsd(tiles)
     simplify_mult = _run_simplify_mult(run, tiles)
@@ -537,9 +546,10 @@ def _align_restore_footprints(plugin, rows: list) -> list:
     """
     import time
 
-    if len(rows) > _RESTORE_ALIGN_MAX_OBJECTS:
+    max_objects = restore_align_max_objects(_RESTORE_ALIGN_MAX_OBJECTS)
+    if len(rows) > max_objects:
         _log(f"Run restore: footprint alignment skipped on {len(rows)} object(s) "
-             f"(over the {_RESTORE_ALIGN_MAX_OBJECTS} this caller can wait for)")
+             f"(over the {max_objects} this caller can wait for)")
         return rows
     try:
         sweep = plugin._auto_footprint_align_sweep(rows)
@@ -547,7 +557,7 @@ def _align_restore_footprints(plugin, rows: list) -> list:
         return rows
     if sweep is None:
         return rows
-    deadline = time.monotonic() + _RESTORE_ALIGN_BUDGET_S
+    deadline = time.monotonic() + restore_align_budget_s(_RESTORE_ALIGN_BUDGET_S)
     try:
         while not sweep.step(64):
             if time.monotonic() >= deadline:
@@ -569,10 +579,23 @@ def _run_start_confidence(run: dict, tiles: list) -> float:
     threshold = run.get("threshold")
     if threshold is None and tiles:
         threshold = tiles[0].get("threshold")
-    snapped = snap_confidence(threshold)
-    if snapped <= 0.15:
-        return _DEFAULT_START_CONFIDENCE
+    default = _restore_default_confidence(run)
+    snapped = snap_confidence(threshold, default)
+    if snapped <= restore_confidence_floor(_RESTORE_CONFIDENCE_FLOOR):
+        return default
     return snapped
+
+
+def _restore_default_confidence(run: dict) -> float:
+    """The start confidence a fresh run of the same prompt would open at:
+    the served per-class default, exemplar-only aware, else the shipped one."""
+    try:
+        from ...core.review_presets import review_start_confidence_default
+
+        prompt = (run.get("prompt") or "").strip()
+        return float(review_start_confidence_default(prompt, not prompt))
+    except Exception:  # noqa: BLE001 -- a dial must never break a restore  # nosec B110
+        return _DEFAULT_START_CONFIDENCE
 
 
 def _confidence_showing_an_object(conf: float, objects: list) -> float:
@@ -716,15 +739,25 @@ def export_decoded_run(decoded: dict, confidence: float, path: str,
     ``project_context`` is what ``capture_project_export_context`` read on the
     GUI thread, so nothing here reaches QgsProject. It defaults to the values
     captured when this run's fetch started.
+
+    The run's own prompt, detail and source raster ride ``decoded`` when the
+    decode carried them; each one that is there reaches the file's metadata,
+    and each one that is not is simply left out.
     """
     from qgis.core import QgsCoordinateReferenceSystem
 
     from ...core.polygon_exporter import export_geometries_to_file
 
-    geoms = [g for _fid, g, s in (decoded.get("objects") or [])
-             if g is not None and not g.isEmpty() and s >= confidence]
-    if not geoms:
+    kept = [(fid, g, s) for fid, g, s in (decoded.get("objects") or [])
+            if g is not None and not g.isEmpty() and s >= confidence]
+    if not kept:
         return {"count": 0, "written": False}
+    geoms = [g for _fid, g, _s in kept]
+    # The per-object facts the file used to lose. The score is what a
+    # geomatician filters and audits on, and the id is what makes two exports
+    # of one run comparable row by row.
+    det_ids = [fid for fid, _g, _s in kept]
+    scores = [s for _fid, _g, s in kept]
     context = (project_context if isinstance(project_context, dict)
                else _project_export_context)
     stats: dict = {}
@@ -733,7 +766,14 @@ def export_decoded_run(decoded: dict, confidence: float, path: str,
         path, driver=driver, stats=stats,
         project_crs=context.get("project_crs"),
         transform_context=context.get("transform_context"),
-        ellipsoid=str(context.get("ellipsoid") or ""))
+        ellipsoid=str(context.get("ellipsoid") or ""),
+        scores=scores,
+        det_ids=det_ids,
+        object_class=str(decoded.get("prompt") or ""),
+        source_layer_name=str(decoded.get("source_layer_name") or ""),
+        prompt=str(decoded.get("prompt") or ""),
+        detail=decoded.get("detail"),
+        confidence=confidence)
     written = layer is not None
     del layer
     return {"count": int(stats.get("written") or 0), "written": written}
@@ -865,6 +905,14 @@ def restore_run(plugin, run: dict, tiles: list, decoded: dict) -> bool:
     plugin._auto_raw_count = len(merged_scored)
     plugin._auto_dense_tiles = 0
     plugin._auto_preview_geoms = []
+    # A restore rebuilds the object list from the archive, so every index the
+    # last review filtered on now names a different object. Cleared here for the
+    # same reason _start_auto_detection clears them: left standing, a deletion
+    # made in the previous review hides an unrelated restored object, and a
+    # hand-drawn id exempts one from the confidence and size gates.
+    plugin._auto_manual_removed = set()
+    plugin._auto_correction_removed = set()
+    plugin._auto_manual_object_ids = set()
     # The ground this run was confined to, when the archive kept it. Nothing
     # re-detects from here, so it is not a live clip: it is what a later
     # Finish records as the run's zone, instead of the exported layer's own

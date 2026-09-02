@@ -60,7 +60,13 @@ class GenericRequestTask(QgsTask):
             # app error) don't misread a raised exception as a blank-code error.
             raw_code = getattr(e, "code", "")
             code = getattr(raw_code, "value", raw_code) or "UNKNOWN"
-            self._failure = (str(e)[:200], str(code))
+            # The text travels to a signal, and from there to a panel and to a
+            # bug report, so it goes through the same scrub as every other line
+            # that leaves this machine: a raised exception can carry a local
+            # path or an address in it.
+            from ..core.log_scrub import scrub_sensitive
+
+            self._failure = (scrub_sensitive(str(e))[:200], str(code))
             return False
 
         if self.isCanceled():

@@ -71,7 +71,7 @@ def rings_to_polygons(rings: list[list[Any]]) -> list[Any]:
             polygon.setExteriorRing(QgsLineString(list(usable[i])))
             for h in holes.get(i, []):
                 polygon.addInteriorRing(QgsLineString(list(usable[h])))
-            out.append(QgsGeometry(polygon))
+            out.append(_oriented(QgsGeometry(polygon)))
         return out or [s for s in solids if s is not None]
     except Exception:  # noqa: BLE001 -- a ring nobody can classify stays solid
         return _all_solid(usable)
@@ -114,6 +114,24 @@ def _containers(rings: list[list[Any]], solids: list[Any]) -> list[list[int]]:
     return out
 
 
+def _oriented(geom: Any) -> Any:
+    """The same polygon with its rings wound the way the formats expect.
+
+    A tracer emits a ring in whatever direction it walked the boundary, so an
+    exterior and a hole can come back wound the same way. Shapefile and the
+    RFC 7946 GeoJSON profile both read the winding, and a file that gets it
+    wrong shows the hole filled and the object hollow in readers that trust
+    it. Returns the argument unchanged when the build cannot force it.
+    """
+    try:
+        forced = geom.forceRHR()
+        if forced is not None and not forced.isEmpty():
+            return forced
+    except (RuntimeError, AttributeError, TypeError):
+        pass
+    return geom
+
+
 def _all_solid(rings: list[list[Any]]) -> list[Any]:
     """Every ring as its own exterior-only polygon, degenerate ones dropped."""
     return [g for g in (_solid(r) for r in rings) if g is not None]
@@ -127,7 +145,7 @@ def _solid(ring: list[Any]) -> Any:
         polygon = QgsPolygon()
         polygon.setExteriorRing(QgsLineString(list(ring)))
         geom = QgsGeometry(polygon)
-        return None if geom.isEmpty() else geom
+        return None if geom.isEmpty() else _oriented(geom)
     except Exception:  # noqa: BLE001 -- a degenerate ring is simply dropped
         return None
 

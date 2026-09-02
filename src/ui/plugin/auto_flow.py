@@ -412,6 +412,28 @@ class AutoFlowMixin:
         except Exception:
             return 0.0
 
+    def _auto_zone_tile_cap(self) -> int:
+        """Tile ceiling for the zone currently drawn, and it ARMS the grid with
+        it on the way past.
+
+        The one place the run gate, the slider ceiling and the refusal message
+        ask, so all three quote the same number. The tile manager holds its own
+        copy and refuses a grid on it, so the copy is written here rather than
+        at each caller: a reader that forgot would refuse a grid on the
+        previous zone's ceiling, and nothing would say so. A zone whose surface
+        cannot be measured falls back to the absolute ceiling, which is what
+        every caller used before the per-km2 limit existed.
+        """
+        from .shared import max_tiles_per_run_cap
+        cap = max_tiles_per_run_cap(self._auto_zone_area_km2() or None)
+        tiles = getattr(self, "_tile_manager", None)
+        if tiles is not None:
+            try:
+                tiles.max_tiles = cap
+            except (RuntimeError, AttributeError):
+                pass  # nosec B110 -- the grid keeps the ceiling it was built with
+        return cap
+
     def _auto_duration_ms(self) -> int:
         """Elapsed ms since the detection phase started (0 if not started)."""
         try:
@@ -655,10 +677,14 @@ class AutoFlowMixin:
         dlg = SegmentLibraryDialog(
             self.dock_widget, recent=segment_history.get_recent(), plugin=self,
             view_only=view_only)
-        if dlg.exec() and not view_only:
-            token = dlg.get_selected_prompt()
-            if token:
-                self.dock_widget.set_prompt_text(token)
+        chosen = dlg.exec()
+        token = dlg.get_selected_prompt() if chosen and not view_only else ""
+        # The window is parented to the dock, so closing it only hides it: one
+        # per visit piled up for the life of the session, each holding its run
+        # cards and their decoded imagery.
+        dlg.deleteLater()
+        if token:
+            self.dock_widget.set_prompt_text(token)
 
     def _on_zone_draw_requested(self) -> None:
         """Handle the dock's 'Draw zone' button."""
@@ -925,6 +951,15 @@ class AutoFlowMixin:
             if run_crs is None or run_crs == layer_crs:
                 return 1.0, 1.0
             centre_run = zone_in_run.center()
+            # Memoised on the two CRSs and the zone centre: the seed walk runs
+            # _grid_for_detail once per detail level, and each call built a
+            # QgsCoordinateTransform and measured the ground twice for the very
+            # same three inputs.
+            key = (layer_crs.authid(), run_crs.authid(),
+                   round(centre_run.x(), 6), round(centre_run.y(), 6))
+            memo = getattr(self, "_auto_unit_factor_memo", None)
+            if memo is not None and memo[0] == key:
+                return memo[1]
             run_mx, run_my = ground_unit_metres(
                 run_crs, centre_run.x(), centre_run.y())
             if run_mx <= 0 or run_my <= 0:
@@ -935,7 +970,9 @@ class AutoFlowMixin:
                 layer_crs, centre_layer.x(), centre_layer.y())
             # Each axis against its own, so the y factor stays right even if a
             # run CRS is ever allowed whose two axes do not agree.
-            return layer_mx / run_mx, layer_my / run_my
+            factors = (layer_mx / run_mx, layer_my / run_my)
+            self._auto_unit_factor_memo = (key, factors)
+            return factors
         except (RuntimeError, AttributeError, TypeError, ValueError,
                 ZeroDivisionError):
             return 1.0, 1.0
@@ -1060,12 +1097,12 @@ class AutoFlowMixin:
         still strictly finer than n-1's. Always >= 1.
         """
         from ...core.tile_manager import MAX_DETAIL_LEVEL
-        from .shared import max_tiles_per_run_cap
 
         # The run gate already uses the server-dialed cap; the slider ceiling
         # must read the SAME value or a lowered cap would leave inert levels
-        # the Detect gate then refuses.
-        max_tiles = max_tiles_per_run_cap()
+        # the Detect gate then refuses. The cap follows the zone drawn, so it
+        # is asked for through the one helper all three readers share.
+        max_tiles = self._auto_zone_tile_cap()
 
         # One-entry memo: the debounced slider/cost ticks re-ask for the SAME
         # layer+zone many times, and each walk re-runs up to MAX_DETAIL_LEVEL
@@ -1150,6 +1187,25 @@ class AutoFlowMixin:
         return self._finest_level_reaching(
             layer, zone_in_layer, zone_seed_mupp())
 
+    def _default_detail_from_examples(self, layer, zone_in_layer) -> int:
+        """The prompt-less seed, read off the drawn examples when there are any.
+
+        With no word, the examples are the only measurement of the object the
+        plugin has, and it is taken off the user's own imagery. Reading it here
+        is what stops a run with no word cutting a large object into
+        tile-shaped pieces. With nothing drawn, or a size that cannot be
+        measured, this is exactly `_default_detail_for_zone`.
+
+        Synchronous and offline. The server run plan reads the same drawn size
+        through its own measured ladder and stays the authority when it lands
+        (`_reseed_auto_detail_from_plan`); this answers before any network call
+        and when none ever answers.
+        """
+        target_mupp = self._exemplar_seed_target_mupp(layer, zone_in_layer)
+        if target_mupp <= 0:
+            return self._default_detail_for_zone(layer, zone_in_layer)
+        return self._finest_level_reaching(layer, zone_in_layer, target_mupp)
+
     def _finest_level_reaching(
         self, layer, zone_in_layer, target_mupp: float, floor_m: float = 0.0,
     ) -> int:
@@ -1165,6 +1221,11 @@ class AutoFlowMixin:
         Some objects are read through a fixed wide window, so a tile under that
         width is padding rather than context and the answer degrades however
         sharp the pixels are; the floor OUTRANKS the target for that reason.
+
+        The walk never reaches the machine ceiling itself: it stops
+        ``seed_headroom_levels`` under it, so a pick the source or the run cap
+        would otherwise pin at the top of the slider leaves the user a finer
+        level to drag to. The band keeps the same room above every pick.
 
         There is no fallback ladder and no tile budget, and both absences are
         the point. A budget in tiles used to buy the user a smaller bill; per
@@ -1182,12 +1243,14 @@ class AutoFlowMixin:
 
         Always >= 1.
         """
+        from ...core.detection_policy import seed_headroom_levels
         from ...core.tile_manager import TILE_SIZE
 
         cap = self._max_useful_detail(layer, zone_in_layer)
+        ceiling = max(1, cap - seed_headroom_levels())
         tile_cap = self._seed_tile_cap_for_plan()
         best = 1
-        for n in range(1, cap + 1):
+        for n in range(1, ceiling + 1):
             sized = self._grid_for_detail(layer, zone_in_layer, n)
             if sized is None:
                 break
@@ -1342,7 +1405,8 @@ class AutoFlowMixin:
                 detail = self._auto_detail_for_object(
                     layer, zone_in_layer, object_class)
             else:
-                detail = self._default_detail_for_zone(layer, zone_in_layer)
+                detail = self._default_detail_from_examples(
+                    layer, zone_in_layer)
             self._seed_auto_detail_value(detail)
         except (RuntimeError, AttributeError):
             pass
@@ -1385,9 +1449,16 @@ class AutoFlowMixin:
         moved the slider, their value stands for the object it was tuned for.
         A different prompt is a new sizing problem, so it releases the
         override and re-seeds (the user can still re-adjust afterwards).
-        Requires a drawn zone and a non-empty object class. Sets the slider
-        programmatically (signal free via set_auto_detail_value's
-        blockSignals), so it never trips the user-lock itself.
+
+        With no word, the drawn examples describe the object instead, so this
+        re-seeds off their measurement. A run can be made on examples alone,
+        and such a user has to reach the same seed a typed word reaches.
+        Nothing named and nothing drawn is the one case with no measurement at
+        all: it leaves the slider alone, and the manual override with it.
+
+        Requires a drawn zone. Sets the slider programmatically (signal free
+        via set_auto_detail_value's blockSignals), so it never trips the
+        user-lock itself.
         """
         if not self.dock_widget or self._auto_zone is None:
             return
@@ -1395,20 +1466,33 @@ class AutoFlowMixin:
         if self._auto_worker is not None or self._auto_review is not None:
             return
         object_class = (object_class or "").strip()
-        if not object_class:
+        layer = self._get_active_raster_layer()
+        if layer is None:
             return
+        try:
+            zone_in_layer = self._reproject_zone_to_run_crs(self._auto_zone, layer)
+        except (RuntimeError, AttributeError):
+            return
+        # Resolved before the lock is touched: with nothing to seed from there
+        # is nothing to release the user's own value for either.
+        target_mupp = 0.0
+        if not object_class:
+            target_mupp = self._exemplar_seed_target_mupp(layer, zone_in_layer)
+            if target_mupp <= 0:
+                return
         if self._auto_detail_user_locked:
             locked_for = getattr(self, "_auto_detail_lock_prompt", "")
             if object_class.lower() == locked_for:
                 return
             self._auto_detail_user_locked = False
             self._auto_detail_lock_prompt = ""
-        layer = self._get_active_raster_layer()
-        if layer is None:
-            return
         try:
-            zone_in_layer = self._reproject_zone_to_run_crs(self._auto_zone, layer)
-            detail = self._auto_detail_for_object(layer, zone_in_layer, object_class)
+            if object_class:
+                detail = self._auto_detail_for_object(
+                    layer, zone_in_layer, object_class)
+            else:
+                detail = self._finest_level_reaching(
+                    layer, zone_in_layer, target_mupp)
             self._seed_auto_detail_value(detail)
             self._update_credit_estimate()
         except (RuntimeError, AttributeError):
@@ -1440,11 +1524,17 @@ class AutoFlowMixin:
         # and with it any attribute filters that plan carried.
         self._auto_run_plan = None
         self._auto_attribute_filters = []
-        if not prompt or not self.dock_widget:
+        if not self.dock_widget:
             return
         # Never fetch mid-run/review: the prompt is locked then and a late
         # apply must not fight an in-flight run.
         if self._auto_worker is not None or self._auto_review is not None:
+            return
+        # The drawn examples are a measurement of the object too, so a run
+        # with no text still has something to plan from, and a word whose class
+        # is far bigger than the drawing gets the drawing's tile.
+        exemplar_size_m = self._exemplar_size_for_plan()
+        if not prompt and exemplar_size_m is None:
             return
         from ...core.activation_manager import get_auth_header, is_plugin_activated
         if not is_plugin_activated():
@@ -1464,16 +1554,40 @@ class AutoFlowMixin:
             task = GenericRequestTask(
                 tr("Planning AI Segmentation run"),
                 lambda: client.get_seg_run_plan(
-                    prompt, zone_area_m2, native_mupp, auth=auth),
+                    prompt, zone_area_m2, native_mupp, auth=auth,
+                    exemplar_size_m=exemplar_size_m),
                 hidden=True,
             )
             task.succeeded.connect(
-                lambda plan, p=prompt: self._on_auto_run_plan_ready(p, plan))
+                lambda plan, p=prompt, x=exemplar_size_m:
+                    self._on_auto_run_plan_ready(p, plan, exemplar_size_m=x))
             task.failed.connect(lambda *_a: self._on_auto_run_plan_failed())
             self._auto_run_plan_task = task
             QgsApplication.taskManager().addTask(task)
         except Exception:  # noqa: BLE001 -- planning is best-effort
             self._auto_run_plan_task = None  # nosec B110
+
+    def _exemplar_size_for_plan(self) -> float | None:
+        """Ground size (m) of the drawn examples for the run-plan request, None
+        when there are none or it cannot be measured. Same ruler as the
+        Precision band (auto_detail_window._exemplar_object_size_m)."""
+        if self._auto_zone is None:
+            return None
+        try:
+            layer = self._get_active_raster_layer()
+            if layer is None:
+                return None
+            zone_in_layer = self._reproject_zone_to_run_crs(self._auto_zone, layer)
+            size = float(self._exemplar_object_size_m(layer, zone_in_layer))
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            return None
+        return size if size > 0 else None
+
+    def _run_plan_from_exemplar(self) -> bool:
+        """True when the stored run plan was requested with a drawn-example
+        size, so it stands on its own without a typed word."""
+        rp = getattr(self, "_auto_run_plan", None)
+        return isinstance(rp, dict) and rp.get("exemplar_size_m") is not None
 
     def _auto_run_plan_inputs(self) -> tuple[float | None, float | None]:
         """Best-effort (zone_area_m2, native_mupp) for the run-plan request.
@@ -1533,23 +1647,41 @@ class AutoFlowMixin:
             native_mupp = None
         return zone_area_m2, native_mupp
 
-    def _on_auto_run_plan_ready(self, prompt: str, plan: object) -> None:
+    def _on_auto_run_plan_ready(
+        self, prompt: str, plan: object, exemplar_size_m: float | None = None,
+    ) -> None:
         """Main thread: store the plan under its prompt and refine the detail
-        seed from it, but only while that prompt is still the committed one."""
+        seed from it, but only while that prompt is still the committed one.
+
+        ``exemplar_size_m`` is the drawn-example size the request carried; a
+        plan fetched for it stands without a typed word (an examples-only
+        run), so it is stored beside the plan for the gates to read."""
         self._auto_run_plan_task = None
         if not isinstance(plan, dict) or plan.get("error"):
             return
+        # The account's own measured pace (additive, fail-open) requotes the
+        # duration under Detect. Read before the prompt gates below: it
+        # describes the link, not the object, so a plan that arrives late for
+        # a prompt the user has since edited still carries a true pace.
+        from ...core.run_eta import own_pace_seconds_per_tile
+        own_pace = own_pace_seconds_per_tile(plan)
+        if own_pace is not None and self.dock_widget is not None:
+            try:
+                self.dock_widget.set_auto_own_pace(own_pace)
+            except (RuntimeError, AttributeError):
+                pass
         # A late plan response must never act while a run, its review or a
         # correction batch is active: the prompt is not editable then, and a
         # swap or detail reseed would fight the in-flight or reviewed result.
         if self._auto_worker is not None or self._auto_review is not None:
             return
         prompt = (prompt or "").strip()
-        if not prompt:
+        if not prompt and exemplar_size_m is None:
             return
         if prompt.lower() != self._resolved_auto_object_class().strip().lower():
             return  # the user moved on to a different object since the fetch
-        self._auto_run_plan = {"prompt": prompt, "plan": plan}
+        self._auto_run_plan = {
+            "prompt": prompt, "plan": plan, "exemplar_size_m": exemplar_size_m}
         self._reseed_auto_detail_from_plan(prompt, plan)
         # Optional server prompt_rewrite block (additive, fail-open). When it
         # owns the prompt-info line (a rewrite swapped in, or a decline nudge
@@ -1695,7 +1827,11 @@ class AutoFlowMixin:
         if self._auto_worker is not None or self._auto_review is not None:
             return
         prompt = (prompt or "").strip()
-        if not prompt or prompt.lower() != self._resolved_auto_object_class().strip().lower():
+        # No typed word: the plan applies only when it was requested for the
+        # drawn examples, never a leftover for a prompt since cleared.
+        if not prompt and not self._run_plan_from_exemplar():
+            return
+        if prompt.lower() != self._resolved_auto_object_class().strip().lower():
             return
         if self._auto_detail_user_locked and getattr(self, "_auto_detail_lock_prompt", "") == prompt.lower():
             return

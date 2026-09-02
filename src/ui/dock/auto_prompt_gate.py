@@ -132,10 +132,13 @@ class DockAutoPromptGateMixin:
                 narrowed = suggestion != typed
                 if narrowed:
                     self.auto_prompt_input.setText(suggestion)
+                # The tip line is rich text, so the slice of the user's own
+                # words is escaped before it lands in it.
+                import html
                 self._set_prompt_info(
                     tr('One object per run - detecting "{first}" now. '
                        'Run the other objects as separate detections.').format(
-                        first=suggestion), tip=True)
+                        first=html.escape(suggestion)), tip=True)
                 try:
                     from ...core import telemetry_run_events
                     # prompt = the 1-2 word object that actually runs;

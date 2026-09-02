@@ -31,15 +31,18 @@ from .dock.auto_prompt_suggest import DockAutoPromptSuggestMixin
 from .dock.auto_review_build import DockAutoReviewBuildMixin
 from .dock.auto_review_correct import DockAutoReviewCorrectMixin
 from .dock.auto_review_panel import DockAutoReviewPanelMixin
+from .dock.auto_run_block import DockAutoRunBlockMixin
 from .dock.auto_run_lifecycle import DockAutoRunLifecycleMixin
 from .dock.auto_run_status import DockAutoRunStatusMixin
 from .dock.build import DockBuildMixin
+from .dock.exemplar_upsell import DockExemplarUpsellMixin
 from .dock.handoff import DockHandoffMixin
 from .dock.install_lock import DockInstallLockMixin
 from .dock.manual_credit_gate import DockManualCreditGateMixin
 from .dock.manual_engine import DockManualEngineMixin
 from .dock.manual_local_install import DockManualLocalInstallMixin
 from .dock.manual_notice import DockManualNoticeMixin
+from .dock.pro_ceiling_contact import DockProCeilingContactMixin
 from .dock.qgis_bridge import DockQgisBridgeMixin
 from .dock.refine import DockRefineMixin
 from .dock.server_switches import DockServerSwitchesMixin
@@ -47,7 +50,6 @@ from .dock.styles import (  # noqa: F401 - re-exported for other modules
     _BTN_BLUE,
     _BTN_BLUE_AUTH,
     _BTN_BLUE_PRIMARY,
-    _BTN_EXPORT_DISABLED,
     _BTN_EXPORT_READY,
     _BTN_GHOST,
     _BTN_GRAY,
@@ -115,9 +117,12 @@ class AISegmentationDockWidget(
     DockAutoPromptSuggestMixin,
     DockAutoDetailLevelMixin,
     DockAutoCreditsMixin,
+    DockProCeilingContactMixin,
     DockAutoFlowStepsMixin,
+    DockAutoRunBlockMixin,
     DockAutoRunLifecycleMixin,
     DockAutoRunStatusMixin,
+    DockExemplarUpsellMixin,
     DockAutoReviewPanelMixin,
     DockAutoReviewCorrectMixin,
     DockInstallLockMixin,
@@ -298,14 +303,6 @@ class AISegmentationDockWidget(
         # manual Export-to-layer / Stop buttons are hidden so "Back to review"
         # (then Finish) stays the single, unambiguous commit path.
         self._refine_handoff: bool = False
-        # Total detections seeded into a Refine-in-Manual handoff, and the kept
-        # (validated) count. Both drive the compact instructions hint ("N of M
-        # detections kept - click a blue detection to edit it").
-        self._handoff_seed_total: int = 0
-        self._handoff_kept: int = 0
-        # How many detections are currently SELECTED in the handoff (selection-
-        # first review): drives the "N selected" guidance card state.
-        self._handoff_selected: int = 0
         # True while a detection is OPEN for editing in the handoff (the state
         # card swaps to the editing actions).
         self._handoff_editing: bool = False
@@ -315,6 +312,9 @@ class AISegmentationDockWidget(
         # Count of positive ("find similar") visual exemplars currently set, so
         # Detect can enable on exemplars alone (no text prompt required).
         self._auto_positive_exemplars: int = 0
+        # The exemplar set as last handed to set_exemplars, kept so the in-run
+        # receipt can redraw the thumbnails without the editing card.
+        self._auto_exemplar_items: list = []
         # True once the user clicks "Start Automatic Segmentation": the layer
         # is locked and the flow moves to the draw-zone step. Reset to False
         # only by Exit (back to the Start step with the layer editable again).

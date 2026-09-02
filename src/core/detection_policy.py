@@ -4,8 +4,10 @@ The per-object detail targets (which ground resolution to seed per object) and
 the review shape defaults and size floors are provided by the plugin's server
 configuration and cached in memory. Without that configuration the plugin uses
 one neutral default for each value, so Automatic mode still runs (quality only
-depends on it). Manual mode reads the shape dials from here too, but never the per-object
-tiers: it has no prompt, so it cannot pick a class.
+depends on it). Semi-Auto reads the shape and size dials from here as well; the
+per-object tiers are keyed on a prompt, so only a path that has one reads them.
+Every reader is cache-only and fails open, which is what keeps Semi-Auto working
+with no configuration at all.
 
 This file holds the matching and fallback MECHANISMS only; the tuned tables
 live in the server configuration. Pure Python with no Qt at import time, so it
@@ -30,10 +32,13 @@ from .prompt_taxonomy import (
 )
 from .tile_manager import (
     AUTO_OBJECT_MIN_PX,
+    AUTO_SEED_HEADROOM_LEVELS,
     AUTO_SEED_TILE_CAP,
     DEFAULT_AUTO_TILE_BUDGET,
     DEFAULT_SEED_MUPP_M,
-    DETAIL_MAX_OBJECT_TILE_FRAC,
+    DETAIL_COARSE_TRAVEL_RATIO,
+    DETAIL_FINE_TRAVEL_RATIO,
+    DRAWN_OBJECT_TILE_FRAC,
     MASK_SCALE_MIN_WIDTH_PX,
     NATIVE_OVERSAMPLE_MAX,
     QUALITY_FLOOR_MUPP_M,
@@ -355,6 +360,40 @@ def prompt_suggests_canopy(prompt: str, policy: dict | None = None) -> bool:
     return norm in words or any(w in words for w in norm.split())
 
 
+_CLOSED_CANOPY_FALLBACK = {"max_raw_per_tile": 8.0, "min_span_dropped": 3, "min_tiles": 12}
+
+
+def closed_canopy_signature(raw_total: int, tiles: int, span_dropped: int,
+                            policy: dict | None = None) -> bool:
+    """Whether a finished separate-objects run on a tree word looks like a
+    closed forest: the model returned few masks per tile and handed back
+    whole tiles as one block (the tile-spanning masks the guard dropped).
+    On such ground no tile size and no word yields individual crowns, so
+    the review says so instead of leaving an empty forest unexplained.
+
+    The three cutoffs arrive server-side at ``review.closed_canopy_advice``
+    (``max_raw_per_tile``, ``min_span_dropped``, ``min_tiles``); the
+    fallback is one generic setting, not a tuned table."""
+    dial = review_policy(policy).get("closed_canopy_advice")
+    cfg = dict(_CLOSED_CANOPY_FALLBACK)
+    if isinstance(dial, dict):
+        for key in cfg:
+            v = dial.get(key)
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0:
+                cfg[key] = float(v)
+    try:
+        tiles = int(tiles)
+        raw_total = int(raw_total)
+        span_dropped = int(span_dropped)
+    except (TypeError, ValueError):
+        return False
+    if tiles < cfg["min_tiles"] or tiles <= 0:
+        return False
+    if span_dropped < cfg["min_span_dropped"]:
+        return False
+    return (raw_total / tiles) <= cfg["max_raw_per_tile"]
+
+
 def restore_partitions_for(prompt: str, policy: dict | None = None,
                            exemplar_only: bool = False) -> bool:
     """Whether this run should give back the objects a coarse reading
@@ -434,9 +473,12 @@ def map_likeness_min_share(policy: dict | None = None) -> float:
 
 
 def max_concurrent(policy: dict | None = None) -> int:
-    """Cap on concurrent in-flight tiles per run (fallback 6)."""
+    """Cap on concurrent in-flight tiles per run (fallback 6).
+
+    Bounded both ways: zero or below stops a run before it starts, and a very
+    large value opens more sockets than any machine can drive."""
     val = seed_policy(policy).get("max_concurrent")
-    if _is_finite_policy_value(val):
+    if _is_finite_policy_value(val) and 1 <= val <= 32:
         return int(val)
     return 6
 
@@ -797,18 +839,31 @@ def _seed_float(key: str, fallback: float, policy: dict | None) -> float:
 
 
 def zone_seed_mupp(policy: dict | None = None) -> float:
-    """Prompt-less default seed resolution (m/px)."""
-    return _seed_float("zone_seed_mupp", DEFAULT_SEED_MUPP_M, policy)
+    """Prompt-less default seed resolution (m/px). Zero is a divisor further
+    down, so it falls back rather than being used."""
+    val = _seed_float("zone_seed_mupp", DEFAULT_SEED_MUPP_M, policy)
+    return val if val > 0 else DEFAULT_SEED_MUPP_M
 
 
 def soft_tile_budget(policy: dict | None = None) -> int:
     """Soft tile (credit) preference the auto seed tries to stay within."""
-    return int(_seed_float("soft_tile_budget", DEFAULT_AUTO_TILE_BUDGET, policy))
+    val = int(_seed_float("soft_tile_budget", DEFAULT_AUTO_TILE_BUDGET, policy))
+    return val if val > 0 else DEFAULT_AUTO_TILE_BUDGET
 
 
 def seed_tile_cap(policy: dict | None = None) -> int:
     """Hard ceiling on tiles the auto-picked default may propose."""
-    return int(_seed_float("seed_tile_cap", AUTO_SEED_TILE_CAP, policy))
+    val = int(_seed_float("seed_tile_cap", AUTO_SEED_TILE_CAP, policy))
+    return val if val > 0 else AUTO_SEED_TILE_CAP
+
+
+def seed_headroom_levels(policy: dict | None = None) -> int:
+    """Levels the Precision slider keeps open above an automatically picked
+    level, so a default never sits at the top of its travel. Zero turns the
+    room off; an out-of-band value falls back rather than being used."""
+    val = int(_seed_float("seed_headroom_levels",
+                          float(AUTO_SEED_HEADROOM_LEVELS), policy))
+    return val if 0 <= val <= 10 else AUTO_SEED_HEADROOM_LEVELS
 
 
 def free_run_fraction(policy: dict | None = None) -> float:
@@ -856,6 +911,21 @@ def max_tiles_per_run(fallback: int, policy: dict | None = None) -> int:
     return val if val > 0 else fallback
 
 
+def max_tiles_per_km2(fallback: float, policy: dict | None = None) -> float:
+    """Tiles one run may spend per km2 of the zone drawn. Served, so what a km2
+    may buy in compute is retunable without a plugin release. Must stay
+    positive; the fallback is the client's own constant."""
+    val = _seed_float("max_tiles_per_km2", float(fallback), policy)
+    return val if val > 0 else fallback
+
+
+def max_tiles_floor(fallback: int, policy: dict | None = None) -> int:
+    """Smallest per-run tile ceiling the per-km2 rule may produce, so a very
+    small zone still gets a grid worth running. Must stay positive."""
+    val = int(_seed_float("max_tiles_floor", float(fallback), policy))
+    return val if val > 0 else fallback
+
+
 def tile_jpeg_quality(fallback: int, policy: dict | None = None) -> int:
     """JPEG quality for the tile upload encode. A fidelity/bandwidth dial the
     server can tune without a plugin release (detection scores near the review
@@ -867,29 +937,57 @@ def tile_jpeg_quality(fallback: int, policy: dict | None = None) -> int:
 
 
 def object_min_px(policy: dict | None = None) -> int:
-    """Minimum pixels across for an object to count as resolvable."""
-    return int(_seed_float("object_min_px", AUTO_OBJECT_MIN_PX, policy))
+    """Minimum pixels across for an object to count as resolvable. Zero is a
+    divisor further down, so it falls back rather than being used."""
+    val = int(_seed_float("object_min_px", AUTO_OBJECT_MIN_PX, policy))
+    return val if val > 0 else AUTO_OBJECT_MIN_PX
 
 
-def detail_max_object_tile_frac(policy: dict | None = None) -> float:
-    """Share of a tile's ground side an object may take before extra detail
-    stops paying for it. Bounds the fine end of the Precision slider.
+def _travel_ratio(key: str, fallback: float, policy: dict | None) -> float:
+    val = _seed_float(key, fallback, policy)
+    return val if 1.0 <= val <= 8.0 else fallback
 
-    Its own key, not the sibling `max_object_tile_frac`: that one guards the
-    SEED, so borrowing it would tie how far a user may push the slider to what
-    a default run costs and returns. `split_risk_tile_frac` marks a later point
-    again, where pieces stop being stitchable, which is what the amber warning
-    claims. Three limits, three keys.
+
+def detail_coarse_travel_ratio(policy: dict | None = None) -> float:
+    """How many times the recommended tile's ground side the coarsest slider
+    level may cover. Bounds the COARSE end of the Precision slider on the
+    automatic pick, so the pick sits inside its band on every zone size.
+    Client range 1 to 8; out of band falls back rather than being used."""
+    return _travel_ratio("detail_coarse_travel_ratio",
+                         DETAIL_COARSE_TRAVEL_RATIO, policy)
+
+
+def detail_fine_travel_ratio(policy: dict | None = None) -> float:
+    """By how much the recommended tile's ground side may shrink at the finest
+    slider level. Bounds the FINE end of the Precision slider on the automatic
+    pick, inside the machine ceiling and the object's served floor. Client
+    range 1 to 8; out of band falls back rather than being used."""
+    return _travel_ratio("detail_fine_travel_ratio",
+                         DETAIL_FINE_TRAVEL_RATIO, policy)
+
+
+def drawn_object_tile_frac(policy: dict | None = None) -> float:
+    """Share of a tile's ground side a drawn example may take when the run has
+    no typed word, so the example is the only description of the object.
+
+    The seed grows the tile until the drawn object fits inside this share, and
+    never shrinks it below the prompt-less seed resolution: a small example
+    leaves the grid where it has always been, a large one gets a tile that
+    holds it whole instead of one that cuts it into fragments.
+
+    A fourth key beside `max_object_tile_frac`, `detail_max_object_tile_frac`
+    and `split_risk_tile_frac`, because it answers a fourth question: how much
+    of a tile a MEASURED object may take, not a tier's typical one. Out of band
+    falls back rather than being used, since it is a divisor.
     """
-    val = _seed_float("detail_max_object_tile_frac",
-                      DETAIL_MAX_OBJECT_TILE_FRAC, policy)
-    return val if 0 < val <= 1 else DETAIL_MAX_OBJECT_TILE_FRAC
+    val = _seed_float("drawn_object_tile_frac", DRAWN_OBJECT_TILE_FRAC, policy)
+    return val if 0 < val <= 1 else DRAWN_OBJECT_TILE_FRAC
 
 
 def sweet_spot_max_mupp(policy: dict | None = None) -> float:
     """Coarse edge (m/px) of the adequate-quality band.
 
-    Nothing reads it any more. It served the seed's old fallback ladder, which
+    UNREACHABLE: nothing reads it any more. It served the seed's old fallback ladder, which
     was removed: the seed now walks to the object's own target and keeps the
     finest level it reaches, so a second, coarser notion of "good enough" has
     no job. Kept because the server still serves the key and an older plugin
@@ -949,10 +1047,12 @@ def recall_floor_exemplar_only(fallback: float, policy: dict | None = None) -> f
 
 
 def confidence_default(policy: dict | None = None) -> float:
-    """The post-run review's starting confidence cutoff."""
+    """The post-run review's starting confidence cutoff. A score, so anything
+    outside 0 to 1 falls back."""
     from .review_defaults import AUTO_DEFAULT_CONFIDENCE
 
-    return _seed_float("confidence_default", AUTO_DEFAULT_CONFIDENCE, policy)
+    val = _seed_float("confidence_default", AUTO_DEFAULT_CONFIDENCE, policy)
+    return val if 0.0 <= val <= 1.0 else AUTO_DEFAULT_CONFIDENCE
 
 
 def confidence_default_exemplar_only(policy: dict | None = None) -> float:
@@ -1121,7 +1221,8 @@ def queue_retry_budget_s(fallback: float, policy: dict | None = None) -> float:
 def midrun_offline_streak(fallback: int, policy: dict | None = None) -> int:
     """Unbroken hard-connectivity failures after the first success before a
     run is declared offline. Fallback: client constant."""
-    return int(_net_float("midrun_offline_streak", float(fallback), policy))
+    return int(_net_float("midrun_offline_streak", float(fallback), policy,
+                          high=100.0))
 
 
 def backend_unavailable_retries(fallback: int, policy: dict | None = None) -> int:
@@ -1136,12 +1237,21 @@ def backend_unavailable_delay_s(fallback: float, policy: dict | None = None) -> 
     return _net_float("backend_unavailable_delay_s", fallback, policy, high=120.0)
 
 
+# Below this a served stall timeout would end healthy runs. A cold service
+# holds the first tiles in its waiting room for up to about two minutes, and a
+# queued run makes no progress the whole time: it is waiting, not dead, and the
+# watchdog cannot tell the two apart. The floor keeps the cold start inside the
+# window, whatever the served value.
+_STALL_TIMEOUT_FLOOR_S = 120.0
+
+
 def stall_timeout_s(fallback: float, policy: dict | None = None) -> float:
     """Seconds of zero run progress after which the main-thread watchdog
     declares the worker wedged and forces a terminal. An operations dial:
-    tighten or loosen it fleet-wide without a plugin release. Fallback: client
-    constant."""
-    return _net_float("stall_timeout_s", fallback, policy, high=3600.0)
+    tighten or loosen it fleet-wide without a plugin release. Floored so a cold
+    start is never read as a dead service. Fallback: client constant."""
+    return _net_float("stall_timeout_s", fallback, policy, high=3600.0,
+                      low=_STALL_TIMEOUT_FLOOR_S)
 
 
 def busy_jitter(
@@ -1160,14 +1270,21 @@ def busy_jitter(
 def prefetch_depth(fallback: int, policy: dict | None = None) -> int:
     """How many upcoming tiles the streaming path renders ahead of need.
     Fallback: client constant."""
-    return int(_net_float("prefetch_depth", float(fallback), policy))
+    return int(_net_float("prefetch_depth", float(fallback), policy, high=64.0))
+
+
+def tile_fetch_parallel(fallback: int, policy: dict | None = None) -> int:
+    """How many basemap tiles one crop fetches at once from an online source.
+    On a cold zone the basemap host paces the run, so this is the dial to
+    move when a run is slower than the service. Fallback: client constant."""
+    return int(_net_float("tile_fetch_parallel", float(fallback), policy, high=64.0))
 
 
 def convert_workers(fallback: int, policy: dict | None = None) -> int:
     """Threads the streaming path uses to turn a finished tile's masks into
     geometry, off the loop that drives the sockets. 0 = size from the machine.
     Fallback: client constant."""
-    return int(_net_float("convert_workers", float(fallback), policy))
+    return int(_net_float("convert_workers", float(fallback), policy, high=64.0))
 
 
 def prefetch_holdoff_s(fallback: float, policy: dict | None = None) -> float:
@@ -1243,6 +1360,14 @@ def min_poll_backoff_s(fallback: float, policy: dict | None = None) -> float:
     hint cannot turn the poll loop into a tight request storm. Fallback: client
     constant."""
     return _net_float("min_poll_backoff_s", fallback, policy, high=30.0)
+
+
+def window_hint_max(fallback: int, policy: dict | None = None) -> int:
+    """Widest in-flight window a served width hint may open, whatever the hint
+    asks for. The service names a width per answer because only it knows how
+    much capacity is up; this is what a bad or hostile one can never get past.
+    Fallback: client constant."""
+    return int(_net_float("window_hint_max", float(fallback), policy, high=32.0))
 
 
 def aimd_min(fallback: int, policy: dict | None = None) -> int:
@@ -1817,7 +1942,7 @@ _AUTO_REGULARIZE_DEFAULTS: dict[str, float | int] = {
     "consensus_radius_m": 100.0,
     "consensus_min_neighbours": 3,
     "consensus_iou_margin": 0.01,
-    "guard_iou_floor": 0.90,
+    "guard_iou_floor": 0.85,
     "guard_area_ceiling": 0.10,
 }
 
@@ -1880,8 +2005,14 @@ def _auto_regularize_dials(reg: dict) -> dict:
     already answered the enable question; this never does.
 
     A dial listed in ``_AUTO_REGULARIZE_RANGES`` is also range-checked, and a
-    value outside its range is read as a typo: the compiled default stands."""
-    out: dict[str, float | int] = {}
+    value outside its range is read as a typo: the compiled default stands.
+
+    One switch rides along: ``revert_to_simplified``, true only when served
+    as exactly true (a reverted object then keeps its simplified outline
+    rather than its raw one). Absent means off, the behaviour before it."""
+    out: dict[str, float | int | bool] = {
+        "revert_to_simplified": reg.get("revert_to_simplified") is True,
+    }
     for key, fallback in _AUTO_REGULARIZE_DEFAULTS.items():
         val = reg.get(key)
         if _is_finite_policy_value(val) and (
@@ -2389,6 +2520,34 @@ def exemplar_max_region(fallback: int, policy: dict | None = None) -> int:
     """How many region markers one run may carry. Fallback: client constant;
     must stay at least 1."""
     return _exemplar_positive_int("max_region", fallback, policy)
+
+
+def exemplar_max_total(fallback: int, policy: dict | None = None) -> int:
+    """How many object examples (positive and exclude together) one run may
+    carry. The per-label ceilings above stay, this one caps their sum.
+    Fallback: client constant; must stay at least 1."""
+    return _exemplar_positive_int("max_total", fallback, policy)
+
+
+def _exemplar_nonneg_int(key: str, fallback: int, policy: dict | None) -> int:
+    """A zero-or-more integer exemplar dial, or the caller's fallback. Zero is
+    a real value here (a plan that offers none of something)."""
+    val = exemplar_policy(policy).get(key)
+    if _is_finite_policy_value(val) and val >= 0:
+        return int(val)
+    return fallback
+
+
+def exemplar_max_positive_free(fallback: int, policy: dict | None = None) -> int:
+    """How many positive examples a run on the free plan may carry. Zero is
+    accepted (no example on free). Fallback: client constant."""
+    return _exemplar_nonneg_int("max_positive_free", fallback, policy)
+
+
+def exemplar_max_exclude_free(fallback: int, policy: dict | None = None) -> int:
+    """How many exclude examples a run on the free plan may carry. Zero is
+    accepted and is the shipped value. Fallback: client constant."""
+    return _exemplar_nonneg_int("max_exclude_free", fallback, policy)
 
 
 def exemplar_min_example_positives(fallback: int, policy: dict | None = None) -> int:

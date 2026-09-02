@@ -11,6 +11,12 @@ import weakref
 from qgis.core import QgsFeatureSink
 
 from ...core.i18n import tr
+from ...core.interaction_dials import (
+    auto_pump_budget_s,
+    live_frame_cost_ratio,
+    live_repaint_max_ms,
+    live_repaint_ms,
+)
 from ...core.qt_compat import field_type_double, field_type_int, field_type_string
 
 # QgsField type args (QGIS 4 rejects raw int, #25/#36): resolved once in
@@ -75,18 +81,53 @@ def clip_served_hint(text: str) -> str:
     return (head[:cut] if cut > 0 else head).rstrip(" ,;:.") + "..."
 
 
-def max_tiles_per_run_cap() -> int:
-    """Hard per-run tile (credit) ceiling, resolved from the server detection
-    policy when present, else the built-in MAX_TILES. Lets the cost ceiling be
-    tuned server-side without a plugin release. Cached config only (no network),
+def max_tiles_per_run_cap(zone_km2: float | None = None) -> int:
+    """Hard per-run tile ceiling, resolved from the server detection policy
+    when present, else the built-in constants. Cached config only (no network),
     so it is safe on the GUI thread and in the live credit estimate; fails to
-    the constant offline and on older servers."""
-    from ...core.tile_manager import MAX_TILES
+    the constants offline and on older servers.
+
+    Two limits, and the smaller one wins.
+
+    - The absolute ceiling bounds one run's wall clock and our own compute.
+    - The per-km2 ceiling bounds what a run may spend for each km2 it bills.
+      A run is priced on the surface drawn, so this is the one ratio that can
+      be driven to an absurd value on purpose: without it a pinhole zone at
+      the finest grid buys a large amount of compute for almost no surface.
+      It is sized on the finest ground tile any class is measurably answered
+      at, so it refuses no precision anybody can use.
+
+    ``zone_km2`` is the surface the user drew. Without it only the absolute
+    ceiling is known, which is what every caller had before the second limit
+    existed.
+    """
+    from ...core.tile_manager import (
+        MAX_TILES,
+        MAX_TILES_FLOOR,
+        MAX_TILES_PER_KM2,
+    )
     try:
-        from ...core.detection_policy import max_tiles_per_run
-        return max_tiles_per_run(MAX_TILES)
-    except Exception:  # noqa: BLE001 -- policy is best-effort; fall to the constant
-        return MAX_TILES
+        from ...core.detection_policy import (
+            max_tiles_floor,
+            max_tiles_per_km2,
+            max_tiles_per_run,
+        )
+        ceiling = max_tiles_per_run(MAX_TILES)
+        if zone_km2 is None or zone_km2 <= 0:
+            return ceiling
+        per_km2 = max_tiles_per_km2(MAX_TILES_PER_KM2)
+        floor = max_tiles_floor(MAX_TILES_FLOOR)
+    except Exception:  # noqa: BLE001 -- policy is best-effort; fall to the constants
+        ceiling = MAX_TILES
+        if zone_km2 is None or zone_km2 <= 0:
+            return ceiling
+        per_km2 = MAX_TILES_PER_KM2
+        floor = MAX_TILES_FLOOR
+    try:
+        allowed = int(float(zone_km2) * float(per_km2))
+    except (TypeError, ValueError):
+        return ceiling
+    return max(int(floor), min(int(ceiling), allowed))
 
 
 # -- the two zone refusals -------------------------------------------------
@@ -110,7 +151,7 @@ def zone_too_large_message(max_tiles: int, fallback: str | None = None) -> str:
     from ...core.server_dials import dial_copy
 
     if fallback is None:
-        fallback = tr("Zone too large. Reduce the area to {max} detections or fewer.")
+        fallback = tr("Zone too large. Draw a zone of {max} tiles or fewer.")
     text = dial_copy("zone.too_large", fallback)
     return text.replace("{max}", str(int(max_tiles)))
 
@@ -342,6 +383,23 @@ _AUTO_LIVE_REPAINT_MS = 300
 _AUTO_LIVE_FRAME_COST_RATIO = 3.0
 # However slow one frame gets, the preview still shows something this often.
 _AUTO_LIVE_REPAINT_MAX_MS = 6000
+
+
+def auto_pump_budget() -> float:
+    """Seconds one finalize or reslice turn works before it yields. Served
+    as ui.auto_pump_budget_s, read per turn."""
+    return auto_pump_budget_s(_AUTO_PUMP_BUDGET_S)
+
+
+def auto_live_repaint_settings() -> tuple[int, float, int]:
+    """(repaint interval ms, frame cost ratio, repaint ceiling ms) for the
+    live preview, each served under ui.live_*, read when a tick is scheduled."""
+    return (
+        live_repaint_ms(_AUTO_LIVE_REPAINT_MS),
+        live_frame_cost_ratio(_AUTO_LIVE_FRAME_COST_RATIO),
+        live_repaint_max_ms(_AUTO_LIVE_REPAINT_MAX_MS),
+    )
+
 
 # Bulk-insert flag: tells the provider not to populate feature IDs back onto the
 # input features, which we never read. A recognised QGIS speed-up for bulk
@@ -622,6 +680,49 @@ def join_orphaned_workers(budget_seconds: float) -> int:
         except (RuntimeError, AttributeError):
             pass  # dead C++ wrapper, or not a QThread: nothing to join
     return joined
+
+
+def detach_widget_from_main_window(widget) -> bool:
+    """Take a top-level plugin widget off the QGIS main window and schedule
+    its destruction. Returns True when the widget is on its way out.
+
+    Unparenting is the part that matters. `iface.removeDockWidget` and `hide()`
+    both leave the widget a child of the main window, and `deleteLater()` only
+    posts an event that nothing processes before unload returns. So the widget
+    is still there, under its object name, when the next instance of the plugin
+    builds its own: two widgets, one name.
+
+    Ownership goes back to C++ after the unparent, so dropping the last Python
+    reference cannot run the destructor inside unload. The delete happens on the
+    next pass of the event loop instead.
+
+    Never raises: this runs inside unload, where a raise skips the steps below.
+    """
+    if widget is None:
+        return False
+    from qgis.PyQt import sip
+    try:
+        if sip.isdeleted(widget):
+            return False
+    except (RuntimeError, TypeError):
+        return False
+    try:
+        widget.hide()
+    except (RuntimeError, AttributeError):
+        pass
+    try:
+        widget.setParent(None)
+    except (RuntimeError, AttributeError):
+        pass
+    try:
+        sip.transferto(widget, None)
+    except (RuntimeError, TypeError, ValueError):
+        pass
+    try:
+        widget.deleteLater()
+    except (RuntimeError, AttributeError):
+        return False
+    return True
 
 
 def dir_size_label(path: str) -> str:

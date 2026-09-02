@@ -17,6 +17,7 @@ from ...core.review_defaults import (
 from ...core.review_defaults import (
     AUTO_REVIEW_SIMPLIFY_DEFAULT as _AUTO_REVIEW_SIMPLIFY_DEFAULT,
 )
+from .correct_summary_row import clear_all_rest_label
 from .styles import (
     _msg_label_qss,
     _msg_text,
@@ -342,10 +343,15 @@ class DockAutoReviewCorrectMixin:
         self._apply_merge_tile()
 
     def _apply_merge_tile(self) -> None:
+        """Merge shows only at rest. A fix session freezes every polygon but
+        its own, and the Manual (vertex) session announces itself through
+        _qgis_bridge_active_ui rather than the AI session flag, so both are
+        read here: a reslice mid session must not put the tile back."""
         try:
             self.auto_shape_merge_btn.setVisible(
                 bool(getattr(self, "_auto_merge_available", False))
-                and not bool(getattr(self, "_auto_correct_session_active", False)))
+                and not bool(getattr(self, "_auto_correct_session_active", False))
+                and not bool(getattr(self, "_qgis_bridge_active_ui", False)))
         except (RuntimeError, AttributeError):
             pass
 
@@ -440,9 +446,14 @@ class DockAutoReviewCorrectMixin:
                 continue
         return out
 
-    def _emit_shape_only_changed(self, control: str, _value) -> None:
+    def _emit_shape_only_changed(self, control: str, param: str) -> None:
         """A per-shape control moved: publish every value and track the
-        adjustment once per control per review (no new event name)."""
+        adjustment once per control per review (no new event name).
+
+        ``param`` names the review param THIS control writes, so the tracked
+        value is the one that moved. The event column is a string, which is
+        what lets one name carry a count, a distance and a tick alike.
+        """
         values = self.get_shape_only_values()
         self.auto_shape_only_changed.emit(values)
         try:
@@ -455,7 +466,7 @@ class DockAutoReviewCorrectMixin:
                 from ...core import telemetry, telemetry_run_events
                 telemetry_run_events.track_review_shape_adjusted(
                     control=control,
-                    value=int(values.get("points_pct", 0) or 0),
+                    value=values.get(param),
                     run_id=telemetry.get_last_run_id() or "")
         except Exception:
             pass  # nosec B110
@@ -615,16 +626,20 @@ class DockAutoReviewCorrectMixin:
         self._refresh_correct_info_line()
 
     def enter_ai_reshape_state(self) -> None:
-        """Morph the panel into an in-place AI fix session: show Done/Undo and
-        lock the dials (no separate screen). The panel and selection stay; only
-        the fix method is live. ``_refine_handoff`` stays the internal flag the
-        teardown paths and closeEvent already consult.
+        """Morph the panel into an in-place AI fix session (no separate screen).
 
-        The step primary stays put. A session opens on a single map click, so
-        hiding it took the way forward away from anyone who clicked a polygon to
-        see what happens; leaving Correct folds the live session first
-        (_on_auto_review_step_requested), so the button is safe to press
-        mid-edit. Save stays the session's own answer.
+        Three things change and nothing else: the session row appears with
+        Save and Undo, the armed line is seeded with what the method is waiting
+        for, and the ladder dims the two steps the user is not on. The panel,
+        the selection and the per-polygon dials all stay live around it.
+        ``_refine_handoff`` stays the internal flag the teardown paths and
+        closeEvent already consult.
+
+        There is no Cancel, on purpose: the edits live on the session's own
+        copy until they fold, and every way out folds them. Save folds them
+        here, Escape folds them from the canvas, and leaving Correct folds them
+        first (_on_auto_review_step_requested), so the step primary is safe to
+        press mid-edit. Undo beside Save is what takes an edit back.
         """
         self._refine_handoff = True
         try:
@@ -660,9 +675,9 @@ class DockAutoReviewCorrectMixin:
             from .styles import _BTN_TILE, _BTN_TILE_ACTIVE
             armed = (which == "merge")
             self._auto_correct_merge_armed = armed
-            # The tile carries its armed look in its own stylesheet (a dynamic
-            # property needs a matching rule, and the tile QSS has none).
-            btn.setProperty("armed", armed)
+            # The tile carries its armed look in its own stylesheet: the tile
+            # QSS has no [armed] rule, so setting the property here would paint
+            # nothing.
             btn.setStyleSheet(_BTN_TILE_ACTIVE if armed else _BTN_TILE)
             # The label stays stable; the active look plus the panel's armed
             # line carry the "now click the pieces" state.
@@ -726,12 +741,15 @@ class DockAutoReviewCorrectMixin:
             if text:
                 self.auto_correct_summary_label.setText(text)
             # Name what it takes. "Clear all" beside "Undo last" reads as its
-            # neighbour, and it undoes the whole round in one quiet click.
-            if count > 1:
-                clear_text = tr("Clear all {n}").format(n=count)
+            # neighbour, so the count goes on the link. The guard owns the
+            # label: a new correction also drops any confirm left armed, since
+            # the question on screen is no longer the one the user was asked.
+            guard = getattr(self, "_correct_clear_confirm", None)
+            if guard is not None:
+                guard.set_count(count)
             else:
-                clear_text = tr("Clear all")
-            self.auto_correct_clear_btn.setText(clear_text)
+                self.auto_correct_clear_btn.setText(
+                    clear_all_rest_label(count))
         except (RuntimeError, AttributeError):
             pass
         self._refresh_correct_summary_row()

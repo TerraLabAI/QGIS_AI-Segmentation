@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from typing import NamedTuple
 
-from qgis.PyQt.QtCore import QRect, Qt, QTimer, pyqtSignal
+from qgis.PyQt.QtCore import QRect, Qt, pyqtSignal
 from qgis.PyQt.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -42,7 +42,9 @@ from .ai_segmentation_dockwidget import (
     BRAND_GREEN_TEXT,
     BRAND_RED,
 )
+from .dock.contact_copy import copy_cta_text, copy_with_feedback
 from .dock.font_scale import scale_px_length
+from .dock.styles import _BTN_BLUE_OUTLINE
 from .dock.ui_refresh import format_quota_count
 from .dock.upsell_card import UpsellCard
 from .external_links import open_external_url, open_local_path
@@ -57,8 +59,9 @@ _DIR_SIZE_CACHE: dict[str, str] = {}
 # Last resort for the removal: the window refuses to close while one runs, so a
 # worker that never reports back (a thread the OS would not start, a signal
 # lost with the plugin) leaves a modal dialog that only killing QGIS can shut.
-# Far above any plausible delete, so a slow disk always wins the race.
-_REMOVAL_WATCHDOG_MS = 600_000
+# Above any plausible delete of a local folder tree, so a slow disk still wins
+# the race, and low enough that a user is not held for a quarter of an hour.
+_REMOVAL_WATCHDOG_MS = 300_000
 
 # Height left free around the window when the cards are taller than the screen.
 # The title bar is measured on its own, so this covers the taskbar and a strip
@@ -202,8 +205,10 @@ def resolve_plan_credits(usage: dict, sub: dict) -> PlanCredits:
         # The free-tier total is a server dial, so read the getter instead of
         # restating the number here: a fleet-wide change must move the gauge.
         from ..core.detection_policy import free_monthly_allowance
+        from ..core.surface_dials import pro_monthly_credits_fallback
 
-        total = _PRO_MONTHLY_CREDITS_FALLBACK if is_subscriber else free_monthly_allowance()
+        total = (pro_monthly_credits_fallback(_PRO_MONTHLY_CREDITS_FALLBACK)
+                 if is_subscriber else free_monthly_allowance())
     reset_date = (usage.get("reset_date") or usage.get("period_end")
                   or sub.get("current_period_end"))
     return PlanCredits(is_subscriber, remaining, total, reset_date)
@@ -255,7 +260,7 @@ class AccountSettingsDialog(QDialog):
     def __init__(self, client, auth, activation_key, parent=None,
                  on_remove_ai_data=None, is_busy_check=None):
         super().__init__(parent)
-        self.setWindowTitle(tr("Account Settings"))
+        self.setWindowTitle(tr("Account settings"))
         self.setModal(True)
         # Optional plugin callbacks. on_remove_ai_data(on_progress, on_finished)
         # -> (started, message) starts deleting the local venv + weights + key
@@ -312,6 +317,11 @@ class AccountSettingsDialog(QDialog):
         error_layout.addWidget(self._error_label)
         self._retry_btn = QPushButton(tr("Retry"))
         self._retry_btn.setMaximumWidth(100)
+        # No button in this window may answer Return: the key used to reach
+        # whichever one Qt had made the default, and on the account card that
+        # was Sign out.
+        self._retry_btn.setAutoDefault(False)
+        self._retry_btn.setDefault(True)
         self._retry_btn.clicked.connect(self._fetch_account)
         # Billing-problem CTA: shown only when the server reports the
         # subscription is not active (payment failed / lapsed). Opens the
@@ -320,6 +330,7 @@ class AccountSettingsDialog(QDialog):
         self._error_manage_btn = QPushButton(tr("Update payment method"))
         self._error_manage_btn.setStyleSheet(_PRIMARY_BTN)
         self._error_manage_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._error_manage_btn.setAutoDefault(False)
         self._error_manage_btn.setMinimumHeight(36)
         self._error_manage_btn.setToolTip(
             tr("Opens your terra-lab.ai account in the browser."))
@@ -329,6 +340,7 @@ class AccountSettingsDialog(QDialog):
         self._error_sign_out_btn = QPushButton(tr("Sign out"))
         self._error_sign_out_btn.setStyleSheet(_LINK_BTN)
         self._error_sign_out_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._error_sign_out_btn.setAutoDefault(False)
         self._error_sign_out_btn.clicked.connect(
             lambda: self._on_sign_out("error_card"))
         retry_row = QHBoxLayout()
@@ -386,10 +398,17 @@ class AccountSettingsDialog(QDialog):
         # Drop any previous in-flight load (Retry) so its result can't land late.
         self._cancel_worker()
         client, auth = self._client, self._auth
+
+        def load_account():
+            # The task passes on only (message, code), so the counts a device
+            # refusal carries are kept here for the error card to read.
+            result = _load_account_and_usage(client, auth)
+            if isinstance(result, dict) and "error" in result:
+                self._last_error_payload = dict(result)
+            return result
+
         self._worker = GenericRequestTask(
-            tr("Loading account info..."),
-            lambda: _load_account_and_usage(client, auth),
-            hidden=True,
+            tr("Loading account info..."), load_account, hidden=True,
         )
         self._worker.succeeded.connect(self._on_loaded)
         self._worker.failed.connect(self._on_failed)
@@ -611,7 +630,13 @@ class AccountSettingsDialog(QDialog):
         elif (code or "").strip().upper() == "DEVICE_LIMIT_EXCEEDED":
             # Same sentence the run path uses, so both surfaces name the same
             # action. Retry cannot free a slot, so it is not offered.
-            self._error_label.setText(tr(
+            payload = getattr(self, "_last_error_payload", None) or {}
+            used, cap = payload.get("active_devices"), payload.get("device_limit")
+            head = ""
+            if isinstance(used, int) and isinstance(cap, int) and cap > 0:
+                head = tr("{used} of {cap} computers in use.").format(
+                    used=used, cap=cap) + " "
+            self._error_label.setText(head + tr(
                 "Your plan is already running on its maximum number of "
                 "computers. Close AI Segmentation on one of them, then try "
                 "again."))
@@ -721,6 +746,7 @@ class AccountSettingsDialog(QDialog):
         sign_out_btn = QPushButton(tr("Sign out"))
         sign_out_btn.setStyleSheet(_SIGNOUT_LINK)
         sign_out_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        sign_out_btn.setAutoDefault(False)
         sign_out_btn.clicked.connect(lambda: self._on_sign_out("account_card"))
         chip_row.addWidget(sign_out_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
@@ -813,15 +839,19 @@ class AccountSettingsDialog(QDialog):
         manage_btn = QPushButton(tr("Manage account") + " ↗")
         manage_btn.setStyleSheet(_MANAGE_LINK)
         manage_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        manage_btn.setAutoDefault(False)
         manage_btn.setToolTip(
             tr("Opens your terra-lab.ai dashboard in the browser."))
         manage_btn.clicked.connect(lambda: self._open_dashboard("account_card"))
         header.addWidget(manage_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         card_layout.addLayout(header)
 
-        status = sub.get("status", "active")
+        # Coerced, and the default built only when it is needed: a null status
+        # made the eagerly evaluated `status.title()` raise, and this runs
+        # inside the load handler, so the whole window stayed on "Loading...".
+        status = str(sub.get("status") or "active")
         status_text, status_color = _STATUS_DISPLAY.get(
-            status, (status.title(), BRAND_RED)
+            status, (status.replace("_", " ").title(), BRAND_RED)
         )
 
         plan = resolve_plan_credits(usage, sub)
@@ -845,6 +875,17 @@ class AccountSettingsDialog(QDialog):
         )
         plan_status.setStyleSheet("font-size: 12px; color: palette(text);")
         card_layout.addWidget(plan_status)
+
+        # Free is for trying the plugin out, not for billable work. The pricing
+        # page and the Terms of Use carry the same rule; a free user does their
+        # work in here, so the line has to exist in here too.
+        if not is_subscriber:
+            free_use_note = QLabel(
+                tr("Personal, non-commercial use. A paid plan adds commercial "
+                   "use for one person."))
+            free_use_note.setWordWrap(True)
+            free_use_note.setStyleSheet("font-size: 11px; color: palette(text);")
+            card_layout.addWidget(free_use_note)
 
         bar: QProgressBar | None = None
         # Both plans renew, so both get the date. A free user reading a spent
@@ -926,7 +967,7 @@ class AccountSettingsDialog(QDialog):
                 # for a plugin release.
                 title=dial_copy(
                     "account.upgrade_title",
-                    tr("300 km² of Automatic a month, on zones of any "
+                    tr("200 km² of Automatic a month, on zones of any "
                        "size.")),
                 body=dial_copy(
                     "account.upgrade_body",
@@ -937,7 +978,7 @@ class AccountSettingsDialog(QDialog):
                     tr("39 EUR a month, cancel anytime.")),
                 star=dial_copy(
                     "upsell.bullet_quota_manual",
-                    tr("2,000 cloud objects every month in Semi-Auto")),
+                    tr("500 cloud objects every month in Semi-Auto")),
             )
             upgrade_card.button.setToolTip(dial_copy(
                 "account.upgrade_tooltip",
@@ -958,7 +999,23 @@ class AccountSettingsDialog(QDialog):
         contact.setWordWrap(True)
         contact.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         contact.setStyleSheet("font-size: 10px; color: rgba(128,128,128,0.9);")
-        card_layout.addWidget(contact)
+        # The address is one click to copy: the same served button label as
+        # the dock's cards, outlined so the Upgrade button above stays the
+        # only loud one. It copies what the line shows.
+        import html
+        address = html.unescape(contact_email)
+        copy_btn = QPushButton(copy_cta_text().replace("&", "&&"))
+        copy_btn.setStyleSheet(_BTN_BLUE_OUTLINE)
+        copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        copy_btn.setAutoDefault(False)
+        copy_btn.clicked.connect(
+            lambda _=False, btn=copy_btn: copy_with_feedback(btn, address))
+        contact_row = QHBoxLayout()
+        contact_row.setContentsMargins(0, 0, 0, 0)
+        contact_row.setSpacing(8)
+        contact_row.addWidget(contact, 1)
+        contact_row.addWidget(copy_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        card_layout.addLayout(contact_row)
 
         return card
 
@@ -1071,7 +1128,7 @@ class AccountSettingsDialog(QDialog):
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(6)
 
-        title = QLabel(f"<b>{tr('Dependencies')}</b>")
+        title = QLabel(f"<b>{tr('Local AI files')}</b>")
         title.setStyleSheet("font-size: 13px; color: palette(text);")
         layout.addWidget(title)
 
@@ -1096,12 +1153,13 @@ class AccountSettingsDialog(QDialog):
         path_lbl = QLabel(PLUGIN_CACHE_DIR)
         path_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         path_lbl.setWordWrap(True)
-        path_lbl.setStyleSheet("font-size: 10px; color: rgba(128,128,128,0.7);")
+        path_lbl.setStyleSheet("font-size: 11px; color: rgba(128,128,128,0.9);")
         layout.addWidget(path_lbl)
 
         open_btn = QPushButton(tr("Open folder"))
         open_btn.setStyleSheet(_SECONDARY_BTN)
         open_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        open_btn.setAutoDefault(False)
         open_btn.clicked.connect(lambda: self._open_install_folder(PLUGIN_CACHE_DIR))
         row = QHBoxLayout()
         row.setContentsMargins(0, 2, 0, 0)
@@ -1123,6 +1181,7 @@ class AccountSettingsDialog(QDialog):
             self._remove_btn = QPushButton(tr("Remove downloaded AI data"))
             self._remove_btn.setStyleSheet(_LINK_BTN)
             self._remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._remove_btn.setAutoDefault(False)
             self._remove_btn.setEnabled(not busy)
             if busy:
                 self._remove_btn.setToolTip(
@@ -1216,8 +1275,13 @@ class AccountSettingsDialog(QDialog):
         # The only way out of this window is the removal reporting back, and a
         # worker can die without ever reporting. Arm the last resort.
         try:
-            QTimer.singleShot(
-                _REMOVAL_WATCHDOG_MS,
+            # Bound to the dialog: a bare singleShot holds this window alive in
+            # the global event loop for the whole wait, and fires into it even
+            # once its C++ half is gone.
+            from ..core.qt_compat import safe_single_shot
+            from ..core.surface_dials import removal_watchdog_ms
+            safe_single_shot(
+                removal_watchdog_ms(_REMOVAL_WATCHDOG_MS), self,
                 lambda g=generation: self._on_removal_watchdog(g))
         except (RuntimeError, AttributeError):
             pass
@@ -1313,18 +1377,22 @@ class AccountSettingsDialog(QDialog):
 
         self._telemetry_checkbox = QCheckBox(
             tr("Share usage statistics with TerraLab"))
-        self._telemetry_checkbox.setToolTip(tr("Helps us fix bugs faster."))
         self._telemetry_checkbox.setChecked(is_telemetry_enabled())
         self._telemetry_checkbox.setCursor(Qt.CursorShape.PointingHandCursor)
         self._telemetry_checkbox.setStyleSheet("font-size: 12px; color: palette(text);")
         self._telemetry_checkbox.toggled.connect(self._on_telemetry_toggled)
         layout.addWidget(self._telemetry_checkbox)
 
+        # Two sentences, two tr() calls: the first keeps its translations,
+        # the second names the run log lines that ship with an Automatic run
+        # (core.run_log_capture) and is new.
         caption = QLabel(
             tr(
                 "Errors, versions and the words you type, linked to your "
                 "account. Never your imagery, layers or coordinates."
             )
+            + " "
+            + tr("After an Automatic run, its technical log lines are sent too.")
         )
         caption.setWordWrap(True)
         caption.setStyleSheet("font-size: 11px; color: rgba(128,128,128,0.9);")
@@ -1338,6 +1406,7 @@ class AccountSettingsDialog(QDialog):
         self._reset_hints_btn = QPushButton(tr("Show guidance tips again"))
         self._reset_hints_btn.setStyleSheet(_LINK_BTN)
         self._reset_hints_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._reset_hints_btn.setAutoDefault(False)
         self._reset_hints_btn.clicked.connect(self._on_reset_hints)
         guidance_row.addWidget(self._reset_hints_btn)
         guidance_row.addStretch()
@@ -1367,12 +1436,21 @@ class AccountSettingsDialog(QDialog):
                 pass  # nosec B110
 
     def _on_reset_hints(self):
+        from ..core.qt_compat import safe_single_shot
         from .dock.guidance import reset_hints
 
         reset_hints()
         if hasattr(self, "_reset_hints_btn"):
+            # Confirm, then go back: disabling it for good left the card
+            # holding a dead link for the rest of the session.
             self._reset_hints_btn.setText(tr("Guidance tips restored"))
-            self._reset_hints_btn.setEnabled(False)
+            safe_single_shot(2000, self, self._restore_reset_hints_label)
+
+    def _restore_reset_hints_label(self) -> None:
+        try:
+            self._reset_hints_btn.setText(tr("Show guidance tips again"))
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110 - the card was rebuilt under us
 
     @staticmethod
     def _open_install_folder(path: str):

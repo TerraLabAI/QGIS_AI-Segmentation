@@ -11,6 +11,8 @@ from typing import Callable
 
 from qgis.core import Qgis, QgsGeometry
 
+from .mcp_api_guard import gui_thread_only
+
 # The confidence band detect_auto accepts. The shipped pair is the fallback;
 # the band in force comes from _confidence_bounds_in_force().
 _CONFIDENCE_BOUNDS = (0.05, 0.95)
@@ -132,7 +134,10 @@ class SegmentationAutoMixin:
                                was kept, and "_error" reads "Cancelled".
             "layer_name"    -- str, name of the output vector layer created.
                                Treat as opaque: it is a human-friendly name
-                               like "Buildings (3 Jul)". Results are saved as
+                               like "Buildings (3 Jul)", numbered when a
+                               same-prompt-same-day rerun already used that
+                               name ("Buildings 2 (3 Jul)"), never refused for
+                               colliding. Results are saved as
                                a table inside the project's
                                ai_segmentation.gpkg.
             "busy"          -- bool, present and True when another run is
@@ -165,9 +170,9 @@ class SegmentationAutoMixin:
         from .core.detect_gate import can_detect
 
         has_text = bool(object_class and object_class.strip())
-        # A run needs the word. Exemplars sharpen it and never replace it, the
-        # same floor the panel's Detect button reads, so an agent and a person
-        # are refused for the same reason (see core/detect_gate.can_detect).
+        # A run needs an object: the word, or at least one positive exemplar.
+        # The same floor the panel's Detect button reads, so an agent and a
+        # person are refused for the same reason (see detect_gate.can_detect).
         positives = 0
         for ex in (exemplars or []):
             try:
@@ -177,8 +182,8 @@ class SegmentationAutoMixin:
                 positives += 1  # malformed label defaults to positive
         if not can_detect(has_text, positives):
             return {"_error": (
-                "object_class must be a non-empty string. Exemplars sharpen a "
-                "run, they cannot stand in for the word."
+                "a run needs an object: pass a non-empty object_class, or at "
+                "least one positive exemplar. A word is the tighter of the two."
             )}
 
         if not hasattr(plugin, "_run_auto_detect_headless"):
@@ -200,6 +205,8 @@ class SegmentationAutoMixin:
         if exemplar_err:
             return exemplar_err
 
+        if refine is not None and not isinstance(refine, dict):
+            return {"_error": f"refine must be a dict of settings, or None, got {refine!r}."}
         if should_cancel is not None and not callable(should_cancel):
             return {"_error": "should_cancel must be a callable taking no arguments, or None."}
         # A bool and nothing else: bool("false") is True, so a string here
@@ -400,6 +407,7 @@ class SegmentationAutoMixin:
                 f"confidence must be in [{low:g}, {high:g}], got {confidence!r}.")}
         return conf, None
 
+    @gui_thread_only
     def set_mode(self, mode: str) -> dict:
         """Switch the dock between interactive and automatic modes.
 
@@ -422,7 +430,7 @@ class SegmentationAutoMixin:
             from .mcp_api import not_found_error
             return not_found_error(
                 "mode", mode_lower, ["interactive", "automatic"],
-                note="The panel labels them Manual and Automatic.",
+                note="The panel labels them Semi-Auto and Automatic.",
             )
 
         try:
@@ -436,7 +444,12 @@ class SegmentationAutoMixin:
             dock = getattr(plugin, "dock_widget", None)
             if dock is None:
                 return {"_error": "Dock widget not available"}
-            dock._on_mode_selected(target)
+            # A caller may run against a build that predates
+            # _on_mode_selected returning bool: None then reads as accepted,
+            # the same as True, rather than as a refusal that never happened.
+            accepted = dock._on_mode_selected(target)
+            if accepted is False:
+                return {"_error": f"The panel refused to switch to {mode_lower} mode."}
             if target == Mode.AUTOMATIC:
                 try:
                     if plugin._tile_manager is None:
@@ -451,6 +464,7 @@ class SegmentationAutoMixin:
         except Exception as e:
             return {"_error": f"Failed to switch mode: {str(e)}"}
 
+    @gui_thread_only
     def set_auto_zone(self, zone_wkt: str | None) -> dict:
         """Set the detection zone for automatic mode.
 
@@ -573,20 +587,33 @@ class SegmentationAutoMixin:
         Returns
         -------
         dict with keys:
-            "cancelled"      -- bool, always True.
+            "cancelled"      -- bool, True when a run was found and asked to
+                               stop. False when there was nothing to cancel.
+            "was_running"    -- bool, whether a run was actually going.
             "tiles_salvaged" -- int, tiles already delivered and kept.
+            "_error"         -- str, present only when nothing was running.
         """
         plugin = self._plugin
 
-        # Read the count before cancelling: the soft path drops the worker
-        # reference once it winds down.
+        # Read the count and the running state before cancelling: the soft
+        # path drops the worker reference once it winds down.
         salvaged = 0
+        was_running = False
         try:
             worker = getattr(plugin, "_auto_worker", None)
             if worker is not None:
+                was_running = bool(worker.isRunning())
                 salvaged = int(getattr(worker, "tiles_succeeded", 0) or 0)
         except (RuntimeError, AttributeError, TypeError, ValueError):
             salvaged = 0
+
+        if not was_running:
+            return {
+                "cancelled": False,
+                "was_running": False,
+                "tiles_salvaged": salvaged,
+                "_error": "No run to cancel.",
+            }
 
         try:
             if hasattr(plugin, "_on_auto_cancel_clicked"):
@@ -595,7 +622,7 @@ class SegmentationAutoMixin:
                 plugin._stop_auto_detection()
         except (RuntimeError, AttributeError):
             pass
-        return {"cancelled": True, "tiles_salvaged": salvaged}
+        return {"cancelled": True, "was_running": True, "tiles_salvaged": salvaged}
 
     def _full_extent_over_free_cap(self, layer_name: str | None):
         """Error dict when the full raster is over the free-tier zone cap, else None.

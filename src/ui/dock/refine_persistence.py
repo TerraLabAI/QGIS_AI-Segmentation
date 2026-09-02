@@ -207,11 +207,3 @@ def capture_refine_settings(panel, only=None) -> dict:
             else:
                 out[name] = _TYPES[name](widget.value())
     return out
-
-
-def forget_refine_settings() -> None:
-    """Drop every remembered control, so the panel opens on the defaults."""
-    with suppress(Exception):
-        settings = QSettings()
-        for name, _kind in _REMEMBERED:
-            settings.remove(_KEY_PREFIX + name)

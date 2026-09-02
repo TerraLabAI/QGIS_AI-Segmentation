@@ -64,9 +64,6 @@ class DockHandoffMixin:
     def note_handoff_shape_removed(self, count: int = 1) -> None:
         return
 
-    def _reset_handoff_counters(self) -> None:
-        return
-
     def end_refine_handoff(self, target_mode=None) -> None:
         """Retained for the project-teardown path (auto_zone), which may fire
         while a reshape is open: just leave the in-place reshape sub-state.

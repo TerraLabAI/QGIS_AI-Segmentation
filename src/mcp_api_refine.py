@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import contextlib
 
+from .mcp_api_guard import gui_thread_only
+
 # Every name a caller may use, mapped onto the key the refine pipeline reads.
 # Both spellings of each control are accepted, because the panel labels them in
 # plain words and the pipeline names them by unit.
@@ -96,6 +98,7 @@ class SegmentationRefineMixin:
         out["current"] = current
         return out
 
+    @gui_thread_only
     def apply_refine(
         self,
         simplify_px: float | None = None,
@@ -154,6 +157,27 @@ class SegmentationRefineMixin:
         server. It also does not save: call the panel's export, or run
         :meth:`detect_auto`, to write the result.
         """
+        # bool("false") is True, so a string here would silently turn a
+        # switch on for a caller trying to turn it off.
+        from .mcp_api import coerce_bool_param
+        bool_args = {
+            "round_corners": round_corners,
+            "fill_holes": fill_holes,
+            "right_angles": right_angles,
+            "shared_borders": shared_borders,
+        }
+        for arg_name, value in bool_args.items():
+            if value is None:
+                continue
+            coerced, bool_err = coerce_bool_param(arg_name, value)
+            if bool_err:
+                return bool_err
+            bool_args[arg_name] = coerced
+        round_corners = bool_args["round_corners"]
+        fill_holes = bool_args["fill_holes"]
+        right_angles = bool_args["right_angles"]
+        shared_borders = bool_args["shared_borders"]
+
         plugin = self._plugin
         if getattr(plugin, "_auto_review", None) is None:
             return {"_error": _NO_REVIEW_MESSAGE}
@@ -235,6 +259,7 @@ class SegmentationRefineMixin:
         """
         if not isinstance(refine, dict) or not refine:
             return None
+        from .mcp_api import coerce_bool_param
         out: dict = {}
         for raw_key, value in refine.items():
             key = _REFINE_KEY_ALIASES.get(str(raw_key))
@@ -242,7 +267,12 @@ class SegmentationRefineMixin:
                 continue
             try:
                 if key in _REFINE_BOOL_KEYS:
-                    out[key] = bool(value)
+                    # bool("false") is True: a real coercion, not a cast, or
+                    # a caller turning this off silently turns it on instead.
+                    coerced, bool_err = coerce_bool_param(key, value)
+                    if bool_err:
+                        continue
+                    out[key] = coerced
                 elif key in _REFINE_INT_KEYS:
                     out[key] = int(value)
                 else:

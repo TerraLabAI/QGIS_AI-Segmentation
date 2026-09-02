@@ -303,6 +303,11 @@ def zone_outline_for_upload(plugin) -> tuple[str, str] | None:
                 return None
             if outline.isEmpty():
                 return None
+        # Same fold as the predict call: a zone drawn across the antimeridian
+        # comes out of the transform with longitudes past 180, which the
+        # account service refuses, and the outline is then lost.
+        from ...core.zone_antimeridian import fold_into_lonlat_range
+        outline = fold_into_lonlat_range(outline)
         # Seven decimals of a degree is about a centimetre on the ground, and
         # full precision doubles a traced coastline for nothing.
         wkt = str(outline.asWkt(7) or "")
@@ -409,6 +414,31 @@ def _exported_area_m2(refined: list, crs, plugin=None) -> float | None:
     return None
 
 
+def _run_tile_counts(plugin) -> tuple[int | None, int | None]:
+    """(tiles the run completed, tiles it planned), either None when unknown.
+
+    The pair says whether the run covered its zone. Read off the run context
+    the launch wrote and the count the review carries; best-effort like the
+    rest of this module, so an unreadable plugin state answers (None, None).
+    """
+    done = total = None
+    try:
+        result = getattr(plugin, "_last_auto_result", None) or {}
+        value = result.get("tiles_processed")
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            done = value
+    except (RuntimeError, AttributeError):
+        done = None
+    try:
+        ctx = getattr(plugin, "_auto_run_ctx", None) or {}
+        value = ctx.get("total")
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            total = value
+    except (RuntimeError, AttributeError):
+        total = None
+    return done, total
+
+
 def build_run_export_payload(
     plugin, review: dict, refined: list, refined_scores: list,
     export_path: str = "finish", confidence_applied: float | None = None,
@@ -500,6 +530,17 @@ def build_run_export_payload(
         zone_km2 = 0.0
     if math.isfinite(zone_km2) and zone_km2 > 0:
         payload["zone_km2"] = round(zone_km2, 4)
+    # How much of the zone the run actually got through. A run the user
+    # cancelled, or one that stopped on an error, covered only part of the
+    # ground its zone describes, and zone_km2 above says nothing about that:
+    # it is the whole zone on a run of 190 tiles out of 1925 exactly as it is
+    # on a run of 1925. Both counts optional and both additive; a server that
+    # does not read them ignores them.
+    tiles_done, tiles_total = _run_tile_counts(plugin)
+    if tiles_done is not None:
+        payload["tiles_completed"] = tiles_done
+    if tiles_total is not None:
+        payload["tiles_total"] = tiles_total
     # The drawn outline, so a restore can confine the run to it and a re-run
     # can point at it instead of at its bounding box. Both optional, both
     # omitted when the run had no polygon.

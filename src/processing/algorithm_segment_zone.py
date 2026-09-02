@@ -24,6 +24,7 @@ from qgis.core import (
     QgsProcessingParameterString,
 )
 
+from ..core.i18n import tr
 from .algorithm_support import (
     PLAN_HELP_LINE,
     SEGMENTATION_SEARCH_TAGS,
@@ -106,7 +107,8 @@ class SegmentZoneAlgorithm(QgsProcessingAlgorithm):
             "Finds every object of one kind inside a zone and returns them as polygons.\n\n"
             "You give it an imagery layer and a rectangle, and you type what to look for. "
             "The AI reads the picture and returns one polygon per object it finds, with the "
-            "class you asked for and a score.\n\n"
+            "class you asked for and a score. The rectangle is read in the imagery layer's "
+            "own CRS.\n\n"
             "What to type in 'What to detect': one plain word or short phrase, for example "
             "building, tree, swimming pool, solar panel, car, boat, road.\n\n"
             "Imagery it needs: an aerial or satellite raster, or a web map layer, where the "
@@ -129,7 +131,8 @@ class SegmentZoneAlgorithm(QgsProcessingAlgorithm):
             "and STATUS. TILES_PROCESSED counts the imagery tiles the AI answered; it is not "
             "the cost, because the run is charged for the surface of its zone whatever it "
             f"finds. Run '{STATUS_ALGORITHM_ID}' after the run to read the real balance. "
-            "Open SAVED_FILE to read the polygons from disk.\n\n"
+            "Open SAVED_FILE to read the polygons from disk. There is no output-folder "
+            "parameter: the GeoPackage always goes into the project's own folder.\n\n"
             "Prefer this over drawing polygons by hand whenever you need many objects over an "
             "area: all building footprints in a district, every tree in a park, every pool in a "
             f"suburb. Use '{point_algorithm_label()}' when you only want one object.\n\n"
@@ -155,7 +158,10 @@ class SegmentZoneAlgorithm(QgsProcessingAlgorithm):
             "What to detect (e.g. building, tree, swimming pool, solar panel)",
             defaultValue="building"))
         # Left empty on purpose: the service picks a grid that suits the object
-        # and the zone. A number here overrides that pick.
+        # and the zone. A number here overrides that pick. defaultValue=None,
+        # not a number, is what keeps the Toolbox field blank rather than
+        # pre-filled: parameter_left_unset() in algorithm_support.py reads
+        # that blank the same way, as "let the AI choose".
         self.addParameter(QgsProcessingParameterNumber(
             self.DETAIL,
             "Detail level (leave empty to let the AI choose)",
@@ -222,18 +228,21 @@ class SegmentZoneAlgorithm(QgsProcessingAlgorithm):
 
         instance_colors = self.parameterAsBoolean(parameters, self.INSTANCE_COLORS, context)
 
-        feedback.pushInfo(f"Looking for '{object_class}' on {raster.name()}.")
+        feedback.pushInfo(tr("Looking for '{0}' on {1}.").format(object_class, raster.name()))
         feedback.pushInfo(
-            "The AI service answers this in one go, so the progress bar stays still and QGIS "
-            "stays busy. This can take several minutes. Do not start it again. The zone is "
-            "charged when the run starts; Cancel stops the run and keeps what was found.")
+            tr(
+                "The AI service answers this in one go, so the progress bar stays still and "
+                "QGIS stays busy. This can take several minutes. Do not start it again. The "
+                "zone is charged when the run starts; Cancel stops the run and keeps what "
+                "was found."
+            ))
 
         # The last moment cancelling is free. Past this line the call blocks
         # until the service answers, and the whole zone has been charged.
         if feedback.isCanceled():
             # A deliberate stop, so report it rather than raise: an error here
             # reads as a run that broke, and this one never started.
-            feedback.pushInfo("Cancelled before the zone was sent. Nothing was spent.")
+            feedback.pushInfo(tr("Cancelled before the zone was sent. Nothing was spent."))
             return {
                 self.INSTANCE_COUNT: 0,
                 self.TILES_PROCESSED: 0,
@@ -270,15 +279,19 @@ class SegmentZoneAlgorithm(QgsProcessingAlgorithm):
         instances = int(result.get("instances") or 0)
         tiles_processed = int(result.get("tiles_processed") or 0)
         feedback.pushInfo(
-            f"Found {instances} object(s) across {tiles_processed} processed tile(s). "
-            f"Run '{STATUS_ALGORITHM_ID}' to read what is left on the plan: the run is "
-            "charged for the surface of its zone, so the tile count is not the cost.")
+            tr(
+                "Found {0} object(s) across {1} processed tile(s). "
+                "Run '{2}' to read what is left on the plan: the run is "
+                "charged for the surface of its zone, so the tile count is not the cost."
+            ).format(instances, tiles_processed, STATUS_ALGORITHM_ID))
 
         produced = layer_created_since(before, result.get("layer_name"))
         if produced is None:
             feedback.pushWarning(
-                "The run finished but added no layer to the project. Look in the AI "
-                "Segmentation panel: results waiting for review live there.")
+                tr(
+                    "The run finished but added no layer to the project. Look in the AI "
+                    "Segmentation panel: results waiting for review live there."
+                ))
             return {
                 self.INSTANCE_COUNT: instances,
                 self.TILES_PROCESSED: tiles_processed,
@@ -289,7 +302,7 @@ class SegmentZoneAlgorithm(QgsProcessingAlgorithm):
             }
 
         feedback.setProgress(100)
-        feedback.pushInfo(f"Added to the project: {produced.name()}.")
+        feedback.pushInfo(tr("Added to the project: {0}.").format(produced.name()))
         return {
             self.INSTANCE_COUNT: instances,
             self.TILES_PROCESSED: tiles_processed,
@@ -312,11 +325,13 @@ class SegmentZoneAlgorithm(QgsProcessingAlgorithm):
         produced = layer_created_since(before, result.get("layer_name"))
         if produced is None:
             feedback.pushInfo(
-                "Cancelled. The AI service had processed "
-                f"{tiles_processed} tile(s) before the stop, and nothing was added to the "
-                "project. Open the AI Segmentation panel and look for a run waiting for "
-                f"review before starting another one. Run '{STATUS_ALGORITHM_ID}' to see "
-                "what is left on the plan.")
+                tr(
+                    "Cancelled. The AI service had processed "
+                    "{0} tile(s) before the stop, and nothing was added to the "
+                    "project. Open the AI Segmentation panel and look for a run waiting for "
+                    "review before starting another one. Run '{1}' to see "
+                    "what is left on the plan."
+                ).format(tiles_processed, STATUS_ALGORITHM_ID))
             return {
                 self.INSTANCE_COUNT: instances,
                 self.TILES_PROCESSED: tiles_processed,
@@ -326,10 +341,12 @@ class SegmentZoneAlgorithm(QgsProcessingAlgorithm):
                 self.SAVED_FILE: "",
             }
         feedback.pushInfo(
-            f"Cancelled. Kept the {instances} object(s) already found, from the "
-            f"{tiles_processed} tile(s) processed before the stop. The zone was "
-            "charged when the run started, so the stop does not lower the bill. "
-            f"Added to the project: {produced.name()}.")
+            tr(
+                "Cancelled. Kept the {0} object(s) already found, from the "
+                "{1} tile(s) processed before the stop. The zone was "
+                "charged when the run started, so the stop does not lower the bill. "
+                "Added to the project: {2}."
+            ).format(instances, tiles_processed, produced.name()))
         return {
             self.INSTANCE_COUNT: instances,
             self.TILES_PROCESSED: tiles_processed,

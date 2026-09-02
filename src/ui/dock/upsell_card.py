@@ -33,6 +33,7 @@ from qgis.PyQt.QtWidgets import (
     QVBoxLayout,
 )
 
+from .contact_copy import CopyEmailLabel
 from .font_scale import scale_qss_font_px
 from .styles import (
     _BTN_BLUE,
@@ -44,6 +45,7 @@ from .styles import (
 
 _TITLE_QSS = "font-size: 13px; font-weight: bold; color: palette(text);"
 _BODY_QSS = "font-size: 12px; color: palette(text);"
+_DETAIL_QSS = "font-size: 12px; font-weight: bold; color: palette(text);"
 _COMPACT_QSS = "font-size: 12px; font-weight: 600; color: palette(text);"
 _MUTED_QSS = "font-size: 11px; color: rgba(128,128,128,0.95);"
 _STAR_QSS = "font-size: 11px; font-weight: bold; color: palette(text);"
@@ -56,6 +58,7 @@ class UpsellCard(QFrame):
                  on_cta: Callable[[], None] | None = None, parent=None):
         super().__init__(parent)
         self.variant = variant
+        self._tint = "premium"
         self.setObjectName(name)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(_msg_card_qss(name, "premium")
@@ -64,9 +67,17 @@ class UpsellCard(QFrame):
         self.title = QLabel()
         self.note = QLabel()
         self.body = QLabel()
+        # The one fact the button acts on (an address to copy), between the
+        # body and the button so it is read before the click. Selectable:
+        # a user who prefers to drag it into a mail must be able to.
+        self.detail = QLabel()
         self.button = QPushButton()
         self.escape = QLabel()
-        for lbl in (self.star, self.title, self.note, self.body, self.escape):
+        # Under everything else: the invitation to write to us with a custom
+        # need. A click copies the address. Hidden until a caller fills it.
+        self.contact = CopyEmailLabel()
+        for lbl in (self.star, self.title, self.note, self.body, self.detail,
+                    self.escape):
             lbl.setWordWrap(True)
             # A served sentence never reaches a rich-text parser: plain text
             # only, so stray HTML-looking characters in a fallback never
@@ -74,10 +85,15 @@ class UpsellCard(QFrame):
             lbl.setTextFormat(Qt.TextFormat.PlainText)
         self.star.setStyleSheet(scale_qss_font_px(_STAR_QSS))
         self.body.setStyleSheet(scale_qss_font_px(_BODY_QSS))
+        self.detail.setStyleSheet(scale_qss_font_px(_DETAIL_QSS))
+        self.detail.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
         self.note.setStyleSheet(scale_qss_font_px(_MUTED_QSS))
         self.escape.setStyleSheet(scale_qss_font_px(_MUTED_QSS))
         self.note.setVisible(False)
+        self.detail.setVisible(False)
         self.button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._on_cta = on_cta
         if on_cta is not None:
             self.button.clicked.connect(on_cta)
 
@@ -95,8 +111,10 @@ class UpsellCard(QFrame):
             row.addWidget(self.button, 0, Qt.AlignmentFlag.AlignVCenter)
             layout.addLayout(row)
             layout.addWidget(self.body)
+            layout.addWidget(self.detail)
             self.star.setVisible(False)
             self.escape.setVisible(False)
+            self.contact.setVisible(False)
         else:
             self.title.setStyleSheet(scale_qss_font_px(_TITLE_QSS))
             self.button.setStyleSheet(_BTN_BLUE)
@@ -115,18 +133,55 @@ class UpsellCard(QFrame):
             elif variant != "star":
                 self.star.setVisible(False)
             layout.addWidget(self.body)
+            layout.addWidget(self.detail)
             layout.addSpacing(4)
             layout.addWidget(self.button)
             layout.addWidget(self.escape)
+            layout.addWidget(self.contact)
+
+    def set_tint(self, kind: str) -> None:
+        """Repaint the card in another message tint.
+
+        One card can carry more than one kind of news (see auto_run_block.py,
+        where the same card names a refusal and a service outage). A premium
+        tint on a card that sells nothing reads as an offer the reader cannot
+        find, so the tint follows the news, not the widget. A no-op when the
+        tint is already the one asked for.
+        """
+        if kind == self._tint:
+            return
+        self._tint = kind
+        self.setStyleSheet(_msg_card_qss(self.objectName(), kind)
+                           + _CARD_CHILD_BTN_RESET_QSS)
+
+    def route_cta(self, on_cta: Callable[[], None]) -> None:
+        """Point the button at another handler.
+
+        The same card can sell Pro to a free account and, for a subscriber
+        who spent the month, copy our address instead: one card, one
+        button, and the handler follows the account rather than a second
+        card fighting the first for the page. A no-op when the handler is
+        already the one wired.
+        """
+        if on_cta == self._on_cta:
+            return
+        try:
+            self.button.clicked.disconnect()
+        except (TypeError, RuntimeError):
+            pass  # nosec B110 -- nothing was connected
+        self.button.clicked.connect(on_cta)
+        self._on_cta = on_cta
 
     def set_text(self, title: str, body: str | None, cta: str,
                  escape: str | None = None, star: str | None = None,
-                 note: str | None = None) -> None:
+                 note: str | None = None, detail: str | None = None) -> None:
         """Fill every line. ``None`` hides the optional ones. Plain text
         only: a served sentence never reaches a rich-text parser here."""
         self.title.setText(title)
         self.body.setText(body or "")
         self.body.setVisible(bool(body))
+        self.detail.setText(detail or "")
+        self.detail.setVisible(bool(detail))
         # A QPushButton reads a single "&" as the mnemonic marker and eats
         # it, so a served or fallback sentence with one shows a missing
         # letter. Double it here, once, for every caller.
@@ -139,3 +194,10 @@ class UpsellCard(QFrame):
         if self.variant in ("star", "wall"):
             self.star.setText(f"{_PREMIUM_STAR}  {star}" if star else "")
             self.star.setVisible(bool(star))
+
+    def set_contact_email(self, email: str | None) -> None:
+        """Show the custom-needs line under the card with ``email`` in it,
+        or hide it. Compact cards have no room for it and ignore the call."""
+        if self.variant == "compact":
+            return
+        self.contact.set_email(email)

@@ -38,7 +38,8 @@ from qgis.core import (
 from qgis.PyQt.QtCore import QSettings
 
 from . import output_store
-from .qt_compat import WkbMultiPolygon, field_type_double, field_type_string
+from .layer_conventions import make_area_measurer, measure_field, round_measure
+from .qt_compat import WkbMultiPolygon, field_type_string
 
 _LOG_TAG = "AI Segmentation"
 
@@ -92,32 +93,51 @@ _MAX_ARMED_TABLES = 16
 
 
 def _autosave_fields() -> QgsFields:
-    """The lean autosave schema: the user annotation column, the object class
-    (the run prompt) and the per-object confidence score. Measures (area,
-    perimeter) are recomputed by the normal export; the crash net stays
-    write-cheap."""
+    """The autosave schema: the same five columns, in the same order, that a
+    committed run writes.
+
+    A recovered run is handed to the user as a deliverable, so it may not be a
+    different shape from the export it stands in for. The column was called
+    ``score`` here and ``confidence`` everywhere else, which is one column
+    with two names in one GeoPackage.
+    """
     fields = QgsFields()
-    fields.append(QgsField("label", field_type_string()))
+    fields.append(QgsField("det_id", field_type_string()))
     fields.append(QgsField("class", field_type_string()))
-    fields.append(QgsField("score", field_type_double()))
+    fields.append(measure_field("confidence", decimals=3))
+    fields.append(measure_field("area_m2"))
+    fields.append(measure_field("perimeter_m"))
     return fields
 
 
-def _open_writer(path: str, table: str, fields: QgsFields, crs):
-    """One QgsVectorFileWriter over ``path``/``table``, or None."""
+def _open_writer(path: str, table: str, fields: QgsFields, crs,
+                 transform_context=None):
+    """One QgsVectorFileWriter over ``path``/``table``, or None.
+
+    ``transform_context`` is the project's, read by the caller. It is passed in
+    rather than read here so the write can run on a thread that must not touch
+    QgsProject.
+    """
+    from .output_gpkg_rollover import file_size
+
     options = QgsVectorFileWriter.SaveVectorOptions()
     options.driverName = "GPKG"
     options.fileEncoding = "UTF-8"
     options.layerName = table
+    # Create the file only when it is confirmed missing. This writes into the
+    # shared project GeoPackage, so recreating it over a file that merely
+    # cannot be stat'ed drops every committed run already in it.
     options.actionOnExistingFile = (
-        QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteLayer
-        if os.path.exists(path)
-        else QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteFile
+        QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteFile
+        if file_size(path) == 0
+        else QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteLayer
     )
+    if transform_context is None:
+        transform_context = QgsProject.instance().transformContext()
     try:
         writer = QgsVectorFileWriter.create(
             path, fields, WkbMultiPolygon, crs,
-            QgsProject.instance().transformContext(), options)
+            transform_context, options)
     except Exception:  # noqa: BLE001 -- a broken writer means no autosave here
         return None
     if writer is None:
@@ -128,16 +148,16 @@ def _open_writer(path: str, table: str, fields: QgsFields, crs):
     return writer
 
 
-def write_autosave(merged_ided: list, crs_authid: str, prompt: str,
-                   run_id: str, source_layer=None) -> dict | None:
-    """Stream the merged scored set ((fid, geom, score) triples) to a
-    GeoPackage table in one pass, no temp memory layer. A None score is written
-    as NULL, for a polygon no model scored.
+def prepare_autosave(merged_ided: list, crs_authid: str, prompt: str,
+                     run_id: str, source_layer=None) -> dict | None:
+    """Everything ``write_prepared_autosave`` needs, resolved here where
+    QgsProject may be read, with the geometries copied out as WKB.
 
-    Lands in the project's shared GeoPackage next to the committed runs; if
-    that file cannot be written, falls back to a standalone per-run file in
-    the same output directory. Returns the pending-pointer dict on success
-    (file written, at least one feature), None otherwise. Never raises.
+    Split from the write so a caller may hand the write to a background thread.
+    What comes back is plain data plus three configured value objects (the CRS,
+    the output transform, the measurer), so the writer never touches a
+    QgsGeometry the run still holds and never reads the project. Returns None
+    when there is nothing to write. Never raises.
     """
     try:
         if not merged_ided:
@@ -149,21 +169,76 @@ def write_autosave(merged_ided: list, crs_authid: str, prompt: str,
         # stay right but $area and any downstream buffer are off by
         # 1/cos(latitude).
         crs, ground_metre_xform = _autosave_output_crs(crs, merged_ided)
-        fields = _autosave_fields()
         stem = (prompt or "").strip() or "detection"
         gpkg_path = output_store.project_gpkg_path(source_layer)
         table = output_store.snake_table_name(
             f"{stem} {AUTOSAVE_TABLE_MARK}", gpkg_path)
-        writer = _open_writer(gpkg_path, table, fields, crs)
+        context = QgsProject.instance().transformContext()
+        # A WKB copy per row: the merger's keepers stay the run's own, and a
+        # writer thread that outlives this call still has geometry of its own.
+        rows = []
+        for fid, geom, score in merged_ided:
+            try:
+                if geom is None or geom.isEmpty():
+                    continue
+                rows.append((str(fid), bytes(geom.asWkb()),
+                             None if score is None else float(score)))
+            except Exception:  # nosec B112 -- one bad geometry is simply skipped
+                continue
+        if not rows:
+            return None
+        return {
+            "rows": rows,
+            "crs": crs,
+            "xform": ground_metre_xform,
+            "context": context,
+            "gpkg_path": gpkg_path,
+            "table": table,
+            "stem": stem,
+            "object_class": (prompt or "").strip() or None,
+            "run_id": run_id or "",
+            "fallback_dirs": list(
+                output_store.output_directory_candidates(source_layer)),
+            # One measurer for the whole run: setEllipsoid reads the SRS
+            # database, so building one per feature costs seconds on a big set.
+            # Built here because it reads the project ellipsoid; measured in
+            # the CRS the rows are written in, which is the one picked above.
+            "measurer": make_area_measurer(crs, transform_context=context),
+        }
+    except Exception:  # noqa: BLE001 -- the crash net must never break finalize
+        return None
+
+
+def write_prepared_autosave(job: dict | None) -> dict | None:
+    """Write one prepared autosave job to its GeoPackage table, in one pass and
+    with no temp memory layer. A None score is written as NULL, for a polygon
+    no model scored.
+
+    Safe on a worker thread: everything that reads QgsProject was settled by
+    ``prepare_autosave``, and the geometries are this call's own WKB copies.
+    Lands in the project's shared GeoPackage next to the committed runs; if
+    that file cannot be written, falls back to a standalone per-run file in the
+    same output directory. Returns the pending-pointer dict on success (file
+    written, at least one feature), None otherwise. Never raises.
+    """
+    try:
+        if not job or not job.get("rows"):
+            return None
+        crs = job["crs"]
+        context = job["context"]
+        fields = _autosave_fields()
+        gpkg_path = job["gpkg_path"]
+        table = job["table"]
+        writer = _open_writer(gpkg_path, table, fields, crs, context)
         if writer is None:
             # Shared file locked/corrupt: a standalone file still saves the run.
             # Walk the directories, since the folder itself can be what refuses
             # the write (a share or a WSL mount takes the file and then denies
             # the SQLite lock), and a new name there fails the same way.
-            for directory in output_store.output_directory_candidates(source_layer):
+            for directory in job.get("fallback_dirs") or []:
                 fallback = os.path.join(
                     directory, f"{table}_{time.strftime('%H%M%S')}.gpkg")
-                writer = _open_writer(fallback, table, fields, crs)
+                writer = _open_writer(fallback, table, fields, crs, context)
                 if writer is not None:
                     gpkg_path = fallback
                     break
@@ -174,37 +249,38 @@ def write_autosave(merged_ided: list, crs_authid: str, prompt: str,
                 return None
 
         from .layer_conventions import to_multipolygon
-        object_class = (prompt or "").strip()
+        object_class = job.get("object_class")
+        ground_metre_xform = job.get("xform")
+        measurer = job["measurer"]
         count = 0
-        for _fid, geom, score in merged_ided:
+        for fid, wkb, score in job["rows"]:
             try:
-                if geom is None or geom.isEmpty():
+                geom = QgsGeometry()
+                geom.fromWkb(wkb)
+                if geom.isEmpty():
                     continue
                 multi = to_multipolygon(geom)
                 if multi is None or multi.isEmpty():
                     continue
                 if ground_metre_xform is not None:
-                    # Reproject a geometry this loop OWNS, never the caller's.
-                    # to_multipolygon hands the argument straight back when it
-                    # is already multipart, and these come from the merger's
-                    # keepers, so transforming in place moved the run's own
-                    # objects into the output CRS behind its back. Everything
-                    # downstream still measures in the render CRS the run
-                    # declares, so an object that got moved read about 400x too
-                    # small and the review's min-size floor deleted it.
-                    # QgsGeometry(other) is a shallow copy and shares the same
-                    # abstract geometry: the inner clone is what detaches.
-                    inner = multi.constGet()
-                    multi = (QgsGeometry(inner.clone()) if inner is not None
-                             else QgsGeometry(multi))
+                    # Transforming in place is safe here and nowhere else: the
+                    # geometry was rebuilt from this job's own WKB, so nothing
+                    # the run still measures shares it. (Reprojecting a
+                    # to_multipolygon result the caller owned once moved the
+                    # merger's live keepers into the output CRS behind its
+                    # back, and the review's min-size floor then deleted them.)
                     multi.transform(ground_metre_xform)
                 feat = QgsFeature(fields)
                 feat.setGeometry(multi)
                 # No score means no model scored this polygon (a hand save), so
                 # the column stays NULL rather than claiming a confidence.
                 feat.setAttributes([
-                    "", object_class,
-                    None if score is None else round(float(score), 3)])
+                    fid,
+                    object_class,
+                    None if score is None else round(float(score), 3),
+                    round_measure(measurer.measureArea(multi)),
+                    round_measure(measurer.measurePerimeter(multi)),
+                ])
                 writer.addFeature(feat)
                 count += 1
             except Exception:  # nosec B112 -- one bad geometry never stops the save
@@ -216,9 +292,9 @@ def write_autosave(merged_ided: list, crs_authid: str, prompt: str,
         return {
             "path": gpkg_path,
             "table": table,
-            "layer_name": output_store.friendly_layer_name(stem),
-            "prompt": object_class,
-            "run_id": run_id or "",
+            "layer_name": output_store.friendly_layer_name(job["stem"]),
+            "prompt": object_class or "",
+            "run_id": job.get("run_id") or "",
             "count": count,
             "ts": time.time(),
         }
@@ -230,6 +306,45 @@ def write_autosave(merged_ided: list, crs_authid: str, prompt: str,
         except Exception:  # nosec B110
             pass
         return None
+
+
+def write_autosave(merged_ided: list, crs_authid: str, prompt: str,
+                   run_id: str, source_layer=None) -> dict | None:
+    """Prepare and write the crash-net autosave in one blocking call.
+
+    The synchronous path, for callers with no GUI to protect (a hand save, the
+    headless run). The Automatic finalize hands the two halves to a thread
+    instead. Never raises.
+    """
+    return write_prepared_autosave(
+        prepare_autosave(merged_ided, crs_authid, prompt, run_id,
+                         source_layer=source_layer))
+
+
+def repaint_layers_over(path: str) -> None:
+    """Ask every project layer served by ``path`` to draw itself again.
+
+    The autosave is a deferred writer into the file a saved layer displays, and
+    its SQLite commit can hold that file across the layer's first render: the
+    render reads nothing, paints an empty map, and nothing asks for another
+    frame. Main thread only.
+    """
+    try:
+        if not path:
+            return
+        target = os.path.normcase(os.path.abspath(path))
+        for layer in QgsProject.instance().mapLayers().values():
+            try:
+                source = layer.source() or ""
+                source = source.split("|", 1)[0]
+                if not source:
+                    continue
+                if os.path.normcase(os.path.abspath(source)) == target:
+                    layer.triggerRepaint()
+            except (RuntimeError, AttributeError, ValueError, OSError):
+                continue
+    except Exception:  # nosec B110 -- a missed repaint never breaks a run
+        pass
 
 
 def record_pending(info: dict) -> None:
@@ -263,22 +378,48 @@ def _pointer_raw() -> dict | None:
         return None
 
 
+def _forget_pointer() -> None:
+    """Remove the stored pointer, with no ownership test. Never raises.
+
+    For the two callers that have already established the pointer names
+    nothing recoverable: a pointer that cannot be parsed or whose file is
+    confirmed gone, and one a dead session left behind whose table path has
+    just been written to the log. ``clear_pending`` is the guarded way in.
+    """
+    try:
+        QSettings().remove(_PENDING_KEY)
+    except Exception:  # nosec B110
+        pass
+
+
 def read_pending(check_file: bool = True) -> dict | None:
     """The pending autosave pointer, or None. With ``check_file`` (default) a
-    pointer whose GeoPackage no longer exists is dropped and cleared."""
+    pointer whose GeoPackage is confirmed gone is dropped and cleared.
+
+    A file that cannot be stat'ed at all (a share offline, a folder held for a
+    moment) is unknown, not gone: the pointer stays armed and this answers None
+    for now. Clearing it there would throw away the only name the run's table
+    has, and the objects behind it are the copy a dead session left.
+    """
     try:
         info = _pointer_raw()
         if info is None:
             # Stored but unreadable: drop it, or it is re-parsed every start.
             if QSettings().value(_PENDING_KEY, "", type=str):
-                clear_pending()
+                _forget_pointer()
             return None
         if not info.get("path") or not info.get("table"):
-            clear_pending()
+            _forget_pointer()
             return None
-        if check_file and not os.path.exists(str(info["path"])):
-            clear_pending()
-            return None
+        if check_file:
+            from .output_gpkg_rollover import file_size
+
+            size = file_size(str(info["path"]))
+            if size == 0:
+                _forget_pointer()
+                return None
+            if size is None:
+                return None
         return info
     except Exception:  # noqa: BLE001 -- unreadable pointer = no pending
         return None
@@ -311,6 +452,12 @@ def drop_autosave_table(path: str, table: str) -> None:
 def is_autosave_table(table: str) -> bool:
     """Whether this table name was produced by the autosave naming rule.
 
+    UNREACHABLE (2026-09-01) from outside this module: its only callers are the
+    two reporting functions below, which have no caller of their own. Nothing
+    on any schedule cleans an autosave table, so they accumulate in the shared
+    output GeoPackage. Wiring a report plus a human decision into the account
+    dialog's storage card is what would make this trio live.
+
     The rule is ``<prompt slug> autosave`` through ``snake_table_name``, so the
     name ends in ``_autosave_<yyyymmdd>``, plus the ``_2`` the deduper appends.
     A prompt long enough to push the mark past the 40-character cut answers no,
@@ -327,10 +474,14 @@ def orphan_autosave_tables(gpkg_path: str) -> list[dict]:
     and an estimate, since SQLite hands pages back to the file's free list
     rather than to the disk until the file is vacuumed.
 
-    Nothing in the plugin calls this on a schedule, and nothing should: one of
-    these tables is the only unfiltered copy of a past run, held exactly for
-    the session that died before its export. Read straight from SQLite, so a
-    report costs no OGR layer opens. Never raises.
+    UNREACHABLE (2026-09-01): no caller in src/, scripts/ or tests/. Nothing in
+    the plugin calls this on a schedule, and nothing should: one of these
+    tables is the only unfiltered copy of a past run, held exactly for the
+    session that died before its export. What it is waiting for is the account
+    dialog's storage card, where a person reads the report and decides.
+
+    Read straight from SQLite, so a report costs no OGR layer opens. Never
+    raises.
     """
     out: list[dict] = []
     if not gpkg_path or not os.path.exists(gpkg_path):
@@ -394,6 +545,9 @@ def _scalar(connection, statement: str):
 def drop_listed_autosave_tables(gpkg_path: str, tables) -> list[str]:
     """Drop the autosave tables NAMED by the caller. Returns what went.
 
+    UNREACHABLE (2026-09-01): no caller in src/, scripts/ or tests/, and it
+    stays that way until the report above is put in front of a person.
+
     The list is the caller's, always. Nothing here scans a file and deletes
     what it finds: pair it with ``orphan_autosave_tables`` and a human who
     read the report, because every table it names holds objects that exist
@@ -414,9 +568,12 @@ def drop_listed_autosave_tables(gpkg_path: str, tables) -> list[str]:
 
 
 def clear_pending(run_id: str | None = None, drop_table: bool = False) -> None:
-    """Drop the pending pointer. With ``run_id``, only when the stored pointer
-    belongs to that run, so finishing today's run never consumes a previous
-    session's still-unrecovered autosave.
+    """Drop the pending pointer, when ``run_id`` names the run it belongs to.
+
+    An armed pointer is only ever consumed by the run that armed it. A caller
+    that names no run claims nothing: it used to claim WHATEVER was armed, so
+    finishing a run with no id disarmed a previous session's autosave, and with
+    ``drop_table`` it deleted the only copy of a run this session never made.
 
     ``drop_table`` also deletes that run's autosave table. It is for the caller
     that just wrote the same objects to a real layer: the crash-net copy is
@@ -425,24 +582,22 @@ def clear_pending(run_id: str | None = None, drop_table: bool = False) -> None:
     because that is where it is the only copy left.
 
     The table is found from the pointer, and from this session's own arming
-    record when the pointer is gone, was never armed, or carries no run id. It
-    used to be found from the pointer alone, under a run id test that a caller
-    with an empty run id could not pass, so those runs kept their table for
-    good. A table an armed pointer for ANOTHER run claims is never dropped:
-    there it is still the only copy of that run.
+    record when the pointer is gone, was never armed, or belongs to another
+    run. That record is how a caller with no run id still drops its OWN table
+    instead of leaving one behind in the project's GeoPackage for good. A table
+    an armed pointer claims is never dropped: there it is still the only copy
+    of that run.
     """
     pointer = _pointer_raw()
-    mine = pointer if (not run_id or (pointer or {}).get("run_id") == run_id) else None
+    mine = pointer if (run_id and (pointer or {}).get("run_id") == run_id) else None
     if pointer is not None and mine is None:
-        # Someone else's run is still pending: leave its pointer armed. This
-        # run's own table can still go, when this session recorded where it is.
+        # Another run is still pending, or this caller named none: leave the
+        # pointer armed. This run's own table can still go, when this session
+        # recorded where it is and the armed pointer does not claim it.
         if drop_table:
             _drop_run_table(run_id, protected=pointer)
         return
-    try:
-        QSettings().remove(_PENDING_KEY)
-    except Exception:  # nosec B110
-        pass
+    _forget_pointer()
     if drop_table:
         _drop_run_table(run_id, fallback=mine, protected=None)
     elif run_id:
@@ -455,10 +610,15 @@ def _drop_run_table(run_id: str | None, fallback: dict | None = None,
 
     ``fallback`` is the pointer that already names it. ``protected`` is a
     pointer still armed for another run, whose table stays whatever happens.
+
+    A run with no id is a key like any other: ``record_pending`` files it under
+    the empty string, so the caller that names no run still reaches the table
+    it armed itself, and only that one.
     """
+    key = str(run_id or "")
     info = fallback
-    if info is None and run_id:
-        info = _ARMED_TABLES.get(str(run_id))
+    if info is None:
+        info = _ARMED_TABLES.get(key)
     if not info:
         return
     path = str(info.get("path") or "")
@@ -466,10 +626,11 @@ def _drop_run_table(run_id: str | None, fallback: dict | None = None,
     if protected is not None and _same_table(protected, path, table):
         return
     drop_autosave_table(path, table)
-    if run_id:
-        _ARMED_TABLES.pop(str(run_id), None)
+    _ARMED_TABLES.pop(key, None)
 
 
+# True means "protect this table", so every doubt answers True, an unreadable
+# pointer included: the callers all read it as a veto on a delete.
 def _same_table(info: dict, path: str, table: str) -> bool:
     """Whether ``info`` points at this very table, on this very file."""
     try:
@@ -499,9 +660,22 @@ def log_and_clear_stale_pending(current_run_id: str | None = None) -> None:
                 path=str(info.get("path") or ""),
                 table=str(info.get("table") or "")),
             _LOG_TAG, level=Qgis.MessageLevel.Info)
-        clear_pending()
+        # The path is in the log now, so the pointer has nothing left to carry.
+        # Forget it outright: this caller names no run, and clear_pending would
+        # rightly refuse to claim a pointer for a run it cannot name.
+        _forget_pointer()
     except Exception:  # nosec B110 -- a log line never breaks a start
         pass
+
+
+def _measures_already_written(layer) -> bool:
+    """Whether the first row already carries a measured area."""
+    try:
+        for feat in layer.getFeatures():
+            return feat["area_m2"] is not None
+    except (RuntimeError, AttributeError, KeyError, TypeError, ValueError):
+        return False
+    return False
 
 
 def _fill_measure_fields(layer) -> None:
@@ -510,16 +684,16 @@ def _fill_measure_fields(layer) -> None:
     The autosave itself stays write-cheap and stores neither, so a recovered
     run would otherwise hand the user a narrower attribute table than the same
     run exported the normal way. Best-effort: a read-only file simply keeps the
-    lean schema.
+    lean schema. A table this version wrote already carries both columns
+    filled, and is left alone.
     """
-    from .layer_conventions import make_area_measurer, round_measure
-
     provider = layer.dataProvider()
     have = {f.name().lower() for f in layer.fields()}
     missing = [n for n in ("area_m2", "perimeter_m") if n not in have]
+    if not missing and _measures_already_written(layer):
+        return
     if missing:
-        added = provider.addAttributes(
-            [QgsField(n, field_type_double()) for n in missing])
+        added = provider.addAttributes([measure_field(n) for n in missing])
         layer.updateFields()
         if not added:
             return
@@ -561,7 +735,19 @@ def load_pending_layer(info: dict) -> str | None:
         display = str(info.get("layer_name") or "") or (
             output_store.friendly_layer_name(prompt))
         layer = QgsVectorLayer(f"{path}|layername={table}", display, "ogr")
-        if not layer.isValid() or layer.featureCount() == 0:
+        if not layer.isValid():
+            return None
+        # Make the handle read the rows before anything counts them. A writer
+        # that still holds the file leaves a fresh handle seeing the table in
+        # the header and none of its rows, and here that empty count is the
+        # abort test: a recovery whose objects are all on disk would fail
+        # silently. See output_store._load_table.
+        try:
+            layer.dataProvider().reloadData()
+            layer.updateExtents()
+        except (RuntimeError, AttributeError):  # nosec B110
+            pass
+        if layer.featureCount() == 0:
             return None
         from .layer_conventions import apply_output_conventions, make_committed_renderer
         layer.setRenderer(make_committed_renderer(
@@ -576,11 +762,12 @@ def load_pending_layer(info: dict) -> str | None:
             ts = float(info.get("ts") or 0.0)
         except (TypeError, ValueError):
             ts = 0.0
+        from .output_metadata import timestamp_iso_from_epoch
+
         apply_output_conventions(
             layer, "",
             prompt=prompt,
-            created_iso=(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
-                         if ts else ""),
+            created_iso=timestamp_iso_from_epoch(ts) if ts else "",
         )
         output_store.add_committed_layer(layer)
         layer.triggerRepaint()

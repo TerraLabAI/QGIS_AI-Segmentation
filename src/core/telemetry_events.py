@@ -7,7 +7,7 @@ REGISTRY_VERSION together.
 """
 from __future__ import annotations
 
-REGISTRY_VERSION = 27
+REGISTRY_VERSION = 32
 
 # --- Lifecycle ------------------------------------------------------------
 PLUGIN_FIRST_OPEN = "plugin_first_open"
@@ -50,6 +50,10 @@ AUTO_ZERO_RESULT = "auto_zero_result"
 # Empty-tile scan gate outcome for one run (emitted only when the server
 # policy armed the gate; fallback says why an armed gate stood down).
 AUTO_GATE_SCAN = "auto_gate_scan"
+# The card said "slow" once in a run: what the client was doing at that moment.
+AUTO_RUN_SLOW_NOTICE = "auto_run_slow_notice"
+# The run's own QGIS log lines, redacted, one event per run end.
+AUTO_RUN_LOG = "auto_run_log"
 
 # --- Review / refine ------------------------------------------------------
 REVIEW_OPENED = "review_opened"
@@ -129,6 +133,7 @@ PLUGIN_ERROR = "plugin_error"
 FLUSH_NOW = frozenset({
     AUTO_DETECT_STARTED, AUTO_DETECT_COMPLETED, AUTO_DETECT_FAILED, AUTO_DETECT_CANCELLED,
     CREDITS_EXHAUSTED, AUTO_ZERO_RESULT, AUTO_TILES_DEGRADED, AUTO_EXPORT_DONE,
+    AUTO_RUN_LOG,
     MANUAL_SESSION_SUMMARY, PLUGIN_ERROR, INSTALL_FAILED,
     HISTORY_RESTORED, HISTORY_EXPORTED,
     # The session often ends right after these (quit after cancelling, browser
@@ -186,6 +191,8 @@ ALL_EVENTS = frozenset({
     AUTO_TILES_DEGRADED,
     AUTO_ZERO_RESULT,
     AUTO_GATE_SCAN,
+    AUTO_RUN_SLOW_NOTICE,
+    AUTO_RUN_LOG,
     REVIEW_OPENED,
     REVIEW_CONFIDENCE_FINAL,
     REVIEW_ABANDONED,
@@ -274,6 +281,8 @@ REQUIRED_PROPS: dict[str, tuple[str, ...]] = {
     AUTO_TILES_DEGRADED: ("run_id",),
     AUTO_ZERO_RESULT: ("run_id",),
     AUTO_GATE_SCAN: ("run_id", "scans", "tiles_skipped"),
+    AUTO_RUN_SLOW_NOTICE: ("run_id", "phase"),
+    AUTO_RUN_LOG: ("run_id",),
     # --- Review / refine --------------------------------------------------
     REVIEW_OPENED: ("run_id",),
     REVIEW_CONFIDENCE_FINAL: ("run_id",),

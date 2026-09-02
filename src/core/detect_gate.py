@@ -1,11 +1,11 @@
 """Pure decision logic for when an Automatic detection may run.
 
-A run needs a typed prompt. Examples are optional and they sharpen it; they
-never replace it. An example on its own says "find things that look like
-this", which the model grounds far more loosely than a word does, and the
-runs that came back empty or full of noise were the ones with no word in
-them. The exclude (negative) example is a refinement offered only once the
-positive set is strong enough.
+A run needs an object, and there are two ways to give one: type the word, or
+draw an example of it. Either opens the gate; both together is the model's
+most accurate mode and what the card steers toward. A word grounds the search
+tighter than a picture does, so an example-only run is the looser of the two
+and the UI says so, but it is a run the user may choose. The exclude
+(negative) example is a refinement offered only once a positive exists.
 
 The two minimums below are client fallbacks for the server's exemplar block,
 read through the resolvers here so the gate and the example store always agree.
@@ -16,11 +16,13 @@ tested directly.
 """
 from __future__ import annotations
 
-# Two references detect better than one: this threshold drives the
-# second-example NUDGE and the exclude-button unlock. It does not block a run
-# (the floor below is any non-empty query). Product decision, not a tuned
-# value, and the client fallback for `exemplar.min_example_positives`.
-MIN_EXAMPLE_POSITIVES = 2
+# Positives needed before the exclude example is offered: one. An exclude
+# refines a positive, so it needs one to refine, and no more (an exclude on
+# top of a single positive plus the word is the model's own refinement loop).
+# It does not block a run (the floor below is any non-empty query). Product
+# decision, not a tuned value, and the client fallback for
+# `exemplar.min_example_positives`.
+MIN_EXAMPLE_POSITIVES = 1
 
 # The recommended default combination is a text prompt PLUS at least this many
 # positive examples: the model grounds the word and the look together, which is
@@ -67,19 +69,17 @@ def meta_satisfied(has_text: bool, positives: int) -> bool:
 
 
 def can_detect(has_text: bool, positives: int, excludes: int = 0) -> bool:
-    """True when a detection may start: there is a TYPED PROMPT.
+    """True when a detection may start: a typed prompt, or a drawn example.
 
-    This is the whole gate on the green Detect button. Examples are optional
-    on top of the word, never instead of it: the model grounds a word far
-    tighter than a picture, and an example-only run is the one that comes back
-    empty or full of look-alikes. Quality steering above this floor is advice
-    only (the UI nudges toward a second example), never a block.
+    This is the whole gate on the green Detect button. Both inputs name the
+    object, so either one opens it. Quality steering above this floor is
+    advice only (the card recommends the word plus an example, the model's
+    most accurate mode), never a block.
 
-    ``positives`` and ``excludes`` never affect the decision; they are taken
-    for a complete, self-documenting signature and because every caller
-    already has them to hand.
+    ``excludes`` never affects the decision: an exclude says what to drop, so
+    it is a refinement of a query and never a query.
     """
-    return has_text
+    return has_text or positives >= min_example_positives()
 
 
 def exclude_available(positives: int) -> bool:

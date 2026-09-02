@@ -142,6 +142,17 @@ class CloudFirstPredictor:
         the session ends."""
         return self._generation
 
+    def set_session_id(self, session_id: str | None) -> None:
+        """Pass the billing session's id on to the remote side, which is the
+        only one that puts it on the wire. Only the on-device fallback answers
+        with nothing to name, and it needs no id at all."""
+        setter = getattr(self._remote, "set_session_id", None)
+        if setter is not None:
+            try:
+                setter(session_id)
+            except Exception:  # nosec B110 -- naming a session never breaks a click
+                pass
+
     def reset_image(self) -> None:
         self._generation += 1
         self._crop = None

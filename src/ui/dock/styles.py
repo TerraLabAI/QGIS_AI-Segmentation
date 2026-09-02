@@ -413,6 +413,9 @@ _SECTION_TOGGLE_QSS = (
     " padding: 8px 10px; text-align: left; }"
     f"QPushButton:hover {{ color: {BRAND_BLUE};"
     " border-color: rgba(30, 136, 229, 0.7); }"
+    " QPushButton:disabled { color: rgba(128, 128, 128, 0.55);"
+    " background-color: rgba(128, 128, 128, 0.06);"
+    " border-color: rgba(128, 128, 128, 0.20); }"
 )
 
 # The same head with its card open under it (_CARD_JOINED_QSS): no bottom edge
@@ -427,6 +430,9 @@ _SECTION_TOGGLE_OPEN_QSS = (
     " border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;"
     " padding: 8px 10px; text-align: left; }"
     f"QPushButton:hover {{ color: {BRAND_BLUE}; }}"
+    " QPushButton:disabled { color: rgba(128, 128, 128, 0.55);"
+    " background-color: rgba(128, 128, 128, 0.06);"
+    " border-color: rgba(128, 128, 128, 0.20); }"
 )
 
 # Theme-safe combobox for combos living inside a styled card. A parent card
@@ -907,12 +913,6 @@ _BTN_EXPORT_READY = (
     f"QPushButton:hover {{ background-color: {BTN_GREEN_HOVER}; color: #000000; }}"
 )
 
-_BTN_EXPORT_DISABLED = (
-    f"QPushButton {{ background-color: {BRAND_DISABLED}; color: {DISABLED_TEXT};"
-    f" padding: 6px 12px; border: none; border-radius: 4px;"
-    f" {_BTN_LABEL_WEIGHT} }}"
-)
-
 # Compact filled buttons for the browser-handoff waiting state. Both carry a
 # soft tint (never transparent): neutral for "open again", red for "cancel".
 _BTN_PAIR_NEUTRAL = (
@@ -994,6 +994,7 @@ for _qss_name in (
     "_BTN_CHIP",
     "_BTN_TILE",
     "_BTN_TILE_ACTIVE",
+    "_BTN_GREEN_STEP",
     "_METHOD_SWITCH_QSS",
     "_BTN_REMOVE_ROW",
     "_FOOTER_ICON_BTN_STYLE",

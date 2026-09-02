@@ -61,14 +61,26 @@ class AutoImageryGuardMixin:
         # the switch is safe to pull mid-incident.
         if not feature_enabled("imagery_probe"):
             return 0.0, None
-        extent = self._imagery_probe_extent(grid)
         mupp = self._grid_mupp(grid)
-        if extent is None or mupp <= 0:
+        centres = self._probe_centres(layer, grid)
+        if not centres or mupp <= 0:
             return 0.0, None
+        floor = 0.0
         try:
-            return self._walk_source_depth(layer, extent, mupp, grid)
+            for centre in centres:
+                extent = self._imagery_probe_extent(grid, centre)
+                if extent is None:
+                    continue
+                level, refusal = self._walk_source_depth(
+                    layer, extent, mupp, grid)
+                # The worst window decides. One arm of the zone with no picture
+                # is an arm of grey cards the user pays for.
+                if refusal is not None:
+                    return 0.0, refusal
+                floor = max(floor, level)
         except Exception:  # noqa: BLE001 - a probe must never block a run
             return 0.0, None
+        return floor, None
 
     def _note_imagery_backoff(self) -> None:
         """Tell the user the basemap, not the slider, set the run's detail.
@@ -113,7 +125,7 @@ class AutoImageryGuardMixin:
         crs = self._probe_render_crs(grid)
         images = probe_depth_chain(
             layer, extent, render_crs=crs, count=steps + 2,
-            side_px=_PROBE_SIDE_PX, min_side_px=LEVEL_SAMPLE_PX)
+            side_px=None, min_side_px=LEVEL_SAMPLE_PX)
         if len(images) < 2:
             return 0.0, None
         floor_min = agreement_min()
@@ -167,10 +179,57 @@ class AutoImageryGuardMixin:
         crs = QgsCoordinateReferenceSystem(authid)
         return crs if crs.isValid() else None
 
+    def _probe_centres(self, layer, grid) -> list:
+        """Points to centre the probe windows on, in the run CRS.
+
+        The zone's bounding-box centre falls OUTSIDE an L-shaped, diagonal or
+        corridor zone, so one window there tests ground the run never reads: a
+        zone whose centre carries imagery and whose arms do not passed the
+        guard, and the user paid for grey cards. These points all sit ON the
+        polygon's surface and are spread along it, so no arm goes unlooked at.
+        Falls back to the bounding-box centre when there is no drawn polygon
+        (the rectangle and headless paths), which is the old behaviour.
+        """
+        from qgis.core import QgsGeometry, QgsRectangle
+
+        try:
+            minx, miny, maxx, maxy = (grid or {})["bbox"]
+        except (KeyError, TypeError, ValueError):
+            return []
+        centre = ((float(minx) + float(maxx)) / 2.0,
+                  (float(miny) + float(maxy)) / 2.0)
+        try:
+            poly = self._polygon_in_run_crs(layer)
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            poly = None
+        if poly is None or poly.isEmpty():
+            return [centre]
+        points: list = []
+        bb = poly.boundingBox()
+        step = bb.width() / 3.0
+        for i in range(3):
+            band = QgsRectangle(bb.xMinimum() + i * step, bb.yMinimum(),
+                                bb.xMinimum() + (i + 1) * step, bb.yMaximum())
+            try:
+                part = poly.intersection(QgsGeometry.fromRect(band))
+                if part is None or part.isEmpty():
+                    continue
+                on_surface = part.pointOnSurface()
+                if on_surface is None or on_surface.isEmpty():
+                    continue
+                point = on_surface.asPoint()
+                points.append((point.x(), point.y()))
+            except (RuntimeError, ValueError, TypeError):
+                continue
+        return points or [centre]
+
     @staticmethod
-    def _imagery_probe_extent(grid):
+    def _imagery_probe_extent(grid, centre=None):
         """A _PROBE_SIDE_PX square of ground at the run's resolution, centred
-        on the zone, as a QgsRectangle in the run CRS.
+        on ``centre``, as a QgsRectangle in the run CRS.
+
+        ``centre`` is an (x, y) pair from :meth:`_probe_centres`; None falls
+        back to the middle of the grid's own extent.
 
         None when the grid carries no usable extent, which fails the guard open.
         Clamped to the zone so a zone smaller than the probe window is not
@@ -191,8 +250,15 @@ class AutoImageryGuardMixin:
         # Run-CRS units per pixel, per axis. The automatic grid makes square
         # pixels, so these agree; reading both keeps the probe honest if that
         # ever stops being true.
-        half_w = min(width, _PROBE_SIDE_PX * width / pixel_w) / 2.0
-        half_h = min(height, _PROBE_SIDE_PX * height / pixel_h) / 2.0
-        cx = (float(minx) + float(maxx)) / 2.0
-        cy = (float(miny) + float(maxy)) / 2.0
+        # The same served side the probe renders at, so the square of ground
+        # and the pixels it lands in agree.
+        from ...core.shape_policy_dials import imagery_probe_px
+        side_px = imagery_probe_px(_PROBE_SIDE_PX)
+        half_w = min(width, side_px * width / pixel_w) / 2.0
+        half_h = min(height, side_px * height / pixel_h) / 2.0
+        if centre is not None:
+            cx, cy = float(centre[0]), float(centre[1])
+        else:
+            cx = (float(minx) + float(maxx)) / 2.0
+            cy = (float(miny) + float(maxy)) / 2.0
         return QgsRectangle(cx - half_w, cy - half_h, cx + half_w, cy + half_h)

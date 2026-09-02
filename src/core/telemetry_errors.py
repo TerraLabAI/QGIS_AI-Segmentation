@@ -116,6 +116,13 @@ def track_plugin_error(
         except Exception:
             pass  # nosec B110
     track(ev.PLUGIN_ERROR, props)
+    # An error inside an Automatic run also ships the run's log so far, so
+    # the code that failed can be read against what the run was doing.
+    try:
+        from .run_log_capture import send_run_log_on_error
+        send_run_log_on_error(error_code)
+    except Exception:  # noqa: BLE001 -- the error event itself is out
+        pass  # nosec B110
 
 # --- Error capture (top-level slots + worker bodies) ----------------------
 #

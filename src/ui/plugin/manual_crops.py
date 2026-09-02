@@ -21,12 +21,15 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from ...core.i18n import tr
+from ...core.interaction_dials import encode_lock_ceiling_s, encode_watchdog_interval_ms
 from ...core.prompt_manager import FrozenCropSession
 from ..error_report_dialog import show_error_report
 
 # Transport-lock watchdog: beat interval, and the ceiling past which a lock
 # is considered stranded even if its owner still looks alive. set_image's own
 # transport timeout is 180s, so a lock held past 240s means the pipe is dead.
+# Both served (network.encode_watchdog_interval_ms, network.encode_lock_ceiling_s);
+# the ceiling never drops below the served click wait plus a margin.
 ENCODE_WATCHDOG_INTERVAL_MS = 5000
 ENCODE_LOCK_CEILING_S = 240.0
 
@@ -48,17 +51,29 @@ class CropReadWorker(QThread):
 
     done = pyqtSignal(int, object)  # (generation, (image, info, err, code))
 
-    def __init__(self, args: dict, generation: int, parent=None):
+    def __init__(self, args: dict, generation: int, cancel=None, parent=None):
         super().__init__(parent)
         self._args = dict(args)
         self._generation = generation
+        self._cancel = cancel
+
+    def _abandoned(self) -> bool:
+        return self._cancel is not None and self._cancel.is_set()
 
     def run(self):
         from ...core.feature_encoder import extract_crop_from_raster
+        if self._abandoned():
+            # Released before the thread got the processor. Nothing has been
+            # read, so nothing has to be thrown away.
+            return
         try:
             result = extract_crop_from_raster(**self._args)
         except Exception as e:  # noqa: BLE001 - a raise here must not kill the thread
             result = (None, None, str(e), "crop_error_unknown")
+        if self._abandoned():
+            # The image this carries is the largest thing the session holds,
+            # and nobody is waiting for it any more.
+            return
         self.done.emit(self._generation, result)
 
 
@@ -126,13 +141,18 @@ class ManualCropsMixin:
                 return None
         return point
 
-    def _transform_geometry_to_canvas_crs(self, geometry):
+    def _transform_geometry_to_canvas_crs(self, geometry) -> bool:
         """Transform a QgsGeometry from raster CRS to canvas CRS (in-place).
 
-        Does nothing when both CRS are identical.
+        Does nothing, and answers True, when both CRS are identical. False when
+        the transform refused: the shape is then still in the raster CRS, and
+        drawing it on the canvas puts it somewhere it does not belong.
         """
-        if self._raster_to_canvas_xform is not None:
-            geometry.transform(self._raster_to_canvas_xform)
+        if self._raster_to_canvas_xform is None:
+            return True
+        from ...core.qt_compat import geometry_op_succeeded
+        return geometry_op_succeeded(
+            geometry.transform(self._raster_to_canvas_xform))
 
     def _transform_to_canvas_crs(self, point):
         """Transform a QgsPointXY from raster CRS to canvas CRS.
@@ -155,11 +175,9 @@ class ManualCropsMixin:
         if not self._is_layer_valid():
             return False
         try:
+            # The layer extent is already in the raster CRS, which is the
+            # frame the point arrives in, so neither side needs moving.
             ext = self._current_layer.extent()
-            # Transform extent to raster CRS if needed
-            if self._canvas_to_raster_xform is not None:
-                # Layer extent is in layer CRS, point is already in raster CRS
-                pass
             in_x = ext.xMinimum() <= point.x() <= ext.xMaximum()
             in_y = ext.yMinimum() <= point.y() <= ext.yMaximum()
             return in_x and in_y
@@ -688,7 +706,7 @@ class ManualCropsMixin:
         # matched the baseline, skipped the re-encode and was answered from the
         # older, coarser imagery still loaded.
         self._pending_crop_zoom_baseline = (
-            scale_factor, self.iface.mapCanvas().mapUnitsPerPixel())
+            scale_factor, self.iface.mapCanvas().mapUnitsPerPixel(), None)
         return {
             "raster_path": self._current_raster_path,
             "center_x": center_point.x(),
@@ -935,13 +953,18 @@ class ManualCropsMixin:
         recompute the auto min-area and restore canvas focus. Shared by the sync
         and async success paths."""
         self._current_crop_info = crop_info
-        # The file read's zoom baseline lands with the crop it describes, for
-        # the same reason the window below does. Online crops set their own
-        # baseline in _online_crop_mupp and leave this empty.
+        # The zoom baseline lands with the crop it describes, for the same
+        # reason the window below does. Both routes stash it: the file read
+        # carries a scale factor, the online fetch a ground resolution.
         baseline = getattr(self, "_pending_crop_zoom_baseline", None)
         self._pending_crop_zoom_baseline = None
-        if baseline is not None and not self._is_online_layer:
-            self._current_crop_scale_factor, self._current_crop_canvas_mupp = baseline
+        if baseline is not None:
+            scale_factor, canvas_mupp, actual_mupp = baseline
+            self._current_crop_canvas_mupp = canvas_mupp
+            if scale_factor is not None:
+                self._current_crop_scale_factor = scale_factor
+            if actual_mupp is not None:
+                self._current_crop_actual_mupp = actual_mupp
         # The predictor now HOLDS this window. Recording it only here is the
         # point: a read that started, or an encode that failed, must never let a
         # later open skip its own encode over a crop that never arrived.
@@ -1001,7 +1024,7 @@ class ManualCropsMixin:
         # outcome.
         if show_busy:
             QApplication.setOverrideCursor(Qt.CursorShape.BusyCursor)
-            self._set_manual_encoding_note(True)
+            self._set_manual_encoding_note(True, phase="encode")
 
         try:
             worker = SetImageWorker(self.predictor, image_np, gen)
@@ -1174,15 +1197,17 @@ class ManualCropsMixin:
 
         self._manual_encode_gen += 1
         gen = self._manual_encode_gen
+        cancel = threading.Event()
         try:
             from .shared import park_orphaned_worker
-            worker = CropReadWorker(args, gen)
+            worker = CropReadWorker(args, gen, cancel=cancel)
         except Exception as e:  # noqa: BLE001 - nothing was taken yet
             self._report_crop_error(str(e), "crop_error_unknown", quiet)
             return False
 
         self._crop_read = {
             "worker": worker,
+            "cancel": cancel,
             "gen": gen,
             "on_encoded": on_encoded,
             "cursor": bool(show_busy),
@@ -1317,6 +1342,12 @@ class ManualCropsMixin:
         self._crop_read = None
         if read is None:
             return
+        # Tell the thread nobody owns its read any more. It is never stopped by
+        # force: it holds plain data only, and park_orphaned_worker joins it
+        # before its object goes.
+        cancel = read.get("cancel")
+        if cancel is not None:
+            cancel.set()
         self._encoding_in_progress = False
         self._encode_lock_gen = None
         if read.get("cursor"):
@@ -1650,6 +1681,10 @@ class ManualCropsMixin:
         self._release_online_fetch(restore_provider=restore_provider)
         self._surface_online_crop_error(error, error_code, center_point,
                                         quiet=quiet)
+        # Everything queued behind this fetch needed THIS crop. Left standing,
+        # the queued request runs against imagery that never arrived and the
+        # user gets a second error for the same failure.
+        self._queued_crop_request = None
         self._discard_pending_manual_click()
 
     def _release_online_fetch(self, restore_provider: bool = True) -> None:
@@ -1949,7 +1984,8 @@ class ManualCropsMixin:
         """Queue the next watchdog beat (seam for tests; the QTimer holds the
         bound method alive until it fires)."""
         from qgis.PyQt.QtCore import QTimer
-        QTimer.singleShot(ENCODE_WATCHDOG_INTERVAL_MS, self._encode_watchdog_tick)
+        QTimer.singleShot(encode_watchdog_interval_ms(ENCODE_WATCHDOG_INTERVAL_MS),
+                          self._encode_watchdog_tick)
 
     def _encode_watchdog_tick(self) -> None:
         """One watchdog beat (main thread). Goes quiet as soon as the lock is
@@ -1970,7 +2006,7 @@ class ManualCropsMixin:
         # ownerless lock and the watchdog force-released a read that was doing
         # exactly what it should, right in the middle of a slow raster.
         owner_alive = owner_alive or self._crop_read is not None
-        if owner_alive and held_s < ENCODE_LOCK_CEILING_S:
+        if owner_alive and held_s < encode_lock_ceiling_s(ENCODE_LOCK_CEILING_S):
             self._encode_watchdog_strikes = 0
         else:
             self._encode_watchdog_strikes = getattr(
@@ -2162,16 +2198,17 @@ class ManualCropsMixin:
         else:
             new_center, mupp_or_scale = self._grid_center_for_manual_click(
                 raster_pt, self._compute_initial_scale_factor())
-        self.current_low_res_mask = None
-        # The old full-res mask belongs to the OLD crop frame; the next click is
-        # in the NEW frame. Null it so Progressive Merge skips the first
-        # post-zoom click rather than merge two masks that cover different
-        # ground (both are padded to the model's square, so a shape check would
-        # not catch the frame mismatch). The transferred low-res mask below
-        # still carries the shape context into the re-encode.
-        self.current_mask = None
 
         def _tail():
+            self.current_low_res_mask = None
+            # The old full-res mask belongs to the OLD crop frame; the next
+            # click is in the NEW frame. Null it so Progressive Merge skips the
+            # first post-zoom click rather than merge two masks that cover
+            # different ground (both are padded to the model's square, so a
+            # shape check would not catch the frame mismatch). The transferred
+            # low-res mask below still carries the shape context into the
+            # re-encode.
+            self.current_mask = None
             self._invalidate_history_logits()
             # Transfer the previous mask as context to the new crop.
             if old_mask is not None and old_crop_info is not None:

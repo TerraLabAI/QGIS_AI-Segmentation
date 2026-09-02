@@ -7,8 +7,6 @@ from qgis.core import Qgis, QgsMessageLog
 
 from .venv_manager import ensure_venv_packages_available
 
-ensure_venv_packages_available()
-
 _cached_device = None
 _device_info = None
 
@@ -18,6 +16,12 @@ def probe_inprocess_torch_device():  # -> torch.device
 
     if _cached_device is not None:
         return _cached_device
+
+    # Put the plugin's own packages on the path here rather than at import.
+    # Importing this module used to do it, so anything that merely reached for
+    # a name in here paid the whole path fix-up, before it was known whether a
+    # local engine was going to be used at all.
+    ensure_venv_packages_available()
 
     try:
         import torch  # noqa: F811

@@ -445,8 +445,11 @@ class ManualHandoffMixin:
         transform refuses it. Never mutates the input: an entry geometry is
         shared with the seed layers and the hit index."""
         try:
+            from ...core.qt_compat import geometry_op_succeeded
+
             out = QgsGeometry(geom)
-            out.transform(xform)
+            if not geometry_op_succeeded(out.transform(xform)):
+                return None
             return None if out.isEmpty() else out
         except Exception:  # noqa: BLE001 -- caller keeps the original shape
             return None

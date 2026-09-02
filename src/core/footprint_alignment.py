@@ -15,7 +15,8 @@ policy-gated per prompt family, and applied to the canonical bases BEFORE the
 review opens, so the review and the export both see the aligned shapes.
 align_saved_footprint at the bottom is the single-object form of the same
 competition, run at a Semi-Auto save with the session's already saved shapes
-as the neighbourhood (ui.plugin.manual_save_alignment).
+as the neighbourhood (ui.plugin.manual_save_alignment). Those neighbours are
+prepared once per session, not once per save: core.footprint_neighbour_cache.
 
 All tolerances are GROUND METRES. The driver builds a per-run metre frame
 (run_frame_scale) and does every measure inside it, so a pseudo-Mercator or
@@ -42,14 +43,22 @@ from qgis.core import (
     QgsSpatialIndex,
 )
 
+from .footprint_neighbour_cache import cached_neighbour_prep
 from .footprint_ring_math import (
     angle_diff_mod90,
     circle_ring,
     ring_dominant_angle,
     ring_drop_short_edges,
+    ring_is_simple,
     ring_rebuild_corners,
     ring_snap_segments,
     weighted_circular_mean_mod90,
+)
+from .shape_policy_dials import (
+    circle_segments,
+    consensus_neighbour_cap,
+    min_angle_split_deg,
+    save_neighbour_cap,
 )
 
 # An angle candidate closer than this to one already tried adds nothing.
@@ -87,6 +96,10 @@ class AlignmentParams:
     consensus_iou_margin: float
     guard_iou_floor: float
     guard_area_ceiling: float
+    # Served switch: an object no snap candidate survives for keeps its
+    # simplified outline (the pass's own input, run through the same guards)
+    # instead of the pixel staircase it came in with. Off keeps the input.
+    revert_to_simplified: bool = False
 
 
 def compile_alignment_params(settings: dict, gsd_m: float) -> AlignmentParams:
@@ -115,6 +128,7 @@ def compile_alignment_params(settings: dict, gsd_m: float) -> AlignmentParams:
         consensus_iou_margin=float(settings["consensus_iou_margin"]),
         guard_iou_floor=float(settings["guard_iou_floor"]),
         guard_area_ceiling=float(settings["guard_area_ceiling"]),
+        revert_to_simplified=settings.get("revert_to_simplified") is True,
     )
 
 
@@ -418,7 +432,11 @@ def _guarded_candidate(raw: QgsGeometry, cand: QgsGeometry,
 def _snap_candidate(coords: np.ndarray, base_deg: float,
                     params: AlignmentParams) -> QgsGeometry | None:
     """One angle candidate: snap the ring to base_deg, rebuild corners, drop
-    short edges, repair. None when the rebuild degenerates."""
+    short edges, repair. None when the rebuild degenerates.
+
+    A ring that crosses itself is refused here rather than handed to the
+    repair, which would keep its largest lobe and hand back a shape smaller
+    than the one the model traced, with nothing to say it had shrunk."""
     lines = ring_snap_segments(
         coords, base_deg, params.ortho_window_deg, params.diag_window_deg)
     ring = ring_rebuild_corners(lines, params.parallel_threshold_m)
@@ -426,6 +444,8 @@ def _snap_candidate(coords: np.ndarray, base_deg: float,
         return None
     ring = ring_drop_short_edges(
         ring, params.min_edge_abs_m, params.min_edge_rel, params.min_corner_deg)
+    if not ring_is_simple(ring):
+        return None
     geom = _geometry_from_rings([ring])
     if geom is None:
         return None
@@ -445,8 +465,9 @@ class FootprintAlignSweep:
     give-up guards per object). ``step(k)`` advances up to k objects and
     returns True when everything is done; ``result()`` then returns the rows
     in the input order, geometries replaced only where an aligned shape passed
-    the guards. Never raises out of step(): a failing object keeps its input
-    geometry.
+    the guards (or, with the served revert_to_simplified switch, where the
+    simplified outline did). Never raises out of step(): a failing object
+    keeps its input geometry.
     """
 
     def __init__(self, rows: list, params: AlignmentParams,
@@ -465,6 +486,12 @@ class FootprintAlignSweep:
         self.reverted_count = 0
         self.circle_count = 0
         self.skipped_count = 0
+        # Reverted rows that took their simplified outline (a subset of
+        # reverted_count, non-zero only with the served switch on).
+        self.simplified_count = 0
+        # The fids whose geometry this pass replaced. A caller holding work
+        # computed from the input shapes can drop just these rows.
+        self.changed_fids: set = set()
 
     # -- stages --------------------------------------------------------------
 
@@ -557,7 +584,7 @@ class FootprintAlignSweep:
         # whole finalize slice on a dense run. The cap never cuts below the
         # minimum the dial asks for, or a configuration wanting more agreement
         # would silently get less of it than a run with the shipped value.
-        cap = max(_CONSENSUS_NEIGHBOUR_CAP,
+        cap = max(consensus_neighbour_cap(_CONSENSUS_NEIGHBOUR_CAP),
                   int(self._params.consensus_min_neighbours))
         if len(near) > cap:
             near.sort(key=lambda item: item[0])
@@ -596,12 +623,12 @@ class FootprintAlignSweep:
         if circularity >= params.circularity_skip:
             center = simp.centroid().asPoint()
             circle = _geometry_from_rings([circle_ring(
-                center.x(), center.y(), area, _CIRCLE_SEGMENTS)])
+                center.x(), center.y(), area, circle_segments(_CIRCLE_SEGMENTS))])
             kept = None
             if circle is not None:
                 kept, _iou = _guarded_candidate(raw, circle, params, raw_area)
             if kept is None:
-                self.reverted_count += 1
+                self._revert(i, raw, simp, raw_area)
                 return
             self._publish(i, kept)
             self.circle_count += 1
@@ -620,16 +647,17 @@ class FootprintAlignSweep:
             if kept is not None:
                 candidates.append((kept, iou, is_consensus))
 
+        split_deg = min_angle_split_deg(_MIN_ANGLE_SPLIT_DEG)
         _try_angle(own_angle, False)
         if top_fraction < params.mrr_when_top_below:
             mrr = _mrr_angle_mod90(raw)
-            if mrr is not None and angle_diff_mod90(mrr, own_angle) > _MIN_ANGLE_SPLIT_DEG:
+            if mrr is not None and angle_diff_mod90(mrr, own_angle) > split_deg:
                 _try_angle(mrr, False)
-        if consensus is not None and angle_diff_mod90(consensus, own_angle) > _MIN_ANGLE_SPLIT_DEG:
+        if consensus is not None and angle_diff_mod90(consensus, own_angle) > split_deg:
             _try_angle(consensus, True)
 
         if not candidates:
-            self.reverted_count += 1
+            self._revert(i, raw, simp, raw_area)
             return
         best = max(candidates, key=lambda c: c[1])
         # The consensus candidate wins ties within the margin, so a block
@@ -640,17 +668,40 @@ class FootprintAlignSweep:
                 break
         self._publish(i, best[0])
 
-    def _publish(self, i: int, frame_geom: QgsGeometry) -> None:
-        """Map an accepted metre-frame shape back to the run CRS and store it
-        on the output row. A failed map keeps the input row."""
+    def _revert(self, i: int, raw: QgsGeometry, simp: QgsGeometry | None,
+                raw_area: float) -> None:
+        """No snap candidate survived the guards. The row keeps the geometry
+        it came in with, unless the served switch is on: then it takes its
+        simplified outline, the ring the candidates were built from, after the
+        same guards. That outline sits within the simplify tolerance of the
+        raw one, so the staircase goes and the shape does not move; an object
+        too small to clear the guards even at that distance stays raw."""
+        self.reverted_count += 1
+        if not self._params.revert_to_simplified or simp is None:
+            return
+        kept, _iou = _guarded_candidate(raw, simp, self._params, raw_area)
+        if kept is not None and self._store_frame_geom(i, kept):
+            self.simplified_count += 1
+
+    def _store_frame_geom(self, i: int, frame_geom: QgsGeometry) -> bool:
+        """Map a metre-frame shape back to the run CRS onto the output row.
+        False (row untouched) when the map back yields nothing."""
         rings = _geometry_rings(frame_geom)
         back = _geometry_from_rings(
             _scaled_rings(rings, 1.0 / self._kx, 1.0 / self._ky))
         if back is None or back.isEmpty():
-            self.reverted_count += 1
-            return
+            return False
         fid, _geom, score = self._rows[i]
         self._out[i] = (fid, back, score)
+        self.changed_fids.add(fid)
+        return True
+
+    def _publish(self, i: int, frame_geom: QgsGeometry) -> None:
+        """Store an accepted (snapped) shape. A failed map keeps the input row
+        and counts as a revert."""
+        if not self._store_frame_geom(i, frame_geom):
+            self.reverted_count += 1
+            return
         self.aligned_count += 1
 
     # -- driver --------------------------------------------------------------
@@ -699,11 +750,12 @@ def align_footprints_now(rows: list, params: AlignmentParams,
     return sweep.result(), sweep
 
 
-# The most neighbours one save-time alignment prepares. Only the pool inside
-# the consensus radius counts, nearest first, so a session holding thousands
-# of saved shapes still pays a bounded price per save. The consensus needs a
-# few agreeing neighbours, not the whole street; every save re-prepares them
-# on the GUI thread, so the cap is what bounds the per-save stall.
+# The most neighbours one save-time alignment reads. Only the pool inside the
+# consensus radius counts, nearest first, so a session holding thousands of
+# saved shapes still pays a bounded price per save. The consensus needs a few
+# agreeing neighbours, not the whole street. What each of them costs is bounded
+# again by core.footprint_neighbour_cache, which prepares one saved shape once
+# per session instead of once per save.
 _SAVE_NEIGHBOUR_CAP = 24
 
 
@@ -743,14 +795,18 @@ def align_saved_footprint(geom: QgsGeometry, neighbour_geoms: list,
         near.sort(key=lambda item: item[0])
         rows = [target_row] + [
             (i + 1, other, None)
-            for i, (_dist, other) in enumerate(near[:_SAVE_NEIGHBOUR_CAP])]
+            for i, (_dist, other) in enumerate(near[:save_neighbour_cap(_SAVE_NEIGHBOUR_CAP)])]
         sweep = FootprintAlignSweep(rows, params, scale)
-        for i in range(len(rows)):
+        try:
+            sweep._prepare_one(0)
+        except Exception:  # noqa: BLE001 -- no prepared target, no alignment
+            return None
+        for i in range(1, len(rows)):
             try:
-                sweep._prepare_one(i)
+                sweep._prepared[i] = cached_neighbour_prep(
+                    sweep, i, params, scale)
             except Exception:  # noqa: BLE001 -- a bad neighbour drops out alone
-                if i == 0:
-                    return None
+                sweep._prepared[i] = None
         sweep._build_neighbour_index()
         sweep._consensus_one(0)
         sweep._align_one(0)

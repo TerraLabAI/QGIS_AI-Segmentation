@@ -26,6 +26,8 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from ...core.activation_manager import (
+    get_consent_terms_url,
+    get_privacy_url,
     has_tos_accepted,
     has_tos_locked,
 )
@@ -41,7 +43,7 @@ from .guidance import (
 )
 from .styles import (
     _BTN_BLUE,
-    _BTN_EXPORT_DISABLED,
+    _BTN_EXPORT_READY,
     _BTN_GRAY,
     _BTN_GREEN,
     _BTN_GREEN_AUTH,
@@ -174,8 +176,13 @@ class DockBuildMixin:
         self.mode_switch.mode_selected.connect(self._on_mode_selected)
         self.main_layout.addWidget(self.mode_switch)
 
-    def _on_mode_selected(self, mode: Mode) -> None:
-        """Handle mode-switch toggle. Blocks switch while a run is in progress."""
+    def _on_mode_selected(self, mode: Mode) -> bool:
+        """Handle mode-switch toggle. Blocks the switch while a run is going.
+
+        True when the mode changed, False when the request was refused, so a
+        programmatic caller can report the refusal instead of claiming the
+        mode it asked for.
+        """
         if mode == Mode.AUTOMATIC and self._segmentation_active:
             self.mode_switch.blockSignals(True)
             self.mode_switch.set_mode(Mode.INTERACTIVE)
@@ -185,11 +192,14 @@ class DockBuildMixin:
             # T4: tooltips are hover-only, so also flash the reason as a 3 s
             # status line where the user is already looking.
             try:
+                # The card look is what the label wears at rest; a blocked
+                # switch must not leave it in whatever the last state set.
+                self._set_instructions_style("card")
                 self.instructions_label.setText(msg)
                 QTimer.singleShot(3000, self._update_instructions)
             except (RuntimeError, AttributeError):
                 pass
-            return
+            return False
         if mode == Mode.INTERACTIVE and self._auto_run_active:
             self.mode_switch.blockSignals(True)
             self.mode_switch.set_mode(Mode.AUTOMATIC)
@@ -203,7 +213,7 @@ class DockBuildMixin:
                 QTimer.singleShot(3000, self._restore_auto_run_status)
             except (RuntimeError, AttributeError):
                 pass
-            return
+            return False
         self.mode_switch.setToolTip("")
         self._mode = mode
         # B1: programmatic callers (MCP set_mode, headless auto runs) enter
@@ -215,6 +225,7 @@ class DockBuildMixin:
         # No last-mode persistence: the dock always reopens on Automatic (D1).
         self.mode_changed.emit(mode)
         self._update_full_ui()
+        return True
 
     def _on_manual_try_example(self) -> None:
         """Manual first-run hero 'Try it on an example'. The demo simply loads
@@ -643,16 +654,10 @@ class DockBuildMixin:
         # are about to actually use the service. Hidden permanently once the
         # user has clicked Start for the first time (see lock_tos): at that
         # point consent is considered irrevocably given.
-        _tos_terms_url = (
-            "https://terra-lab.ai/terms-of-use"
-            "?utm_source=qgis&utm_medium=plugin"
-            "&utm_campaign=ai-segmentation&utm_content=consent_terms"
-        )
-        _tos_privacy_url = (
-            "https://terra-lab.ai/privacy-policy"
-            "?utm_source=qgis&utm_medium=plugin"
-            "&utm_campaign=ai-segmentation&utm_content=consent_privacy"
-        )
+        # Served addresses, read when the row is built; the UTM names the
+        # consent row as the touchpoint.
+        _tos_terms_url = get_consent_terms_url("consent_terms")
+        _tos_privacy_url = get_privacy_url("consent_privacy")
         self.tos_container = QWidget()
         tos_row = QHBoxLayout(self.tos_container)
         tos_row.setContentsMargins(0, 0, 0, 0)
@@ -763,6 +768,19 @@ class DockBuildMixin:
         self.auto_correct_undo_shortcut.activated.connect(
             self._on_auto_correct_undo_shortcut)
 
+        # The list cleanup_signals tears down. Written here, beside the
+        # builders, so a shortcut added above is never left connected to a dock
+        # that is gone.
+        self._dock_shortcuts = [
+            self.start_shortcut,
+            self.auto_escape_shortcut,
+            self.auto_enter_shortcut,
+            self.auto_enter_shortcut_kp,
+            self.auto_correct_remove_backspace_shortcut,
+            self.auto_correct_remove_delete_shortcut,
+            self.auto_correct_undo_shortcut,
+        ]
+
         # Nothing is armed at rest, and the states that arm each key are
         # written from half the dock, so the filter re-arms them on the press
         # itself (see _ShortcutArmingFilter). Parented to the dock: Qt drops
@@ -772,12 +790,16 @@ class DockBuildMixin:
         # On the dock too, for the floating case: a key pressed in a floating
         # dock never walks up to the main window.
         self.installEventFilter(self._shortcut_arming_filter)
+        # Kept so cleanup_signals can take the filter off the window again: a
+        # reload builds a new dock, and the old filter would stay on the window.
+        self._shortcut_arming_window = None
         try:
             from qgis.utils import iface
 
             window = iface.mainWindow() if iface is not None else None
             if window is not None:
                 window.installEventFilter(self._shortcut_arming_filter)
+                self._shortcut_arming_window = window
         except (ImportError, AttributeError, RuntimeError):
             pass  # nosec B110 - step changes still re-arm without the filter
 
@@ -800,9 +822,8 @@ class DockBuildMixin:
         self.save_mask_button.setMinimumHeight(34)
         self.save_mask_button.setStyleSheet(_BTN_BLUE)
         self.save_mask_button.setToolTip(
-            tr("Off until a selection is on screen. Click the object first, "
-               "then Save polygon keeps it in your session; Export writes "
-               "all kept polygons to a layer.")
+            tr("Click the object first. Save polygon keeps it in your "
+               "session; Export writes all kept polygons to a layer.")
         )
         layout.addWidget(self.save_mask_button)
 
@@ -812,7 +833,9 @@ class DockBuildMixin:
         self.export_button.setEnabled(False)
         self.export_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.export_button.setMinimumHeight(34)
-        self.export_button.setStyleSheet(_BTN_EXPORT_DISABLED)
+        # One look, written once: the primary is HIDDEN while there is
+        # nothing to export, so it never wears a disabled style.
+        self.export_button.setStyleSheet(_BTN_EXPORT_READY)
         layout.addWidget(self.export_button)
 
         # Secondary action buttons (small, horizontal)

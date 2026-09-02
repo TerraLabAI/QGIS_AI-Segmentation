@@ -263,7 +263,9 @@ def _bucketed_instance_renderer(layer, palette):
             "outline_width": INSTANCE_OUTLINE_WIDTH,
             "outline_style": "solid",
         })
-        categories.append(QgsRendererCategory(bucket, symbol, str(bucket)))
+        # No label: the bucket number means nothing to a reader, and 64 rows
+        # reading "0" to "63" push every other layer out of the legend.
+        categories.append(QgsRendererCategory(bucket, symbol, ""))
     # Catch-all: a row whose classifier evaluates to NULL must still draw.
     fallback = QgsFillSymbol.createSimple({
         "color": f"160,160,160,{INSTANCE_FILL_ALPHA}",
@@ -372,6 +374,22 @@ def _store_style_in_the_file(layer) -> None:
         _log_symbology_failure("saving the style into the file", err)
 
 
+def _collapse_legend_node(layer) -> None:
+    """Fold the layer's legend entry shut in the Layers panel.
+
+    One hue per object means one legend row per hue bucket, and an expanded
+    node fills the panel with unlabelled swatches. The user can still open it.
+    """
+    try:
+        from qgis.core import QgsProject
+
+        node = QgsProject.instance().layerTreeRoot().findLayer(layer.id())
+        if node is not None:
+            node.setExpanded(False)
+    except Exception as err:  # noqa: BLE001 -- the legend never fails a run
+        _log_symbology_failure("folding the legend entry", err)
+
+
 def paint_instances_apart(layer) -> dict:
     """Give every object on a saved layer its own colour, in the file as well.
 
@@ -411,6 +429,7 @@ def paint_instances_apart(layer) -> dict:
         }
     try:
         layer.setRenderer(renderer)
+        _collapse_legend_node(layer)
         layer.triggerRepaint()
     except Exception as err:  # noqa: BLE001 -- colouring never fails a run
         _log_symbology_failure("putting the colours on the layer", err)

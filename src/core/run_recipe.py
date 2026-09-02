@@ -62,6 +62,19 @@ _REFINE_DEFAULTS: dict[str, float | bool] = {
     "fill_holes_max": AUTO_REVIEW_FILL_HOLES_MAX_M2_DEFAULT,
 }
 
+# What each numeric control can be set to in the review panel. A token stands
+# in for that panel, so it may never carry a value a user could not have
+# dialled: without a band, a token asking to expand by 1e9 runs that through
+# the geometry pass on every object of the run. Same shape as the ring bounds
+# _validate_ring applies. Keys absent here are the boolean ones.
+_REFINE_BANDS: dict[str, tuple[float, float]] = {
+    "simplify": (0.0, 1000.0),
+    "clean": (0.0, 50.0),
+    "expand": (-1000.0, 1000.0),
+    "fill_holes_max": (0.0, 1000000.0),
+}
+_REFINE_BOOL_KEYS = ("smooth", "ortho", "fill_holes")
+
 
 class RecipeError(ValueError):
     """A token is malformed, out of bounds, or of an unknown version.
@@ -191,10 +204,16 @@ def decode(token: str) -> RunRecipe:
         for k, v in r.items():
             if k not in _REFINE_DEFAULTS:
                 continue  # ignore unknown keys (forward compatibility)
-            # bool is a subclass of int, so (int, float) accepts both; the value
-            # keeps its own type (True stays bool, 2.0 stays float).
-            if isinstance(v, (int, float)):
-                refine[k] = v
+            # bool is a subclass of int, so (int, float) accepts both; the
+            # value keeps its own kind (a switch stays a switch, a dial stays
+            # a number) and every dial is held to what the panel offers.
+            if not isinstance(v, (int, float)):
+                continue
+            if k in _REFINE_BOOL_KEYS:
+                refine[k] = bool(v)
+                continue
+            low, high = _REFINE_BANDS[k]
+            refine[k] = min(high, max(low, float(v)))
 
     return RunRecipe(
         prompt=prompt,

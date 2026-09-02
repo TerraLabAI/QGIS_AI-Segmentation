@@ -14,6 +14,14 @@ from qgis.core import (
     QgsPointXY,
 )
 
+from ...core.interaction_dials import (
+    ground_scale_band_deg,
+    ground_scale_band_m,
+    live_refiner_memo_max,
+    rescue_refine_budget_s,
+    review_reslice_parked_geoms_max,
+    review_reslice_parked_keys_max,
+)
 from ...core.live_refine import (
     LiveRefiner,
     plain_outline_geom,
@@ -58,6 +66,12 @@ _RESLICE_PARKED_GEOMS_MAX = 40000
 _RESCUE_REFINE_BUDGET_S = 3.0
 
 
+def rescue_refine_budget() -> float:
+    """The rescue export's shaping budget, served as
+    ui.review.rescue_refine_budget_s. Read once per rescue."""
+    return rescue_refine_budget_s(_RESCUE_REFINE_BUDGET_S)
+
+
 def _geom_centre_xy(geom) -> tuple[float, float] | None:
     """Where a per-CRS ground measure is taken for ONE object: the centre of
     its bounding box, or None when there is no box to read.
@@ -76,28 +90,6 @@ def _geom_centre_xy(geom) -> tuple[float, float] | None:
         centre = bbox.center()
         return float(centre.x()), float(centre.y())
     except (AttributeError, RuntimeError, TypeError):
-        return None
-
-
-def _geoms_centre(geoms: list) -> tuple[float, float] | None:
-    """Centre of the combined bounding box of ``geoms``, or None when it
-    cannot be read. Used as the position a per-CRS ground measure is taken
-    at, so the whole set converts on one factor."""
-    box = None
-    try:
-        for geom in geoms:
-            if geom is None or geom.isEmpty():
-                continue
-            bbox = geom.boundingBox()
-            if box is None:
-                box = bbox
-            else:
-                box.combineExtentWith(bbox)
-        if box is None:
-            return None
-        centre = box.center()
-        return float(centre.x()), float(centre.y())
-    except (RuntimeError, AttributeError, TypeError):
         return None
 
 
@@ -186,16 +178,16 @@ class AutoReviewGeometryMixin:
         cached = getattr(self, "_auto_crs_scale_band", None)
         if cached is not None and cached[0] == authid:
             return cached[1]
-        band = _GROUND_SCALE_BAND_M
+        band = ground_scale_band_m(_GROUND_SCALE_BAND_M)
         try:
             from ...core.layer_conventions import crs_measures_in_ground_metres
             crs = QgsCoordinateReferenceSystem(authid)
             if crs_measures_in_ground_metres(crs):
                 band = 0.0
             elif crs.isGeographic():
-                band = _GROUND_SCALE_BAND_DEG
+                band = ground_scale_band_deg(_GROUND_SCALE_BAND_DEG)
         except Exception:  # noqa: BLE001 -- an unreadable CRS keeps the band
-            band = _GROUND_SCALE_BAND_M
+            band = ground_scale_band_m(_GROUND_SCALE_BAND_M)
         self._auto_crs_scale_band = (authid, band)
         return band
 
@@ -225,9 +217,14 @@ class AutoReviewGeometryMixin:
             return None
         return refiner.refine(base)
 
-    def _review_refiner_for(self, base, params: dict, pixel_size: float):
+    def _review_refiner_for(self, base, params: dict, pixel_size: float,
+                            shape_key: tuple | None = None):
         """The refiner that shapes THIS object under ``params``, or None when
         there is no position to measure the run's ground dials at.
+
+        ``shape_key`` lets a caller that has already computed the shape key hand
+        it in. The key walks a dozen params, and the refine path computed it
+        once for the cache and again here for every object of the set.
 
         Split out from the refine itself because the pick reads the project
         (the ground measure) and the shape does not: the review's off-GUI
@@ -257,7 +254,8 @@ class AutoReviewGeometryMixin:
         # self: the tests bind this method onto bare stubs.
         key = (getattr(self, "_auto_crs_authid", None),
                self._auto_ground_scale_bucket(ref[1]),
-               AutoReviewGeometryMixin._review_shape_key(params, pixel_size))
+               shape_key if shape_key is not None
+               else AutoReviewGeometryMixin._review_shape_key(params, pixel_size))
         refiners = getattr(self, "_review_live_refiners", None)
         if not isinstance(refiners, dict):
             refiners = {}
@@ -265,7 +263,7 @@ class AutoReviewGeometryMixin:
         refiner = refiners.get(key)
         if refiner is None:
             # Dicts keep insertion order, so the first key is the oldest.
-            while len(refiners) >= _LIVE_REFINER_MEMO_MAX:
+            while len(refiners) >= live_refiner_memo_max(_LIVE_REFINER_MEMO_MAX):
                 refiners.pop(next(iter(refiners)))
             refiner = LiveRefiner(
                 params, pixel_size,
@@ -315,93 +313,52 @@ class AutoReviewGeometryMixin:
         )
 
     def _boundary_snap_offered(self) -> bool:
-        """Whether this run may show the shared-borders control: a land-cover
-        object, and few enough shapes for one pass. The prompt comes from the
-        run context (the review's own prompt as a fallback), so a restored run
-        answers the same way a fresh one does. Fail-closed on any error: the
-        control simply does not appear."""
-        try:
-            from ...core.boundary_snap import boundary_snap_offered
-            prompt = str((self._auto_run_ctx or {}).get("prompt") or "").strip()
-            if not prompt:
-                prompt = str((self._auto_review or {}).get("prompt") or "")
-            return boundary_snap_offered(prompt, len(self._auto_objects))
-        except Exception:  # noqa: BLE001 -- a gate failure hides the control
-            return False
+        """Whether this run may show the shared-borders control. Body in
+        review_boundary_snap."""
+        from .review_boundary_snap import boundary_snap_is_offered
+
+        return boundary_snap_is_offered(self)
 
     def _boundary_snap_tolerance_units(self, geoms: list) -> float:
-        """The shared-borders tolerance for this set, in RUN CRS UNITS.
+        """The shared-borders tolerance for this set, in RUN CRS UNITS. Body in
+        review_boundary_snap."""
+        from .review_boundary_snap import boundary_snap_tolerance_in_units
 
-        The dial is a ground distance (see core.boundary_snap) and a run often
-        works in Web Mercator, where one unit is well under a metre: measure
-        the metres one unit spans in the middle of the set, then convert. A set
-        whose position cannot be read falls back to the metre value, which is
-        exact in any metric projection.
-        """
-        from ...core.boundary_snap import boundary_snap_tolerance_units
-        ref = _geoms_centre(geoms)
-        if ref is None:
-            return boundary_snap_tolerance_units(0.0)
-        return boundary_snap_tolerance_units(
-            self._auto_crs_metres_per_unit(ref[0], ref[1]))
+        return boundary_snap_tolerance_in_units(self, geoms)
 
     def _apply_boundary_snap(self, geoms: list, params: dict) -> list:
         """Give the VISIBLE set exact shared borders, once, as a whole set.
 
         Every other review control acts on ONE object, so it lives in the
         per-object refine (_refine_geom_for_review). Sharing a border needs
-        every neighbour at once, so it runs here instead: on the assembled
-        visible set, right before the review adopts it, which is also the set
-        the Export commits.
-
-        Off unless the user ticked the control, and the control itself is only
-        offered on a land-cover run small enough for one pass. Returns the
-        input list when anything is off, so a caller can always use the
-        result; the length and the order always match the input, which is what
-        keeps the parallel score and id lists aligned.
+        every neighbour at once, so it runs on the assembled visible set, right
+        before the review adopts it, which is also the set the Export commits.
+        Body in review_boundary_snap.
         """
-        if not params.get("snap_boundaries"):
-            return geoms
-        if not isinstance(geoms, list) or len(geoms) < 2:
-            return geoms
-        from ...core.boundary_snap import boundary_snap_max_objects, snap_boundaries
-        cap = boundary_snap_max_objects()
-        if cap > 0 and len(geoms) > cap:
-            # The control is not offered above the cap, so this is a safety
-            # net (a set that grew after a batch fold): skip quietly.
-            QgsMessageLog.logMessage(
-                f"Auto review: shared borders skipped, {len(geoms)} shapes "
-                f"over the {cap} limit",
-                "AI Segmentation", level=Qgis.MessageLevel.Info)
-            return geoms
-        tolerance = self._boundary_snap_tolerance_units(geoms)
-        if tolerance <= 0:
-            return geoms
-        import time as _t
-        t0 = _t.monotonic()
-        try:
-            out = snap_boundaries(
-                geoms, tolerance, crs=self._auto_crs_authid or None)
-        except Exception as exc:  # noqa: BLE001 -- keep the unsnapped shapes
-            # A whole-set GEOS failure here must degrade to "no shared
-            # borders", never end the finalize/reslice chain that called it.
-            QgsMessageLog.logMessage(
-                f"Auto review: shared borders failed, keeping the unsnapped "
-                f"shapes ({exc})",
-                "AI Segmentation", level=Qgis.MessageLevel.Warning)
-            return geoms
-        if not isinstance(out, list) or len(out) != len(geoms):
-            return geoms
-        took_ms = int((_t.monotonic() - t0) * 1000)
-        # Log only a slow snap: this runs on every reslice while Shared borders
-        # is on, so logging each cheap pass would spam the main-thread message
-        # log during a confidence drag.
-        if took_ms > 50:
-            QgsMessageLog.logMessage(
-                f"Auto review: shared borders over {len(geoms)} shape(s) "
-                f"in {took_ms} ms",
-                "AI Segmentation", level=Qgis.MessageLevel.Info)
-        return out
+        from .review_boundary_snap import apply_boundary_snap_to_set
+
+        return apply_boundary_snap_to_set(self, geoms, params)
+
+    def _begin_boundary_snap(self, geoms: list, params: dict) -> tuple:
+        """``(answer, started)``: the sliced half of _apply_boundary_snap, for
+        the finalize pump. Body in review_boundary_snap."""
+        from .review_boundary_snap import begin_boundary_snap_pass
+
+        return begin_boundary_snap_pass(self, geoms, params)
+
+    def _finish_boundary_snap(self, geoms: list, started: tuple) -> list:
+        """The snapped set from a pass stepped to the end. Body in
+        review_boundary_snap."""
+        from .review_boundary_snap import finish_boundary_snap_pass
+
+        return finish_boundary_snap_pass(self, geoms, started)
+
+    def _set_boundary_snap_skip_reason(self, reason: str) -> None:
+        """Tell the panel why shared borders did nothing, once. Body in
+        review_boundary_snap."""
+        from .review_boundary_snap import set_boundary_snap_skip_reason
+
+        set_boundary_snap_skip_reason(self, reason)
 
     def _reset_review_refine_cache(self) -> None:
         """Drop the reslice refine cache. Must run whenever _auto_objects is
@@ -422,9 +379,16 @@ class AutoReviewGeometryMixin:
         stop_refine_thread = getattr(self, "_stop_review_refine_thread", None)
         if stop_refine_thread is not None:
             stop_refine_thread()
-        self._auto_reslice_cache = {"key": None, "geoms": {}, "parked": {}}
+        self._auto_reslice_cache = {
+            "key": None, "geoms": {}, "parked": {}, "areas": {}}
+        # Per-object edit sequences belong to the object set that just went.
+        self._review_refine_seq = {}
         self._review_fid_map = {}
         self._review_live_refiners = {}
+        # The whole-set shared-borders and gap-fill answers describe the
+        # geometry that just went, and their keys hold those geometries alive.
+        self._boundary_snap_memo = None
+        self._gap_fill_memo = None
         # The position the ground measure falls back to when an object carries
         # none. It belongs to the run the refiners belonged to.
         self._review_ground_ref_xy = None
@@ -454,7 +418,21 @@ class AutoReviewGeometryMixin:
         rebuilds it)."""
         cache = getattr(self, "_auto_reslice_cache", None)
         touched = [int(idx) for idx in indices]
+        # An answer for the shape BEFORE this edit may still be on its way back
+        # from the refine thread. The shape key has not moved (no control was
+        # touched), so only the per-object sequence can tell the two apart.
+        bump = getattr(self, "_bump_review_refine_seq", None)
+        if bump is not None:
+            bump(touched)
+        # The whole-set shared-borders and gap-fill answers described the
+        # shapes that just changed.
+        self._boundary_snap_memo = None
+        self._gap_fill_memo = None
         if isinstance(cache, dict):
+            areas = cache.get("areas")
+            if isinstance(areas, dict):
+                for idx in touched:
+                    areas.pop(idx, None)
             # The parked keys go with the current one. They exist so that
             # returning to a previous setting is free, and a hand edit rewrote
             # the object: without this, moving a control back would redraw the
@@ -502,10 +480,15 @@ class AutoReviewGeometryMixin:
             parked[old_key] = old_geoms
         revived = parked.pop(key, None)
         held = sum(len(g) for g in parked.values())
-        while parked and (len(parked) > _RESLICE_PARKED_KEYS_MAX or held > _RESLICE_PARKED_GEOMS_MAX):
+        keys_max = review_reslice_parked_keys_max(_RESLICE_PARKED_KEYS_MAX)
+        geoms_max = review_reslice_parked_geoms_max(_RESLICE_PARKED_GEOMS_MAX)
+        while parked and (len(parked) > keys_max or held > geoms_max):
             held -= len(parked.pop(next(iter(parked))))
         cache["key"] = key
         cache["geoms"] = revived if revived is not None else {}
+        # The measured areas describe the geometry under the OLD key. They are
+        # cheap to rebuild and wrong to keep, so they go with the swap.
+        cache["areas"] = {}
 
     @staticmethod
     def _plain_outline_geom(base):
@@ -557,6 +540,7 @@ class AutoReviewGeometryMixin:
         # override drops that object's cache entry, so the shared key stays a
         # whole-set identity.
         _per_shape = getattr(self, "_shape_params_for_object", None)
+        _shared_params = params
         if _per_shape is not None:
             params = _per_shape(det_idx, params)
         # Guarded inside refine_review_geom: one pathological geometry
@@ -565,7 +549,12 @@ class AutoReviewGeometryMixin:
         # cached either way, so a retried pass does not repeat the failure.
         # Normalized (repair + MultiPolygon coerce) ONCE at cache-fill time, so
         # every later push of this geometry skips both.
-        refiner = self._review_refiner_for(base, params, pixel_size)
+        # The key above already describes these params; hand it over rather than
+        # walking every dial a second time. An object carrying its OWN Shape
+        # settings is a different identity, so it recomputes.
+        refiner = self._review_refiner_for(
+            base, params, pixel_size,
+            shape_key=key if params is _shared_params else None)
         if refiner is None:
             result = self._plain_outline_geom(base)
             geoms[det_idx] = result
@@ -589,6 +578,23 @@ class AutoReviewGeometryMixin:
                 "AI Segmentation", level=Qgis.MessageLevel.Warning)
         except Exception:  # nosec B110
             pass
+
+    def _note_stitch_shapes_dirty(self, fids) -> None:
+        """Record fids whose object changed after the live stitch thread shaped
+        it, so the finalize seeds its refine cache from every OTHER object
+        instead of giving the whole set up.
+
+        Two things move an object after that thread has stopped: the partition
+        restore, and the run-wide footprint alignment. Both touch a small part
+        of the run, and both report exactly what they touched.
+        """
+        if not fids:
+            return
+        dirty = getattr(self, "_auto_stitch_dirty_fids", None)
+        if dirty is None:
+            dirty = set()
+            self._auto_stitch_dirty_fids = dirty
+        dirty.update(fids)
 
     def _stitch_shapes_are_reusable(self, pixel_size: float,
                                     objects: list) -> bool:
@@ -626,15 +632,20 @@ class AutoReviewGeometryMixin:
         # per object; only the two ends are measured.
         band = None
         try:
-            for row in objects:
-                ref = _geom_centre_xy(row[0])
-                if ref is None:
-                    return False
-                here = self._auto_ground_scale_bucket(ref[1])
-                if band is None:
-                    band = here
-                elif here != band:
-                    return False
+            # A CRS whose coordinate difference IS a ground metre has one band
+            # from end to end, so every object answers 0 and the walk can only
+            # ever confirm it. Skip it: this runs once per finalize over the
+            # whole set.
+            if self._auto_ground_scale_band() > 0.0:
+                for row in objects:
+                    ref = _geom_centre_xy(row[0])
+                    if ref is None:
+                        return False
+                    here = self._auto_ground_scale_bucket(ref[1])
+                    if band is None:
+                        band = here
+                    elif here != band:
+                        return False
             for row in (objects[0], objects[-1]):
                 ref = _geom_centre_xy(row[0])
                 if ref is None:
@@ -673,9 +684,13 @@ class AutoReviewGeometryMixin:
             self._adopt_reslice_shape_key(cache, key)
         geoms = cache["geoms"]
         per_shape = getattr(self, "_shape_params_for_object", None)
+        # Objects that moved after the thread shaped them. Skipping them here
+        # is what keeps the seeded output identical to the refined one: they
+        # fall through and get shaped from the geometry they now carry.
+        dirty = getattr(self, "_auto_stitch_dirty_fids", None) or ()
         seeded = 0
         for det_idx, fid in enumerate(object_fids):
-            if det_idx in geoms:
+            if det_idx in geoms or fid in dirty:
                 continue
             shape = shapes.get(fid)
             if shape is None:
@@ -701,8 +716,8 @@ class AutoReviewGeometryMixin:
 
     def _compute_visible_objects(
         self, params: dict, pixel_size: float, with_scores: bool = False,
-        refine_budget_s: float = 0.0,
-    ) -> list | tuple[list, list]:
+        refine_budget_s: float = 0.0, with_ids: bool = False,
+    ) -> list | tuple[list, list] | tuple[list, list, list]:
         """Synchronous filter+refine of _auto_objects into the visible geom set:
         whole-object confidence + size filter, then the shape refine. Used by the
         headless path; the interactive path does the same cooperatively.
@@ -715,7 +730,10 @@ class AutoReviewGeometryMixin:
         is a dict lookup and never touches the budget, so the set the user was
         actually looking at always comes out fully shaped; only the cohort the
         Confidence cutoff had hidden can fall back to its traced outline. 0
-        means no bound, which is what the headless path wants."""
+        means no bound, which is what the headless path wants.
+
+        ``with_ids`` also returns the parallel canonical det_id list, so a caller
+        can tell two same-sized sets apart by identity instead of by count."""
         import time as _t
 
         removed = self._review_removed_fids()
@@ -732,6 +750,7 @@ class AutoReviewGeometryMixin:
         unrepairable = 0
         out = []
         out_scores = []
+        out_ids = []
         for det_idx, (base, score, area) in enumerate(self._auto_objects):
             if det_idx in removed or base is None or base.isEmpty():
                 continue
@@ -745,11 +764,13 @@ class AutoReviewGeometryMixin:
             if g is not None:
                 out.append(g)
                 out_scores.append(float(score))
+                if with_ids:
+                    out_ids.append(self._object_fid_for(det_idx))
             else:
                 unrepairable += 1
         if unshaped:
             QgsMessageLog.logMessage(
-                f"Auto review: rescue export ran out of its {_RESCUE_REFINE_BUDGET_S:.0f}s "
+                f"Auto review: rescue export ran out of its {refine_budget_s:.0f}s "
                 f"shaping budget; {unshaped} hidden object(s) saved with their "
                 f"traced outline", "AI Segmentation", level=Qgis.MessageLevel.Info)
         if unrepairable:
@@ -762,6 +783,8 @@ class AutoReviewGeometryMixin:
         # The set is complete here, which is the only point a whole-set
         # operation can run: shared borders needs every neighbour at once.
         out = self._apply_boundary_snap(out, params)
+        if with_ids:
+            return out, out_scores, out_ids
         if with_scores:
             return out, out_scores
         return out

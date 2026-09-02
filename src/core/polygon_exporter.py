@@ -15,6 +15,7 @@ import numpy as np  # noqa: E402
 from qgis.core import (  # noqa: E402
     Qgis,
     QgsFeature,
+    QgsField,
     QgsGeometry,
     QgsLineString,
     QgsMessageLog,
@@ -27,6 +28,13 @@ from qgis.PyQt.QtCore import QMetaObject, QObject, pyqtSlot  # noqa: E402
 
 from .merger import IncrementalMerger  # noqa: E402,F401
 from .polygon_packing import pack_disjoint_crops  # noqa: E402
+from .qt_compat import PolygonGeometry, field_type_string  # noqa: E402
+from .shape_policy_dials import (  # noqa: E402
+    close_max_area_growth,
+    refine_margin_px,
+    smooth_area_keep,
+    smooth_diet_fraction,
+)
 
 
 def mask_to_polygons_rasterio(
@@ -98,19 +106,50 @@ def _finish_polygon(geojson: dict, simplify_tolerance: float) -> QgsGeometry | N
     only thing that decides what a mask's pixels become.
     """
     geom = _geojson_to_geometry(geojson)
-    if geom is None or geom.isEmpty() or not geom.isGeosValid():
+    if geom is None or geom.isEmpty():
         return None
     if simplify_tolerance <= 0:
-        return geom
-    # simplify() can return a self-intersecting result that the isGeosValid()
-    # gate above already passed; re-validate so an invalid geometry never
-    # reaches the live merger. Repair when possible, otherwise keep the
-    # unsimplified (valid) geometry.
+        return geom if geom.isGeosValid() else None
+    # A validity walk reads every vertex, and a traced outline carries one per
+    # step of its staircase, so the raw outline is the dearest thing here to
+    # check. Simplify first: a valid simplified outline is the answer whatever
+    # it came from, and the raw one is only asked when the simplify failed and
+    # the ladder below needs to know whether it may fall back on it.
     simplified = geom.simplify(simplify_tolerance)
+    if (simplified is not None and not simplified.isEmpty()
+            and simplified.isGeosValid()):
+        return simplified
+    if not geom.isGeosValid():
+        return None
+    if simplified is None:
+        return geom
+    return _repaired_simplification(geom, simplified)
+
+
+def simplify_and_revalidate(geom: QgsGeometry,
+                            tolerance: float) -> QgsGeometry:
+    """Simplify a valid polygon, keeping the result only while it stays valid.
+
+    simplify() can return a self-intersecting result from an input that was
+    valid, and an invalid geometry breaks area maths and every downstream
+    geoprocessing step while looking fine on screen. Repair when the repair
+    works, otherwise hand back the unsimplified geometry: a few more vertices
+    beats a broken shape.
+    """
+    if tolerance <= 0:
+        return geom
+    simplified = geom.simplify(tolerance)
     if simplified is None:
         return geom
     if not simplified.isEmpty() and simplified.isGeosValid():
         return simplified
+    return _repaired_simplification(geom, simplified)
+
+
+def _repaired_simplification(geom: QgsGeometry,
+                             simplified: QgsGeometry) -> QgsGeometry:
+    """The repaired ``simplified`` when the repair holds, else ``geom``: the
+    last rung of the simplify ladder, shared by both of its climbers."""
     fixed = simplified.makeValid()
     if fixed is not None and not fixed.isEmpty() and fixed.isGeosValid():
         return fixed
@@ -157,6 +196,7 @@ def masks_to_polygons_packed(
     if not bbox:
         return out
     try:
+        from rasterio import Env as rasterio_env
         from rasterio.features import shapes as get_shapes
         from rasterio.transform import from_bounds as transform_from_bounds
     except ImportError:
@@ -187,34 +227,39 @@ def masks_to_polygons_packed(
         boxes.append((int(row0), int(row0) + h - 1, int(col0), int(col0) + w - 1))
 
     try:
-        for indices, (br0, br1, bc0, bc1) in pack_disjoint_crops(boxes, max_side):
-            lab = np.zeros((br1 - br0 + 1, bc1 - bc0 + 1), np.int32)
-            for label, i in enumerate(indices, start=1):
-                crop, _origin = crops[i]
-                r0, _r1, c0, _c1 = boxes[i]
-                ro, co = r0 - br0, c0 - bc0
-                # `where` must be boolean: numpy refuses a uint8 selector under
-                # safe casting, and the tile pipeline hands uint8 crops (see
-                # fill_small_holes). Any non-zero pixel is object.
-                stamp = crop if crop.dtype == np.bool_ else crop != 0
-                np.copyto(lab[ro:ro + crop.shape[0], co:co + crop.shape[1]],
-                          np.int32(label), where=stamp)
-            pack_minx = minx + bc0 * px_w
-            pack_maxy = maxy - br0 * px_h
-            transform = transform_from_bounds(
-                pack_minx, pack_maxy - lab.shape[0] * px_h,
-                pack_minx + lab.shape[1] * px_w, pack_maxy,
-                lab.shape[1], lab.shape[0],
-            )
-            for geojson_geom, value in get_shapes(
-                lab, mask=lab > 0, connectivity=4, transform=transform
-            ):
-                label = int(value)
-                if label <= 0 or label > len(indices):
-                    continue
-                geom = _finish_polygon(geojson_geom, simplify_tolerance)
-                if geom is not None:
-                    out[indices[label - 1]].append(geom)
+        # shapes() opens a GDAL environment when none is active and drops it
+        # on the way out, once per call, and a tile is many packs. One
+        # environment held over the whole tile serves every pack in it. It
+        # is thread-local, so converter threads never share one.
+        with rasterio_env():
+            for indices, (br0, br1, bc0, bc1) in pack_disjoint_crops(boxes, max_side):
+                lab = np.zeros((br1 - br0 + 1, bc1 - bc0 + 1), np.int32)
+                for label, i in enumerate(indices, start=1):
+                    crop, _origin = crops[i]
+                    r0, _r1, c0, _c1 = boxes[i]
+                    ro, co = r0 - br0, c0 - bc0
+                    # `where` must be boolean: numpy refuses a uint8 selector under
+                    # safe casting, and the tile pipeline hands uint8 crops (see
+                    # fill_small_holes). Any non-zero pixel is object.
+                    stamp = crop if crop.dtype == np.bool_ else crop != 0
+                    np.copyto(lab[ro:ro + crop.shape[0], co:co + crop.shape[1]],
+                              np.int32(label), where=stamp)
+                pack_minx = minx + bc0 * px_w
+                pack_maxy = maxy - br0 * px_h
+                transform = transform_from_bounds(
+                    pack_minx, pack_maxy - lab.shape[0] * px_h,
+                    pack_minx + lab.shape[1] * px_w, pack_maxy,
+                    lab.shape[1], lab.shape[0],
+                )
+                for geojson_geom, value in get_shapes(
+                    lab, mask=lab > 0, connectivity=4, transform=transform
+                ):
+                    label = int(value)
+                    if label <= 0 or label > len(indices):
+                        continue
+                    geom = _finish_polygon(geojson_geom, simplify_tolerance)
+                    if geom is not None:
+                        out[indices[label - 1]].append(geom)
         return out
     except Exception as exc:  # noqa: BLE001 - fall back to the per-mask path
         QgsMessageLog.logMessage(
@@ -436,10 +481,11 @@ def mask_to_polygons_fallback(
                 if fixed is None:
                     continue
                 geom = fixed
-            if simplify_tolerance > 0:
-                simplified = geom.simplify(simplify_tolerance)
-                if simplified is not None and not simplified.isEmpty():
-                    geom = simplified
+            # Same ladder as the rasterio path: a simplify that breaks the
+            # ring is thrown away, not written. This is the path a user
+            # without the optional geometry packages runs, so it may not be
+            # the one that ships invalid shapes.
+            geom = simplify_and_revalidate(geom, simplify_tolerance)
             geometries.append(geom)
 
         return geometries
@@ -666,7 +712,7 @@ def apply_mask_refinement(
     # around one object. So they run on the object's own window, which answers
     # exactly as the whole frame does (see _mask_bounding_window).
     window = _mask_bounding_window(
-        result, abs(int(expand_value)) + _REFINE_MARGIN_PX)
+        result, abs(int(expand_value)) + refine_margin_px(_REFINE_MARGIN_PX))
     if window is None:
         return result  # nothing set: every step leaves an empty mask empty
     row0, row1, col0, col1 = window
@@ -763,22 +809,33 @@ def fill_small_holes(mask: np.ndarray, max_hole_px: int) -> np.ndarray:
     except ImportError:
         return mask
     try:
-        filled = ndimage.binary_fill_holes(mask)
-        holes = filled & ~mask.astype(bool)
-        if not holes.any():
-            return filled.astype(np.uint8)
-        labels, n = ndimage.label(holes)
-        if n:
-            counts = np.bincount(labels.ravel())
-            big = np.flatnonzero(counts > max_hole_px)
-            big = big[big != 0]  # label 0 is background, never a hole
-            if big.size:
-                filled[np.isin(labels, big)] = False
-        return filled.astype(np.uint8)
+        solid = mask.astype(bool, copy=False)
+        if solid.size == 0:
+            return solid.astype(np.uint8)
+        # ONE 4-connected labelling of the background answers both questions
+        # this function asks. A background region is a hole when it never
+        # reaches the array border, and its label count is its size. Filling
+        # first and labelling the result afterwards asked the same array twice:
+        # binary_fill_holes is two erosions of the whole crop, and the fill it
+        # produced then had to be labelled again to be measured. Same holes,
+        # same sizes, same output.
+        labels, n = ndimage.label(~solid)
+        if n == 0:
+            return solid.astype(np.uint8)
+        border = np.concatenate((labels[0], labels[-1],
+                                 labels[:, 0], labels[:, -1]))
+        outside = np.zeros(n + 1, dtype=bool)
+        outside[border] = True
+        outside[0] = True  # label 0 is the object itself, never a hole
+        counts = np.bincount(labels.ravel(), minlength=n + 1)
+        fillable = ~outside & (counts <= max_hole_px)
+        if not fillable.any():
+            return solid.astype(np.uint8)
+        return (solid | fillable[labels]).astype(np.uint8)
     except Exception:
-        # A scipy failure (e.g. RecursionError) must never crash the per-tile
-        # pipeline; leave the mask unfilled rather than aborting the run
-        # (#bug-robert).
+        # A hole-filling failure must never crash the per-tile pipeline: one
+        # tile that will not fill costs a courtyard, aborting the run costs
+        # every tile the user paid for. Leave the mask unfilled.
         return mask
 
 
@@ -1226,6 +1283,8 @@ def rounded_corner_outline(
     if g is None or g.isEmpty():
         return g
     passes, offset, max_angle = 1, 0.25, 120.0
+    area_keep = smooth_area_keep(_SMOOTH_AREA_KEEP)
+    diet = smooth_diet_fraction(_SMOOTH_DIET_FRACTION)
     try:
         served = settings
         if served is None:
@@ -1248,7 +1307,7 @@ def rounded_corner_outline(
         if tol > 0.0 and _mean_segment_length(src) < tol:
             thinned = src.simplify(tol)
             if (thinned is not None and not thinned.isEmpty()
-                    and thinned.area() >= _SMOOTH_AREA_KEEP * src.area()):
+                    and thinned.area() >= area_keep * src.area()):
                 src = thinned
         # minimumDistance is NOT a tolerance here: hand QgsGeometry.smooth a ring
         # whose segments sit under it and it returns a degenerate zero-area ring
@@ -1257,16 +1316,16 @@ def rounded_corner_outline(
         r = src.smooth(passes, offset, -1.0, max_angle)
         # isEmpty() does NOT catch that degenerate ring (it has points, just no
         # area), so the guard is on area, against the geometry actually smoothed.
-        if r is None or r.isEmpty() or r.area() < _SMOOTH_AREA_KEEP * src.area():
+        if r is None or r.isEmpty() or r.area() < area_keep * src.area():
             return src
         g = r
         if tol > 0.0:
             # Half tolerance, not the full one: at the full tolerance
             # Douglas-Peucker strips the curve the pass just added and the
             # object comes back with the corners it started with.
-            r2 = g.simplify(tol * _SMOOTH_DIET_FRACTION)
+            r2 = g.simplify(tol * diet)
             if (r2 is not None and not r2.isEmpty()
-                    and r2.area() >= _SMOOTH_AREA_KEEP * g.area()):
+                    and r2.area() >= area_keep * g.area()):
                 g = r2
     except Exception:  # noqa: BLE001 -- refine is best-effort  # nosec B110
         pass
@@ -1415,6 +1474,16 @@ def apply_geometry_refinement(
     if geom is None or geom.isEmpty():
         return geom
     g = geom
+    # A zone clip or a repair can hand over a GeometryCollection: the polygon
+    # plus stray lines and points. removeInteriorRings leaves a collection
+    # untouched, so its holes survived every fill until the MultiPolygon
+    # coercion at the end. Keep the polygonal parts first, so the whole chain
+    # below works on a shape it understands.
+    if g.type() != PolygonGeometry:
+        areal = polygonal_part_of(g)
+        if areal is None or areal.isEmpty():
+            return geom
+        g = areal
     # A multipart input is already an explicit user/object decision: it can be
     # a Correct-step merge of disjoint roof pieces.  The de-spike opening may
     # split a single noisy mask at a thin neck, where keeping its main part is
@@ -1489,7 +1558,7 @@ def apply_geometry_refinement(
             if (r is not None and not r.isEmpty()
                     and _geometry_part_count(r) >= before_parts
                     and (before_area <= 0.0
-                         or r.area() <= before_area * _CLOSE_MAX_AREA_GROWTH)):
+                         or r.area() <= before_area * close_max_area_growth(_CLOSE_MAX_AREA_GROWTH))):
                 g = r
         except Exception:  # noqa: BLE001 -- refine is best-effort  # nosec B110
             pass
@@ -2170,6 +2239,54 @@ class CoverSweep:
         return [it for it, k in zip(self._items, self._keep) if k]
 
 
+# Ceilings on the overlap count. It is provenance, not a result, so it is
+# never worth a visible pause on the Export click: past either ceiling the
+# count is given up and the metadata line is left out.
+OVERLAP_COUNT_MAX_OBJECTS = 5000
+OVERLAP_COUNT_MAX_PAIRS = 20000
+
+
+def count_overlapping_pairs(geoms: list) -> int | None:
+    """How many pairs of exported objects still share ground, or None.
+
+    Detections at several granularities are reduced to one reading per region,
+    but nothing forces the survivors apart: two objects may still overlap in
+    part, and a user summing the area column gets more ground than the run
+    covers. The count says so in the file's own metadata instead of leaving it
+    to be discovered in a spreadsheet.
+
+    None means "not counted", never "none found": a set past the ceilings is
+    left alone rather than paying a visible pause for a provenance line.
+    """
+    usable = [g for g in geoms if g is not None and not g.isEmpty()]
+    if len(usable) < 2 or len(usable) > OVERLAP_COUNT_MAX_OBJECTS:
+        return None
+    try:
+        index = QgsSpatialIndex()
+        boxes = []
+        for i, geom in enumerate(usable):
+            box = geom.boundingBox()
+            boxes.append(box)
+            index.addFeature(i, box)
+        pairs = 0
+        examined = 0
+        for i, geom in enumerate(usable):
+            for j in index.intersects(boxes[i]):
+                if j <= i:
+                    continue
+                examined += 1
+                if examined > OVERLAP_COUNT_MAX_PAIRS:
+                    return None
+                other = usable[j]
+                inter = geom.intersection(other)
+                if (inter is not None and not inter.isEmpty()
+                        and inter.area() > 0.0):
+                    pairs += 1
+        return pairs
+    except Exception:  # noqa: BLE001 -- a count nobody can take is left out
+        return None
+
+
 # ---------------------------------------------------------------------------
 # File export (additive driver support for the Library's direct Export)
 # ---------------------------------------------------------------------------
@@ -2190,6 +2307,36 @@ _DRIVER_EXTENSIONS = {
 # of these in a projected CRS produces a file every conforming reader places
 # somewhere else. The ground-metre CRS goes to the other drivers.
 _WGS84_ONLY_DRIVERS = ("GeoJSON", "KML")
+
+
+# GDAL layer-creation options per driver, so a written file says what it is
+# rather than leaving every reader to guess.
+#   GeoJSON: the RFC 7946 profile (right-hand rule, WGS84, no CRS member), a
+#   bbox for readers that index on it, and coordinates cut to about a
+#   centimetre instead of 17 digits of float noise that triple the file.
+#   Shapefile: without ENCODING there is no .cpg beside the .shp, and any
+#   accented class or label comes back mangled.
+_DRIVER_LAYER_OPTIONS = {
+    "GeoJSON": ["RFC7946=YES", "WRITE_BBOX=YES", "COORDINATE_PRECISION=7"],
+    "ESRI Shapefile": ["ENCODING=UTF-8"],
+}
+
+# A dBase column name stops at 10 characters, so "perimeter_m" reaches the
+# file as "perimeter_" and reads like a truncation nobody meant. The short
+# name is written on purpose instead, and it carries the same alias.
+_SHAPEFILE_MEASURE_NAMES = ("area_m2", "perim_m")
+
+
+def measure_field_names(driver: str) -> tuple[str, str]:
+    """The (area, perimeter) column names one driver can actually carry."""
+    if driver == "ESRI Shapefile":
+        return _SHAPEFILE_MEASURE_NAMES
+    return ("area_m2", "perimeter_m")
+
+
+def driver_layer_options(driver: str) -> list[str]:
+    """GDAL layer-creation options for one export driver, possibly empty."""
+    return list(_DRIVER_LAYER_OPTIONS.get(driver, ()))
 
 
 def driver_extension(driver: str) -> str:
@@ -2465,6 +2612,12 @@ def export_geometries_to_file(
     project_crs=None,
     transform_context=None,
     ellipsoid: str = "",
+    scores: list | None = None,
+    det_ids: list | None = None,
+    object_class: str = "",
+    prompt: str = "",
+    detail: int | None = None,
+    confidence: float | None = None,
 ):
     """Write polygon geometries to a vector file and return the loaded layer.
 
@@ -2496,6 +2649,18 @@ def export_geometries_to_file(
         project_crs:       The project CRS, for the output-CRS choice.
         transform_context: The project's coordinate transform context.
         ellipsoid:         The project's ellipsoid, for the geodesic measures.
+        scores:            Per-object confidence, parallel to ``geoms``. It
+                           writes the ``confidence`` column; without it that
+                           column stays NULL rather than absent, so a file
+                           exported from the library carries the same schema
+                           as one saved from a run.
+        det_ids:           Per-object stable ids, parallel to ``geoms``. They
+                           write ``det_id``, which is what lets two exports of
+                           the same run be compared row by row.
+        object_class:      What the objects are, written on every row.
+        prompt, detail, confidence: the run parameters, for the metadata
+                           abstract. They are what tells a reader months later
+                           what this file is a run of.
 
     The last three are the project values a caller reads on the GUI thread when
     the write itself runs on a worker thread, where QgsProject is out of bounds.
@@ -2547,14 +2712,20 @@ def export_geometries_to_file(
         return None
     temp_layer.setCrs(crs)
     pr = temp_layer.dataProvider()
-    # Measures only. This helper is handed finished geometries and nothing
-    # else, so a class or a confidence column would be empty on every row.
+    # The same five columns every export path writes, in the same order, so a
+    # file from the library and a file from a run open the same way.
+    area_name, perimeter_name = measure_field_names(driver)
     if not pr.addAttributes([
+        QgsField("det_id", field_type_string()),
+        QgsField("class", field_type_string()),
+        # Three decimals: a dBase column that declares none writes a
+        # confidence of 0.55 as 1.
+        measure_field("confidence", decimals=3),
         # Declared width and decimals, because a Shapefile writes each number
         # to what its column header says and a column that declares nothing
         # arrives as whole metres. See layer_conventions.measure_field.
-        measure_field("area_m2"),
-        measure_field("perimeter_m"),
+        measure_field(area_name),
+        measure_field(perimeter_name),
     ]):
         QgsMessageLog.logMessage(
             "Export: could not build the attribute schema",
@@ -2564,9 +2735,15 @@ def export_geometries_to_file(
     temp_layer.updateFields()
 
     measurer = _batch_area_measurer(crs, transform_context, ellipsoid)
+    if scores is not None and len(scores) != len(geoms):
+        scores = None  # misaligned parallel list: honest NULLs over mislabels
+    if det_ids is not None and len(det_ids) != len(geoms):
+        det_ids = None
+    row_class = str(object_class or "").strip() or None
     feats = []
     skipped = 0
-    for geom in geoms:
+    written_geoms = []
+    for index, geom in enumerate(geoms):
         if geom is None or geom.isEmpty():
             skipped += 1
             continue
@@ -2591,8 +2768,17 @@ def export_geometries_to_file(
                 # only for the handful of rows that failed, which is the kind
                 # of wrong a reader has no way to spot.
                 area, perimeter = None, None
-        feat.setAttributes([round_measure(area), round_measure(perimeter)])
+        score = scores[index] if scores is not None else None
+        raw_id = det_ids[index] if det_ids is not None else index
+        feat.setAttributes([
+            str(raw_id),
+            row_class,
+            None if score is None else round(float(score), 3),
+            round_measure(area),
+            round_measure(perimeter),
+        ])
         feats.append(feat)
+        written_geoms.append(geom)
     # What reaches the file, not what the caller handed in. A geometry no
     # repair can save is dropped here, and a caller counting its own input
     # would name a number the file contradicts.
@@ -2633,13 +2819,21 @@ def export_geometries_to_file(
     options.driverName = driver
     options.fileEncoding = "UTF-8"
     options.layerName = name
+    driver_options = driver_layer_options(driver)
+    if driver_options:
+        options.layerOptions = driver_options
     # A GeoPackage holds several tables and is often already open as a map
     # layer: replace the one table, never the file. Recreating the file drops
     # every other table in it, and a file with a live handle cannot be unlinked
-    # at all on Windows.
+    # at all on Windows. A target that cannot be stat'ed is unknown, not
+    # absent, so it keeps the table mode too: appending to a file that turns
+    # out to be missing costs nothing, recreating one that is there costs the
+    # user every other table in it.
+    from .output_gpkg_rollover import file_size
+
     options.actionOnExistingFile = (
         QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteLayer
-        if driver == "GPKG" and os.path.exists(output_path)
+        if driver == "GPKG" and file_size(output_path) != 0
         else QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteFile
     )
     if os.path.exists(output_path):
@@ -2729,9 +2923,34 @@ def export_geometries_to_file(
         )
         return None
 
+    # Make the handle read the rows. The writer still holds the file, so a read
+    # handle opened right behind it sees the table in the header and none of
+    # the rows that are still only in the journal: featureCount() answers the
+    # full count, getFeatures() yields nothing, and the user gets a blank map
+    # after a save they paid for. See output_store._load_table.
+    try:
+        result_layer.dataProvider().reloadData()
+        result_layer.updateExtents()
+    except (RuntimeError, AttributeError):  # nosec B110
+        pass
+
     result_layer.setRenderer(make_committed_renderer())
-    if driver == "GPKG":
-        # Provenance metadata + style embedded in the GeoPackage, exactly like
-        # the standard review export. Other drivers cannot persist either.
-        apply_output_conventions(result_layer, source_layer_name)
+    # Provenance on every driver. Only a GeoPackage can hold the style inside
+    # the file; the metadata reaches the others as the sidecar QGIS writes
+    # beside them, which is what a colleague opening a Shapefile reads.
+    source_authid = ""
+    try:
+        if crs is not None and crs.isValid():
+            source_authid = str(crs.authid() or "")
+    except (RuntimeError, AttributeError):
+        source_authid = ""
+    apply_output_conventions(
+        result_layer, source_layer_name,
+        prompt=prompt or object_class,
+        detail=detail,
+        confidence=confidence,
+        source_crs_authid=source_authid,
+        overlapping_pairs=count_overlapping_pairs(written_geoms),
+        store_style=(driver == "GPKG"),
+    )
     return result_layer

@@ -29,9 +29,9 @@ _DOT = "·"
 
 # Muted, and one step under the note it sits beneath. A disclosure has to be
 # readable, not loud. Same pair as the Account Settings legal footer.
-_CLOUD_NOTICE_QSS = ("font-size: 10px; color: rgba(128, 128, 128, 0.85);"
+_CLOUD_NOTICE_QSS = ("font-size: 10px; color: rgba(128, 128, 128, 0.95);"
                      " background: transparent;")
-_CLOUD_NOTICE_LINK_COLOR = "rgba(128, 128, 128, 0.85)"
+_CLOUD_NOTICE_LINK_COLOR = "rgba(128, 128, 128, 0.95)"
 
 
 def build_cloud_notice_line() -> QLabel:

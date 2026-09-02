@@ -50,12 +50,18 @@ HINT_START_AUTO = "start_auto_info"
 HINT_TUTORIAL_FIRST_STEPS = "tutorial_first_steps"
 HINT_TUTORIAL_ZERO_RESULTS = "tutorial_zero_results"
 HINT_EXEMPLAR_TIP = "exemplar_tip"
+# The rule of the two input cards, under the Detect button: a name, an
+# example, or both. It sits at the end of the setup because that is where
+# the reader decides whether they have given enough, and it closes for good
+# once they know.
+HINT_INPUT_RULE = "input_rule"
 # The next Detect would repeat the last run exactly. Advisory, never a gate,
 # so it obeys the same x-to-close rule as every other blue tip.
 HINT_RERUN_SAME_SETUP = "rerun_same_setup"
 # What the Confidence number is (Keep step): the AI's own score for each
 # object. Heads no step and repeats no label, so it is a tip, not a title.
 HINT_REVIEW_CONFIDENCE = "review_confidence"
+HINT_REVIEW_CLOSED_CANOPY = "review_closed_canopy"
 # What the review's shared-borders control does (Keep step, land cover
 # only). Shown next to the control it explains.
 HINT_REVIEW_SHARED_BORDERS = "review_shared_borders"
@@ -112,6 +118,7 @@ ALL_HINTS = [
     HINT_TUTORIAL_FIRST_STEPS,
     HINT_TUTORIAL_ZERO_RESULTS,
     HINT_EXEMPLAR_TIP,
+    HINT_INPUT_RULE,
     HINT_RERUN_SAME_SETUP,
     HINT_REVIEW_CONFIDENCE,
     HINT_REVIEW_SHARED_BORDERS,
@@ -184,10 +191,18 @@ GUIDE_URL_BASE = "https://terra-lab.ai/blog/ai-segmentation-complete-guide"
 
 
 def guide_url(content: str) -> str:
-    """Guide URL with the shared UTM stem and a per-touchpoint utm_content."""
+    """Guide URL with the shared UTM stem and a per-touchpoint utm_content.
+
+    The base is a served dial, read here rather than at import so a moved
+    page reaches the fleet without a release.
+    """
+    from ...core.surface_dials import guide_url_base
+
+    base = guide_url_base(GUIDE_URL_BASE)
+    joiner = "&" if "?" in base else "?"
     return (
-        f"{GUIDE_URL_BASE}"
-        "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
+        f"{base}{joiner}"
+        "utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
         f"&utm_content={content}"
     )
 
@@ -351,6 +366,9 @@ class DismissibleHint(QWidget):
         # show_glyph=False for mode DESCRIPTIONS (what Manual/Automatic do):
         # they state a fact, they do not tip.
         body_lbl = QLabel(_msg_text("info", body) if show_glyph else body)
+        # Plain text from the start, not only from the first set_hint: a served
+        # sentence or a word the user typed must never render as markup.
+        body_lbl.setTextFormat(Qt.TextFormat.PlainText)
         body_lbl.setWordWrap(True)
         body_lbl.setStyleSheet(_BODY_STYLE)
         self.body_label = body_lbl
@@ -379,6 +397,9 @@ class DismissibleHint(QWidget):
         col.addLayout(head)
 
         self.setVisible(not self.is_dismissed())
+        # Prune on the way in: the list is only walked on a guidance reset, and
+        # a session that never resets grew one dead reference per card built.
+        _LIVE_HINTS[:] = [ref for ref in _LIVE_HINTS if ref() is not None]
         _LIVE_HINTS.append(weakref.ref(self))
 
     def is_dismissed(self) -> bool:

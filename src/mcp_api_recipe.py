@@ -19,6 +19,7 @@ from qgis.core import (
 
 from .core import run_recipe
 from .core.review_defaults import AUTO_DEFAULT_CONFIDENCE
+from .mcp_api_auto import _confidence_bounds_in_force
 
 
 class SegmentationRecipeMixin:
@@ -199,7 +200,8 @@ class SegmentationRecipeMixin:
             conf = float(value)
         except (TypeError, ValueError):
             return None
-        if not math.isfinite(conf) or not 0.05 <= conf <= 0.95:
+        low, high = _confidence_bounds_in_force()
+        if not math.isfinite(conf) or not low <= conf <= high:
             return None
         return conf
 

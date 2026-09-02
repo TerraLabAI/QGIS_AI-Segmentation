@@ -22,6 +22,7 @@ from qgis.core import (
     QgsProject,
 )
 
+from ..core.i18n import tr
 from .algorithm_support import (
     FACADE_MISSING_MESSAGE,
     PLAN_HELP_LINE,
@@ -109,7 +110,8 @@ class SegmentPointAlgorithm(QgsProcessingAlgorithm):
             "into the next algorithm), LAYER_NAME and SAVED_FILE, the GeoPackage holding it, "
             "alongside SCORE (how sure the AI is), INSTANCE_COUNT, STATUS, POLYGON_WKT, the "
             "outline as text for a caller that wants the geometry without opening a file, and "
-            "POLYGON_CRS, the CRS that text is in.\n\n"
+            "POLYGON_CRS, the CRS that text is in. There is no output-folder parameter: the "
+            "GeoPackage always goes into the project's own folder.\n\n"
             "Prefer this over drawing the shape by hand when you want one building, one field, "
             f"one pond or one roof traced accurately. Use '{zone_algorithm_label()}' "
             "when you want all objects of a kind over an area.\n\n"
@@ -166,14 +168,14 @@ class SegmentPointAlgorithm(QgsProcessingAlgorithm):
         # into a call that spends a credit. The wait below reads Cancel too, so
         # a stop lands within a second of the click.
         if feedback.isCanceled():
-            feedback.pushInfo("Cancelled before the model was asked for. Nothing was spent.")
+            feedback.pushInfo(tr("Cancelled before the model was asked for. Nothing was spent."))
             return self._empty_result("cancelled before the run started")
 
         # A model still coming up is an answer, not a reason to hold the
         # Toolbox: the detection call would wait on the facade's own long cap.
         still_loading = load_model_briefly(api, feedback)
         if feedback.isCanceled():
-            feedback.pushInfo("Cancelled while the model was loading. Nothing was spent.")
+            feedback.pushInfo(tr("Cancelled while the model was loading. Nothing was spent."))
             return self._empty_result("cancelled before the run started")
         if still_loading:
             return self._answer_while_the_model_loads(feedback, still_loading)
@@ -189,14 +191,16 @@ class SegmentPointAlgorithm(QgsProcessingAlgorithm):
         canvas_crs = self._canvas_crs()
         point = self.parameterAsPoint(parameters, self.POINT, context, canvas_crs)
 
-        feedback.pushInfo(f"Looking at ({point.x():.2f}, {point.y():.2f}) on {raster.name()}.")
+        feedback.pushInfo(
+            tr("Looking at ({0}, {1}) on {2}.").format(
+                f"{point.x():.2f}", f"{point.y():.2f}", raster.name()))
 
         # The last moment cancelling is free: the call below saves what it finds,
         # and saving is what the account pays for. A deliberate stop is reported
         # rather than raised, the same as the zone algorithm: an error here reads
         # as a run that broke, and this one never started.
         if feedback.isCanceled():
-            feedback.pushInfo("Cancelled before the point was sent. Nothing was spent.")
+            feedback.pushInfo(tr("Cancelled before the point was sent. Nothing was spent."))
             return self._empty_result("cancelled before the run started")
 
         discard_unsaved = self.parameterAsBoolean(
@@ -218,13 +222,15 @@ class SegmentPointAlgorithm(QgsProcessingAlgorithm):
         export_error = str(result.get("export_error") or "")
         if export_error:
             feedback.pushWarning(
-                f"The object was outlined but saving it failed: {export_error}. "
-                "The outline is still returned as POLYGON_WKT.")
+                tr(
+                    "The object was outlined but saving it failed: {0}. "
+                    "The outline is still returned as POLYGON_WKT."
+                ).format(export_error))
 
         produced = layer_created_since(before, result.get("exported_layer"))
         score = float(result.get("score") or 0.0)
         feedback.setProgress(100)
-        feedback.pushInfo(f"Outlined one object, score {score:.3f}.")
+        feedback.pushInfo(tr("Outlined one object, score {0}.").format(f"{score:.3f}"))
 
         return {
             self.INSTANCE_COUNT: 1,

@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import math
 
+from .shape_policy_dials import crop_edge_clearance, crop_grid_cell_fraction, crop_scale_step
+
 # Ground size of one grid cell, as a fraction of the crop's own ground size. A
 # quarter keeps the shared crop close enough around each of its objects that
 # none of them sits near an edge.
@@ -170,8 +172,9 @@ def crop_scale_for_bounds(
         return min_scale
     if exact >= max_scale:
         return max_scale
-    steps = math.ceil(math.log(exact / min_scale) / math.log(SCALE_STEP))
-    return min(max_scale, min_scale * SCALE_STEP ** steps)
+    scale_step = crop_scale_step(SCALE_STEP)
+    steps = math.ceil(math.log(exact / min_scale) / math.log(scale_step))
+    return min(max_scale, min_scale * scale_step ** steps)
 
 
 def snap_center_to_grid(
@@ -189,7 +192,7 @@ def snap_center_to_grid(
     """
     if native_pixel_size <= 0 or scale <= 0:
         return center_x, center_y
-    step = crop_size * scale * native_pixel_size * GRID_CELL_FRACTION
+    step = crop_size * scale * native_pixel_size * crop_grid_cell_fraction(GRID_CELL_FRACTION)
     if step <= 0:
         return center_x, center_y
     return round(center_x / step) * step, round(center_y / step) * step
@@ -222,7 +225,7 @@ def neighborhood_crop_window(
         return exact_cx, exact_cy, scale
 
     ground = crop_size * scale * native_pixel_size
-    step = ground * GRID_CELL_FRACTION
+    step = ground * crop_grid_cell_fraction(GRID_CELL_FRACTION)
     if step <= 0:
         return exact_cx, exact_cy, scale
     cx = round(exact_cx / step) * step
@@ -230,7 +233,7 @@ def neighborhood_crop_window(
 
     # Does the object still sit comfortably inside the shared crop? A large one
     # does not, and takes its own centred window rather than being clipped.
-    half = ground / 2.0 - ground * EDGE_CLEARANCE
+    half = ground / 2.0 - ground * crop_edge_clearance(EDGE_CLEARANCE)
     if (minx < cx - half or maxx > cx + half or miny < cy - half or maxy > cy + half):
         return exact_cx, exact_cy, scale
     return cx, cy, scale
@@ -291,7 +294,7 @@ def window_frames_bounds(
     if scale <= 0:
         return False
     ground = crop_size * scale * native_pixel_size
-    half = ground / 2.0 - ground * EDGE_CLEARANCE
+    half = ground / 2.0 - ground * crop_edge_clearance(EDGE_CLEARANCE)
     minx, miny, maxx, maxy = bounds
     return (minx >= cx - half and maxx <= cx + half and miny >= cy - half and maxy <= cy + half)
 

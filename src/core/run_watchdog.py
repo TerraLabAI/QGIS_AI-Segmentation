@@ -33,3 +33,26 @@ def run_is_stalled(
     if not worker_running or last_progress_ts is None or timeout_s <= 0:
         return False
     return (now - last_progress_ts) >= timeout_s
+
+
+def terminal_is_lost(
+    worker_running: bool,
+    last_progress_ts: float | None,
+    now: float,
+    grace_s: float,
+) -> bool:
+    """Whether a run's terminal never reached the main thread.
+
+    The other arm of the same watch. run_is_stalled above only looks at a
+    worker that is STILL RUNNING; a worker that has exited without its terminal
+    arriving is the other real failure, because only the terminal handlers
+    release the run. Left unwatched, the panel sits at forever progress and the
+    watchdog timer ticks for the rest of the session doing nothing.
+
+    True only when the worker has stopped, progress was recorded, and the grace
+    window since the last progress has passed. A non-positive grace never
+    fires, which disables this arm without touching the other one.
+    """
+    if worker_running or last_progress_ts is None or grace_s <= 0:
+        return False
+    return (now - last_progress_ts) >= grace_s

@@ -20,7 +20,7 @@ the review can never lose a detection.
 """
 from __future__ import annotations
 
-from qgis.core import QgsGeometry, QgsPointXY
+from qgis.core import Qgis, QgsGeometry, QgsPointXY
 
 from .layer_conventions import repair_polygon
 
@@ -280,10 +280,10 @@ def bridge_seam_gap(geom: QgsGeometry | None,
     if geom is None or tolerance <= 0:
         return None
     try:
-        grown = geom.buffer(tolerance, 8)
+        grown = _seam_buffer_square_corners(geom, tolerance)
         if grown is None or grown.isEmpty():
             return None
-        closed = grown.buffer(-tolerance, 8)
+        closed = _seam_buffer_square_corners(grown, -tolerance)
     except (RuntimeError, AttributeError, TypeError, ValueError):
         return None
     if closed is None or closed.isEmpty():
@@ -291,3 +291,26 @@ def bridge_seam_gap(geom: QgsGeometry | None,
     if polygon_part_count(closed) > 1:
         return None
     return _repaired(closed)
+
+
+def _seam_buffer_square_corners(geom: QgsGeometry,
+                                distance: float) -> QgsGeometry | None:
+    """Buffer with a mitre join, so a right angle comes back a right angle.
+
+    The default round join fillets every corner, and the grow-then-shrink pass
+    that closes a tile seam runs it twice: a building's corners come out of a
+    merge visibly rounded, on an object the user never asked to smooth. The
+    enum moved between the QGIS versions this plugin supports, so it is
+    resolved defensively and the round join stands in when it cannot be found.
+    """
+    cap = getattr(getattr(Qgis, "EndCapStyle", None), "Round", None)
+    join = getattr(getattr(Qgis, "JoinStyle", None), "Miter", None)
+    if cap is None or join is None:
+        cap = getattr(QgsGeometry, "CapRound", None)
+        join = getattr(QgsGeometry, "JoinStyleMiter", None)
+    if cap is not None and join is not None:
+        try:
+            return geom.buffer(distance, 8, cap, join, 2.0)
+        except (TypeError, AttributeError):
+            pass
+    return geom.buffer(distance, 8)

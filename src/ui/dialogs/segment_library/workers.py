@@ -15,6 +15,11 @@ import time
 
 from qgis.PyQt.QtCore import QThread, pyqtSignal
 
+from ...core.surface_dials import (
+    library_mask_budget_base_s,
+    library_mask_budget_max_s,
+    library_mask_budget_per_tile_s,
+)
 from .common import _history_error
 
 # Wall clock the whole mask loop may spend. Each tile costs one archive fetch
@@ -22,6 +27,7 @@ from .common import _history_error
 # would hold the thread for hours. Cancel is the user's way out; this is the
 # backstop for the user who walked away. Generous per tile so a big run on a
 # healthy link always finishes, hard ceiling so a bad one cannot run forever.
+# All three are served dials read per fetch; these are the fallbacks.
 _MASK_BUDGET_BASE_S = 30.0
 _MASK_BUDGET_PER_TILE_S = 2.0
 _MASK_BUDGET_MAX_S = 600.0
@@ -100,6 +106,42 @@ class _RunFavoriteWorker(QThread):
         if self.isInterruptionRequested():
             return
         self.done.emit(self._run_id, self._fav, ok)
+
+
+class _RunDeleteWorker(QThread):
+    """Remove one run from the account's history, or put it back.
+
+    The server soft-deletes, so the same worker serves both directions and an
+    undo costs one more call rather than a lost run.
+    """
+
+    done = pyqtSignal(str, bool, bool)  # run_id, deleted, ok
+
+    def __init__(self, client, auth: dict, run_id: str,
+                 deleted: bool = True, parent=None):
+        super().__init__(parent)
+        self._client = client
+        self._auth = auth
+        self._run_id = run_id
+        self._deleted = deleted
+
+    def run(self):
+        # Interrupted means the dialog that would revert the row is going, so
+        # the call is skipped and nothing is emitted into it.
+        if self.isInterruptionRequested():
+            return
+        ok = False
+        try:
+            if self._deleted:
+                resp = self._client.delete_seg_run(self._auth, self._run_id)
+            else:
+                resp = self._client.undelete_seg_run(self._auth, self._run_id)
+            ok = _history_error(resp) is None
+        except Exception:  # noqa: BLE001
+            ok = False
+        if self.isInterruptionRequested():
+            return
+        self.done.emit(self._run_id, self._deleted, ok)
 
 
 class _RunZoneFetchWorker(QThread):
@@ -228,8 +270,9 @@ class _RunFetchWorker(QThread):
         """
         masks_per_tile: dict = {}
         total = len(tiles)
-        budget = min(_MASK_BUDGET_MAX_S,
-                     _MASK_BUDGET_BASE_S + _MASK_BUDGET_PER_TILE_S * total)
+        budget = min(library_mask_budget_max_s(_MASK_BUDGET_MAX_S),
+                     library_mask_budget_base_s(_MASK_BUDGET_BASE_S)
+                     + library_mask_budget_per_tile_s(_MASK_BUDGET_PER_TILE_S) * total)
         started = time.monotonic()
         skipped = 0
         for index, tile in enumerate(tiles):
@@ -287,6 +330,11 @@ class _RunFetchWorker(QThread):
             return None
         if self._export is None:
             return decoded
+        if self.isInterruptionRequested():
+            # The window is gone. Writing now leaves a file on disk that
+            # nothing reports, so the user never learns it is there.
+            self.cancelled.emit()
+            return None
         driver, confidence, path = self._export
         self.progress.emit("write", 0, 0)
         try:

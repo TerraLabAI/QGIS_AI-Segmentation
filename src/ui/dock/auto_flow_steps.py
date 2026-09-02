@@ -143,18 +143,24 @@ class DockAutoFlowStepsMixin:
         # A running detection pins the flow to the launch step.
         if self._auto_run_active:
             index = 2
-        # Launching a run puts the prompt box and the reference panel in their
-        # read-only form, and only set_auto_run_active(False) on a NON-hold path
-        # takes them back out. A run that ends in the review never takes that
-        # path (the review hides the whole card instead), so the read-only form
-        # stayed latched for the rest of the session: "Re-run the whole zone"
-        # then handed back a prompt the user could not type in and a reference
-        # panel with no add button. Every route back to the setup screen goes
-        # through this method, so release it here whenever no run owns the
-        # screen. The hold (finalize hand-over) keeps its read-only form.
+        # The in-run receipt belongs to a live run only. A run that ends in the
+        # review never passes through set_auto_run_active on a non-hold path,
+        # so without this the receipt stayed on the setup screen for the rest
+        # of the session, above the very cards it replaces. Every route back to
+        # the setup screen goes through this method. The hold (the finalize
+        # hand-over) still owns the screen, so it keeps its receipt.
         if not self._auto_run_active and not getattr(self, "_auto_finalizing", False):
-            self._set_auto_prompt_readonly(False)
-            self._set_exemplar_readonly(False)
+            try:
+                self.auto_run_summary_card.setVisible(False)
+            except (RuntimeError, AttributeError):
+                pass
+        # Every route back to the setup screen passes here, so it is where a
+        # run finished since the last list build stops being invisible to the
+        # prompt suggestions.
+        try:
+            self.forget_prompt_suggest_recent()
+        except (RuntimeError, AttributeError):
+            pass
         # The stack is hidden in the empty state (hero only); any explicit step
         # change means the flow is live, so it must be visible again.
         self.auto_steps.setVisible(True)
@@ -203,13 +209,14 @@ class DockAutoFlowStepsMixin:
         # once a source is locked, hiding layers in the tree must not drop it from
         # the list or re-pick another. Unfreezes + resyncs on returning to Start.
         self.auto_layer_combo.set_frozen(not on_start)
-        if on_start:
-            self.auto_layer_combo.setStyleSheet(
-                "QComboBox { color: palette(text); }")
-        else:
-            self.auto_layer_combo.setStyleSheet(
-                "QComboBox { color: palette(text); }"
-                "QComboBox::drop-down { width: 0px; border: none; }")
+        qss = ("QComboBox { color: palette(text); }" if on_start else
+               "QComboBox { color: palette(text); }"
+               "QComboBox::drop-down { width: 0px; border: none; }")
+        # Only when it changes: this runs on every refresh, and a stylesheet
+        # write re-polishes the whole combo each time.
+        if getattr(self, "_auto_layer_combo_qss", None) != qss:
+            self._auto_layer_combo_qss = qss
+            self.auto_layer_combo.setStyleSheet(qss)
 
     def on_zone_deleted_from_canvas(self) -> None:
         """Called by the plugin when the user clicks the zone's x badge."""
@@ -231,6 +238,7 @@ class DockAutoFlowStepsMixin:
             self._auto_est_credits = None
             self.set_auto_zone_surface(None)
             self.auto_credit_cost_label.setVisible(False)
+            self.refresh_auto_run_estimate()
         elif state == "zone_set":
             # A drawn zone completes step 2.
             self._go_to_auto_step(2)
@@ -247,9 +255,9 @@ class DockAutoFlowStepsMixin:
         """Live guidance under the 'Draw your zone' title while the user clicks
         points, so it is always clear what to do next and how to finish."""
         if count <= 0:
-            txt = tr("Click on the map to outline the area to scan.")
+            txt = tr("Click on the map to outline your zone.")
         elif count < 3:
-            txt = tr("Keep clicking around the area, at least 3 points.")
+            txt = tr("Keep clicking around the zone, at least 3 points.")
         else:
             txt = tr("Click the first point to close the zone.")
         try:

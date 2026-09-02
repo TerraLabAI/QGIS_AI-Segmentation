@@ -40,6 +40,15 @@ _INSTALL_LOCKED_WIDGETS = (
     "mode_switch",
 )
 
+# Controls whose enabled state is decided elsewhere. The lock still takes them,
+# but the release asks their owner instead of handing back a control the owner
+# would refuse (Export follows the visible count; Merge follows the fix
+# session).
+_OWNED_LOCKED_WIDGETS = frozenset({
+    "auto_export_btn",
+    "auto_shape_merge_btn",
+})
+
 
 class DockInstallLockMixin:
     """The review's on/off for a local-AI install that owns the panel."""
@@ -77,6 +86,8 @@ class DockInstallLockMixin:
         open the destructive door the review keeps shut.
         """
         for name in _INSTALL_LOCKED_WIDGETS:
+            if not active and name in _OWNED_LOCKED_WIDGETS:
+                continue
             widget = getattr(self, name, None)
             if widget is None:
                 continue
@@ -103,3 +114,22 @@ class DockInstallLockMixin:
                     not bool(getattr(self, "_auto_review_active", False)))
             except (RuntimeError, AttributeError):
                 pass
+            self._release_owned_install_locks()
+
+    def _release_owned_install_locks(self) -> None:
+        """Give the owned controls back to their own rule.
+
+        Export answers to the count of objects still on screen, and Merge to
+        the fix session, so a blanket re-enable would offer an export of
+        nothing or a merge the canvas refuses.
+        """
+        try:
+            self.auto_export_btn.setEnabled(
+                int(getattr(self, "_auto_review_visible_count", 0)) > 0)
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            pass
+        try:
+            self._set_bridge_merge_enabled(True)
+            self._apply_merge_tile()
+        except (RuntimeError, AttributeError):
+            pass

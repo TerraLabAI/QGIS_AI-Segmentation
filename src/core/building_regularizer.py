@@ -120,6 +120,11 @@ _MULTI_PARALLEL_ANGLE_EPS = 1.5
 # to the single-direction path and its output is unchanged. A generic guard,
 # not a primary tuning dial.
 _MULTI_MIN_GROUP_WEIGHT_FRACTION = 0.20
+# Share of a ring's area and perimeter the de-staircase has to leave alone for
+# it to count as having done nothing at all (see _rings_already_on_grid). Set
+# for float noise, not for a shape difference: dropping one stair step moves
+# both measures by orders of magnitude more.
+_DESTAIRCASE_NOOP_FRACTION = 1.0e-9
 
 
 class RegularizeResult(NamedTuple):
@@ -754,35 +759,30 @@ def _cluster_directions(
     direction must carry to be kept at all.
     """
     folded = np.mod(azimuth_angles, 90.0)
-    bins = np.zeros(90, dtype=float)
+    weights = np.asarray(lengths, dtype=float)
     indices = np.minimum(np.floor(folded).astype(int), 89)
-    for idx, weight in zip(indices, lengths):
-        bins[int(idx)] += float(weight)
+    bins = np.bincount(indices, weights=weights, minlength=90).astype(float)
     if bins.sum() <= 0.0:
         return []
-    smoothed = bins.copy()
-    for i in range(90):
-        smoothed[i] = (
-            2.0 * bins[i] + bins[(i - 1) % 90] + bins[(i + 1) % 90]
-        ) / 4.0
+    # Circular 1-2-1 smoothing of all 90 bins at once: np.roll(bins, 1)[i] is
+    # bins[i - 1], so the wrap between bin 89 and bin 0 comes for free.
+    smoothed = (2.0 * bins + np.roll(bins, 1) + np.roll(bins, -1)) / 4.0
     peaks = [
         i
         for i in range(90)
         if smoothed[i] > 0.0 and smoothed[i] >= smoothed[(i - 1) % 90] and smoothed[i] >= smoothed[(i + 1) % 90]
     ]
     peaks.sort(key=lambda i: smoothed[i], reverse=True)
-    total_weight = float(np.sum(lengths))
+    total_weight = float(weights.sum())
 
     def _weight_near(peak: int) -> float:
-        return float(
-            np.sum(
-                [
-                    w
-                    for a, w in zip(folded, lengths)
-                    if _circular_dist_mod(float(a), peak + 0.5, 90.0) <= min_separation_deg
-                ]
-            )
-        )
+        # Every edge's circular gap to the peak centre in one vectorised pass,
+        # so a candidate peak costs no Python-level walk over the ring.
+        gaps = np.abs(folded - (peak + 0.5)) % 90.0
+        gaps = np.minimum(gaps, 90.0 - gaps)
+        # Only the edges inside the window are summed, and in ring order, so
+        # this reads the same total the peak-by-peak walk read.
+        return float(np.sum(weights[gaps <= min_separation_deg]))
 
     min_weight = min_group_weight * total_weight
     chosen: list[int] = []
@@ -985,48 +985,54 @@ def _enforce_angles_multi(
     return adjusted_points
 
 
-def _ring_min_iou() -> float:
-    """IoU under which one regularized RING is thrown away and the original
-    kept, resolved from the cached server policy when present.
+class RegularizeDials(NamedTuple):
+    """The server-tuned dials the inner geometry steps need, read ONCE per
+    regularize pass and threaded down the call chain.
 
-    Not the same guard as ``min_keep_iou``, which is applied later and to the
-    whole geometry. This one reverts per ring, silently: if it sits too high
-    the regularizer declines every complex footprint and the user sees Right
-    angles do nothing, with no message saying why. That is the failure this
-    dial exists to be able to correct without a release.
+    None of them can change inside a pass and the policy lookup is not free, so
+    it runs once at the top and travels down as an argument rather than being
+    re-read for every part and every ring.
 
-    Cache-only, never raises, so a failure keeps the built-in value and the
-    geometry is unchanged.
+    ring_min_iou: the pre-assembly whole-shape floor. It compares the snapped
+        polygon (all its rings already put back together) against that same
+        input polygon, and on a miss the input is kept, silently. Despite the
+        served key's name it does NOT measure one ring. It is also not
+        ``min_keep_iou``, which runs later, over the whole assembled geometry
+        and every part at once. If this floor sits too high the regularizer
+        declines every complex footprint and the user sees Right angles do
+        nothing, with no message saying why, which is the failure this dial
+        exists to correct without a release.
+    multi_parallel_eps_deg: angular gap under which the multi-direction corner
+        reconnect treats two edges as parallel.
+    multi_min_group_weight: share of a ring's perimeter a second or third
+        structural direction must carry to be kept.
+    """
+
+    ring_min_iou: float = _RING_MIN_IOU
+    multi_parallel_eps_deg: float = _MULTI_PARALLEL_ANGLE_EPS
+    multi_min_group_weight: float = _MULTI_MIN_GROUP_WEIGHT_FRACTION
+
+
+_DEFAULT_DIALS = RegularizeDials()
+
+
+def _resolve_regularize_dials() -> RegularizeDials:
+    """The dials from the cached server policy when present, else the built-in
+    defaults. Cache-only (no network) and never raises, so a failure keeps the
+    built-in values and the geometry is unchanged.
     """
     try:
         from .detection_policy import regularize_settings
 
-        value = float(regularize_settings()["ring_min_iou"])
-        return value if 0.0 < value < 1.0 else _RING_MIN_IOU
-    except Exception:  # noqa: BLE001 - policy is optional, never break geometry
-        return _RING_MIN_IOU
-
-
-def _multi_clustering_dials() -> tuple[float, float]:
-    """(parallel angle epsilon, minimum group weight) for the multi-direction
-    clustering, resolved from the cached server policy when present, else the
-    built-in defaults.
-
-    The on/off switch and the other two multi dials already arrive as kwargs
-    from the same policy block; these two are read here because the callers in
-    between do not carry them. Cache-only (no network) and only reached on the
-    multi path, which is off unless the server turns it on; any failure keeps
-    the built-in values, so the geometry is unchanged.
-    """
-    try:
-        from .detection_policy import regularize_settings
         settings = regularize_settings()
-        return (
-            float(settings["multi_parallel_eps_deg"]),
-            float(settings["multi_min_group_weight"]),
+        ring_iou = float(settings["ring_min_iou"])
+        return RegularizeDials(
+            ring_min_iou=ring_iou if 0.0 < ring_iou < 1.0 else _RING_MIN_IOU,
+            multi_parallel_eps_deg=float(settings["multi_parallel_eps_deg"]),
+            multi_min_group_weight=float(settings["multi_min_group_weight"]),
         )
     except Exception:  # noqa: BLE001 - policy is optional, never break geometry
-        return (_MULTI_PARALLEL_ANGLE_EPS, _MULTI_MIN_GROUP_WEIGHT_FRACTION)
+        return _DEFAULT_DIALS
 
 
 def regularize_coordinate_array_multi(
@@ -1037,6 +1043,7 @@ def regularize_coordinate_array_multi(
     max_groups: int,
     min_separation_deg: float,
     angle_enforcement_tolerance: float = 0.1,
+    dials: RegularizeDials | None = None,
 ) -> tuple[Any, float]:
     """Multi-direction regularization of one closed ring.
 
@@ -1054,9 +1061,11 @@ def regularize_coordinate_array_multi(
         processing_coords = coordinates
     if len(processing_coords) < 3:
         return coordinates, 0.0
-    parallel_eps_deg, min_group_weight = _multi_clustering_dials()
+    resolved = dials or _resolve_regularize_dials()
+    parallel_eps_deg = resolved.multi_parallel_eps_deg
     edge_data = _analyze_edges_multi(
-        processing_coords, max_groups, min_separation_deg, min_group_weight
+        processing_coords, max_groups, min_separation_deg,
+        resolved.multi_min_group_weight,
     )
     group_dirs = edge_data["group_dirs"]
     if len(group_dirs) <= 1:
@@ -1099,6 +1108,7 @@ def _regularize_one_ring(
     multi_direction: bool,
     multi_max_groups: int,
     multi_min_separation_deg: float,
+    dials: RegularizeDials | None = None,
 ) -> tuple[Any, float]:
     """Dispatch one ring to the multi-direction or single-direction path."""
     if multi_direction:
@@ -1109,6 +1119,7 @@ def _regularize_one_ring(
             diagonal_threshold_reduction=diagonal_threshold_reduction,
             max_groups=multi_max_groups,
             min_separation_deg=multi_min_separation_deg,
+            dials=dials,
         )
     return regularize_coordinate_array(
         coordinates=coordinates,
@@ -1119,18 +1130,25 @@ def _regularize_one_ring(
 
 
 def preprocess_polygon(polygon: Any, simplify: bool, simplify_tolerance: float) -> Any:
-    """De-staircase a raw mask outline: simplify then densify so the edge
+    """De-staircase a raw mask outline: simplify, then densify so the edge
     analysis sees real edges, not single-pixel stair steps."""
     if simplify:
         simplified = polygon.simplify(
             tolerance=simplify_tolerance, preserve_topology=True
         )
-        if polygon.is_empty:
+        # The SIMPLIFIED shape is what would be used, so it is the one that has
+        # to have survived. Testing the input here let an emptied simplify
+        # through and only the guards further down caught it.
+        if simplified.is_empty:
             return polygon
         if isinstance(simplified, Polygon):
             polygon = simplified
         else:
             return polygon
+    # The densify is NOT conditioned on the ring's corner count. A ring can
+    # carry plenty of corners and still hold one long wall, and leaving that
+    # wall coarse moves the snapped outline, so what looks like a way to skip
+    # work here is a change of output.
     return polygon.segmentize(max_segment_length=simplify_tolerance * 5)
 
 
@@ -1183,6 +1201,7 @@ def regularize_single_polygon(
     multi_direction: bool = _DEFAULT_MULTI_DIRECTION,
     multi_max_groups: int = _DEFAULT_MULTI_MAX_GROUPS,
     multi_min_separation_deg: float = _DEFAULT_MULTI_MIN_SEPARATION_DEG,
+    dials: RegularizeDials | None = None,
 ) -> list[Any]:
     """Regularize one shapely Polygon (or MultiPolygon part-by-part).
 
@@ -1190,7 +1209,10 @@ def regularize_single_polygon(
     self-intersecting shape splits under buffer(0)). Returns the input
     unchanged on any degenerate case. When multi_direction is on, each ring is
     snapped to its own clustered directions (see regularize_coordinate_array_multi).
+    ``dials`` are the server-tuned values resolved once for the whole pass; left
+    out, they are resolved here.
     """
+    resolved_dials = dials or _resolve_regularize_dials()
     if isinstance(polygon, MultiPolygon):
         results: list[Any] = []
         for p in polygon.geoms:
@@ -1207,6 +1229,7 @@ def regularize_single_polygon(
                     multi_direction=multi_direction,
                     multi_max_groups=multi_max_groups,
                     multi_min_separation_deg=multi_min_separation_deg,
+                    dials=resolved_dials,
                 )
             )
         return results or [polygon]
@@ -1233,6 +1256,7 @@ def regularize_single_polygon(
                     multi_direction=multi_direction,
                     multi_max_groups=multi_max_groups,
                     multi_min_separation_deg=multi_min_separation_deg,
+                    dials=resolved_dials,
                 )
             )
         return results or [polygon]
@@ -1249,6 +1273,7 @@ def regularize_single_polygon(
         multi_direction=multi_direction,
         multi_max_groups=multi_max_groups,
         multi_min_separation_deg=multi_min_separation_deg,
+        dials=resolved_dials,
     )
 
     # Never on a shape with holes: the substitution replaces the outer ring
@@ -1274,6 +1299,7 @@ def regularize_single_polygon(
             multi_direction=multi_direction,
             multi_max_groups=multi_max_groups,
             multi_min_separation_deg=multi_min_separation_deg,
+            dials=resolved_dials,
         )
         regularized_interiors.append(regularized_interior)
 
@@ -1282,7 +1308,10 @@ def regularize_single_polygon(
         interior_rings = [LinearRing(r) for r in regularized_interiors]
         regularized_polygon = Polygon(exterior_ring, interior_rings).buffer(0)
         final_iou, _ = iou_and_symmetric_fraction(regularized_polygon, polygon)
-        if final_iou < _ring_min_iou():
+        # Pre-assembly whole-shape floor: the snapped polygon, every ring back
+        # in place, against this same input polygon. The served key is spelled
+        # ring_min_iou, but no ring is measured on its own here.
+        if final_iou < resolved_dials.ring_min_iou:
             return [polygon]
         pieces = flatten_to_polygons([regularized_polygon])
         return pieces or [polygon]
@@ -1300,6 +1329,7 @@ def _regularize_part_local(
     multi_direction: bool,
     multi_max_groups: int,
     multi_min_separation_deg: float,
+    dials: RegularizeDials | None = None,
 ) -> list[Any]:
     """One part regularized in a frame centred on it and scaled so the snap
     tolerance is exactly 1, then mapped back.
@@ -1332,6 +1362,7 @@ def _regularize_part_local(
             multi_direction=multi_direction,
             multi_max_groups=multi_max_groups,
             multi_min_separation_deg=multi_min_separation_deg,
+            dials=dials,
         )
     centre = part.centroid
     origin_x, origin_y = float(centre.x), float(centre.y)
@@ -1350,6 +1381,7 @@ def _regularize_part_local(
         multi_direction=multi_direction,
         multi_max_groups=multi_max_groups,
         multi_min_separation_deg=multi_min_separation_deg,
+        dials=dials,
     )
     return [_affine_transform(piece, back) for piece in results or []]
 
@@ -1369,6 +1401,14 @@ def _cleanup_polygon(polygon: Any, simplify_tolerance: float) -> Any:
     if polygon is None or polygon.is_empty or simplify_tolerance <= 0:
         return polygon
     try:
+        # A rectangle holds no sliver to open out, and a negative-then-positive
+        # mitre buffer walks a convex quadrilateral's corners straight out and
+        # back, so the whole chain is a copy of the input. Stopping at four
+        # corners is deliberate: a sharper ring hits the mitre limit, and the
+        # bevel that follows is a real shape change the guards have to see.
+        if (isinstance(polygon, Polygon) and not polygon.interiors
+                and len(polygon.exterior.coords) == 5):
+            return polygon
         buffer_size = simplify_tolerance / 50.0
         cleaned = polygon.buffer(-buffer_size, cap_style="square", join_style="mitre")
         cleaned = cleaned.buffer(
@@ -1380,8 +1420,9 @@ def _cleanup_polygon(polygon: Any, simplify_tolerance: float) -> Any:
         cleaned = cleaned.simplify(tolerance=buffer_size, preserve_topology=True)
         if cleaned.is_empty:
             return polygon
-        if (_component_count(cleaned) < _component_count(polygon)
-                or _hole_count(cleaned) < _hole_count(polygon)):
+        cleaned_parts, cleaned_holes = _component_and_hole_counts(cleaned)
+        original_parts, original_holes = _component_and_hole_counts(polygon)
+        if cleaned_parts < original_parts or cleaned_holes < original_holes:
             return polygon
         return cleaned
     except Exception:  # noqa: BLE001 -- best-effort  # nosec B110
@@ -1398,9 +1439,12 @@ def _assemble_parts(per_part: list[list[Any]]) -> Any:
     and joining across parts welds two roof pieces the input deliberately kept
     apart, which the user then has to split by hand. They are joined only when
     keeping them apart would produce an overlapping, invalid shape, which no
-    caller can save.
+    caller can save, and only while that join leaves every input part standing
+    on its own.
 
-    None when nothing survived.
+    None when nothing survived, and None when the last-resort union welded two
+    parts into one: the caller then keeps its own geometry rather than a shape
+    the user has to split by hand.
     """
     merged: list[Any] = []
     for bucket in per_part:
@@ -1420,7 +1464,16 @@ def _assemble_parts(per_part: list[list[Any]]) -> Any:
             return apart
     except Exception:  # noqa: BLE001 -- an unbuildable set falls through  # nosec B110
         pass
-    return _unary_union(merged)
+    joined = _unary_union(merged)
+    # The union is the last resort, and it is only an answer while it leaves
+    # every piece it was handed standing on its own. A part count that came
+    # down means it welded two of them, so say nothing survived and let the
+    # caller keep its own geometry.
+    if joined is None:
+        return None
+    if _component_count(joined) < sum(_component_count(one) for one in merged):
+        return None
+    return joined
 
 
 def _destaircase_geometry(geometry: Any, tolerance_m: float) -> Any:
@@ -1466,6 +1519,17 @@ def _hole_count(geom: Any) -> int:
         return sum(len(part.interiors) for part in flatten_to_polygons([geom]))
     except Exception:  # noqa: BLE001 -- best-effort  # nosec B110
         return 0
+
+
+def _component_and_hole_counts(geom: Any) -> tuple[int, int]:
+    """(polygon parts, interior rings) from ONE flatten walk, for a caller that
+    needs both and would otherwise walk the same geometry twice.
+    Best-effort: (0, 0) on failure."""
+    try:
+        parts = flatten_to_polygons([geom])
+        return len(parts), sum(len(part.interiors) for part in parts)
+    except Exception:  # noqa: BLE001 -- best-effort  # nosec B110
+        return 0, 0
 
 
 def _rectangularity(geom: Any) -> float:
@@ -1564,6 +1628,67 @@ def _is_eligible(original: Any, policy: RegularizePolicy) -> bool:
         return True
 
 
+def _rings_already_on_grid(
+    parts: list[Any],
+    tolerance_m: float,
+    allow_diagonal: bool,
+    angle_tolerance: float = 0.1,
+) -> bool:
+    """True when every ring of every part already has all its edges on ONE
+    right-angle (and, when allowed, 45-degree) grid, inside ``angle_tolerance``
+    degrees, AND the de-staircase would leave the outline where it is.
+
+    A shape squared by an earlier pass has nothing left to snap: the snap, the
+    corner reconnect, the sliver buffers and the IoU guards below would only
+    rebuild it. Both halves are needed, because a stair-stepped mask outline is
+    perfectly axis-aligned step by step and would pass the angle half on its
+    own while the pass still has every step to take out.
+
+    The angles are read first: they cost no geometry, and they turn away nearly
+    every shape before the simplify runs. Douglas-Peucker only ever drops
+    vertices, and dropping a step shortens the ring, while dropping a vertex
+    that sat on a straight run leaves both the perimeter and the area where
+    they were, so the two measures separate the two cases.
+
+    Best-effort: False on anything unexpected, which just runs the normal path.
+    """
+    if not parts:
+        return False
+    try:
+        period = 45.0 if allow_diagonal else 90.0
+        for part in parts:
+            for ring in (part.exterior, *part.interiors):
+                coords = np.asarray(ring.coords, dtype=float)
+                if len(coords) < 4:
+                    return False
+                vectors = coords[1:] - coords[:-1]
+                lengths = np.hypot(vectors[:, 0], vectors[:, 1])
+                kept = lengths > 1e-9
+                if not np.any(kept):
+                    return False
+                azimuths = np.degrees(
+                    np.arctan2(vectors[kept, 1], vectors[kept, 0])
+                )
+                # Every edge measured against the grid the first one sits on.
+                offsets = np.mod(azimuths - azimuths[0], period)
+                gaps = np.minimum(offsets, period - offsets)
+                if np.any(gaps > angle_tolerance):
+                    return False
+        for part in parts:
+            simple = part.simplify(tolerance_m, preserve_topology=True)
+            if not isinstance(simple, Polygon) or simple.is_empty:
+                return False
+            if part.area <= 0.0 or part.length <= 0.0:
+                return False
+            if abs(simple.area - part.area) > _DESTAIRCASE_NOOP_FRACTION * part.area:
+                return False
+            if abs(simple.length - part.length) > _DESTAIRCASE_NOOP_FRACTION * part.length:
+                return False
+        return True
+    except Exception:  # noqa: BLE001 -- best-effort  # nosec B110
+        return False
+
+
 def _regularize_geometry(
     geometry: Any,
     tolerance_m: float,
@@ -1619,6 +1744,15 @@ def _regularize_geometry(
         # (already de-staircased/simplified upstream), never a squared guess.
         return geometry, False, True
 
+    # Already square: every edge sits on its own right-angle grid, so the whole
+    # chain below can only hand back the shape it was given.
+    if _rings_already_on_grid(parts, tolerance_m, allow_diagonal):
+        return geometry, False, False
+
+    # Server-tuned dials read ONCE for the pass, then threaded down, instead of
+    # re-resolved for every part and every ring.
+    dials = _resolve_regularize_dials()
+
     # One bucket per INPUT part, kept apart on purpose: see _assemble_parts.
     per_part: list[list[Any]] = []
     for part in parts:
@@ -1641,6 +1775,7 @@ def _regularize_geometry(
                 multi_direction=multi_direction,
                 multi_max_groups=multi_max_groups,
                 multi_min_separation_deg=multi_min_separation_deg,
+                dials=dials,
             )
         except Exception:  # noqa: BLE001 -- best-effort  # nosec B110
             results = [part]

@@ -93,10 +93,10 @@ class AutoGridFillMixin:
         except (RuntimeError, AttributeError, TypeError, ValueError):
             return 1.0
         if not kept:
+            # No ground on this layer. The run itself refuses such a zone, so
+            # the fraction only has to stay harmless: 1.0 leaves the seed where
+            # it would be with no polygon at all.
             return 1.0
-        # _tiles_in_polygon never culls to empty: it hands back the whole grid
-        # rather than an empty run. That safety fallback reads here as "no
-        # polygon", which is the right answer for a fraction.
         return min(1.0, max(len(kept) / len(tiles), 1.0 / len(tiles)))
 
     def _probe_detail_level(self, layer, zone_in_layer) -> int | None:

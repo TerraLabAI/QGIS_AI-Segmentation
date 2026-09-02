@@ -184,6 +184,12 @@ def conservative_ground_factor(metres_per_x_unit: float, aspect: float) -> float
     """Ground metres per unit to divide a ground dial by so the dial is never
     exceeded on EITHER axis.
 
+    UNREACHABLE (2026-09-01): no caller in src/, tests/ or scripts/. It is also
+    the one function here that would be WRONG beside stretch_y: after the
+    stretch one frame unit already measures metres_per_x_unit, so dividing by
+    this factor applies the aspect a second time. Read it as a note on the
+    problem, not as a helper to reach for.
+
     A tolerance converted with the x factor alone reaches ``aspect`` times
     further along y, which on a geographic CRS is most of a metre out of half
     a metre. Taking the longer of the two axes keeps the converted value inside

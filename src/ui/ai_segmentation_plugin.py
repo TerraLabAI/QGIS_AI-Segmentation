@@ -41,6 +41,7 @@ from ..core.review_defaults import (
 from .ai_segmentation_dockwidget import AISegmentationDockWidget
 from .ai_segmentation_maptool import AISegmentationMapTool
 from .canvas_palette import PENDING_FILL, PENDING_STROKE
+from .plugin.auto_autosave_offload import AutoAutosaveOffloadMixin
 from .plugin.auto_correct import AutoCorrectMixin
 from .plugin.auto_detail_window import AutoDetailWindowMixin
 from .plugin.auto_exemplar_grouping import AutoExemplarGroupingMixin
@@ -85,7 +86,11 @@ from .plugin.manual_shape_cache import ManualShapeCacheMixin
 from .plugin.manual_workflow import ManualWorkflowMixin
 from .plugin.qgis_edit_bridge import QgisEditBridgeMixin
 from .plugin.qgis_edit_tool_messages import QgisEditToolMessagesMixin
-from .plugin.shared import join_orphaned_workers, park_orphaned_worker
+from .plugin.shared import (
+    detach_widget_from_main_window,
+    join_orphaned_workers,
+    park_orphaned_worker,
+)
 
 
 class AISegmentationPlugin(
@@ -111,6 +116,7 @@ class AISegmentationPlugin(
     HandoffSeedLayersMixin,
     AutoRunTerminalMixin,
     AutoExemplarGroupingMixin,
+    AutoAutosaveOffloadMixin,
     AutoObjectBuildMixin,
     AutoReviewParamsMixin,
     AutoReviewGeometryMixin,
@@ -382,6 +388,10 @@ class AISegmentationPlugin(
         # prompt, as the slider ended up holding it. None means no seed stands,
         # so the started event cannot say where the run's level came from.
         self._auto_detail_seeded: int | None = None
+        # Ground size (m) of the drawn examples the prompt-less seed last read.
+        # None means none stands, so the next drawing re-seeds whatever it
+        # measures.
+        self._auto_exemplar_seed_m: float | None = None
         self._zone_rubber_band: QgsRubberBand | None = None
         self._zone_delete_badge = None  # ZoneDeleteBadge | None
         self._zone_badge_filter = None  # ZoneBadgeClickFilter | None
@@ -578,6 +588,9 @@ class AISegmentationPlugin(
         # det_id -> the shape key it was handed over under.
         self._review_refine_inflight: dict = {}
         self._review_refine_stamp = None
+        # The crash-net GeoPackage write of a finished run, off the GUI thread
+        # (see plugin/auto_autosave_offload.py). None between runs.
+        self._auto_autosave_thread = None  # RunAutosaveThread | None
         self._auto_repaint_timer = None  # QTimer | None (coalesced live write)
         # The live preview paces itself on the canvas, not on a clock: a refresh
         # asked for while the previous one is still drawing KILLS it and starts
@@ -824,17 +837,15 @@ class AISegmentationPlugin(
         self.ai_edit_action = make_ai_edit_action(
             self.iface.mainWindow(),
             self.iface,
-            tr("AI Edit"),
+            # A product name is a brand, not copy: "AI Segmentation" above is
+            # a bare literal for the same reason.
+            "AI Edit",
             tr("Generate imagery with AI on map zones (opens AI Edit plugin)"),
             icon=ai_edit_icon,
         )
         add_action_to_toolbar(self.terralab_toolbar, self.ai_edit_action, "ai-edit", is_cross_promo=True)
         add_plugin_to_menu(self.terralab_menu, self.ai_edit_action, "ai-edit")
         add_to_plugins_menu(self.iface, self.ai_edit_action)
-
-        # Defer dock widget creation to first toggle for fast plugin load
-        self.dock_widget = None
-        self._dock_created = False
 
         self.map_tool = AISegmentationMapTool(self.iface.mapCanvas())
         self.map_tool.positive_click.connect(self._on_positive_click)
@@ -912,10 +923,11 @@ class AISegmentationPlugin(
         except Exception:  # nosec B110
             pass
 
-        # Auto-open the panel on first install and after every upgrade (new
-        # version), but never on a routine launch. Same-version launches let
-        # QGIS restore the dock to the state the user left it in
-        # (open/closed + position), via its objectName. Mirrors AI Edit.
+        # Open the panel by itself on a first install only. An upgrade raises
+        # it when the user already had it open, and leaves a closed panel
+        # closed: a version bump is our news, not theirs. Same-version launches
+        # let QGIS restore the dock to the state the user left it in
+        # (open/closed + position), via its objectName.
         settings = QSettings()
         settings.remove("AISegmentation/dock_shown_once")  # superseded key
         current_version = self._read_plugin_version()
@@ -924,7 +936,8 @@ class AISegmentationPlugin(
         if last_shown_version != current_version:
             settings.setValue(
                 "AISegmentation/dock_shown_version", current_version)
-            if self.dock_widget:
+            first_install = not last_shown_version
+            if self.dock_widget and (first_install or self.dock_widget.isVisible()):
                 self.dock_widget.show()
                 self.dock_widget.raise_()
                 self._ensure_dock_height()
@@ -1203,7 +1216,11 @@ class AISegmentationPlugin(
         # for its redraw: give the map its normal update rate back, or the
         # user's canvas keeps the parked one after the plugin is gone.
         try:
-            from .plugin.canvas_redraw_handover import release_map_picture_hold
+            from .plugin.canvas_redraw_handover import (
+                release_live_run_picture_hold,
+                release_map_picture_hold,
+            )
+            release_live_run_picture_hold(self.iface.mapCanvas())
             release_map_picture_hold(self.iface.mapCanvas())
         except (RuntimeError, AttributeError, ImportError):
             pass  # nosec B110
@@ -1593,13 +1610,32 @@ class AISegmentationPlugin(
         # and these two bare calls were the last unguarded statements in the
         # method. A raise here skipped the map tool, the rubber bands, the auto
         # worker's join, the canvas event filters and the log collector.
+        #
+        # removeDockWidget un-docks and hides, it does NOT unparent, and
+        # deleteLater only posts an event nothing processes before unload
+        # returns. So the dock was still a child of the main window, under its
+        # object name, when the next instance registered its own: two docks,
+        # one name. detach_widget_from_main_window takes it off the parent.
         if self.dock_widget:
             try:
                 self.iface.removeDockWidget(self.dock_widget)
-                self.dock_widget.deleteLater()
             except (RuntimeError, AttributeError):
                 pass
+            detach_widget_from_main_window(self.dock_widget)
             self.dock_widget = None
+
+        # 6b. The account window opens beside a running detection instead of
+        # over it, so it can still be up here, parented to the main window and
+        # wired to this dying controller. Its modal path deletes itself; this
+        # one only ever did on finished.
+        account_dialog = getattr(self, "_account_dialog", None)
+        if account_dialog is not None:
+            try:
+                account_dialog.reject()
+            except (RuntimeError, AttributeError):
+                pass
+            detach_widget_from_main_window(account_dialog)
+            self._account_dialog = None
 
         # 7. Clear markers and unset map tool
         # A QgsMapTool is a CHILD of the canvas, so unsetting it only stops it
@@ -1843,7 +1879,10 @@ class AISegmentationPlugin(
         self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dock_widget)
         self._initialized = True
         self._setup_done = True
-        if self.dock_widget.isVisible():
+        # addDockWidget fires visibilityChanged itself on some platforms, so
+        # this hand-made call ran the first-time setup a second time. The flag
+        # the handler sets is the one thing that tells the two apart.
+        if self.dock_widget.isVisible() and not self._first_time_setup_done:
             self._on_dock_visibility_changed(True)
 
     def _on_auto_enter_pressed(self) -> bool:
@@ -2041,6 +2080,16 @@ class AISegmentationPlugin(
         if getattr(self, "_auto_review", None):
             return
         self._prefetch_server_config()
+        # The interval is a served dial as well. Re-read it here so a change
+        # lands on the next beat instead of waiting for the next QGIS start.
+        timer = self._config_refresh_timer
+        if timer is not None:
+            try:
+                wanted = self._config_refresh_interval_ms()
+                if timer.interval() != wanted:
+                    timer.setInterval(wanted)
+            except RuntimeError:
+                self._config_refresh_timer = None
 
     def _reapply_server_switches(self) -> None:
         """Have the dock re-read the configuration in force. GUI thread only."""

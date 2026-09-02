@@ -125,7 +125,7 @@ _SSL_ERROR_PATTERNS = [
     "sslerror",
     "sslcertverificationerror",
     "certificate verify failed",
-    "CERTIFICATE_VERIFY_FAILED",
+    "certificate_verify_failed",
     "tlsv1 alert",
     "unable to get local issuer certificate",
     "self signed certificate in certificate chain",
@@ -265,7 +265,7 @@ _NETWORK_ERROR_PATTERNS = [
     "protocolerror",
     "readtimeouterror",
     "connecttimeouterror",
-    "urlib3.exceptions",
+    "urllib3.exceptions",
     "requests.exceptions.connectionerror",
     "network is unreachable",
     "temporary failure in name resolution",
@@ -540,8 +540,8 @@ def is_dll_init_error(output: str) -> bool:
     application-control) or quarantined by antivirus also prints "DLL load
     failed", but the fix there is to whitelist the plugin folder, not to install
     the VC++ runtime. Defer those to is_antivirus_error so the user gets the
-    right guidance instead of a dead-end "install Visual C++" message
-    (#bug-kees).
+    right guidance instead of a dead-end "install Visual C++" message.
+    Seen on a managed Windows machine where the runtime was already there.
     """
     lower = output.lower()
     patterns = [
@@ -669,7 +669,8 @@ def get_app_control_help(install_dir: str = "") -> str:
 
 # Localized variants of "access is denied" from Windows error messages.
 # uv surfaces the raw OS message (in the user's system language), so our
-# English-only classifier was silently missing these cases (#bug-lukas).
+# English-only classifier was silently missing these cases: a German
+# installer failed with no explanation at all.
 _ACCESS_DENIED_LOCALIZED = [
     "access is denied",             # en
     "zugriff verweigert",           # de

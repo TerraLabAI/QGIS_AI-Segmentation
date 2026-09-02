@@ -43,6 +43,7 @@ import json
 import platform
 import sys
 import threading
+import time
 import uuid
 
 from qgis.core import (
@@ -55,11 +56,17 @@ from qgis.core import (
 from qgis.PyQt.QtCore import QByteArray, QSettings, QThread, QTimer, QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
+from . import transport_dials as _td
 from .qt_compat import HttpStatusCodeAttribute, silent_task_flags
 from .telemetry_events import FLUSH_NOW, NO_CONSENT_EVENTS, REGISTRY_VERSION
 
 _TIMEOUT_MS = 5_000
 _BATCH_MAX = 10
+# The registered product id every event files under. The paid plan is a
+# DIFFERENT id on the billing routes, and no event may arrive under that one:
+# it is not a registered product on the analytics side, so anything filed there
+# lands in no report at all.
+TELEMETRY_PRODUCT_ID = "ai-segmentation"
 _PENDING_PRE_AUTH_MAX = 50
 _TELEMETRY_ENABLED_KEY = "TerraLab/telemetry_enabled"
 
@@ -164,7 +171,11 @@ _last_run_id: str | None = None
 # never change during a session; memoize them so track()/flush() do not re-read
 # metadata.txt (and .env.local) from disk on every event.
 _plugin_version_cache: str | None = None
-_base_url_cache: str | None = None
+
+# The opt-out, held for a moment. See is_telemetry_enabled.
+_enabled_cache: bool | None = None
+_enabled_cache_at: float = 0.0
+_ENABLED_CACHE_S = 5.0
 
 
 # --- Opt-out --------------------------------------------------------------
@@ -175,11 +186,28 @@ def is_telemetry_enabled() -> bool:
 
     Reads the shared TerraLab/telemetry_enabled QSettings key (shared with
     AI Edit so the user opts out once). Fail-closed: if the preference cannot be
-    read, do NOT send (privacy over a data point)."""
+    read, do NOT send (privacy over a data point).
+
+    Read at most once every few seconds and held in between, because every
+    event asks. Short rather than for the session: the key is shared, so the
+    sibling plugin can turn it off while this one is loaded, and that answer
+    has to reach us without a restart."""
+    global _enabled_cache, _enabled_cache_at
+    now = time.monotonic()
+    if _enabled_cache is not None and (now - _enabled_cache_at) < _ENABLED_CACHE_S:
+        return _enabled_cache
     try:
-        return bool(QSettings().value(_TELEMETRY_ENABLED_KEY, True, type=bool))
+        value = bool(QSettings().value(_TELEMETRY_ENABLED_KEY, True, type=bool))
     except Exception:  # nosec B110
-        return False
+        value = False
+    _enabled_cache, _enabled_cache_at = value, now
+    return value
+
+
+def _forget_enabled_cache() -> None:
+    """Drop the held preference so the next read goes to QSettings."""
+    global _enabled_cache
+    _enabled_cache = None
 
 
 def set_telemetry_enabled(enabled: bool) -> None:
@@ -194,6 +222,7 @@ def set_telemetry_enabled(enabled: bool) -> None:
         QSettings().setValue(_TELEMETRY_ENABLED_KEY, bool(enabled))
     except Exception:  # nosec B110
         pass
+    _forget_enabled_cache()
     if not enabled:
         drop_queued_events()
 
@@ -255,7 +284,7 @@ def _base_properties() -> dict:
     except Exception:
         qgis_version = "unknown"
     props = {
-        "product_id": "ai-segmentation",
+        "product_id": TELEMETRY_PRODUCT_ID,
         "plugin_version": _read_plugin_version(),
         "os": platform.system(),
         "os_version": platform.release(),
@@ -299,25 +328,11 @@ def _read_plugin_version() -> str:
 
 
 def _build_base_url() -> str:
-    global _base_url_cache
-    if _base_url_cache is not None:
-        return _base_url_cache
-    import os
-    plugin_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-    env_path = os.path.join(plugin_dir, ".env.local")
-    base = "https://terra-lab.ai"
-    if os.path.isfile(env_path):
-        try:
-            with open(env_path, encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith("TERRALAB_BASE_URL="):
-                        base = line.split("=", 1)[1].strip().strip('"').strip("'")
-                        break
-        except Exception:
-            pass  # nosec B110
-    _base_url_cache = base
-    return base
+    """The address the relay POST goes to. The same reader the client uses, so
+    the two can never end up on different backends."""
+    from .env_local import terralab_base_url
+
+    return terralab_base_url()
 
 
 def _get_auth_header() -> dict | None:
@@ -336,7 +351,14 @@ def _get_auth_header() -> dict | None:
 
 def _has_consent() -> bool:
     """Non-lifecycle events additionally require ToS acceptance (raw message
-    fields can carry path fragments; the ToS is the user's data gate)."""
+    fields can carry path fragments; the ToS is the user's data gate).
+
+    Precedence, highest first: the global telemetry opt-out refuses everything
+    and is read on its own before this; then the ToS lock, which is permanent
+    once the user has run with consent; then the tick box, which defaults to
+    on. So a locked ToS answers yes whatever the box says, and the opt-out
+    answers no whatever either says.
+    """
     try:
         from .activation_manager import has_tos_accepted, has_tos_locked
         return bool(has_tos_accepted() or has_tos_locked())
@@ -380,7 +402,7 @@ class _TelemetryFlushTask(QgsTask):
         # One retry with a short backoff covers a transient network blip without
         # a disk queue; a hard-offline session still loses the batch (accepted).
         if not self._post() and not self.isCanceled():
-            self._wait_before_retry(_RETRY_BACKOFF_S)
+            self._wait_before_retry(_td.telemetry_retry_backoff_s(_RETRY_BACKOFF_S))
             if self.isCanceled():
                 return False
             self._post()
@@ -388,7 +410,6 @@ class _TelemetryFlushTask(QgsTask):
 
     def _wait_before_retry(self, seconds: float) -> None:
         """Back off in slices, so a cancel is honoured while it waits."""
-        import time
         end = time.monotonic() + seconds
         while time.monotonic() < end:
             if self.isCanceled():
@@ -399,6 +420,12 @@ class _TelemetryFlushTask(QgsTask):
         try:
             payload = json.dumps({"events": self._events}).encode("utf-8")
             url = f"{_build_base_url().rstrip('/')}/api/plugin/track"
+            from .server_dials import cleartext_remote_url
+
+            if cleartext_remote_url(url):
+                # The batch travels under the account's bearer key. Reported as
+                # done, not as a failure: a retry would send it the same way.
+                return True
             req = QNetworkRequest(QUrl(url))
             req.setRawHeader(b"Content-Type", b"application/json")
             if hasattr(req, "setTransferTimeout"):
@@ -416,12 +443,17 @@ class _TelemetryFlushTask(QgsTask):
             # retry dead code: a failed batch returned True and was dropped.
             if int(err) != 0:
                 return False
-            # A transport-level NoError still covers a 4xx/5xx response (the POST
-            # reached the relay but it rejected the batch): treat those as a
-            # failure too so run()'s single retry fires. An unreadable status
-            # (None) stays a success, since the transport itself succeeded.
+            # A transport-level NoError still covers a 4xx/5xx response: the
+            # POST reached the relay but it rejected the batch. A 5xx, and a
+            # rate limit, are worth run()'s single retry. Any other 4xx is the
+            # relay refusing this body, and it would refuse the same body a
+            # second time, so that one counts as done and the batch is dropped.
+            # An unreadable status (None) stays a success, since the transport
+            # itself succeeded.
             status = self._http_status(blocker)
-            return status is None or status < 400
+            if status is None or status < 400:
+                return True
+            return not (status >= 500 or status == 429)
         except Exception:
             return False  # nosec B110 - telemetry must never break the plugin
 
@@ -475,6 +507,11 @@ def track(event: str, properties: dict | None = None, flush_now: bool = False) -
             "event": event,
             "properties": {**_base_properties(), **(properties or {})},
         }
+        # Pinned AFTER the merge. A caller that passes a subscription row
+        # through (the paid plan carries its own product id on the billing
+        # routes) would otherwise file its event under an id the analytics
+        # side does not know.
+        evt["properties"]["product_id"] = TELEMETRY_PRODUCT_ID
     except Exception:  # nosec B110
         return
     with _lock:
@@ -494,7 +531,7 @@ def _trim_batch_locked() -> None:
     ordinary events go first and the milestones stay, since those are what the
     funnel is measured on; a flood of milestones alone still gets cut from the
     oldest, or the bound would not be one."""
-    drop = len(_batch) - _BATCH_HARD_MAX
+    drop = len(_batch) - _td.telemetry_batch_hard_max(_BATCH_HARD_MAX)
     if drop <= 0:
         return
     kept: list[dict] = []
@@ -530,7 +567,7 @@ def _arm_flush_timer() -> None:
         return
     try:
         timer = QTimer()
-        timer.setInterval(_FLUSH_INTERVAL_S * 1000)
+        timer.setInterval(_td.telemetry_flush_interval_s(_FLUSH_INTERVAL_S) * 1000)
         timer.timeout.connect(_on_flush_timer)
         timer.start()
         _flush_timer = timer
@@ -570,12 +607,13 @@ def _split_for_post(events: list[dict]) -> list[list[dict]]:
     chunks: list[list[dict]] = []
     current: list[dict] = []
     size = 0
+    post_max = _td.telemetry_post_max_bytes(_POST_MAX_BYTES)
     for evt in events:
         try:
             evt_bytes = len(json.dumps(evt).encode("utf-8"))
         except Exception:  # noqa: BLE001 -- unmeasurable: give it its own POST
-            evt_bytes = _POST_MAX_BYTES
-        if current and size + evt_bytes > _POST_MAX_BYTES:
+            evt_bytes = post_max
+        if current and size + evt_bytes > post_max:
             chunks.append(current)
             current = []
             size = 0
@@ -604,14 +642,24 @@ def flush() -> None:
     with _lock:
         if not _batch and not _pending_pre_auth:
             return
-        auth = _get_auth_header()
+    # Resolved BEFORE the lock is taken again. Both reach into the auth manager
+    # and QgsSettings, and a worker thread holds this same lock in track(), so
+    # doing them under it puts a GUI-thread wait behind a worker every minute.
+    # The lock then only drains the two lists. The check above is repeated
+    # below because a worker can only add to the batch in between, never empty
+    # it.
+    auth = _get_auth_header()
+    consented = _has_consent()
+    with _lock:
+        if not _batch and not _pending_pre_auth:
+            return
         if not auth:
+            pre_auth_max = _td.telemetry_pending_pre_auth_max(_PENDING_PRE_AUTH_MAX)
             for evt in _batch:
-                if evt["event"] in NO_CONSENT_EVENTS and len(_pending_pre_auth) < _PENDING_PRE_AUTH_MAX:
+                if evt["event"] in NO_CONSENT_EVENTS and len(_pending_pre_auth) < pre_auth_max:
                     _pending_pre_auth.append(evt)
             _batch.clear()
             return
-        consented = _has_consent()
         events_to_send = list(_pending_pre_auth) + [
             e for e in _batch
             if consented or e["event"] in NO_CONSENT_EVENTS
@@ -640,11 +688,17 @@ def flush() -> None:
 _COORD_PATTERN = None
 _URL_PATTERN = None
 _EMAIL_PATTERN = None
+_PATH_PATTERN = None
+
+# One path segment: no whitespace, no separator, no quote and no bracket. The
+# colon is out as well, so a trailing "file.py: cannot open" keeps the colon
+# that separates the name from the sentence after it.
+_PATH_SEGMENT = r"[^\s\\/'\"<>,;()=:]"
 
 
 def scrub_payload_value(value: str) -> str:
-    """Strip path-like tokens, coordinate tuples, URLs and email addresses
-    from telemetry strings.
+    """Strip file paths, coordinate tuples, URLs and email addresses from
+    telemetry strings.
 
     Applied defensively to any string leaving the machine. We already call
     log_scrub.anonymize_paths for filesystem paths, but this pass also catches
@@ -653,19 +707,44 @@ def scrub_payload_value(value: str) -> str:
     third-party exception text, which can embed a host or an address, and the
     telemetry contract is no URLs and no emails, so redact rather than trust
     the source.
+
+    Paths travel as "<path>", whole. anonymize_paths only replaces the home
+    prefix, so a system path, a Windows install path and every folder the user
+    named under their home came through intact. A folder tree is named by the
+    user and often after their client, and the contract is no file paths at
+    all. The error class words are what make an event useful, and those stay:
+    the run ends at the first segment that carries a space, which is where a
+    path stops and a sentence starts.
     """
     import re as _re
-    global _COORD_PATTERN, _URL_PATTERN, _EMAIL_PATTERN
+    global _COORD_PATTERN, _URL_PATTERN, _EMAIL_PATTERN, _PATH_PATTERN
     if _COORD_PATTERN is None:
         _COORD_PATTERN = _re.compile(
             r"(?:[-+]?\d+(?:\.\d+)?)(?:\s*,\s*[-+]?\d+(?:\.\d+)?){1,}"
         )
         _URL_PATTERN = _re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://[^\s'\"]+")
         _EMAIL_PATTERN = _re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
+        _PATH_PATTERN = _re.compile(
+            # A root: the marker anonymize_paths writes over the home
+            # directory, a drive letter, a "~", a UNC prefix, or a separator
+            # that starts a token. The lookbehinds keep it off ordinary prose,
+            # where a slash sits between two word characters (3/4, km/h).
+            r"(?:<USER>"
+            r"|(?<![\w.])[A-Za-z]:(?=[\\/])"
+            r"|~(?=[\\/])"
+            r"|\\\\(?=" + _PATH_SEGMENT + r")"
+            r"|(?<![\w.:)\]])/(?=" + _PATH_SEGMENT + r"))"
+            # Everything up to the last separator (folder names hold spaces,
+            # so the run crosses them), then a final segment that holds none.
+            r"(?:[^\r\n'\"<>,;()=]*[\\/])?" + _PATH_SEGMENT + r"*"
+        )
     # core-to-core import, deliberately NOT wrapped in try/except: a broken
     # scrubber must fail loudly, never silently ship unscrubbed paths.
     from .log_scrub import anonymize_paths
     value = anonymize_paths(value)
     value = _URL_PATTERN.sub("<URL>", value or "")
     value = _EMAIL_PATTERN.sub("<EMAIL>", value)
+    # After the URL pass, so a scheme-bearing address is already gone and its
+    # path half cannot be read as a local one.
+    value = _PATH_PATTERN.sub("<path>", value)
     return _COORD_PATTERN.sub("<COORDS>", value)

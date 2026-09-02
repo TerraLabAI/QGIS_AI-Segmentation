@@ -98,9 +98,23 @@ class ManualObjectLedger:
         # never per request.
         self.session_id: str = session_id or str(uuid.uuid4())
         self.remote_answered: bool = False
-        self._charged: set[int] = set()
-        self._wire_index: dict[int, int] = {}
+        self._charged: set[str] = set()
+        self._wire_index: dict[str, int] = {}
         self._next_index: int = 0
+
+    def _object_key(self, det_id) -> str:
+        """The name this object is remembered under inside this session.
+
+        Never sent anywhere: it exists so two objects are never taken for one.
+        An id that reads as a number is kept as that number, so 7 and "7" stay
+        the same object. Anything else keeps its own text, so two ids that no
+        number can be made of still count as two objects, and re-saving either
+        one still finds it.
+        """
+        try:
+            return str(int(det_id))
+        except (TypeError, ValueError):
+            return f"id:{det_id}"
 
     def note_remote_answer(self) -> None:
         """A click on the object being traced came back from the network."""
@@ -123,22 +137,18 @@ class ManualObjectLedger:
 
     def already_charged(self, det_id) -> bool:
         """Whether this object has been paid for in this session."""
-        try:
-            return int(det_id) in self._charged
-        except (TypeError, ValueError):
-            return False
+        return self._object_key(det_id) in self._charged
 
     def wire_index(self, det_id) -> int:
         """The number this object travels under, stable for the whole session.
 
         The server keys its charge on (session, index), so an object that is
         sent twice has to carry the same index both times or the second send
-        would look like a new object and cost a second credit.
+        would look like a new object and cost a second credit. Each object gets
+        its own index, including one whose id reads as no number: two of those
+        sharing an index would let the second one through free.
         """
-        try:
-            key = int(det_id)
-        except (TypeError, ValueError):
-            key = -1
+        key = self._object_key(det_id)
         known = self._wire_index.get(key)
         if known is not None:
             return known
@@ -151,10 +161,7 @@ class ManualObjectLedger:
         """Record that this object is paid for. Called on the server's answer,
         never on the send: an object whose charge never landed must stay
         billable, or the user would get it free by losing their connection."""
-        try:
-            self._charged.add(int(det_id))
-        except (TypeError, ValueError):
-            pass
+        self._charged.add(self._object_key(det_id))
 
     def charged_count(self) -> int:
         """How many objects this session has paid for."""

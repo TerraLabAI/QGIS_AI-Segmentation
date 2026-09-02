@@ -12,6 +12,19 @@ import math
 
 import numpy as np
 
+# Smallest round budget of ring_drop_short_edges. A ring with more vertices
+# than this gets one round per vertex instead.
+_MIN_DROP_ROUNDS = 20
+
+# Widest ring whose self-intersection test builds every edge pair at once. The
+# pair count grows with the square of the ring, so past this a dense outline
+# walks edge by edge and keeps its arrays the length of the ring.
+_SIMPLE_ALL_PAIRS_MAX = 96
+
+# Edge-pair index arrays kept per ring size, and how many sizes to keep.
+_PAIR_INDEX_CACHE: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+_PAIR_INDEX_CACHE_MAX = 128
+
 
 def angle_diff_mod90(a: float, b: float) -> float:
     """Smallest absolute difference between two mod-90 angles, in [0, 45]."""
@@ -140,6 +153,81 @@ def _merge_parallel_lines(lines: list, parallel_threshold: float) -> list:
     return merged
 
 
+def ring_is_simple(coords: np.ndarray) -> bool:
+    """Whether a closed ring crosses itself.
+
+    Two edges that share a ring vertex always meet, so only non-adjacent pairs
+    are tested, and only a proper crossing counts: the two ends of one edge
+    must sit on strictly opposite sides of the other, both ways round. A pair
+    that merely touches is left alone, because float dust on a corner would
+    otherwise reject a ring that is fine.
+
+    A crossed ring is not a polygon. Repairing one keeps its largest lobe and
+    drops the rest, which shrinks the shape without saying so, so the callers
+    test the ring here and fall back to what they had.
+    """
+    pts = np.asarray(coords, dtype=float)
+    n = len(pts) - 1
+    if n < 4:
+        return True
+    starts, ends = pts[:n], pts[1:n + 1]
+    if n <= _SIMPLE_ALL_PAIRS_MAX:
+        # Every non-adjacent pair in one set of array calls. A rebuilt corner
+        # ring holds a handful of edges, and there the call overhead of the
+        # per-edge loop below costs more than the arithmetic it carries.
+        i_idx, j_idx = _non_adjacent_pairs(n)
+        if i_idx.size == 0:
+            return True
+        return not bool(np.any(_pairs_cross(
+            starts[i_idx], ends[i_idx], starts[j_idx], ends[j_idx])))
+    for i in range(n - 2):
+        lo = i + 2
+        hi = n - 1 if i == 0 else n
+        if lo >= hi:
+            continue
+        p, q = starts[i], ends[i]
+        a, b = starts[lo:hi], ends[lo:hi]
+        if np.any(_pairs_cross(p, q, a, b)):
+            return False
+    return True
+
+
+def _pairs_cross(p: np.ndarray, q: np.ndarray,
+                 a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Whether edge (p, q) properly crosses edge (a, b), broadcast over
+    arrays: both ends of each edge strictly either side of the other."""
+    d1 = _cross_sign(a, b, p)
+    d2 = _cross_sign(a, b, q)
+    d3 = _cross_sign(p, q, a)
+    d4 = _cross_sign(p, q, b)
+    return (d1 * d2 < 0) & (d3 * d4 < 0)
+
+
+def _non_adjacent_pairs(n: int) -> tuple[np.ndarray, np.ndarray]:
+    """Index arrays of every edge pair of an n-edge closed ring that does not
+    share a vertex. Kept per ring size: the alignment rebuilds millions of
+    small rings and they repeat the same few sizes over and over."""
+    hit = _PAIR_INDEX_CACHE.get(n)
+    if hit is not None:
+        return hit
+    i_idx, j_idx = np.triu_indices(n, k=2)
+    # (first, last) meet at the ring's closing vertex, so they are adjacent.
+    keep = ~((i_idx == 0) & (j_idx == n - 1))
+    pair = (i_idx[keep], j_idx[keep])
+    if len(_PAIR_INDEX_CACHE) < _PAIR_INDEX_CACHE_MAX:
+        _PAIR_INDEX_CACHE[n] = pair
+    return pair
+
+
+def _cross_sign(origin: np.ndarray, first: np.ndarray,
+                second: np.ndarray) -> np.ndarray:
+    """Sign of the cross product of (first - origin) and (second - origin),
+    broadcast over arrays of points. The sign, not the value: the product of
+    two large coordinates overflows long before its sign is in doubt."""
+    return np.sign((first[..., 0] - origin[..., 0]) * (second[..., 1] - origin[..., 1])
+                   - (first[..., 1] - origin[..., 1]) * (second[..., 0] - origin[..., 0]))
+
+
 def ring_rebuild_corners(lines: list, parallel_threshold: float) -> np.ndarray | None:
     """Intersect consecutive snapped lines into a closed ring.
 
@@ -147,7 +235,8 @@ def ring_rebuild_corners(lines: list, parallel_threshold: float) -> np.ndarray |
     segments, are joined with a LOCAL JOG between the two segment ends instead
     of the intersection: a foot projection onto a distant line degenerates into
     a long zero-width spike, and the jog is the only join that cannot. Returns
-    None when fewer than three corners survive.
+    None when fewer than three corners survive, or when the rebuilt ring
+    crosses itself.
     """
     lines = _merge_parallel_lines(lines, parallel_threshold)
     n = len(lines)
@@ -177,7 +266,8 @@ def ring_rebuild_corners(lines: list, parallel_threshold: float) -> np.ndarray |
         pts.append(inter)
     if len(pts) < 3:
         return None
-    return np.asarray(pts + [pts[0]])
+    ring = np.asarray(pts + [pts[0]])
+    return ring if ring_is_simple(ring) else None
 
 
 def ring_drop_short_edges(coords: np.ndarray, min_edge_abs: float,
@@ -188,14 +278,18 @@ def ring_drop_short_edges(coords: np.ndarray, min_edge_abs: float,
     The floor is the larger of the absolute value and the relative share of
     the ring's perimeter. A removed short edge extends its two neighbour edges
     to their intersection when that lands nearby, else collapses to the edge
-    midpoint. Iterates shortest-first until stable (bounded rounds).
+    midpoint. Iterates shortest-first until stable.
     """
     perim = float(np.sum(np.hypot(*(np.diff(coords, axis=0).T))))
     min_edge = max(min_edge_abs, min_edge_rel * perim)
     pts = list(coords[:-1])
     changed = True
     rounds = 0
-    while changed and len(pts) > 3 and rounds < 20:
+    # Each round that changes anything drops exactly one vertex, so the cap
+    # follows the ring: a fixed one stops a dense ring half cleaned, with the
+    # short edges the caller asked to remove still in it.
+    max_rounds = max(_MIN_DROP_ROUNDS, len(pts))
+    while changed and len(pts) > 3 and rounds < max_rounds:
         changed = False
         rounds += 1
         n = len(pts)

@@ -10,8 +10,6 @@ repeated identically on every row.
 """
 from __future__ import annotations
 
-import time
-
 from qgis.core import (
     Qgis,
     QgsCategorizedSymbolRenderer,
@@ -100,10 +98,18 @@ RUN_CRS_SCALE_TOLERANCE = 0.02
 # purpose: the file travels to whoever the deliverable is for, and the layer
 # metadata written beside it is English too.
 EXPORT_FIELD_ALIASES = {
+    "det_id": "ID",
     "class": "Class",
     "confidence": "Confidence",
     "area_m2": "Area (m²)",
     "perimeter_m": "Perimeter (m)",
+    # Shapefile truncates a name past 10 characters, so that format writes
+    # "perim_m". Same column, same alias.
+    "perim_m": "Perimeter (m)",
+    # Columns older layers carry. A file saved by an earlier version still
+    # opens with readable headers, and an append onto one keeps them.
+    "score": "Confidence",
+    "label": "Label",
 }
 
 # -- what the server may change about an export -----------------------------
@@ -287,9 +293,55 @@ def pick_output_crs(source_crs, extent, project_crs=None,
     if (crs_measures_in_ground_metres(project_crs)
             and _crs_holds_ground_scale(project_crs, source_crs, extent,
                                         transform_context, ellipsoid)):
+        note_output_crs_choice(source_crs, project_crs)
         return project_crs
-    return _utm_crs_for_extent(
+    chosen = _utm_crs_for_extent(
         source_crs, extent, transform_context) or source_crs
+    note_output_crs_choice(source_crs, chosen)
+    return chosen
+
+
+# Source/destination pairs already written to the log, so the choice is said
+# once per session per pair instead of once per exported run.
+_logged_output_crs_pairs: set[tuple[str, str]] = set()
+
+
+def note_output_crs_choice(source_crs, chosen_crs) -> None:
+    """Say in the log which CRS a saved file is written in, and why it matters.
+
+    The move is invisible in the UI, and a user reading a length off a file
+    has no other way to find out that the coordinates are not the raster's.
+    A source that measures in ground metres is left alone and says nothing.
+    A run that could not be moved is a Warning, not an Info: its coordinates
+    are not ground metres and every length read off them is off by the
+    latitude factor.
+    """
+    try:
+        source = str(source_crs.authid() or "") if source_crs else ""
+        chosen = str(chosen_crs.authid() or "") if chosen_crs else ""
+    except (RuntimeError, AttributeError):
+        return
+    if not source or not chosen:
+        return
+    key = (source, chosen)
+    if key in _logged_output_crs_pairs:
+        return
+    _logged_output_crs_pairs.add(key)
+    stayed = source == chosen
+    message = (
+        f"Output CRS: {source} kept, no ground-metre CRS covers this extent; "
+        "coordinates are not ground metres"
+        if stayed
+        else f"Output CRS: coordinates written in {chosen}, read from {source}"
+    )
+    try:
+        QgsMessageLog.logMessage(
+            message, "AI Segmentation",
+            level=(Qgis.MessageLevel.Warning if stayed
+                   else Qgis.MessageLevel.Info),
+        )
+    except Exception:  # noqa: BLE001 -- a log line never breaks a save  # nosec B110
+        pass
 
 
 def _utm_crs_for_extent(source_crs, extent, transform_context=None):
@@ -543,8 +595,8 @@ def round_measure(value) -> float | None:
 _MEASURE_FIELD_INTEGER_DIGITS = 17
 
 
-def measure_field(name: str):
-    """A QgsField for an area or perimeter column, with its decimals declared.
+def measure_field(name: str, decimals: int | None = None):
+    """A QgsField for a numeric export column, with its decimals declared.
 
     GeoPackage stores a REAL and forgets any declared precision, so this
     changes nothing there. A Shapefile does not: its dBase table writes each
@@ -553,9 +605,13 @@ def measure_field(name: str):
     ``perimeter_m`` a measurement in that format.
 
     The decimal count is the same one ``round_measure`` writes with, so the
-    column never promises more digits than the value carries.
+    column never promises more digits than the value carries. ``decimals``
+    overrides it for a column that is not a measure (a confidence score is
+    written to three).
     """
-    decimals = max(0, min(int(measure_decimals()), 9))
+    if decimals is None:
+        decimals = measure_decimals()
+    decimals = max(0, min(int(decimals), 9))
     return QgsField(
         name, field_type_double(), "double",
         _MEASURE_FIELD_INTEGER_DIGITS + decimals + 1, decimals,
@@ -977,6 +1033,11 @@ def _write_conventions_into_the_file(layer, metadata: bool, style: bool) -> None
             _log_convention_failure("saving the style into the file", err)
 
 
+# Writes armed for the next event-loop turn, keyed by layer id, so two
+# callers arming the same layer in one turn pay for one write.
+_pending_file_writes: dict[str, dict] = {}
+
+
 def persist_layer_to_file_later(layer, *, metadata: bool = False,
                                 style: bool = False) -> None:
     """Write the metadata and the style INTO the layer's file one turn later.
@@ -994,8 +1055,28 @@ def persist_layer_to_file_later(layer, *, metadata: bool = False,
     if layer is None or not (metadata or style):
         return
 
+    # Two callers can arm a write on the same layer in the same turn (the
+    # export stores its style, then the instance colouring replaces it). Two
+    # timers meant two saveStyleToDatabase calls into the same GeoPackage, the
+    # second one undoing the first's work for nothing. One pending entry per
+    # layer, with the flags merged, is the same result for one write.
+    try:
+        key = str(layer.id())
+    except (RuntimeError, AttributeError):
+        key = ""
+    if key:
+        pending = _pending_file_writes.get(key)
+        if pending is not None:
+            pending["metadata"] = pending["metadata"] or metadata
+            pending["style"] = pending["style"] or style
+            return
+        _pending_file_writes[key] = {"metadata": metadata, "style": style}
+
     def _write() -> None:
-        _write_conventions_into_the_file(layer, metadata, style)
+        flags = _pending_file_writes.pop(key, None) if key else None
+        want_metadata = flags["metadata"] if flags else metadata
+        want_style = flags["style"] if flags else style
+        _write_conventions_into_the_file(layer, want_metadata, want_style)
         # These writes touch the file the layer is reading. Ask for the frame
         # back so nothing on screen is left showing what the layer looked like
         # before them.
@@ -1032,53 +1113,46 @@ def apply_output_conventions(
     confidence: float | None = None,
     created_iso: str = "",
     plugin_version: str = "",
+    basemap_label: str = "",
+    source_crs_authid: str = "",
+    overlapping_pairs: int | None = None,
+    store_style: bool = True,
 ) -> None:
     """Run-level provenance on the LAYER (Properties > Metadata) plus the
     style stored inside the GeoPackage, so the file opens styled and
     documented in any QGIS, with or without this plugin.
 
     The keyword args carry the run parameters that used to be encoded in the
-    filename (prompt, detail, confidence cutoff); they land in the metadata
-    abstract/keywords so the tree name can stay human-friendly. All optional:
-    old call sites keep today's behavior unchanged. Metadata stays English.
+    filename (prompt, detail, confidence cutoff), the imagery credit, the CRS
+    the coordinates were read from and the count of objects that still
+    overlap one another. They land in the metadata abstract, keywords and
+    rights so the tree name can stay human-friendly. All optional: old call
+    sites keep today's behavior unchanged. Metadata stays English.
+
+    ``store_style`` is off for a driver that cannot hold a style inside the
+    file (everything but GeoPackage). The metadata still goes to disk there,
+    as the sidecar QGIS writes beside the file.
     """
-    created = created_iso or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    from .output_metadata import apply_layer_metadata, output_timestamp_iso
+
+    created = created_iso or output_timestamp_iso()
     # Before the style is saved: aliases are part of the style, so this is the
     # only point where they still reach the GeoPackage.
     apply_export_field_aliases(layer)
+    apply_output_display_expression(layer)
     try:
-        md = layer.metadata()
-        md.setTitle(layer.name())
-        lines = ["Polygons digitized with AI Segmentation (TerraLab)."]
-        if prompt:
-            lines.append(f"Object: {prompt}.")
-        if source_raster_name:
-            lines.append(f"Source raster: {source_raster_name}.")
-        lines.append(f"Created: {created}.")
-        if detail is not None:
-            lines.append(f"Detail level: {detail}.")
-        if confidence is not None:
-            lines.append(f"Confidence cutoff: {confidence}.")
-        try:
-            count = int(layer.featureCount())
-            if count >= 0:
-                lines.append(f"Detections: {count}.")
-        except Exception:  # nosec B110
-            pass
-        if plugin_version:
-            lines.append(f"Plugin version: {plugin_version}.")
-        md.setAbstract("\n".join(lines))
-        keywords = [k for k in ("AI Segmentation", prompt, source_raster_name) if k]
-        md.addKeywords("AI Segmentation", keywords)
-        history = list(md.history())
-        detected = f"detected '{prompt}'" if prompt else "segmented"
-        history.append(
-            f"{created} {detected} from '{source_raster_name}'"
-            if source_raster_name
-            else f"{created} {detected}"
+        apply_layer_metadata(
+            layer,
+            source_raster_name=source_raster_name,
+            prompt=prompt,
+            detail=detail,
+            confidence=confidence,
+            created=created,
+            plugin_version=plugin_version,
+            basemap_label=basemap_label,
+            source_crs_authid=source_crs_authid,
+            overlapping_pairs=overlapping_pairs,
         )
-        md.setHistory(history)
-        layer.setMetadata(md)
     except Exception as err:  # noqa: BLE001 -- metadata never blocks an export
         # Never blocks the export, but never silent either: a delivered file
         # that lost its provenance has to leave a trace somewhere.
@@ -1086,35 +1160,92 @@ def apply_output_conventions(
     # setMetadata() and setRenderer() only fill the in-memory layer, which dies
     # with the QGIS session, so both are written into the file as well. That
     # part waits one event-loop turn: see persist_layer_to_file_later.
-    persist_layer_to_file_later(layer, metadata=True, style=True)
+    persist_layer_to_file_later(layer, metadata=True, style=store_style)
 
 
-def attribute_values_for_fields(fields, geom: QgsGeometry, crs, raster_name: str, timestamp: str) -> list:
+# What the map tips and the "identify" panel show for one object, best first.
+# A saved layer without one shows the fid, which names nothing.
+_DISPLAY_FIELD_ORDER = ("class", "det_id", "label", "area_m2")
+
+
+def apply_output_display_expression(layer) -> None:
+    """Name each object by its class rather than by its row number.
+
+    QGIS falls back to the primary key when a layer declares no display
+    expression, so every map tip on a saved run read "1", "2", "3". The first
+    column the layer actually carries wins, and a layer carrying none of them
+    is left alone.
+    """
+    try:
+        names = {f.name().lower() for f in layer.fields()}
+    except (RuntimeError, AttributeError):
+        return
+    present = [c for c in _DISPLAY_FIELD_ORDER if c in names]
+    if not present:
+        return
+    # coalesce, not the first column alone: a run exported without a class
+    # writes that column NULL on every row, and a display expression over it
+    # names every object the empty string.
+    quoted = ", ".join(f'"{name}"' for name in present)
+    expression = quoted if len(present) == 1 else f"coalesce({quoted})"
+    try:
+        layer.setDisplayExpression(expression)
+    except (RuntimeError, AttributeError, TypeError):  # nosec B110
+        pass
+
+
+def attribute_values_for_fields(
+    fields, geom: QgsGeometry, crs, raster_name: str, timestamp: str,
+    *, det_id=None, object_class: str = "", confidence: float | None = None,
+    measurer: QgsDistanceArea | None = None,
+) -> list:
     """Attribute list matching an existing layer's schema by field NAME, so
     appends keep working on layers created by any plugin version (older
-    layers carry area/raster_source/created_at columns)."""
+    layers carry area/raster_source/created_at columns).
+
+    ``det_id``, ``object_class`` and ``confidence`` are the per-object facts
+    the appended row carries; each stays NULL when the caller has none, which
+    is an honest unknown rather than a claim. ``measurer`` is a prebuilt
+    QgsDistanceArea (see make_area_measurer): setEllipsoid reads the SRS
+    database, and building one per column, per feature, is what made a long
+    append crawl.
+    """
+    if measurer is None:
+        measurer = make_area_measurer(crs)
     values = []
     for field in fields:
         name = field.name().lower()
-        if name == "area_m2":
-            values.append(round_measure(geodesic_area_m2(geom, crs)))
-        elif name == "perimeter_m":
-            try:
-                values.append(round_measure(
-                    make_area_measurer(crs).measurePerimeter(geom)))
-            except Exception:
-                values.append(None)
+        if name == "det_id":
+            values.append(None if det_id is None else str(det_id))
+        elif name == "class":
+            values.append(object_class or None)
+        elif name in ("confidence", "score"):
+            values.append(None if confidence is None
+                          else round(float(confidence), 3))
+        elif name in ("area_m2", "perimeter_m", "perim_m"):
+            values.append(_measured_value(measurer, name, geom, crs))
         elif name == "area":
             values.append(round_measure(geom.area()))
         elif name == "raster_source":
+            # Columns only an older layer carries. Kept filled: an append onto
+            # a file somebody made two versions ago should not leave holes in
+            # the columns that file already has.
             values.append(raster_name)
         elif name == "created_at":
             values.append(timestamp)
-        elif name == "label":
-            values.append("")
-        # "class"/"confidence" are per-detection facts of an Automatic run; a
-        # manually appended polygon has neither, so they stay NULL (honest
-        # unknown) via the fallthrough below.
         else:  # fid and any user-added column: let the provider default it
             values.append(None)
     return values
+
+
+def _measured_value(measurer: QgsDistanceArea, name: str, geom: QgsGeometry,
+                    crs) -> float | None:
+    """One geodesic measure column's value, or None when the CRS refuses it."""
+    try:
+        if name == "area_m2":
+            return round_measure(measurer.measureArea(geom))
+        return round_measure(measurer.measurePerimeter(geom))
+    except Exception:  # noqa: BLE001 -- an unmeasurable shape leaves a NULL
+        if name == "area_m2":
+            note_planar_area_fallback()
+        return None

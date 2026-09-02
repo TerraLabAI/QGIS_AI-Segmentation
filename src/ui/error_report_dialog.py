@@ -14,10 +14,12 @@ from qgis.PyQt.QtWidgets import (
     QApplication,
     QDialog,
     QLabel,
+    QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
 )
 
+from ..core.activation_manager import get_support_email
 from ..core.i18n import tr
 
 # Path anonymization + log capture live in core/log_scrub.py (telemetry
@@ -32,13 +34,24 @@ from ..core.log_scrub import (
 from ..core.log_scrub import (
     scrub_report as _scrub_report,
 )
-from .dock.styles import _BTN_BLUE, _BTN_GREEN
+from .dock.styles import _BTN_BLUE, _BTN_GHOST, _BTN_GREEN
 
+# Fallback for the served support address, read when the dialog is built.
 SUPPORT_EMAIL = "yvann.barbot@terra-lab.ai"
 
 # Subtle down-arrow between step 1 and step 2: a muted, small glyph so it
 # reads as flow guidance, not content.
 _ARROW_STYLE = "color: rgba(128,128,128,0.65); font-size: 10px;"
+# Secondary caption (the support address under step 2).
+_CAPTION_STYLE = "color: rgba(128,128,128,0.9); font-size: 11px;"
+# The message box holds the whole error, scrolled rather than cut.
+_MESSAGE_BOX_STYLE = (
+    "QPlainTextEdit { background-color: palette(base); color: palette(text);"
+    " border: 1px solid rgba(128,128,128,0.25); border-radius: 4px;"
+    " font-size: 12px; padding: 6px; }"
+)
+_MESSAGE_BOX_MAX_H = 160
+_DIALOG_MAX_W = 500
 
 
 def _collect_diagnostic_info(error_message: str) -> str:
@@ -320,8 +333,12 @@ class ErrorReportDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("AI Segmentation")
         self.setModal(True)
+        from .dock.font_scale import scale_px_length
+
         self.setMinimumWidth(400)
-        self.setMaximumWidth(500)
+        # Scaled: at a larger UI font the same 500 px cut the step labels in
+        # half, and the window has no other way to grow.
+        self.setMaximumWidth(scale_px_length(_DIALOG_MAX_W))
 
         self._error_title = error_title
         self._error_message = error_message
@@ -357,13 +374,22 @@ class ErrorReportDialog(QDialog):
         self._set_copy_ready(True)
 
     def _set_copy_ready(self, ready: bool) -> None:
-        """Whether the copy button can be pressed yet."""
+        """Whether the two steps can be pressed yet.
+
+        Step 2 waits with step 1: the mail carries whatever is on the
+        clipboard, and until the gather lands that is nothing, so a user who
+        pressed 2 first sent us an empty report.
+        """
         try:
             self._copy_btn.setEnabled(ready)
             self._copy_btn.setText(
                 tr("1. Click to copy logs") if ready
                 else tr("Reading your logs..."))
         except RuntimeError:
+            pass  # nosec B110 - the dialog closed, nothing left to update
+        try:
+            self._email_btn.setEnabled(ready)
+        except (RuntimeError, AttributeError):
             pass  # nosec B110 - the dialog closed, nothing left to update
 
     def _get_diagnostic_info(self) -> str:
@@ -377,16 +403,30 @@ class ErrorReportDialog(QDialog):
         return self._diagnostic_info
 
     def _setup_ui(self):
+        from .dock.font_scale import scale_px_length
+
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
         layout.setContentsMargins(16, 16, 16, 16)
 
-        # Error message
-        error_label = QLabel(self._error_message[:500])
-        error_label.setWordWrap(True)
-        error_label.setTextFormat(Qt.TextFormat.PlainText)
-        error_label.setStyleSheet("font-size: 12px; color: palette(text);")
-        layout.addWidget(error_label)
+        # What failed, in the caller's own words. It was collected and then
+        # never shown, so the window opened on a message with no heading.
+        if self._error_title:
+            title_label = QLabel(self._error_title)
+            title_label.setWordWrap(True)
+            title_label.setTextFormat(Qt.TextFormat.PlainText)
+            title_label.setStyleSheet(
+                "font-size: 13px; font-weight: 600; color: palette(text);")
+            layout.addWidget(title_label)
+
+        # The whole message, scrolled. Cutting it at 500 characters ended it
+        # mid-word with nothing to say more was there, and the tail is often
+        # the only part that names the failure.
+        error_box = QPlainTextEdit(self._error_message)
+        error_box.setReadOnly(True)
+        error_box.setStyleSheet(_MESSAGE_BOX_STYLE)
+        error_box.setMaximumHeight(scale_px_length(_MESSAGE_BOX_MAX_H))
+        layout.addWidget(error_box)
 
         # Help text
         help_label = QLabel(
@@ -405,6 +445,7 @@ class ErrorReportDialog(QDialog):
         self._copy_btn.setEnabled(False)
         self._copy_btn.setStyleSheet(_BTN_GREEN)
         self._copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._copy_btn.setDefault(True)
         self._copy_btn.clicked.connect(self._on_copy)
         layout.addWidget(self._copy_btn)
 
@@ -414,13 +455,33 @@ class ErrorReportDialog(QDialog):
         arrow_label.setStyleSheet(_ARROW_STYLE)
         layout.addWidget(arrow_label)
 
-        # Step 2: Email button (full width) - blue secondary, opens mailto link
-        self._email_btn = QPushButton(tr("2. Click to send to {}").format(SUPPORT_EMAIL))
+        # Step 2: Email button (full width) - blue secondary, opens mailto link.
+        # The address sits under the button, not inside its label: at this
+        # window width the label ran out of room and the step number went with
+        # it. It waits for the gather, like step 1.
+        self._email_btn = QPushButton(tr("2. Send to support"))
         self._email_btn.setToolTip(tr("Open email client"))
         self._email_btn.setStyleSheet(_BTN_BLUE)
         self._email_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._email_btn.setEnabled(False)
+        self._email_btn.setAutoDefault(False)
         self._email_btn.clicked.connect(self._on_open_email)
         layout.addWidget(self._email_btn)
+
+        address_label = QLabel(get_support_email(SUPPORT_EMAIL))
+        address_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        address_label.setTextFormat(Qt.TextFormat.PlainText)
+        address_label.setStyleSheet(_CAPTION_STYLE)
+        layout.addWidget(address_label)
+
+        # A window opened by a failure needs a way out that is not the title
+        # bar's X, which several users never find on a modal.
+        self._close_btn = QPushButton(tr("Close"))
+        self._close_btn.setStyleSheet(_BTN_GHOST)
+        self._close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._close_btn.setAutoDefault(False)
+        self._close_btn.clicked.connect(self.reject)
+        layout.addWidget(self._close_btn)
 
         from .dock.font_scale import apply_font_scale_to_tree
 
@@ -430,21 +491,68 @@ class ErrorReportDialog(QDialog):
         """Copy diagnostic info to clipboard."""
         clipboard = QApplication.clipboard()
         clipboard.setText(self._get_diagnostic_info())
-        self._copy_btn.setText(tr("Copied!"))
+        self._flash_copy_text(tr("Copied!"))
+
+    def _flash_copy_text(self, text: str) -> None:
+        """Say something on the copy button, then put its label back."""
+        try:
+            self._copy_btn.setText(text)
+        except (RuntimeError, AttributeError):
+            return  # the dialog closed, nothing left to update
         # Bound to the dialog: a bare singleShot keeps the lambda and the
         # button alive in the global event loop, so closing the dialog inside
         # the two seconds landed the call on a freed widget.
         from ..core.qt_compat import safe_single_shot
-        safe_single_shot(
-            2000, self, lambda: self._copy_btn.setText(tr("1. Click to copy logs")))
+        safe_single_shot(2000, self, self._restore_copy_label)
+
+    def _restore_copy_label(self) -> None:
+        try:
+            self._copy_btn.setText(tr("1. Click to copy logs"))
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110 - the dialog closed, nothing left to update
+
+    def _put_report_on_clipboard(self, report: str) -> bool:
+        """Put the report on the clipboard, and say so on the copy button.
+
+        An empty report leaves the clipboard alone: the gather may still be
+        running, and wiping what the user copied a moment ago is the one
+        outcome worse than not helping.
+        """
+        if not report:
+            return False
+        try:
+            clipboard = QApplication.clipboard()
+            if clipboard is None:
+                return False
+            clipboard.setText(report)
+        except (RuntimeError, AttributeError):
+            return False
+        self._flash_copy_text(tr("Report copied: paste it into your email"))
+        return True
 
     def _on_open_email(self):
-        """Open email client with support address."""
+        """Open the mail client, with the report still on the clipboard.
+
+        Step 2 used to undo step 1. The mail is the only way the report
+        reaches us, and it carries nothing but what the user pastes, so the
+        report has to be on the clipboard when the mail window opens. Two
+        things took it off: a user who pressed 2 without 1, and the fallback
+        window that opens when the desktop has no mail client, which puts the
+        support address there instead. Reports arrived holding nothing but a
+        signature. So the report goes on the clipboard before the mail client
+        opens, and again once that fallback window is gone.
+        """
         from urllib.parse import quote
 
         from .external_links import open_email
+        report = self._get_diagnostic_info()
+        self._put_report_on_clipboard(report)
         subject = quote("AI Segmentation - Bug Report")
-        open_email(f"mailto:{SUPPORT_EMAIL}?subject={subject}", SUPPORT_EMAIL, parent=self)
+        support_email = get_support_email(SUPPORT_EMAIL)
+        opened = open_email(
+            f"mailto:{support_email}?subject={subject}", support_email, parent=self)
+        if not opened:
+            self._put_report_on_clipboard(report)
 
 
 def show_error_report(

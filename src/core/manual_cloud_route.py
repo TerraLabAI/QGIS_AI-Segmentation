@@ -83,21 +83,11 @@ _MANUAL_CLOUD_ENV = "TERRALAB_MANUAL_CLOUD"
 
 
 def _dev_cloud_route_opt_in() -> bool:
-    """Whether this working tree asked for the cloud engine by hand."""
-    import os
+    """Whether this working tree asked for the cloud engine by hand.
 
-    plugin_dir = os.path.dirname(os.path.dirname(os.path.dirname(
-        os.path.abspath(__file__))))
-    env_path = os.path.join(plugin_dir, ".env.local")
-    try:
-        if not os.path.isfile(env_path):
-            return False
-        with open(env_path, encoding="utf-8") as handle:
-            for line in handle:
-                line = line.strip()
-                if line.startswith(f"{_MANUAL_CLOUD_ENV}="):
-                    value = line.split("=", 1)[1].strip().strip('"').strip("'")
-                    return value.lower() in ("1", "true", "yes", "on")
-    except Exception:  # noqa: BLE001 -- an unreadable file is no opt-in  # nosec B110
-        return False
-    return False
+    Through the shared reader, which parses the file once per process: this is
+    asked on the GUI thread every time an engine card is drawn.
+    """
+    from .env_local import env_local_flag
+
+    return env_local_flag(_MANUAL_CLOUD_ENV)

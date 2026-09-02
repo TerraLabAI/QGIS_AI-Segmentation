@@ -133,7 +133,7 @@ _BADGE_STYLE = (
 _SEPARATOR = "background: rgba(128,128,128,0.20); border: none;"
 _PROMPT_STYLE = (
     "QLabel { color: palette(text); font-size: 12px;"
-    " font-family: monospace;"
+    " font-family: Consolas, 'DejaVu Sans Mono', Menlo, monospace;"
     " background: rgba(128,128,128,0.05); border: 1px solid rgba(128,128,128,0.15);"
     " border-radius: 4px; padding: 8px 10px; }"
 )

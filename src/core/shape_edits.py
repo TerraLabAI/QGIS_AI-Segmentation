@@ -221,12 +221,17 @@ def revert_shape_edit(objects: list, ids: list, edit: ShapeEdit) -> tuple[int, .
     stack of edits reverses cleanly newest first. Out-of-range indices are
     skipped rather than raising: an Undo must never be the thing that breaks a
     review.
+
+    ``ids`` is realigned to ``objects`` before anything is popped. Popping the
+    two lists independently lets them drift apart when one of them is already
+    short, and a shifted id list re-colours every row below the edit.
     """
+    align_ids(objects, ids)
     for _ in range(max(0, edit.appended)):
-        if objects:
-            objects.pop()
-        if ids:
-            ids.pop()
+        if not objects:
+            break
+        objects.pop()
+        ids.pop()
     for index, row in edit.restored:
         if 0 <= index < len(objects):
             objects[index] = row

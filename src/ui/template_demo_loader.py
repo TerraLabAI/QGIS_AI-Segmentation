@@ -46,6 +46,7 @@ from ..core.qt_compat import (
     safe_single_shot,
 )
 from ..core.server_dials import read_value
+from ..core.surface_dials import library_demo_cache_ttl_s
 from .image_cache_budget import sweep_image_cache_once, touch_for_lru
 from .image_cache_validators import (
     conditional_headers,
@@ -188,7 +189,8 @@ def read_cached_pixmap(template_id: str, which: str, variant: str | None = None,
         return None
     try:
         expires = not immutable and read_validator(path) is None
-        if expires and (time.time() - path.stat().st_mtime) > _CACHE_TTL_SECONDS:
+        ttl = library_demo_cache_ttl_s(_CACHE_TTL_SECONDS)
+        if expires and (time.time() - path.stat().st_mtime) > ttl:
             return None
         pm = QPixmap(str(path))
         if pm.isNull() or pm.width() < 2:
@@ -221,6 +223,12 @@ class _PendingFetch(NamedTuple):
     immutable: bool = False
     # True for a conditional check of bytes already on screen.
     revalidate: bool = False
+    # Second address for the same bytes, tried once if the first one fails.
+    # The history grid reads its thumbnails from storage directly, which is a
+    # hop shorter, and falls back to our own route when that address is blocked
+    # by a firewall or names an object that was never written.
+    fallback_url: str | None = None
+    fallback_headers: dict | None = None
 
 
 class TemplateDemoLoader(QObject):
@@ -239,13 +247,18 @@ class TemplateDemoLoader(QObject):
 
     # Cap simultaneous fetches so opening the library (or a popup with bigger
     # preview images) doesn't fire dozens of requests at once and choke a slow
-    # link. Excess requests queue and start as in-flight ones finish. Kept low
-    # so a thin pipe isn't split too many ways (each split is likelier to time
-    # out).
-    _MAX_CONCURRENT = 3
+    # link. Excess requests queue and start as in-flight ones finish.
+    #
+    # Three was the old ceiling, set when every image was a full archived tile
+    # of half a megabyte. A history grid asks for a card-sized copy instead,
+    # about 40 KB, and twelve cards want twenty-four of them: at three at a
+    # time that is eight waves of round trips before the grid is painted. Qt
+    # holds its own limit of six connections per host, so this mostly stops the
+    # queue from being the narrower of the two.
+    _MAX_CONCURRENT = 8
 
     # Of those slots, at most one may ever hold a background revalidation, so a
-    # user staring at a placeholder always has the other two.
+    # user staring at a placeholder always has the rest.
     _MAX_CONCURRENT_REVALIDATE = 1
 
     # Let the dialog lay out, paint and load its first images before walking
@@ -278,7 +291,8 @@ class TemplateDemoLoader(QObject):
 
     def request(self, template_id: str, which: str, url: str,
                 headers: dict | None = None, *, variant: str | None = None,
-                immutable: bool = False) -> None:
+                immutable: bool = False, fallback_url: str | None = None,
+                fallback_headers: dict | None = None) -> None:
         """Try cache first; if miss, queue an async network fetch.
 
         ``which`` is normally "before"/"after" for card sliders; the detail
@@ -299,6 +313,13 @@ class TemplateDemoLoader(QObject):
         nothing on the network. The disk cache key is (template_id, which,
         variant), and history callers pass the tile's request_id as
         template_id, so the key is per-artifact.
+
+        ``fallback_url`` (optional) is a second address for the same bytes,
+        tried once if the first one fails for any reason. The disk cache key
+        does not change, so whichever address answers, the file is reused by
+        both on the next open. A failure with a fallback left is not final:
+        nothing is reported to the caller and the first address is not
+        remembered as missing.
         """
         if not template_id or not which or not url:
             return
@@ -308,7 +329,9 @@ class TemplateDemoLoader(QObject):
         # Defer the disk read + decode to the next event-loop turn so a burst of
         # cached cards built in one loop doesn't block the dialog's first paint.
         # Parented to self, so it can't fire after the loader dies.
-        pending = _PendingFetch(template_id, which, url, headers, variant, immutable)
+        pending = _PendingFetch(
+            template_id, which, url, headers, variant, immutable,
+            fallback_url=fallback_url, fallback_headers=fallback_headers)
         safe_single_shot(0, self, lambda p=pending: self._load_cached_or_fetch(p))
 
     def _load_cached_or_fetch(self, pending: _PendingFetch) -> None:
@@ -432,6 +455,8 @@ class TemplateDemoLoader(QObject):
         err_code = reply.error()
         http_int = _http_status(reply)
         if err_code != QNetworkReply.NetworkError.NoError or http_int >= 400:
+            if self._retry_on_fallback(pending):
+                return
             if http_int == 404:
                 _KNOWN_MISSING.add((template_id, which, pending.variant or ""))
             else:
@@ -442,15 +467,36 @@ class TemplateDemoLoader(QObject):
         data: QByteArray = reply.readAll()
         buf = bytes(data)
         if len(buf) < 256:
+            if self._retry_on_fallback(pending):
+                return
             self.failed.emit(template_id, which)
             return
         pm = QPixmap()
         if not pm.loadFromData(buf):
+            if self._retry_on_fallback(pending):
+                return
             log_debug(f"Image bytes did not decode for {template_id}/{which}")
             self.failed.emit(template_id, which)
             return
         self._write_cache(pending, buf, reply)
         self.loaded.emit(template_id, which, pm)
+
+    def _retry_on_fallback(self, pending: _PendingFetch) -> bool:
+        """Queue the second address for a fetch that just failed, if there is one.
+
+        Returns whether the retry was queued, in which case the caller must not
+        report a failure: the image is still on its way. The pump that follows
+        every finished reply picks the retry up.
+        """
+        if pending.revalidate or not pending.fallback_url:
+            return False
+        self._queue.append(pending._replace(
+            url=pending.fallback_url,
+            headers=pending.fallback_headers,
+            fallback_url=None,
+            fallback_headers=None,
+        ))
+        return True
 
     @staticmethod
     def _write_cache(pending: _PendingFetch, buf: bytes, reply: QNetworkReply) -> None:

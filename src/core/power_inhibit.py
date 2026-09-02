@@ -33,6 +33,11 @@ _IS_LINUX = sys.platform == "linux"
 # display to stay on.
 _ES_CONTINUOUS = 0x80000000
 _ES_SYSTEM_REQUIRED = 0x00000001
+# ES_SYSTEM_REQUIRED only resets the idle timer. A laptop on modern standby
+# still sleeps on the lid or the power button, which ends a long install or
+# a run part way. Away mode keeps the machine working with the screen off;
+# where it is not supported the call answers 0 and the plain pair is used.
+_ES_AWAYMODE_REQUIRED = 0x00000040
 
 
 def begin_keep_awake(reason: str = "AI Segmentation task"):
@@ -47,9 +52,15 @@ def begin_keep_awake(reason: str = "AI Segmentation task"):
     if _IS_WINDOWS:
         try:
             import ctypes
-            ok = ctypes.windll.kernel32.SetThreadExecutionState(
-                _ES_CONTINUOUS | _ES_SYSTEM_REQUIRED)
-            return ("windows", bool(ok)) if ok else None
+            # The call answers with the state it is replacing. Keep it: the
+            # release below used to reset to a bare ES_CONTINUOUS, which drops
+            # a display hold something else in the process had asked for.
+            set_state = ctypes.windll.kernel32.SetThreadExecutionState
+            previous = set_state(
+                _ES_CONTINUOUS | _ES_SYSTEM_REQUIRED | _ES_AWAYMODE_REQUIRED)
+            if not previous:
+                previous = set_state(_ES_CONTINUOUS | _ES_SYSTEM_REQUIRED)
+            return ("windows", int(previous)) if previous else None
         except Exception as exc:  # noqa: BLE001 - power management must never break a run
             logger.debug("power_inhibit: SetThreadExecutionState failed: %s", exc)
             return None
@@ -93,7 +104,9 @@ def end_keep_awake(token) -> None:
     if kind == "windows":
         try:
             import ctypes
-            ctypes.windll.kernel32.SetThreadExecutionState(_ES_CONTINUOUS)
+            # Put back exactly what was in force before the hold.
+            restore = payload if isinstance(payload, int) and payload else _ES_CONTINUOUS
+            ctypes.windll.kernel32.SetThreadExecutionState(restore)
         except Exception as exc:  # noqa: BLE001
             logger.debug("power_inhibit: reset SetThreadExecutionState failed: %s", exc)
         return
@@ -109,5 +122,13 @@ def end_keep_awake(token) -> None:
         try:
             proc.terminate()
             proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            # A child that ignored terminate stays a zombie for the life of
+            # QGIS, still holding the machine awake. Kill it and reap it.
+            try:
+                proc.kill()
+                proc.wait(timeout=2)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("power_inhibit: systemd-inhibit kill failed: %s", exc)
         except Exception as exc:  # noqa: BLE001
             logger.debug("power_inhibit: systemd-inhibit teardown failed: %s", exc)

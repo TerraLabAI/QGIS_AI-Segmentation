@@ -190,9 +190,51 @@ def build_no_imagery_hero(on_demo, *, glyph: str = "🗺️"):
     demo_btn.clicked.connect(on_demo)
     col.addWidget(demo_btn)
 
+    # Second variant of the same card, for imagery that IS loaded but
+    # unchecked in the Layers panel: one button that checks it again. Hidden
+    # until set_hero_variant() switches the card over.
+    show_btn = QPushButton(tr("Show it on the map"))
+    show_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    show_btn.setMinimumHeight(30)
+    show_btn.setStyleSheet(_BTN_BLUE_PRIMARY)
+    show_btn.setVisible(False)
+    col.addWidget(show_btn)
+
     outer.addWidget(card)
     outer.addStretch(1)
+    wrapper.hero_glyph = _glyph
+    wrapper.hero_title = _title
+    wrapper.hero_line = _formats
+    wrapper.hero_divider = _div
+    wrapper.hero_demo_btn = demo_btn
+    wrapper.hero_show_btn = show_btn
+    wrapper.hero_variant = "empty"
+    wrapper.hero_glyph_text = glyph
     return wrapper, demo_btn
+
+
+def set_hero_variant(wrapper, variant: str) -> None:
+    """Switch the no-imagery hero between its two states.
+
+    ``"empty"``: no raster in the project, bring your own or load the example.
+    ``"hidden"``: a raster is loaded but unchecked in the Layers panel, so the
+    honest message is "show it", not "load one". Idempotent."""
+    if getattr(wrapper, "hero_variant", None) == variant:
+        return
+    wrapper.hero_variant = variant
+    hidden = variant == "hidden"
+    wrapper.hero_glyph.setText("👁️" if hidden else wrapper.hero_glyph_text)
+    wrapper.hero_title.setText(
+        tr("Your imagery is hidden") if hidden else tr("Load your own imagery"))
+    wrapper.hero_line.setText(
+        tr("It is unchecked in the Layers panel.") if hidden
+        else tr("Any GeoTIFF, WMS or XYZ basemap."))
+    for i in range(wrapper.hero_divider.count()):
+        item = wrapper.hero_divider.itemAt(i)
+        if item is not None and item.widget() is not None:
+            item.widget().setVisible(not hidden)
+    wrapper.hero_demo_btn.setVisible(not hidden)
+    wrapper.hero_show_btn.setVisible(hidden)
 
 
 class _FooterIconButton(QToolButton):
@@ -209,6 +251,39 @@ class _FooterIconButton(QToolButton):
         super().__init__(parent)
         self.setProperty("hover", False)
         self.setProperty("active", False)
+        self._glyph_factory = None
+
+    def set_glyph_icon(self, factory, size_px: int) -> None:
+        """Paint the button's vector glyph, and keep painting it.
+
+        The glyph takes its ink from the palette at paint time, so an icon set
+        once at build keeps the old theme's colour after the user switches
+        QGIS between light and dark. Holding the factory lets the button
+        repaint itself when the palette moves.
+        """
+        self._glyph_factory = (factory, int(size_px))
+        self._repaint_glyph_icon()
+
+    def _repaint_glyph_icon(self) -> None:
+        pair = getattr(self, "_glyph_factory", None)
+        if not pair:
+            return
+        factory, size_px = pair
+        try:
+            from qgis.PyQt.QtCore import QSize
+
+            self.setIcon(factory(self))
+            self.setIconSize(QSize(size_px, size_px))
+        except (RuntimeError, AttributeError, TypeError):
+            pass
+
+    def changeEvent(self, event):  # noqa: N802 - Qt override
+        super().changeEvent(event)
+        try:
+            if event.type() == QEvent.Type.PaletteChange:
+                self._repaint_glyph_icon()
+        except (RuntimeError, AttributeError):
+            pass
 
     def _repolish(self) -> None:
         self.style().unpolish(self)
@@ -391,7 +466,7 @@ def label_with_target_hint(label: str, hint: str) -> str:
     arrive translated.
     """
     return (f'{html.escape(label)} <span style="color: rgba(128, 128, 128, '
-            f'0.85);">({html.escape(hint)})</span>')
+            f'0.95);">({html.escape(hint)})</span>')
 
 
 def native_key(key) -> str:
@@ -504,7 +579,7 @@ class _ModeSwitch(QFrame):
         self._automatic_btn.setProperty("mode", "automatic")
         self._automatic_btn.setToolTip(tr(
             "Draw a zone, name one kind of object, get all of them in one run. "
-            "Runs on our servers and uses your cloud detections."))
+            "Runs on our servers and uses your cloud objects."))
 
         # No badge on the Automatic half. A "PRO" pill on the tab read as a
         # locked, complicated mode before the user had seen what it does; the
@@ -777,9 +852,6 @@ class _EngineSwitch(QWidget):
             return
         self._repolish()
         self.engine_selected.emit(btn_id == 0)
-
-    def is_cloud(self) -> bool:
-        return self._cloud_btn.isChecked()
 
     def set_cloud_gloss(self, gloss: str) -> None:
         """Rewrite the cloud card's second line (same one-line budget).

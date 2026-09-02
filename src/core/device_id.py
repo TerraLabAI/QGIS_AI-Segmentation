@@ -91,13 +91,23 @@ def get_device_hash(settings=None) -> str:
 # Max length the server stores for the platform label; keep payload tiny.
 _PLATFORM_MAX_LEN = 48
 
+_cached_platform: str | None = None
+
 
 def get_device_platform() -> str:
     """Return a human-readable OS label for this machine (e.g. "macOS 15.0").
 
     Lets the account page show which computer a license is active on. No PII:
     just the OS name + version. Empty string if unavailable.
+
+    Cached for the process lifetime, like the hash above: the OS product name
+    cannot change while QGIS runs, and this is built into the headers of every
+    request the plugin makes.
     """
+    global _cached_platform
+    if _cached_platform is not None:
+        return _cached_platform
+
     try:
         name = QSysInfo.prettyProductName() or ""
     except Exception:  # nosec B110
@@ -107,4 +117,5 @@ def get_device_platform() -> str:
     # gets rejected by strict proxies/gateways. Fold instead of failing.
     name = " ".join(name.split())
     name = name.encode("ascii", "ignore").decode("ascii")
-    return name.strip()[:_PLATFORM_MAX_LEN]
+    _cached_platform = name.strip()[:_PLATFORM_MAX_LEN]
+    return _cached_platform

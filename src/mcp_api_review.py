@@ -10,6 +10,8 @@ itself and leaves nothing open, so decide with ``detect_auto``'s own
 """
 from __future__ import annotations
 
+from .mcp_api_guard import gui_thread_only
+
 _DISPLAY_MODES = ("normal", "outline", "confidence", "random")
 
 _NO_OPEN_REVIEW = (
@@ -59,6 +61,7 @@ class SegmentationReviewMixin:
         out["corrections"] = int(getattr(journal, "count", 0) or 0)
         return out
 
+    @gui_thread_only
     def review_filter(
         self,
         confidence: float | None = None,
@@ -74,8 +77,10 @@ class SegmentationReviewMixin:
         Parameters
         ----------
         confidence : float | None
-            Cutoff in [0.05, 0.95]. Lower keeps more objects and more false
-            positives. None leaves the cutoff alone.
+            Cutoff applied to this review, inside the band the product
+            accepts; a value outside it is refused with the band named. Lower
+            keeps more objects and more false positives. None leaves the
+            cutoff alone.
         min_size_m2 : float | None
             Drop objects under this ground area. 0 keeps every size.
         max_size_m2 : float | None
@@ -112,8 +117,13 @@ class SegmentationReviewMixin:
                     value = conf * 100.0 if "review" in widget_name else conf
                     self._write_review_widget(widget, value)
 
-        size_result = self.apply_refine(
-            min_size_m2=min_size_m2, max_size_m2=max_size_m2)
+        # Only call apply_refine when a size argument was actually given: a
+        # confidence-only call has nothing for it to apply, and asking it
+        # anyway just re-runs the open-review check for no reason.
+        size_result = None
+        if min_size_m2 is not None or max_size_m2 is not None:
+            size_result = self.apply_refine(
+                min_size_m2=min_size_m2, max_size_m2=max_size_m2)
         if isinstance(size_result, dict) and "_error" not in size_result:
             out = {"confidence": float(plugin._auto_confidence)}
             out["kept_instances"] = size_result.get("kept_instances")
@@ -140,6 +150,7 @@ class SegmentationReviewMixin:
         except (RuntimeError, AttributeError, TypeError, ValueError):
             pass
 
+    @gui_thread_only
     def set_display_mode(self, mode: str) -> dict:
         """Recolour an open review's objects on the canvas.
 
@@ -152,9 +163,12 @@ class SegmentationReviewMixin:
 
         Returns
         -------
-        dict with "mode", or "_error". Costs nothing and changes no geometry.
+        dict with "mode", or "_error" when no review is open. Costs nothing
+        and changes no geometry.
         """
         plugin = self._plugin
+        if getattr(plugin, "_auto_review", None) is None:
+            return {"_error": _NO_OPEN_REVIEW}
         wanted = (mode or "").strip().lower() if isinstance(mode, str) else ""
         if wanted not in _DISPLAY_MODES:
             from .mcp_api import not_found_error
@@ -178,6 +192,7 @@ class SegmentationReviewMixin:
             return {"_error": f"Could not set the display mode: {err}"}
         return {"mode": wanted}
 
+    @gui_thread_only
     def review_remove_object(self, index: int) -> dict:
         """Drop one object from an open review.
 
@@ -211,6 +226,7 @@ class SegmentationReviewMixin:
         out.update(self._count_review_kept())
         return out
 
+    @gui_thread_only
     def review_merge_objects(self, indices: list[int]) -> dict:
         """Join several objects of an open review into one.
 
@@ -293,6 +309,7 @@ class SegmentationReviewMixin:
         out.update(self._count_review_kept())
         return out
 
+    @gui_thread_only
     def review_undo_last(self) -> dict:
         """Take back the last correction made to an open review.
 
@@ -318,6 +335,7 @@ class SegmentationReviewMixin:
         out.update(self._count_review_kept())
         return out
 
+    @gui_thread_only
     def review_clear_corrections(self) -> dict:
         """Take back every correction made to an open review.
 

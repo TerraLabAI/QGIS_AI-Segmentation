@@ -1769,6 +1769,18 @@ Prova ad aprirlo in QGIS per verificare che venga visualizzato, oppure convertil
         <translation>Carica le tue immagini</translation>
     </message>
     <message>
+        <source>Your imagery is hidden</source>
+        <translation>La tua immagine è nascosta</translation>
+    </message>
+    <message>
+        <source>It is unchecked in the Layers panel.</source>
+        <translation>È deselezionata nel pannello Livelli.</translation>
+    </message>
+    <message>
+        <source>Show it on the map</source>
+        <translation>Mostrala sulla mappa</translation>
+    </message>
+    <message>
         <source>Lower the Min size filter to show objects first.</source>
         <translation>Abbassa il filtro Dimensione min per mostrare prima gli oggetti.</translation>
     </message>
@@ -2409,6 +2421,10 @@ Prova ad aprirlo in QGIS per verificare che venga visualizzato, oppure convertil
     <message>
         <source>How sure the AI is about each object. Lower shows more, higher keeps only the sure ones.</source>
         <translation>Quanto è sicura l'IA riguardo a ciascun oggetto. Un valore più basso ne mostra di più, uno più alto conserva solo quelli sicuri.</translation>
+    </message>
+    <message>
+        <source>Closed forest: the AI takes it as one cover and does not separate its trees. For the forest as one area, re-run with "forest".</source>
+        <translation>Foresta chiusa: l'IA la considera come un'unica copertura e non separa gli alberi. Per ottenere la foresta come un'unica area, riesegui con "forest".</translation>
     </message>
     <message>
         <source>Identify new shape</source>
@@ -5046,6 +5062,856 @@ sta bloccando l&apos;ambiente AI locale del plugin.</translation>
     <message>
         <source>Open it yourself</source>
         <translation>Aprilo manualmente</translation>
+    </message>
+    <message>
+        <source>Personal, non-commercial use. A paid plan adds commercial use for one person.</source>
+        <translation>Uso personale e non commerciale. Un piano a pagamento include l’uso commerciale per una persona.</translation>
+    </message>
+    <message>
+        <source>Finishing the current AI task, then the install starts.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Right angles is off: this QGIS does not carry the shapely geometry library it needs. Every other shape control still works.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Unavailable: this QGIS does not carry the shapely geometry library that squares the walls. A QGIS installed with its full package set carries it.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Report copied: paste it into your email</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Sign in to reopen, export or run this detection again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Check for Updates</source>
+        <translation>Controlla aggiornamenti</translation>
+    </message>
+    <message>
+        <source>More from TerraLab...</source>
+        <translation>Altro da TerraLab...</translation>
+    </message>
+    <message>
+        <source>BEFORE</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>AFTER</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>(more than {n} min left)</source>
+        <translation>(oltre {n} min rimanenti)</translation>
+    </message>
+    <message>
+        <source>(retry {done}/{total})</source>
+        <translation>(tentativo {done}/{total})</translation>
+    </message>
+    <message>
+        <source>0 shown - raise the Max size filter to reveal them</source>
+        <translation>0 mostrati - alza il filtro Dimensione massima per rivelarli</translation>
+    </message>
+    <message>
+        <source>1 charged</source>
+        <translation>1 addebitato</translation>
+    </message>
+    <message>
+        <source>1 cloud detection</source>
+        <translation>1 rilevamento cloud</translation>
+    </message>
+    <message>
+        <source>2. Send to support</source>
+        <translation>2. Invia al supporto</translation>
+    </message>
+    <message>
+        <source>200 km² of Automatic a month, on zones of any size.</source>
+        <translation>200 km² di Automatic al mese, su zone di qualsiasi dimensione.</translation>
+    </message>
+    <message>
+        <source>200 km² of Automatic every month, on zones of any size</source>
+        <translation>200 km² di Automatic ogni mese, su zone di qualsiasi dimensione</translation>
+    </message>
+    <message>
+        <source>500 cloud objects every month in Semi-Auto</source>
+        <translation>500 oggetti cloud ogni mese in Semi-Auto</translation>
+    </message>
+    <message>
+        <source>A firewall or proxy may be blocking the download. Check your network settings in QGIS (Settings &gt; Options &gt; Network).</source>
+        <translation>Un firewall o un proxy potrebbe bloccare il download. Controlla le impostazioni di rete in QGIS (Impostazioni &gt; Opzioni &gt; Rete).</translation>
+    </message>
+    <message>
+        <source>Account settings</source>
+        <translation>Impostazioni account</translation>
+    </message>
+    <message>
+        <source>Added to the project: {0}.</source>
+        <translation>Aggiunto al progetto: {0}.</translation>
+    </message>
+    <message>
+        <source>Advanced settings - name the object first</source>
+        <translation>Impostazioni avanzate - dai prima un nome all'oggetto</translation>
+    </message>
+    <message>
+        <source>All dependencies installed</source>
+        <translation>Tutte le dipendenze installate</translation>
+    </message>
+    <message>
+        <source>Another QGIS window is downloading the AI model. Wait for it to finish, then try again.</source>
+        <translation>Un'altra finestra di QGIS sta scaricando il modello IA. Attendi che finisca, poi riprova.</translation>
+    </message>
+    <message>
+        <source>Another QGIS window is installing the AI components.</source>
+        <translation>Un'altra finestra di QGIS sta installando i componenti IA.</translation>
+    </message>
+    <message>
+        <source>Building the shapes</source>
+        <translation>Creazione delle forme</translation>
+    </message>
+    <message>
+        <source>Cancelled before the model was asked for. Nothing was spent.</source>
+        <translation>Annullato prima di richiedere il modello. Non è stato speso nulla.</translation>
+    </message>
+    <message>
+        <source>Cancelled before the point was sent. Nothing was spent.</source>
+        <translation>Annullato prima di inviare il punto. Non è stato speso nulla.</translation>
+    </message>
+    <message>
+        <source>Cancelled before the zone was sent. Nothing was spent.</source>
+        <translation>Annullato prima di inviare la zona. Non è stato speso nulla.</translation>
+    </message>
+    <message>
+        <source>Cancelled while the model was loading. Nothing was spent.</source>
+        <translation>Annullato durante il caricamento del modello. Non è stato speso nulla.</translation>
+    </message>
+    <message>
+        <source>Cancelled. Kept the {0} object(s) already found, from the {1} tile(s) processed before the stop. The zone was charged when the run started, so the stop does not lower the bill. Added to the project: {2}.</source>
+        <translation>Annullato. Mantenuti i {0} oggetto/i già trovati, dai {1} tile elaborati prima dello stop. La zona è stata addebitata all'avvio dell'esecuzione, quindi lo stop non riduce il costo. Aggiunto al progetto: {2}.</translation>
+    </message>
+    <message>
+        <source>Cancelled. The AI service had processed {0} tile(s) before the stop, and nothing was added to the project. Open the AI Segmentation panel and look for a run waiting for review before starting another one. Run '{1}' to see what is left on the plan.</source>
+        <translation>Annullato. Il servizio IA aveva elaborato {0} tile prima dello stop, e non è stato aggiunto nulla al progetto. Apri il pannello AI Segmentation e cerca un'esecuzione in attesa di revisione prima di avviarne un'altra. Esegui '{1}' per vedere cosa resta sul piano.</translation>
+    </message>
+    <message>
+        <source>Cannot restart the download: {error}</source>
+        <translation>Impossibile riavviare il download: {error}</translation>
+    </message>
+    <message>
+        <source>Charged</source>
+        <translation>Addebitato</translation>
+    </message>
+    <message>
+        <source>Check disk space and folder permissions, then try again.</source>
+        <translation>Controlla lo spazio su disco e i permessi della cartella, poi riprova.</translation>
+    </message>
+    <message>
+        <source>Checking the {size} MB download...</source>
+        <translation>Verifica del download da {size} MB...</translation>
+    </message>
+    <message>
+        <source>Click on the map to outline your zone.</source>
+        <translation>Clicca sulla mappa per delimitare la tua zona.</translation>
+    </message>
+    <message>
+        <source>Click the object first. Save polygon keeps it in your session; Export writes all kept polygons to a layer.</source>
+        <translation>Fai prima clic sull'oggetto. Salva poligono lo mantiene nella tua sessione; Esporta scrive tutti i poligoni mantenuti in un livello.</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>Chiudi</translation>
+    </message>
+    <message>
+        <source>Cloud detections</source>
+        <translation>Rilevamenti cloud</translation>
+    </message>
+    <message>
+        <source>Connecting to download server...</source>
+        <translation>Connessione al server di download in corso...</translation>
+    </message>
+    <message>
+        <source>Could not reach TerraLab. Your runs are still there.</source>
+        <translation>Impossibile raggiungere TerraLab. Le tue esecuzioni sono ancora lì.</translation>
+    </message>
+    <message>
+        <source>Could not reach TerraLab. Your saved runs are still there.</source>
+        <translation>Impossibile raggiungere TerraLab. Le tue esecuzioni salvate sono ancora lì.</translation>
+    </message>
+    <message>
+        <source>Could not remove this run. Try again later.</source>
+        <translation>Impossibile rimuovere questa esecuzione. Riprova più tardi.</translation>
+    </message>
+    <message>
+        <source>Date</source>
+        <translation>Data</translation>
+    </message>
+    <message>
+        <source>Delete run</source>
+        <translation>Elimina esecuzione</translation>
+    </message>
+    <message>
+        <source>Dense area {current}/{total} · no extra cost</source>
+        <translation>Area densa {current}/{total} · nessun costo extra</translation>
+    </message>
+    <message>
+        <source>Download failed after {attempts} attempts: {reason}</source>
+        <translation>Download non riuscito dopo {attempts} tentativi: {reason}</translation>
+    </message>
+    <message>
+        <source>Download started...</source>
+        <translation>Download avviato...</translation>
+    </message>
+    <message>
+        <source>Downloading Python {version}...</source>
+        <translation>Download di Python {version} in corso...</translation>
+    </message>
+    <message>
+        <source>Downloading {package} ({size})... {elapsed}</source>
+        <translation>Download di {package} ({size}) in corso... {elapsed}</translation>
+    </message>
+    <message>
+        <source>Downloading {package}... {elapsed}</source>
+        <translation>Download di {package} in corso... {elapsed}</translation>
+    </message>
+    <message>
+        <source>Downloading: {done} / {total} MB ({speed} MB/s, {eta})</source>
+        <translation>Download: {done} / {total} MB ({speed} MB/s, {eta})</translation>
+    </message>
+    <message>
+        <source>Downloading: {done} MB ({speed} MB/s)</source>
+        <translation>Download: {done} MB ({speed} MB/s)</translation>
+    </message>
+    <message>
+        <source>Draw a zone, name one kind of object, get all of them in one run. Runs on our servers and uses your cloud objects.</source>
+        <translation>Disegna una zona, dai un nome a un tipo di oggetto e ottienili tutti in un'unica esecuzione. Viene eseguito sui nostri server e utilizza i tuoi oggetti cloud.</translation>
+    </message>
+    <message>
+        <source>Drop points closer than this distance to a straight edge (0 = off).</source>
+        <translation>Rimuovi i punti più vicini di questa distanza a un bordo diritto (0 = disattivato).</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;about {n} minutes to install&lt;/b&gt;</source>
+        <translation>Tutto resta su questo computer {dot} &lt;b&gt;circa {n} minuti per l'installazione&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Everything stays on this computer {dot} &lt;b&gt;{gb} GB and about {n} minutes to install&lt;/b&gt;</source>
+        <translation>Tutto resta su questo computer {dot} &lt;b&gt;{gb} GB e circa {n} minuti per l'installazione&lt;/b&gt;</translation>
+    </message>
+    <message>
+        <source>Export</source>
+        <translation>Esporta</translation>
+    </message>
+    <message>
+        <source>Exported</source>
+        <translation>Esportato</translation>
+    </message>
+    <message>
+        <source>Extracting Python...</source>
+        <translation>Estrazione di Python in corso...</translation>
+    </message>
+    <message>
+        <source>Failed</source>
+        <translation>Non riuscito</translation>
+    </message>
+    <message>
+        <source>Found nothing</source>
+        <translation>Nessun risultato</translation>
+    </message>
+    <message>
+        <source>Found {0} object(s) across {1} processed tile(s). Run '{2}' to read what is left on the plan: the run is charged for the surface of its zone, so the tile count is not the cost.</source>
+        <translation>Trovato/i {0} oggetto/i su {1} tile elaborati. Esegui '{2}' per vedere cosa resta sul piano: l'esecuzione viene addebitata in base alla superficie della sua zona, quindi il numero di tile non è il costo.</translation>
+    </message>
+    <message>
+        <source>Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR environment variable to a directory on a larger drive, then restart QGIS.</source>
+        <translation>Libera spazio su disco, oppure imposta la variabile d'ambiente AI_SEGMENTATION_CACHE_DIR su una cartella di un'unità più capiente, poi riavvia QGIS.</translation>
+    </message>
+    <message>
+        <source>GeoJSON and KML are written in EPSG:4326. Shapefile shortens field names to 10 characters.</source>
+        <translation>GeoJSON e KML vengono scritti in EPSG:4326. Shapefile abbrevia i nomi dei campi a 10 caratteri.</translation>
+    </message>
+    <message>
+        <source>It downloads first, and takes about {n} minutes.</source>
+        <translation>Prima si scarica, e richiede circa {n} minuti.</translation>
+    </message>
+    <message>
+        <source>It downloads first.</source>
+        <translation>Prima si scarica.</translation>
+    </message>
+    <message>
+        <source>It downloads first: {gb} GB and about {n} minutes.</source>
+        <translation>Prima si scarica: {gb} GB e circa {n} minuti.</translation>
+    </message>
+    <message>
+        <source>It started {minutes} minutes ago.</source>
+        <translation>È iniziato {minutes} minuti fa.</translation>
+    </message>
+    <message>
+        <source>Keep clicking around the zone, at least 3 points.</source>
+        <translation>Continua a fare clic intorno alla zona, almeno 3 punti.</translation>
+    </message>
+    <message>
+        <source>Layer is off screen</source>
+        <translation>Il livello è fuori schermo</translation>
+    </message>
+    <message>
+        <source>Loading your runs...</source>
+        <translation>Caricamento delle tue esecuzioni...</translation>
+    </message>
+    <message>
+        <source>Local AI files</source>
+        <translation>File IA locali</translation>
+    </message>
+    <message>
+        <source>Looking at ({0}, {1}) on {2}.</source>
+        <translation>Osservazione di ({0}, {1}) su {2}.</translation>
+    </message>
+    <message>
+        <source>Looking for '{0}' on {1}.</source>
+        <translation>Ricerca di '{0}' su {1}.</translation>
+    </message>
+    <message>
+        <source>Model download failed: {reason}. Retrying will not help. Update the plugin, or ask your IT administrator whether the download is being filtered.</source>
+        <translation>Download del modello non riuscito: {reason}. Riprovare non aiuterà. Aggiorna il plugin, oppure chiedi al tuo amministratore IT se il download viene filtrato.</translation>
+    </message>
+    <message>
+        <source>Model downloaded.</source>
+        <translation>Modello scaricato.</translation>
+    </message>
+    <message>
+        <source>No internet connection. Check your connection and try again.</source>
+        <translation>Nessuna connessione internet. Controlla la tua connessione e riprova.</translation>
+    </message>
+    <message>
+        <source>No run matches that search.</source>
+        <translation>Nessuna esecuzione corrisponde a questa ricerca.</translation>
+    </message>
+    <message>
+        <source>No run matches that search. Load older runs to look further back.</source>
+        <translation>Nessuna esecuzione corrisponde a questa ricerca. Carica esecuzioni più vecchie per guardare più indietro.</translation>
+    </message>
+    <message>
+        <source>No runs yet. Your Automatic runs appear here, ready to reuse, restore or export.</source>
+        <translation>Ancora nessuna esecuzione. Le tue esecuzioni Automatic compaiono qui, pronte per essere riutilizzate, ripristinate o esportate.</translation>
+    </message>
+    <message>
+        <source>Not enough free disk space to download the AI model: {free} MB available, at least {needed} MB is required.</source>
+        <translation>Spazio su disco insufficiente per scaricare il modello IA: {free} MB disponibili, ne servono almeno {needed} MB.</translation>
+    </message>
+    <message>
+        <source>Nothing to export yet. Click an object and save it first.</source>
+        <translation>Ancora niente da esportare. Fai prima clic su un oggetto e salvalo.</translation>
+    </message>
+    <message>
+        <source>Objects</source>
+        <translation>Oggetti</translation>
+    </message>
+    <message>
+        <source>Outlined one object, score {0}.</source>
+        <translation>Delineato un oggetto, punteggio {0}.</translation>
+    </message>
+    <message>
+        <source>Partial file ({size} MB) saved, it will resume on the next try.</source>
+        <translation>File parziale ({size} MB) salvato, riprenderà al prossimo tentativo.</translation>
+    </message>
+    <message>
+        <source>Points the map back at this run, ready to detect the same object again. Nothing is spent until you do.</source>
+        <translation>Riporta la mappa su questa esecuzione, pronta per rilevare di nuovo lo stesso oggetto. Non viene speso nulla finché non lo fai.</translation>
+    </message>
+    <message>
+        <source>Preparing installation...</source>
+        <translation>Preparazione dell'installazione...</translation>
+    </message>
+    <message>
+        <source>Preparing the imagery for the AI...</source>
+        <translation>Preparazione delle immagini per l'IA...</translation>
+    </message>
+    <message>
+        <source>Pro gives you 200 km² of Automatic a month, so you keep working.</source>
+        <translation>Pro ti dà 200 km² di Automatic al mese, così continui a lavorare.</translation>
+    </message>
+    <message>
+        <source>Pro gives you 500 cloud objects a month in Semi-Auto.</source>
+        <translation>Pro ti dà 500 oggetti cloud al mese in Semi-Auto.</translation>
+    </message>
+    <message>
+        <source>Pro raises the month to 200 km² of Automatic.</source>
+        <translation>Pro alza il mese a 200 km² di Automatic.</translation>
+    </message>
+    <message>
+        <source>Pro: 500 cloud objects a month in Semi-Auto with Cloud AI, and 200 km² of Automatic. Same AI, same free clicks and corrections, every machine you work on.</source>
+        <translation>Pro: 500 oggetti cloud al mese in Semi-Auto con Cloud AI, e 200 km² di Automatic. Stessa IA, stessi clic e correzioni gratuiti, su ogni macchina su cui lavori.</translation>
+    </message>
+    <message>
+        <source>Python {version} installed</source>
+        <translation>Python {version} installato</translation>
+    </message>
+    <message>
+        <source>QGIS would not open this layer for editing, so the manual tools could not start.</source>
+        <translation>QGIS non è riuscito ad aprire questo livello per la modifica, quindi gli strumenti manuali non hanno potuto avviarsi.</translation>
+    </message>
+    <message>
+        <source>Raise the Max size filter to show objects first.</source>
+        <translation>Alza prima il filtro Dimensione massima per mostrare gli oggetti.</translation>
+    </message>
+    <message>
+        <source>Remove this run from your history? Its detections stay stored, but it will not be listed here any more.</source>
+        <translation>Rimuovere questa esecuzione dalla cronologia? I suoi rilevamenti restano memorizzati, ma non saranno più elencati qui.</translation>
+    </message>
+    <message>
+        <source>Reshaping the objects...</source>
+        <translation>Rimodellamento degli oggetti in corso...</translation>
+    </message>
+    <message>
+        <source>Resolution</source>
+        <translation>Risoluzione</translation>
+    </message>
+    <message>
+        <source>Restored</source>
+        <translation>Ripristinato</translation>
+    </message>
+    <message>
+        <source>Resuming download...</source>
+        <translation>Ripresa del download in corso...</translation>
+    </message>
+    <message>
+        <source>Retry {done}/{total} in {seconds}s...</source>
+        <translation>Tentativo {done}/{total} tra {seconds}s...</translation>
+    </message>
+    <message>
+        <source>Run again</source>
+        <translation>Esegui di nuovo</translation>
+    </message>
+    <message>
+        <source>Save all {found}</source>
+        <translation>Salva tutti e {found}</translation>
+    </message>
+    <message>
+        <source>Save the hidden objects too?</source>
+        <translation>Salvare anche gli oggetti nascosti?</translation>
+    </message>
+    <message>
+        <source>Save the {visible} shown</source>
+        <translation>Salva i {visible} mostrati</translation>
+    </message>
+    <message>
+        <source>Saved on this computer</source>
+        <translation>Salvato su questo computer</translation>
+    </message>
+    <message>
+        <source>Saved to {folder}. Save the project to keep your results beside it.</source>
+        <translation>Salvato in {folder}. Salva il progetto per mantenere i tuoi risultati accanto ad esso.</translation>
+    </message>
+    <message>
+        <source>Session expired. Open the AI Segmentation panel and sign in again.</source>
+        <translation>Sessione scaduta. Apri il pannello AI Segmentation e accedi di nuovo.</translation>
+    </message>
+    <message>
+        <source>Shared borders is off above {cap} shapes. This result has {count}.</source>
+        <translation>Bordi condivisi è disattivato oltre {cap} forme. Questo risultato ne ha {count}.</translation>
+    </message>
+    <message>
+        <source>Shared borders needs a position for the shapes and this result carries none.</source>
+        <translation>Bordi condivisi ha bisogno di una posizione per le forme, e questo risultato non ne contiene alcuna.</translation>
+    </message>
+    <message>
+        <source>Sign in</source>
+        <translation>Accedi</translation>
+    </message>
+    <message>
+        <source>Sign in to keep detections here.</source>
+        <translation>Accedi per mantenere qui i rilevamenti.</translation>
+    </message>
+    <message>
+        <source>Sign in to reopen, export or run this zone again.</source>
+        <translation>Accedi per riaprire, esportare o eseguire di nuovo questa zona.</translation>
+    </message>
+    <message>
+        <source>Sign in to see every run on your account.</source>
+        <translation>Accedi per vedere tutte le esecuzioni del tuo account.</translation>
+    </message>
+    <message>
+        <source>Sign in to see your past runs.</source>
+        <translation>Accedi per vedere le tue esecuzioni passate.</translation>
+    </message>
+    <message>
+        <source>Star a run or an object to keep it here.</source>
+        <translation>Metti una stella su un'esecuzione o un oggetto per mantenerlo qui.</translation>
+    </message>
+    <message>
+        <source>Starred objects</source>
+        <translation>Oggetti con stella</translation>
+    </message>
+    <message>
+        <source>State: {0}. Ready: {1}.</source>
+        <translation>Stato: {0}. Pronto: {1}.</translation>
+    </message>
+    <message>
+        <source>Status</source>
+        <translation>Stato</translation>
+    </message>
+    <message>
+        <source>Stop</source>
+        <translation>Interrompi</translation>
+    </message>
+    <message>
+        <source>Stop reshaping here. The outlines already redrawn are kept.</source>
+        <translation>Interrompi qui il rimodellamento. I contorni già ridisegnati vengono mantenuti.</translation>
+    </message>
+    <message>
+        <source>Takes this run out of your history. Its detections stay stored.</source>
+        <translation>Rimuove questa esecuzione dalla cronologia. I suoi rilevamenti restano memorizzati.</translation>
+    </message>
+    <message>
+        <source>That click could not be handled. Please try again.</source>
+        <translation>Non è stato possibile gestire quel clic. Riprova.</translation>
+    </message>
+    <message>
+        <source>That shape was not added. Adjust it with a click and try again.</source>
+        <translation>Quella forma non è stata aggiunta. Regolala con un clic e riprova.</translation>
+    </message>
+    <message>
+        <source>The AI engine cannot load on Windows</source>
+        <translation>Il motore IA non può essere caricato su Windows</translation>
+    </message>
+    <message>
+        <source>The AI is still loading. This session starts on its own as soon as it is ready.</source>
+        <translation>L'IA si sta ancora caricando. Questa sessione partirà da sola non appena sarà pronta.</translation>
+    </message>
+    <message>
+        <source>The AI service answers this in one go, so the progress bar stays still and QGIS stays busy. This can take several minutes. Do not start it again. The zone is charged when the run starts; Cancel stops the run and keeps what was found.</source>
+        <translation>Il servizio IA risponde a questo in un'unica soluzione, quindi la barra di avanzamento resta ferma e QGIS resta occupato. Questo può richiedere diversi minuti. Non avviarlo di nuovo. La zona viene addebitata all'avvio dell'esecuzione; Annulla interrompe l'esecuzione e mantiene ciò che è stato trovato.</translation>
+    </message>
+    <message>
+        <source>The AI service is waking up. Holding your spot...</source>
+        <translation>Il servizio IA si sta risvegliando. Mantenimento del tuo posto in coda...</translation>
+    </message>
+    <message>
+        <source>The local AI did not stop in time, so the install was not started. Close and reopen QGIS, then try again.</source>
+        <translation>L'IA locale non si è fermata in tempo, quindi l'installazione non è stata avviata. Chiudi e riapri QGIS, poi riprova.</translation>
+    </message>
+    <message>
+        <source>The model file arrived complete twice and did not match its checksum either time. Something between this computer and the download is altering the file, usually a proxy or a security appliance. Ask your IT administrator to let the download through untouched.</source>
+        <translation>Il file del modello è arrivato completo due volte e non ha corrisposto al suo checksum in nessuna delle due occasioni. Qualcosa tra questo computer e il download sta alterando il file, di solito un proxy o un dispositivo di sicurezza. Chiedi al tuo amministratore IT di lasciar passare il download inalterato.</translation>
+    </message>
+    <message>
+        <source>The model is not loaded yet. Waiting up to {0} seconds for it.</source>
+        <translation>Il modello non è ancora caricato. Attesa fino a {0} secondi.</translation>
+    </message>
+    <message>
+        <source>The object was outlined but saving it failed: {0}. The outline is still returned as POLYGON_WKT.</source>
+        <translation>L'oggetto è stato delineato ma il salvataggio non è riuscito: {0}. Il contorno viene comunque restituito come POLYGON_WKT.</translation>
+    </message>
+    <message>
+        <source>The plugin requires Visual C++ Redistributables to run the local AI engine.
+
+Please download and install:
+https://aka.ms/vs/17/release/vc_redist.x64.exe
+
+After installation, restart QGIS and try again.</source>
+        <translation>Il plugin richiede Visual C++ Redistributables per eseguire il motore IA locale.
+
+Scarica e installa:
+https://aka.ms/vs/17/release/vc_redist.x64.exe
+
+Dopo l'installazione, riavvia QGIS e riprova.</translation>
+    </message>
+    <message>
+        <source>The run finished but added no layer to the project. Look in the AI Segmentation panel: results waiting for review live there.</source>
+        <translation>L'esecuzione è terminata ma non ha aggiunto alcun livello al progetto. Guarda nel pannello AI Segmentation: lì si trovano i risultati in attesa di revisione.</translation>
+    </message>
+    <message>
+        <source>This raster is outside the current map view, so clicks would land on nothing.</source>
+        <translation>Questo raster è fuori dalla vista mappa corrente, quindi i clic non avrebbero effetto.</translation>
+    </message>
+    <message>
+        <source>This run found nothing. Add the object yourself below, or use "Re-run the whole zone" with another word or a smaller zone.</source>
+        <translation>Questa esecuzione non ha trovato nulla. Aggiungi tu stesso l'oggetto qui sotto, oppure usa "Riesegui l'intera zona" con un'altra parola o una zona più piccola.</translation>
+    </message>
+    <message>
+        <source>Today</source>
+        <translation>Oggi</translation>
+    </message>
+    <message>
+        <source>Undated</source>
+        <translation>Senza data</translation>
+    </message>
+    <message>
+        <source>Undo every correction of this round at once. The count is in the label, so you can see what goes. It asks once first.</source>
+        <translation>Annulla tutte le correzioni di questo turno in una volta sola. Il numero è nell'etichetta, così vedi cosa se ne va. Chiede conferma una volta prima.</translation>
+    </message>
+    <message>
+        <source>Undo every correction? Confirm</source>
+        <translation>Annullare tutte le correzioni? Conferma</translation>
+    </message>
+    <message>
+        <source>Unknown error. Try again, or use Cloud AI instead.</source>
+        <translation>Errore sconosciuto. Riprova, oppure usa Cloud AI al suo posto.</translation>
+    </message>
+    <message>
+        <source>Verifying Python installation...</source>
+        <translation>Verifica dell'installazione di Python in corso...</translation>
+    </message>
+    <message>
+        <source>Wait for it to finish, then try again.</source>
+        <translation>Attendi che finisca, poi riprova.</translation>
+    </message>
+    <message>
+        <source>Yesterday</source>
+        <translation>Ieri</translation>
+    </message>
+    <message>
+        <source>Your {n} free cloud detections are used up</source>
+        <translation>I tuoi {n} rilevamenti cloud gratuiti sono esauriti</translation>
+    </message>
+    <message>
+        <source>Zone</source>
+        <translation>Zona</translation>
+    </message>
+    <message>
+        <source>Zone too large - draw a smaller zone</source>
+        <translation>Zona troppo grande - disegna una zona più piccola</translation>
+    </message>
+    <message>
+        <source>Zone too large. Draw a zone of {max} tiles or fewer.</source>
+        <translation>Zona troppo grande. Disegna una zona di {max} tile o meno.</translation>
+    </message>
+    <message>
+        <source>Zoom to the layer first?</source>
+        <translation>Ingrandire prima sul livello?</translation>
+    </message>
+    <message>
+        <source>the AI engine</source>
+        <translation>il motore IA</translation>
+    </message>
+    <message>
+        <source>the AI model</source>
+        <translation>il modello IA</translation>
+    </message>
+    <message>
+        <source>the model file has been removed from that address</source>
+        <translation>il file del modello è stato rimosso da quell'indirizzo</translation>
+    </message>
+    <message>
+        <source>the model file is not at that address</source>
+        <translation>il file del modello non si trova a quell'indirizzo</translation>
+    </message>
+    <message>
+        <source>the server refused access to the model file</source>
+        <translation>il server ha rifiutato l'accesso al file del modello</translation>
+    </message>
+    <message>
+        <source>{hidden} objects are hidden by the filters. Finish asks before it leaves them out.</source>
+        <translation>{hidden} oggetti sono nascosti dai filtri. Termina chiede conferma prima di escluderli.</translation>
+    </message>
+    <message>
+        <source>{hidden} of the {found} objects found are hidden by the Confidence cutoff. They are not on screen, and Finish leaves them out.</source>
+        <translation>{hidden} dei {found} oggetti trovati sono nascosti dalla soglia di Confidenza. Non sono sullo schermo, e Termina li esclude.</translation>
+    </message>
+    <message>
+        <source>{n} charged</source>
+        <translation>{n} addebitato/i</translation>
+    </message>
+    <message>
+        <source>{n} cloud detections</source>
+        <translation>{n} rilevamenti cloud</translation>
+    </message>
+    <message>
+        <source>{n} free cloud detections left, back on {date}.</source>
+        <translation>{n} rilevamenti cloud gratuiti rimasti, di nuovo disponibili il {date}.</translation>
+    </message>
+    <message>
+        <source>{n} free cloud detections left.</source>
+        <translation>{n} rilevamenti cloud gratuiti rimasti.</translation>
+    </message>
+    <message>
+        <source>{n} ha</source>
+        <translation>{n} ha</translation>
+    </message>
+    <message>
+        <source>{n} km2</source>
+        <translation>{n} km2</translation>
+    </message>
+    <message>
+        <source>{package} installed</source>
+        <translation>{package} installato</translation>
+    </message>
+    <message>
+        <source>{used} of {cap} computers in use.</source>
+        <translation>{used} di {cap} computer in uso.</translation>
+    </message>
+    <message>
+        <source>~{minutes}m {seconds}s left</source>
+        <translation>~{minutes}m {seconds}s rimanenti</translation>
+    </message>
+    <message>
+        <source>~{seconds}s left</source>
+        <translation>~{seconds}s rimanenti</translation>
+    </message>
+    <message>
+        <source>Save the {visible} polygons shown as a layer.</source>
+        <translation>Salva i {visible} poligoni mostrati come layer.</translation>
+    </message>
+    <message>
+        <source>About a minute left</source>
+        <translation>Circa un minuto rimanente</translation>
+    </message>
+    <message>
+        <source>About {m} min left</source>
+        <translation>Circa {m} min rimanenti</translation>
+    </message>
+    <message>
+        <source>Dense area · no extra cost</source>
+        <translation>Area densa · nessun costo aggiuntivo</translation>
+    </message>
+    <message>
+        <source>Less than a minute left</source>
+        <translation>Meno di un minuto rimanente</translation>
+    </message>
+    <message>
+        <source>about {m} min</source>
+        <translation>circa {m} min</translation>
+    </message>
+    <message>
+        <source>under a minute</source>
+        <translation>meno di un minuto</translation>
+    </message>
+    <message>
+        <source>{current} of {total} tiles</source>
+        <translation>{current} di {total} tile</translation>
+    </message>
+    <message>
+        <source>{done} of {total} km²</source>
+        <translation>{done} di {total} km²</translation>
+    </message>
+    <message>
+        <source>{km2} km² · {eta}</source>
+        <translation>{km2} km² · {eta}</translation>
+    </message>
+    <message>
+        <source>{pct}% done</source>
+        <translation>{pct}% completato</translation>
+    </message>
+    <message>
+        <source>Free includes one example per run, and this run has it.</source>
+        <translation>Il piano gratuito include un esempio per esecuzione, e questa esecuzione ce l'ha già.</translation>
+    </message>
+    <message>
+        <source>Or run it with this one example.</source>
+        <translation>Oppure esegui con questo unico esempio.</translation>
+    </message>
+    <message>
+        <source>Pro takes up to {max} examples per run, look-alikes to exclude included, so the AI finds exactly what you mean.</source>
+        <translation>Pro accetta fino a {max} esempi per esecuzione, inclusi gli elementi simili da escludere, così l'AI trova esattamente ciò che intendi.</translation>
+    </message>
+    <message>
+        <source>The AI finds every object that looks like your example. Free includes one example per run.</source>
+        <translation>L'AI trova ogni oggetto simile al tuo esempio. Il piano gratuito include un esempio per esecuzione.</translation>
+    </message>
+    <message>
+        <source>The AI finds every object that looks like your examples - you can draw up to {max}.</source>
+        <translation>L'AI trova ogni oggetto simile ai tuoi esempi - puoi disegnarne fino a {max}.</translation>
+    </message>
+    <message>
+        <source>The AI finds every object that looks like your examples.</source>
+        <translation>L'AI trova ogni oggetto simile ai tuoi esempi.</translation>
+    </message>
+    <message>
+        <source>Need more this month? Write to us and we set up a plan that fits your volume.</source>
+        <translation>Hai bisogno di più questo mese? Scrivici e configuriamo un piano adatto al tuo volume.</translation>
+    </message>
+    <message>
+        <source>{left} of {cap} Semi-Auto objects left this month</source>
+        <translation>{left} di {cap} oggetti Semi-Auto rimasti questo mese</translation>
+    </message>
+    <message>
+        <source>Copy email</source>
+        <translation>Copia email</translation>
+    </message>
+    <message>
+        <source>Custom needs? Write to us: {email}</source>
+        <translation>Esigenze personalizzate? Scrivici: {email}</translation>
+    </message>
+    <message>
+        <source>Automatic is unavailable right now.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Describe what to find, show what it looks like, or do both. Both together is the most accurate.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Detect objects ({n} km² · {eta})</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Detect objects ({n} km²)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Draw a smaller zone</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Each tile covers a lot of ground at this precision. Raise the precision in Advanced settings for sharper detections.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Exclude {n}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Reference {n}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Semi-Auto still works until it comes back.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Semi-Auto still works, and Automatic comes back on {date}.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Size of each object</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The AI drops objects that look like this.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The AI looks for more objects like this.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Try again in a few minutes. Your zone and your settings are kept.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Type what to find, or draw an example of it.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>What you asked for</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>You used your Automatic surface for this month.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>and / or</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Building the shapes on this computer - still working, everything already found is kept...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>After an Automatic run, its technical log lines are sent too.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 </TS>

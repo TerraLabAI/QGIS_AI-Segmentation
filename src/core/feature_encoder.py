@@ -1705,9 +1705,11 @@ class OnlineCropFetcher:
             )
             self._direct_image = image
             return ("stabilized", 0.0)
-        if error_code != "crop_error_online_blank_tiles":
-            # Blank is about this ground, not about the layer, so it never
-            # counts against the source.
+        if error_code not in ("crop_error_online_blank_tiles",
+                              "crop_error_online_cancelled"):
+            # Blank is about this ground, not about the layer, and a cancel is
+            # about the user, so neither counts against the source. Two counts
+            # take the direct path away for minutes.
             note_direct_tile_fetch_failed(request.source_key)
         QgsMessageLog.logMessage(
             f"Direct tile fetch brought nothing after {elapsed_ms} ms "

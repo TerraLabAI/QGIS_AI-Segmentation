@@ -36,6 +36,7 @@ from ..error_report_dialog import show_error_report
 from ..shortcut_filter import ShortcutFilter
 from .shared import (
     _FIELD_TYPE_DOUBLE,
+    _FIELD_TYPE_STRING,
     SETTINGS_KEY_LAST_MANUAL_SESSION_TS,
     SETTINGS_KEY_TUTORIAL_SHOWN,
     _add_features_fast,
@@ -121,6 +122,13 @@ class ManualWorkflowMixin:
             # a remote one holds it. Ask for the load here so the sentence below
             # is true and the next Start finds a model.
             self._load_predictor()
+            if self._arm_manual_start_when_ready(layer):
+                self.iface.messageBar().pushMessage(
+                    "AI Segmentation",
+                    tr("The AI is still loading. This session starts on its "
+                       "own as soon as it is ready."),
+                    level=Qgis.MessageLevel.Info, duration=6)
+                return
             QMessageBox.warning(
                 self.iface.mainWindow(),
                 tr("Not Ready"),
@@ -240,6 +248,11 @@ class ManualWorkflowMixin:
         # Store raster path for on-demand crop extraction
         self._current_raster_path = raster_path
 
+        # A raster the map is not showing takes every click and answers
+        # nothing, which reads as a broken tool. Offer the way back to it.
+        if not self._is_online_layer and not self._is_non_georeferenced_mode:
+            self._offer_zoom_to_off_screen_raster(layer)
+
         # Opened here, past every guard above: a Start that turns back leaves no
         # ledger behind for a session that never opened. The review's Correct
         # step comes through here too and opens one on the same terms, because
@@ -327,6 +340,82 @@ class ManualWorkflowMixin:
         except (RuntimeError, AttributeError):
             return
         self._canvas_crs_watch_on = True
+
+    def _arm_manual_start_when_ready(self, layer) -> bool:
+        """Watch the model load and start this session once it answers.
+
+        True when the wait is being watched, so the caller can say the session
+        is coming instead of asking the user to press Start again.
+        """
+        worker = getattr(self, "_predictor_worker", None)
+        try:
+            if worker is None or not worker.isRunning():
+                return False
+            self._start_manual_when_ready = layer
+            if not getattr(self, "_manual_start_when_ready_wired", False):
+                worker.done.connect(self._on_manual_start_when_ready)
+                self._manual_start_when_ready_wired = True
+            return True
+        except (RuntimeError, AttributeError):
+            return False
+
+    def _on_manual_start_when_ready(self, predictor, err_msg: str) -> None:
+        """The model load came back while a Start was waiting on it."""
+        self._manual_start_when_ready_wired = False
+        layer = getattr(self, "_start_manual_when_ready", None)
+        self._start_manual_when_ready = None
+        if layer is None or self.predictor is None:
+            return
+        dock = self.dock_widget
+        if dock is None or getattr(dock, "_segmentation_active", False):
+            return
+        try:
+            if not self._is_layer_valid(layer):
+                return
+        except RuntimeError:
+            return
+        self._on_start_segmentation(layer)
+
+    def _offer_zoom_to_off_screen_raster(self, layer) -> None:
+        """Offer to bring the raster into view when the map is elsewhere.
+
+        Never blocks the session: the user may have framed the view on purpose,
+        and a Start that refuses to start is worse than a click that misses.
+        """
+        try:
+            canvas = self.iface.mapCanvas()
+            view = canvas.extent()
+            extent = layer.extent()
+            if view.isEmpty() or extent.isEmpty():
+                return
+            canvas_crs = canvas.mapSettings().destinationCrs()
+            layer_crs = layer.crs()
+            if (canvas_crs.isValid() and layer_crs.isValid()
+                    and canvas_crs != layer_crs):
+                xform = QgsCoordinateTransform(
+                    layer_crs, canvas_crs, QgsProject.instance())
+                extent = xform.transformBoundingBox(extent)
+            if view.intersects(extent):
+                return
+        except (QgsCsException, RuntimeError, AttributeError):
+            return
+        reply = QMessageBox.question(
+            self.iface.mainWindow(),
+            tr("Layer is off screen"),
+            "{}\n\n{}".format(
+                tr("This raster is outside the current map view, so clicks "
+                   "would land on nothing."),
+                tr("Zoom to the layer first?")),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            canvas.setExtent(extent)
+            canvas.refresh()
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110 -- the session runs either way
 
     def _stop_canvas_crs_watch(self) -> None:
         """Let go of the canvas CRS. Never raises: teardown paths call it."""
@@ -551,8 +640,12 @@ class ManualWorkflowMixin:
         # and this is where it is spent. Asked before anything is committed, so
         # a refusal leaves the shape on screen exactly as the user traced it.
         # The identity is the one this object already had (a re-opened object is
-        # paid for); a brand-new one has none yet and is billable by definition.
-        billing_id = (self._active_refine_origin_entry or {}).get("det_id")
+        # paid for); a brand-new one is minted here so the gate below and the
+        # charge further down judge the same object.
+        origin = self._active_refine_origin_entry or {}
+        origin_id = origin.get("det_id")
+        billing_id = (int(origin_id) if origin_id is not None
+                      else self._next_handoff_det_id())
         if self._manual_save_refused_for_credits(billing_id):
             return
         # There IS a shape to commit. A crop read owning the predictor pipe is
@@ -597,13 +690,11 @@ class ManualWorkflowMixin:
             combined = align_manual_saved_shape(self, combined)
             # Per-instance identity: an object re-opened for editing keeps its
             # original det_id (its Random colour survives the edit); a brand-new
-            # hand save gets a synthetic one. Score follows the same rule.
-            origin = self._active_refine_origin_entry or {}
-            origin_id = origin.get("det_id")
+            # hand save gets the synthetic one the gate above already minted.
+            # Score follows the same rule.
             # Store WKT (with effects), transform info, raw mask, points, and refine settings
             self.saved_polygons.append({
-                "det_id": int(origin_id) if origin_id is not None
-                else self._next_handoff_det_id(),
+                "det_id": billing_id,
                 "score": origin.get("score"),
                 "manual_touched": self._refine_handoff_active,
                 "geometry_wkt": combined.asWkt(),
@@ -740,7 +831,8 @@ class ManualWorkflowMixin:
             return live.strip()
         try:
             if self._is_layer_valid() and self._current_layer.crs().isValid():
-                return self._current_layer.crs().authid()
+                crs = self._current_layer.crs()
+                return crs.authid() or crs.toWkt()
         except RuntimeError:
             pass
         return ""
@@ -886,7 +978,11 @@ class ManualWorkflowMixin:
         should_skip_export = should_skip_export and not self._frozen_sessions
         should_skip_export = should_skip_export and self._unfrozen_display_polygon is None
         if should_skip_export:
-            return  # Nothing to export
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation",
+                tr("Nothing to export yet. Click an object and save it first."),
+                level=Qgis.MessageLevel.Info, duration=5)
+            return
 
         polygons_to_export = list(self.saved_polygons)
 
@@ -915,7 +1011,9 @@ class ManualWorkflowMixin:
             if combined and not combined.isEmpty():
                 origin = self._active_refine_origin_entry or {}
                 origin_id = origin.get("det_id")
-                if self._manual_save_refused_for_credits(origin_id):
+                live_billing_id = (int(origin_id) if origin_id is not None
+                                   else self._next_handoff_det_id())
+                if self._manual_save_refused_for_credits(live_billing_id):
                     # An object nobody can pay for is not committed, exactly as
                     # a Save would answer. Nothing else goes out either: the
                     # export ends the session, so writing the saved polygons
@@ -924,25 +1022,16 @@ class ManualWorkflowMixin:
                     # user has credits or has put the clicks back on their own
                     # computer.
                     return
-                live_billing_id = (int(origin_id) if origin_id is not None
-                                   else self._next_handoff_det_id())
                 # The live object never reaches the saved list, so the charge
                 # is handed its shape here or carries no ground surface.
                 live_billing_geom = combined
                 polygons_to_export.append({
+                    "det_id": live_billing_id,
                     "geometry_wkt": combined.asWkt(),
+                    "geom_obj": combined,
                     "score": origin.get("score"),
                     "transform_info": self.current_transform_info.copy() if self.current_transform_info else None,
                 })
-
-        self._stopping_segmentation = True
-        try:
-            self.iface.mapCanvas().unsetMapTool(self.map_tool)
-            self._restore_previous_map_tool()
-        finally:
-            # A stuck-True flag makes _on_tool_deactivated refuse to ever
-            # re-arm the segmentation tool for the rest of the session.
-            self._stopping_segmentation = False
 
         from ...core import output_store
 
@@ -978,7 +1067,8 @@ class ManualWorkflowMixin:
             if crs_str is None:
                 try:
                     if self._is_layer_valid() and self._current_layer.crs().isValid():
-                        crs_str = self._current_layer.crs().authid()
+                        layer_crs = self._current_layer.crs()
+                        crs_str = layer_crs.authid() or layer_crs.toWkt()
                 except RuntimeError:
                     pass
             crs = None
@@ -1017,6 +1107,7 @@ class ManualWorkflowMixin:
             apply_output_conventions,
             make_area_measurer,
             make_committed_renderer,
+            measure_field,
             repair_polygon,
             round_measure,
             to_multipolygon,
@@ -1029,9 +1120,11 @@ class ManualWorkflowMixin:
         # of being repeated on every row.
         pr = temp_layer.dataProvider()
         pr.addAttributes([
+            QgsField("det_id", _FIELD_TYPE_STRING),
+            QgsField("class", _FIELD_TYPE_STRING),
             QgsField("confidence", _FIELD_TYPE_DOUBLE),
-            QgsField("area_m2", _FIELD_TYPE_DOUBLE),
-            QgsField("perimeter_m", _FIELD_TYPE_DOUBLE),
+            measure_field("area_m2"),
+            measure_field("perimeter_m"),
         ])
         temp_layer.updateFields()
 
@@ -1052,17 +1145,21 @@ class ManualWorkflowMixin:
         for i, polygon_data in enumerate(polygons_to_export):
             feature = QgsFeature(temp_layer.fields())
 
-            # Reconstruct geometry from WKT
-            geom_wkt = polygon_data.get("geometry_wkt")
-            if not geom_wkt:
-                QgsMessageLog.logMessage(
-                    f"Polygon {i + 1} has no WKT data",
-                    "AI Segmentation",
-                    level=Qgis.MessageLevel.Warning
-                )
-                continue
-
-            geom = QgsGeometry.fromWkt(geom_wkt)
+            # The geometry object saved beside the WKT, when there is one: a
+            # re-parse of every outline costs the whole export on a big set.
+            geom = polygon_data.get("geom_obj")
+            if geom is not None:
+                geom = QgsGeometry(geom)
+            else:
+                geom_wkt = polygon_data.get("geometry_wkt")
+                if not geom_wkt:
+                    QgsMessageLog.logMessage(
+                        f"Polygon {i + 1} has no WKT data",
+                        "AI Segmentation",
+                        level=Qgis.MessageLevel.Warning
+                    )
+                    continue
+                geom = QgsGeometry.fromWkt(geom_wkt)
 
             if geom and not geom.isEmpty():
                 # Repair instead of silently dropping invalid rings, then coerce
@@ -1080,7 +1177,12 @@ class ManualWorkflowMixin:
                 else:
                     area = measurer.measureArea(geom)
                     perimeter = measurer.measurePerimeter(geom)
+                det_id = polygon_data.get("det_id")
                 feature.setAttributes([
+                    str(det_id) if det_id is not None else None,
+                    # One class name for every hand-clicked object: the mode
+                    # asks for no prompt, so there is nothing else to name.
+                    "manual",
                     round(float(score), 3) if score is not None else None,
                     round_measure(area),
                     round_measure(perimeter),
@@ -1168,6 +1270,19 @@ class ManualWorkflowMixin:
             )
             return
 
+        # The file is written, so this session is over and the click tool comes
+        # off the map. Not before: every branch above returns with the polygons
+        # still in the session, and a panel already flipped back to Start would
+        # drop them on the next Start.
+        self._stopping_segmentation = True
+        try:
+            self.iface.mapCanvas().unsetMapTool(self.map_tool)
+            self._restore_previous_map_tool()
+        finally:
+            # A stuck-True flag makes _on_tool_deactivated refuse to ever
+            # re-arm the segmentation tool for the rest of the session.
+            self._stopping_segmentation = False
+
         # The object that was still on screen is written to the file now, so
         # this is the moment it is paid for. Sent in the background, like a
         # Save. After the write, never before: a failed write leaves the object
@@ -1202,6 +1317,14 @@ class ManualWorkflowMixin:
             plugin_version=plugin_version,
         )
 
+        # Hand the map over from the rubber bands to the saved layer in ONE
+        # swap, the same hold the Automatic commit uses. Without it the canvas
+        # shows its half-drawn picture while the saved layer draws.
+        try:
+            from .canvas_redraw_handover import hold_map_picture_during_redraw
+            hold_map_picture_during_redraw(self.iface.mapCanvas())
+        except (RuntimeError, AttributeError):  # nosec B110 - display only
+            pass
         # Add under the source raster's sub-group in the "AI Segmentation"
         # group. This also turns on render-time simplification and builds the
         # provider spatial index, so neither is repeated below.
@@ -1467,7 +1590,7 @@ class ManualWorkflowMixin:
                     losing,
                     tr("Use 'Export to layer' to keep them.")),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.Yes
+                QMessageBox.StandardButton.No
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
@@ -1477,6 +1600,10 @@ class ManualWorkflowMixin:
                     context="stop", polygon_count=polygon_count)
             except Exception:
                 pass  # nosec B110
+            # The work leaves the session here. Write it to disk first: the
+            # user confirmed a discard, and a file they can delete costs them
+            # nothing next to an afternoon they cannot get back.
+            self._autosave_manual_saved_polygons(include_live=True)
 
         self._stop_manual_session(keep_saves=False)
 
@@ -1510,6 +1637,13 @@ class ManualWorkflowMixin:
         tool, reset plugin + dock state. No confirm dialog and no export here;
         callers harvest or export unsaved work first. Idempotent; shared by
         the stop button, the refine handoff and the zone teardown paths."""
+        # What this session measured about the link is written now, not on
+        # every click: the write is a file, and the figure is a running average.
+        try:
+            from ...core.click_crop_encoding import flush_crop_profile
+            flush_crop_profile()
+        except Exception:  # noqa: BLE001 -- a teardown must never raise  # nosec B110
+            pass
         # The billing ledger belongs to the session, so it ends with it. A
         # charge already in flight keeps its own copy of what it needs.
         self._end_manual_credit_session()

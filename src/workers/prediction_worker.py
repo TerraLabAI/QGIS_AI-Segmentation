@@ -447,7 +447,16 @@ def main():
         send_ready()
 
         while True:
-            line = _safe_readline()
+            try:
+                line = _safe_readline()
+            except ValueError as e:
+                # One request over the line limit. The reader consumed the whole
+                # line, so the protocol is still in step and the session goes on:
+                # this used to escape to the handler below, which killed the
+                # worker and reported it as an initialization failure, three
+                # actions after initialization was over.
+                send_error(f"Error processing request: {e}")
+                continue
             if not line:
                 break
 
@@ -534,6 +543,9 @@ def main():
                         predictor.reset_predictor()
                     else:
                         predictor.reset_image()
+                    # A reset ends the session that asked for those crops, and
+                    # each entry holds a whole set of encoder feature maps.
+                    _encoded_crop_cache.clear()
                     send_response("reset_done", {})
 
                 elif action == "quit":
