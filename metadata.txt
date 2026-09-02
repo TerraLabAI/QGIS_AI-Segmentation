@@ -3,7 +3,7 @@ name=AI Segmentation by TerraLab
 description=AI segmentation for QGIS: detect and extract building footprints, trees, vegetation or any object from your raster, then refine & export as vector polygons
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
-version=2.5.3
+version=2.5.5
 author=Yvann and Lilien from TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
@@ -29,6 +29,18 @@ about=
     • Multilingual: English, French, Portuguese, Spanish, German, Italian, Dutch, Polish, Indonesian, Japanese, Chinese
 
 changelog=
+    2.5.5
+    - Automatic: large runs build their shapes several times faster, and the time estimate matches
+    - Automatic: a run's Detect button now carries the zone surface and the wait
+    - Farm field runs open the review at a cleaner cutoff
+    - Stability and reliability improvements
+    2.5.4
+    - Large zones run faster, and the progress bar now speaks in area done and time left
+    - The Library shows your past runs grouped by day, with restore, run again and export on every card
+    - Semi-Auto: the preview and the click now read the same picture, so what you see is what you get
+    - A steadier setup on Windows and macOS
+    - Interface polish and clearer messages throughout
+    - Stability and reliability improvements
     2.5.3
     - Minor maintenance and improvements
     2.5.2
