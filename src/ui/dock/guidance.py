@@ -246,6 +246,31 @@ def dismiss_hint(hint_id: str) -> None:
     QSettings().setValue(_SETTINGS_PREFIX + hint_id, True)
 
 
+def dismiss_hint_for_version(hint_id: str, version: str) -> None:
+    """Refuse a hint for one named version only, so the next one asks again."""
+    QSettings().setValue(_SETTINGS_PREFIX + hint_id + "/dismissed_version", str(version))
+
+
+def is_hint_dismissed_for_version(
+    hint_id: str, offered_version: str, installed_version: str = "",
+) -> bool:
+    """Whether the user already refused THIS offered version.
+
+    A plain dismissal predates versioning and names nothing, so it counts as
+    refusing only what is already installed: a newer release still shows.
+    """
+    stored = QSettings().value(_SETTINGS_PREFIX + hint_id + "/dismissed_version", "", type=str)
+    if stored:
+        return stored.strip() == str(offered_version).strip()
+    if not is_hint_dismissed(hint_id):
+        return False
+    from ...core.server_dials import parse_version
+
+    offered = parse_version(offered_version)
+    installed = parse_version(installed_version)
+    return offered is not None and installed is not None and offered <= installed
+
+
 def reset_hints() -> None:
     """Re-enable every hint so the user sees the guidance again.
 

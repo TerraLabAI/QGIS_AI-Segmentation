@@ -596,28 +596,36 @@ class ManualWorkflowMixin:
                 held = tr("You have {count} unsaved polygons.").format(
                     count=polygon_count)
             message = "{}\n\n{}".format(
-                held,
-                tr("Changing layer will discard your current segmentation. Continue?"))
+                held, tr("Saving keeps them on the map."))
 
-            reply = QMessageBox.warning(
-                self.iface.mainWindow(),
-                tr("Change Layer?"),
-                message,
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No
-            )
-
-            if reply != QMessageBox.StandardButton.Yes:
+            choice = self._ask_unsaved_semi_auto(tr("Change Layer?"), message)
+            if choice == "cancel":
                 self.dock_widget.layer_combo.blockSignals(True)
                 self.dock_widget.layer_combo.setLayer(self._current_layer)
                 self.dock_widget.layer_combo.blockSignals(False)
                 return
-            try:
-                from ...core import telemetry_session_events
-                telemetry_session_events.track_manual_abandoned(
-                    context="change_layer", polygon_count=polygon_count)
-            except Exception:
-                pass  # nosec B110
+            if choice == "save":
+                # Put the work on the map, then fall through to the ordinary
+                # layer change below. Never return here: the rest of this
+                # method is what moves _current_layer to the layer the user
+                # just picked, and skipping it would leave the next confirm
+                # comparing against the old one.
+                self._on_export_layer()
+                self._autosave_manual_saved_polygons(include_live=True)
+            else:
+                try:
+                    from ...core import telemetry_session_events
+                    telemetry_session_events.track_manual_abandoned(
+                        context="change_layer", polygon_count=polygon_count)
+                except Exception:
+                    pass  # nosec B110
+                # The work leaves the session here, exactly as it does on Stop,
+                # so it gets the same disk net. Stop has written it since the
+                # day the net was added and this path never did: confirming a
+                # layer change threw the polygons away for good. A file the
+                # user can delete costs them nothing next to an afternoon they
+                # cannot get back.
+                self._autosave_manual_saved_polygons(include_live=True)
 
         self._stopping_segmentation = True
         try:
@@ -1559,6 +1567,36 @@ class ManualWorkflowMixin:
         if refresh is not None:
             refresh()
 
+    def _ask_unsaved_semi_auto(self, title: str, held: str) -> str:
+        """Ask what to do with unsaved Semi-Auto work. Returns the choice.
+
+        "save", "discard" or "cancel". Three buttons, not two: the old dialog
+        offered Yes and No and told the user to go and use Export to layer,
+        which is an instruction to leave the dialog, find a control and come
+        back. The save it was sending them to do is one button, so it is one
+        button here.
+
+        Save is the default, because it is the only choice that cannot lose
+        anything.
+        """
+        box = QMessageBox(self.iface.mainWindow())
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle(title)
+        box.setText(held)
+        save_btn = box.addButton(tr("Save them"),
+                                 QMessageBox.ButtonRole.AcceptRole)
+        drop_btn = box.addButton(tr("Discard"),
+                                 QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton(tr("Cancel"), QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(save_btn)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is save_btn:
+            return "save"
+        if clicked is drop_btn:
+            return "discard"
+        return "cancel"
+
     def _on_stop_segmentation(self):
         """Exit segmentation mode without saving."""
         # Refine handoff: Esc/stop must NEVER offer to discard the whole
@@ -1583,16 +1621,17 @@ class ManualWorkflowMixin:
             else:
                 losing = tr("This will discard {count} polygons.").format(
                     count=polygon_count)
-            reply = QMessageBox.warning(
-                self.iface.mainWindow(),
+            choice = self._ask_unsaved_semi_auto(
                 tr("Stop Segmentation?"),
                 "{}\n\n{}".format(
-                    losing,
-                    tr("Use 'Export to layer' to keep them.")),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No
-            )
-            if reply != QMessageBox.StandardButton.Yes:
+                    losing, tr("Saving keeps them on the map.")))
+            if choice == "cancel":
+                return
+            if choice == "save":
+                # The one path that keeps the work on the map: export, then
+                # tear the session down. Nothing is abandoned, so nothing is
+                # reported as abandoned.
+                self._stop_manual_session(keep_saves=True)
                 return
             try:
                 from ...core import telemetry_session_events

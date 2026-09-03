@@ -568,7 +568,9 @@ class IncrementalMerger:
         use_id = self._next_id if fid is None else fid
         feat = QgsFeature(use_id)
         feat.setGeometry(geom)
-        self._index.insertFeature(feat)
+        # addFeature, not insertFeature: the latter is deprecated and QGIS
+        # logs a warning for it on every merge, which is once per detection.
+        self._index.addFeature(feat)
         self._index_entries += 1
         self._keepers[use_id] = geom
         self._scores[use_id] = float(score)
@@ -633,7 +635,7 @@ class IncrementalMerger:
         for fid in self._live_ids:
             feat = QgsFeature(fid)
             feat.setGeometry(self._keepers[fid])
-            index.insertFeature(feat)
+            index.addFeature(feat)
         self._index = index
         self._index_entries = len(self._live_ids)
 

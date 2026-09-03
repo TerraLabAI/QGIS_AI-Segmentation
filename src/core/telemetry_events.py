@@ -7,7 +7,7 @@ REGISTRY_VERSION together.
 """
 from __future__ import annotations
 
-REGISTRY_VERSION = 32
+REGISTRY_VERSION = 38
 
 # --- Lifecycle ------------------------------------------------------------
 PLUGIN_FIRST_OPEN = "plugin_first_open"
@@ -105,6 +105,12 @@ PRO_UPSELL_CLICKED = "pro_upsell_clicked"
 FREE_TASTE_CONSUMED = "free_taste_consumed"
 LOW_CREDIT_BANNER_VIEWED = "low_credit_banner_viewed"
 DETECT_BLOCKED = "detect_blocked"
+
+# --- Update prompt --------------------------------------------------------
+# Shown once per offered version per install, never once per session.
+PLUGIN_UPDATE_PROMPT_SHOWN = "plugin_update_prompt_shown"
+PLUGIN_UPDATE_PROMPT_CLICKED = "plugin_update_prompt_clicked"
+PLUGIN_UPDATE_PROMPT_SUPPRESSED = "plugin_update_prompt_suppressed"
 
 # --- Account dialog ---------------------------------------------------------
 # Sign out is the clearest churn signal the plugin can send. The dashboard open
@@ -224,6 +230,9 @@ ALL_EVENTS = frozenset({
     FREE_TASTE_CONSUMED,
     LOW_CREDIT_BANNER_VIEWED,
     DETECT_BLOCKED,
+    PLUGIN_UPDATE_PROMPT_SHOWN,
+    PLUGIN_UPDATE_PROMPT_CLICKED,
+    PLUGIN_UPDATE_PROMPT_SUPPRESSED,
     ACCOUNT_SIGNED_OUT,
     ACCOUNT_DASHBOARD_OPENED,
     TELEMETRY_OPT_CHANGED,
@@ -320,6 +329,10 @@ REQUIRED_PROPS: dict[str, tuple[str, ...]] = {
     FREE_TASTE_CONSUMED: (),
     LOW_CREDIT_BANNER_VIEWED: (),
     DETECT_BLOCKED: (),
+    # --- Update prompt ----------------------------------------------------
+    PLUGIN_UPDATE_PROMPT_SHOWN: ("offered_version", "trigger"),
+    PLUGIN_UPDATE_PROMPT_CLICKED: ("offered_version", "action"),
+    PLUGIN_UPDATE_PROMPT_SUPPRESSED: ("served_version", "reason"),
     # --- Account dialog ---------------------------------------------------
     ACCOUNT_SIGNED_OUT: (),
     ACCOUNT_DASHBOARD_OPENED: (),

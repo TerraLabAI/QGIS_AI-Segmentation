@@ -3,6 +3,82 @@
 <context>
     <name>AISegmentation</name>
     <message>
+        <source>Show them</source>
+        <translation>Toon ze</translation>
+    </message>
+    <message>
+        <source>Save them</source>
+        <translation>Opslaan</translation>
+    </message>
+    <message>
+        <source>Discard</source>
+        <translation>Verwerpen</translation>
+    </message>
+    <message>
+        <source>Saving keeps them on the map.</source>
+        <translation>Door ze op te slaan, blijven ze op de kaart.</translation>
+    </message>
+    <message>
+        <source>AI Segmentation {version} is out</source>
+        <translation>AI Segmentation {version} is beschikbaar</translation>
+    </message>
+    <message>
+        <source>Later</source>
+        <translation>Later</translation>
+    </message>
+    <message>
+        <source>Lower precision to fit</source>
+        <translation>Precisie verlagen</translation>
+    </message>
+    <message>
+        <source>Sweeps the same zone in a coarser grid, so it fits in one run.</source>
+        <translation>Doorzoekt hetzelfde gebied met een grover raster, zodat het in één run past.</translation>
+    </message>
+    <message>
+        <source>AI Segmentation {version} is available.</source>
+        <translation>AI Segmentation {version} is beschikbaar.</translation>
+    </message>
+    <message>
+        <source>The update applies once QGIS reloads the plugin. Restart QGIS if the panel misbehaves after it.</source>
+        <translation>De update wordt toegepast zodra QGIS de plugin opnieuw laadt. Start QGIS opnieuw als het paneel daarna niet goed werkt.</translation>
+    </message>
+    <message>
+        <source>Working in a team?</source>
+        <translation>Werkt u in een team?</translation>
+    </message>
+    <message>
+        <source>Custom quota, team seats, invoices, or a custom AI solution.</source>
+        <translation>Aangepast quotum, teamlicenties, facturen of een aangepaste AI-oplossing.</translation>
+    </message>
+    <message>
+        <source>Book a call</source>
+        <translation>Plan een gesprek</translation>
+    </message>
+    <message>
+        <source>Need more than Pro?</source>
+        <translation>Meer nodig dan Pro?</translation>
+    </message>
+    <message>
+        <source>From {price}/month, {days}-day free trial.</source>
+        <translation>Vanaf {price}/maand, {days} dagen gratis proberen.</translation>
+    </message>
+    <message>
+        <source>From {price}/month.</source>
+        <translation>Vanaf {price}/maand.</translation>
+    </message>
+    <message>
+        <source>No matches in this zone. Try one plain word for the object, "building" and not "building footprint", and a smaller zone.</source>
+        <translation>Geen overeenkomsten in dit gebied. Probeer één eenvoudig woord voor het object, "gebouw" en niet "gebouwvoetafdruk", en een kleiner gebied.</translation>
+    </message>
+    <message>
+        <source>Opening the plans page</source>
+        <translation>De abonnementenpagina openen</translation>
+    </message>
+    <message>
+        <source>See all plans</source>
+        <translation>Alle abonnementen bekijken</translation>
+    </message>
+    <message>
         <source>Saving...</source>
         <translation>Opslaan...</translation>
     </message>
@@ -357,10 +433,6 @@ export AI_SEGMENTATION_CACHE_DIR=/jouw/pad</translation>
         <translation>U hebt {count} niet-opgeslagen polygoon(en).</translation>
     </message>
     <message>
-        <source>Changing layer will discard your current segmentation. Continue?</source>
-        <translation>Als u de laag wijzigt, gaat uw huidige segmentatie verloren. Doorgaan?</translation>
-    </message>
-    <message>
         <source>Change Layer?</source>
         <translation>Laag wijzigen?</translation>
     </message>
@@ -371,10 +443,6 @@ export AI_SEGMENTATION_CACHE_DIR=/jouw/pad</translation>
     <message>
         <source>This will discard {count} polygon(s).</source>
         <translation>Hierdoor verwijdert u {count} polygoon(en).</translation>
-    </message>
-    <message>
-        <source>Use 'Export to layer' to keep them.</source>
-        <translation>Gebruik 'Export naar laag' om ze te behouden.</translation>
     </message>
     <message>
         <source>Do you want to continue?</source>
@@ -4104,10 +4172,6 @@ Het is mogelijk verplaatst of hernoemd, of de schijf of netwerkshare waarop het 
     <message>
         <source>Sign in to run Automatic.</source>
         <translation>Meld u aan om Automatisch uit te voeren.</translation>
-    </message>
-    <message>
-        <source>Team or organization? Write to us: {email}</source>
-        <translation>Team of organisatie? Schrijf ons: {email}</translation>
     </message>
     <message>
         <source>The AI Segmentation panel is closed, so there is nothing to detect from. Open it and try again.</source>

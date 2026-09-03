@@ -295,17 +295,23 @@ def symbol_fill_color_property():
     return None
 
 
-# QgsField type argument: QGIS 4 (PyQt6) takes a scoped QMetaType.Type; QGIS 3
-# takes a QVariant. QgsField gained QMetaType support in QGIS 3.38, so gate on
-# the version int rather than probing, keeping the 3.22/3.28 floor on the
-# QVariant overload it documents. Single source for every QgsField(...) call.
+# QgsField type argument: QGIS takes a scoped QMetaType.Type from 3.38, and a
+# QVariant before that. The QVariant overload is deprecated from 3.38 too, and
+# QGIS logs a warning for every field built with it, which on 3.44 is a handful
+# of lines each time a result layer is created.
+#
+# So the gate is 3.38, the version that gained QMetaType, not 4.0. It was 4.0,
+# which meant every QGIS between 3.38 and 4.0, including every current install,
+# took the deprecated path. Below 3.38 the QVariant overload is the only one
+# there, which keeps the 3.22 floor working. Single source for every
+# QgsField(...) call.
 try:
     from qgis.core import Qgis as _Qgis
     _QGIS_VERSION_INT = getattr(_Qgis, "QGIS_VERSION_INT", 0)
 except Exception:
     _QGIS_VERSION_INT = 0
 
-if _QGIS_VERSION_INT >= 40000:
+if _QGIS_VERSION_INT >= 33800:
     from qgis.PyQt.QtCore import QMetaType as _QMetaType
     _FIELD_TYPE_STRING = _QMetaType.Type.QString
     _FIELD_TYPE_DOUBLE = _QMetaType.Type.Double

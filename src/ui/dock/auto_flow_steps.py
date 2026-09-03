@@ -233,6 +233,14 @@ class DockAutoFlowStepsMixin:
             self.set_auto_zone_rejected(None)
         if state in ("idle", "drawing"):
             self._auto_zone_too_large = False
+            # Shut the Advanced fold with the zone that justified it. Left
+            # open, it carried one run's precision into the next and drew the
+            # tile grid over a zone the user had not finished drawing. A user
+            # who wants it back clicks the head again.
+            try:
+                self.set_auto_advanced_open(False)
+            except (RuntimeError, AttributeError):
+                pass
             # No zone = no per-zone estimate; drop the stale cost label AND the
             # cached estimate/gate so neither lingers from the previous zone.
             self._auto_est_credits = None

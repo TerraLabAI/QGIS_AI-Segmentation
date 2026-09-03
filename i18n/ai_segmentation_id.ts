@@ -3,6 +3,82 @@
 <context>
     <name>AISegmentation</name>
     <message>
+        <source>Show them</source>
+        <translation>Tampilkan</translation>
+    </message>
+    <message>
+        <source>Save them</source>
+        <translation>Simpan</translation>
+    </message>
+    <message>
+        <source>Discard</source>
+        <translation>Buang</translation>
+    </message>
+    <message>
+        <source>Saving keeps them on the map.</source>
+        <translation>Menyimpannya akan mempertahankannya di peta.</translation>
+    </message>
+    <message>
+        <source>AI Segmentation {version} is out</source>
+        <translation>AI Segmentation {version} telah dirilis</translation>
+    </message>
+    <message>
+        <source>Later</source>
+        <translation>Nanti</translation>
+    </message>
+    <message>
+        <source>Lower precision to fit</source>
+        <translation>Kurangi presisi agar muat</translation>
+    </message>
+    <message>
+        <source>Sweeps the same zone in a coarser grid, so it fits in one run.</source>
+        <translation>Memindai area yang sama dengan grid yang lebih kasar agar muat dalam satu proses.</translation>
+    </message>
+    <message>
+        <source>AI Segmentation {version} is available.</source>
+        <translation>AI Segmentation {version} tersedia.</translation>
+    </message>
+    <message>
+        <source>The update applies once QGIS reloads the plugin. Restart QGIS if the panel misbehaves after it.</source>
+        <translation>Pembaruan diterapkan setelah QGIS memuat ulang plugin. Mulai ulang QGIS jika panel bermasalah setelahnya.</translation>
+    </message>
+    <message>
+        <source>Working in a team?</source>
+        <translation>Bekerja dalam tim?</translation>
+    </message>
+    <message>
+        <source>Custom quota, team seats, invoices, or a custom AI solution.</source>
+        <translation>Kuota khusus, lisensi pengguna tim, faktur, atau solusi AI yang dibuat khusus.</translation>
+    </message>
+    <message>
+        <source>Book a call</source>
+        <translation>Jadwalkan panggilan</translation>
+    </message>
+    <message>
+        <source>Need more than Pro?</source>
+        <translation>Butuh lebih dari Pro?</translation>
+    </message>
+    <message>
+        <source>From {price}/month, {days}-day free trial.</source>
+        <translation>Mulai dari {price}/bulan, uji coba gratis selama {days} hari.</translation>
+    </message>
+    <message>
+        <source>From {price}/month.</source>
+        <translation>Mulai dari {price}/bulan.</translation>
+    </message>
+    <message>
+        <source>No matches in this zone. Try one plain word for the object, "building" and not "building footprint", and a smaller zone.</source>
+        <translation>Tidak ada kecocokan di area ini. Coba satu kata sederhana untuk objek, "bangunan", bukan "tapak bangunan", dan area yang lebih kecil.</translation>
+    </message>
+    <message>
+        <source>Opening the plans page</source>
+        <translation>Membuka halaman paket</translation>
+    </message>
+    <message>
+        <source>See all plans</source>
+        <translation>Lihat semua paket</translation>
+    </message>
+    <message>
         <source>Saving...</source>
         <translation>Menyimpan...</translation>
     </message>
@@ -357,10 +433,6 @@ export AI_SEGMENTATION_CACHE_DIR=/jalur/anda</translation>
         <translation>Anda memiliki {count} poligon yang belum disimpan.</translation>
     </message>
     <message>
-        <source>Changing layer will discard your current segmentation. Continue?</source>
-        <translation>Mengganti lapisan akan membuang segmentasi Anda saat ini. Lanjutkan?</translation>
-    </message>
-    <message>
         <source>Change Layer?</source>
         <translation>Ganti Lapisan?</translation>
     </message>
@@ -371,10 +443,6 @@ export AI_SEGMENTATION_CACHE_DIR=/jalur/anda</translation>
     <message>
         <source>This will discard {count} polygon(s).</source>
         <translation>Ini akan membuang {count} poligon.</translation>
-    </message>
-    <message>
-        <source>Use 'Export to layer' to keep them.</source>
-        <translation>Gunakan 'Ekspor ke lapisan' untuk menyimpannya.</translation>
     </message>
     <message>
         <source>Do you want to continue?</source>
@@ -4042,10 +4110,6 @@ Berkas ini mungkin telah dipindahkan atau diganti namanya, atau drive atau folde
     <message>
         <source>Sign in to run Automatic.</source>
         <translation>Masuk untuk menjalankan Otomatis.</translation>
-    </message>
-    <message>
-        <source>Team or organization? Write to us: {email}</source>
-        <translation>Tim atau organisasi? Hubungi kami: {email}</translation>
     </message>
     <message>
         <source>The AI Segmentation panel is closed, so there is nothing to detect from. Open it and try again.</source>

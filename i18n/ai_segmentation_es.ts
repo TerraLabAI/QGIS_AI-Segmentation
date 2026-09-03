@@ -4,6 +4,82 @@
     <name>AISegmentation</name>
     
     <message>
+        <source>Show them</source>
+        <translation>Mostrar objetos</translation>
+    </message>
+    <message>
+        <source>Save them</source>
+        <translation>Guardar</translation>
+    </message>
+    <message>
+        <source>Discard</source>
+        <translation>Descartar</translation>
+    </message>
+    <message>
+        <source>Saving keeps them on the map.</source>
+        <translation>Al guardarlos, se mantienen en el mapa.</translation>
+    </message>
+    <message>
+        <source>AI Segmentation {version} is out</source>
+        <translation>Ya está disponible AI Segmentation {version}</translation>
+    </message>
+    <message>
+        <source>Later</source>
+        <translation>Más tarde</translation>
+    </message>
+    <message>
+        <source>Lower precision to fit</source>
+        <translation>Reducir precisión para ajustar</translation>
+    </message>
+    <message>
+        <source>Sweeps the same zone in a coarser grid, so it fits in one run.</source>
+        <translation>Recorre la misma zona con una cuadrícula más amplia para que quepa en una ejecución.</translation>
+    </message>
+    <message>
+        <source>AI Segmentation {version} is available.</source>
+        <translation>AI Segmentation {version} está disponible.</translation>
+    </message>
+    <message>
+        <source>The update applies once QGIS reloads the plugin. Restart QGIS if the panel misbehaves after it.</source>
+        <translation>La actualización se aplica cuando QGIS recarga el complemento. Reinicia QGIS si el panel no funciona correctamente después.</translation>
+    </message>
+    <message>
+        <source>Working in a team?</source>
+        <translation>¿Trabajas en equipo?</translation>
+    </message>
+    <message>
+        <source>Custom quota, team seats, invoices, or a custom AI solution.</source>
+        <translation>Cuota personalizada, licencias de equipo, facturas o una solución de IA a medida.</translation>
+    </message>
+    <message>
+        <source>Book a call</source>
+        <translation>Reservar una llamada</translation>
+    </message>
+    <message>
+        <source>Need more than Pro?</source>
+        <translation>¿Necesitas más que Pro?</translation>
+    </message>
+    <message>
+        <source>From {price}/month, {days}-day free trial.</source>
+        <translation>Desde {price}/mes, prueba gratuita de {days} días.</translation>
+    </message>
+    <message>
+        <source>From {price}/month.</source>
+        <translation>Desde {price}/mes.</translation>
+    </message>
+    <message>
+        <source>No matches in this zone. Try one plain word for the object, "building" and not "building footprint", and a smaller zone.</source>
+        <translation>No hay coincidencias en esta zona. Prueba una sola palabra sencilla para el objeto, "edificio" y no "huella del edificio", y una zona más pequeña.</translation>
+    </message>
+    <message>
+        <source>Opening the plans page</source>
+        <translation>Abriendo la página de planes</translation>
+    </message>
+    <message>
+        <source>See all plans</source>
+        <translation>Ver todos los planes</translation>
+    </message>
+    <message>
         <source>Saving...</source>
         <translation>Guardando...</translation>
     </message>
@@ -379,10 +455,6 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
         <translation>Tiene {count} polígono(s) no exportado(s).</translation>
     </message>
     <message>
-        <source>Changing layer will discard your current segmentation. Continue?</source>
-        <translation>Cambiar de capa descartará tu segmentación actual. ¿Continuar?</translation>
-    </message>
-    <message>
         <source>Change Layer?</source>
         <translation>¿Cambiar de capa?</translation>
     </message>
@@ -393,10 +465,6 @@ export AI_SEGMENTATION_CACHE_DIR=/su/ruta</translation>
     <message>
         <source>This will discard {count} polygon(s).</source>
         <translation>Esto descartará {count} polígono(s).</translation>
-    </message>
-    <message>
-        <source>Use 'Export to layer' to keep them.</source>
-        <translation>Use 'Exportar a capa' para conservarlas.</translation>
     </message>
     <message>
         <source>Do you want to continue?</source>
@@ -4341,10 +4409,6 @@ Es posible que se haya movido o renombrado, o que la unidad o el recurso compart
     <message>
         <source>Sign in to run Automatic.</source>
         <translation>Inicie sesión para ejecutar Automático.</translation>
-    </message>
-    <message>
-        <source>Team or organization? Write to us: {email}</source>
-        <translation>¿Es un equipo u organización? Escríbanos a: {email}</translation>
     </message>
     <message>
         <source>The AI Segmentation panel is closed, so there is nothing to detect from. Open it and try again.</source>

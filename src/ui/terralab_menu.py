@@ -36,12 +36,12 @@ def _find_terralab_logo():
     return None
 
 
-def _open_plugin_manager_updates():
-    """Open the Plugin Manager on its Upgradeable tab.
+def open_plugin_manager_updates(fallback_url: str | None = None) -> bool:
+    """Open the Plugin Manager on its Upgradeable tab. True when it opened.
 
     Never a silent no-op: the manager interface can be absent or refuse to
     open, and the menu entry then swallowed the click with nothing on screen.
-    The generic Manage Plugins action is tried next, and the website last, so
+    The generic Manage Plugins action is tried next, and a web page last, so
     the user always lands somewhere they can act.
     """
     try:
@@ -50,16 +50,21 @@ def _open_plugin_manager_updates():
         if manager is None:
             raise RuntimeError("plugin manager unavailable")
         manager.showPluginManager(3)
-        return
+        return True
     except Exception:  # noqa: BLE001 -- fall through to the next way in
         pass  # nosec B110
     try:
         from qgis.utils import iface
         iface.actionManagePlugins().trigger()
-        return
+        return True
     except Exception:  # noqa: BLE001 -- last resort below
         pass  # nosec B110
-    open_external_url(TERRALAB_URL)
+    open_external_url(fallback_url or TERRALAB_URL)
+    return False
+
+
+def _open_plugin_manager_updates(_checked=False):
+    open_plugin_manager_updates()
 
 
 def get_or_create_terralab_menu(main_window) -> QMenu:

@@ -49,6 +49,7 @@ class DockExemplarUpsellMixin:
             card.set_text(fill(title), fill(body),
                           dial_copy("upsell.cta", tr("Upgrade to Pro")),
                           escape=fill(escape))
+            card.set_pro_offer("plugin_exemplar_cap")
             card.setVisible(True)
         except (RuntimeError, AttributeError):
             return
@@ -90,10 +91,5 @@ class DockExemplarUpsellMixin:
     def _on_exemplar_upsell_cta(self) -> None:
         """The blue button: same destination as every other Pro button in the
         dock, tracked with its own source."""
-        from ..external_links import open_external_url
-        try:
-            from ...core import telemetry_session_events
-            telemetry_session_events.track_pro_upsell_clicked(source="exemplar_cap")
-        except Exception:
-            pass  # nosec B110
-        open_external_url(self._build_upgrade_url("plugin_exemplar_cap"), parent=self)
+        from ...core.pro_page_link import open_pro_page
+        open_pro_page("plugin_exemplar_cap", "exemplar_cap", parent=self)

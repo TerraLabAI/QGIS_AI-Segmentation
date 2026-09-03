@@ -3,6 +3,82 @@
 <context>
     <name>AISegmentation</name>
     <message>
+        <source>Show them</source>
+        <translation>顯示物件</translation>
+    </message>
+    <message>
+        <source>Save them</source>
+        <translation>儲存</translation>
+    </message>
+    <message>
+        <source>Discard</source>
+        <translation>捨棄</translation>
+    </message>
+    <message>
+        <source>Saving keeps them on the map.</source>
+        <translation>儲存後會保留在地圖上。</translation>
+    </message>
+    <message>
+        <source>AI Segmentation {version} is out</source>
+        <translation>AI Segmentation {version} 已推出</translation>
+    </message>
+    <message>
+        <source>Later</source>
+        <translation>稍後</translation>
+    </message>
+    <message>
+        <source>Lower precision to fit</source>
+        <translation>降低精度以容納</translation>
+    </message>
+    <message>
+        <source>Sweeps the same zone in a coarser grid, so it fits in one run.</source>
+        <translation>以較粗的網格掃描相同範圍，使其可在一次執行中完成。</translation>
+    </message>
+    <message>
+        <source>AI Segmentation {version} is available.</source>
+        <translation>AI Segmentation {version} 可用。</translation>
+    </message>
+    <message>
+        <source>The update applies once QGIS reloads the plugin. Restart QGIS if the panel misbehaves after it.</source>
+        <translation>更新會在 QGIS 重新載入外掛程式後套用。若面板之後運作異常，請重新啟動 QGIS。</translation>
+    </message>
+    <message>
+        <source>Working in a team?</source>
+        <translation>團隊協作？</translation>
+    </message>
+    <message>
+        <source>Custom quota, team seats, invoices, or a custom AI solution.</source>
+        <translation>自訂配額、團隊授權、發票或客製化 AI 解決方案。</translation>
+    </message>
+    <message>
+        <source>Book a call</source>
+        <translation>預約會議</translation>
+    </message>
+    <message>
+        <source>Need more than Pro?</source>
+        <translation>需要的不只是 Pro？</translation>
+    </message>
+    <message>
+        <source>From {price}/month, {days}-day free trial.</source>
+        <translation>每月 {price} 起，免費試用 {days} 天。</translation>
+    </message>
+    <message>
+        <source>From {price}/month.</source>
+        <translation>每月 {price} 起。</translation>
+    </message>
+    <message>
+        <source>No matches in this zone. Try one plain word for the object, "building" and not "building footprint", and a smaller zone.</source>
+        <translation>此區域沒有符合項目。請使用描述物件的普通單字，例如「建築物」，不要使用「建築物輪廓」，並縮小區域。</translation>
+    </message>
+    <message>
+        <source>Opening the plans page</source>
+        <translation>正在開啟方案頁面</translation>
+    </message>
+    <message>
+        <source>See all plans</source>
+        <translation>查看所有方案</translation>
+    </message>
+    <message>
         <source>Saving...</source>
         <translation>儲存中...</translation>
     </message>
@@ -357,10 +433,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>您有 {count} 個尚未儲存的多邊形。</translation>
     </message>
     <message>
-        <source>Changing layer will discard your current segmentation. Continue?</source>
-        <translation>變更圖層將捨棄目前的分割結果，是否繼續？</translation>
-    </message>
-    <message>
         <source>Change Layer?</source>
         <translation>變更圖層？</translation>
     </message>
@@ -371,10 +443,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     <message>
         <source>This will discard {count} polygon(s).</source>
         <translation>這將捨棄 {count} 個多邊形。</translation>
-    </message>
-    <message>
-        <source>Use 'Export to layer' to keep them.</source>
-        <translation>請使用「Export 至圖層」來保留它們。</translation>
     </message>
     <message>
         <source>Do you want to continue?</source>
@@ -4286,10 +4354,6 @@ It may have been moved or renamed, or the drive or network share it is on may be
     <message>
         <source>Sign in to run Automatic.</source>
         <translation>請登入以執行自動。</translation>
-    </message>
-    <message>
-        <source>Team or organization? Write to us: {email}</source>
-        <translation>代表團隊或組織？請寫信給我們：{email}</translation>
     </message>
     <message>
         <source>The AI Segmentation panel is closed, so there is nothing to detect from. Open it and try again.</source>

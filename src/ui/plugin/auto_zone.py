@@ -966,6 +966,13 @@ class AutoZoneMixin:
             # the bill never disagree. Pushed before the tile estimate, so the
             # MAX_TILES refusal still gets the last word on the same label.
             self.dock_widget.set_auto_zone_surface(self._auto_zone_area_km2())
+            # Before the refusal is drawn: does the coarse end of the band
+            # actually fit this zone? Only then is precision the fix, and only
+            # then may the dock offer it. Measured on the real grid at that
+            # level, never guessed from the current one.
+            self.dock_widget.set_auto_zone_fit_available(
+                self._coarsest_detail_fits(layer, zone_in_layer)
+                if credit_count < 0 else False)
             self.dock_widget.set_auto_credit_estimate(credit_count)
             # Detail, layer, zone and post-zero returns all pass here, so this
             # is the single chokepoint that re-evaluates the identical-re-run
@@ -1466,6 +1473,28 @@ class AutoZoneMixin:
             return layer_crs
         except (RuntimeError, AttributeError, IndexError, TypeError):
             return None
+
+    def _coarsest_detail_fits(self, layer, zone_in_layer) -> bool:
+        """Whether a run at the lowest precision on offer comes in under the
+        per-run tile ceiling.
+
+        The grid count this reads is the uncut one, before the tiles outside
+        the drawn polygon are dropped, so it can only be pessimistic: a zone
+        it calls a fit is a fit. That is the right way round for a button that
+        promises one.
+        """
+        try:
+            slider_min = int(self.dock_widget.auto_detail_slider.minimum())
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            return False
+        try:
+            sized = self._grid_for_detail(layer, zone_in_layer, slider_min)
+            if not sized:
+                return False
+            tiles = int(sized[3])
+            return 0 <= tiles <= int(self._auto_zone_tile_cap())
+        except Exception:  # noqa: BLE001 -- a probe never breaks the draw path
+            return False
 
     def _reproject_zone_to_run_crs(
         self, zone: QgsRectangle, layer: QgsRasterLayer

@@ -354,6 +354,28 @@ class DockAutoReviewPanelMixin:
         except (RuntimeError, AttributeError):
             pass
 
+    def _on_auto_review_reveal_clicked(self) -> None:
+        """Move the dial that is hiding everything, and nothing else.
+
+        The readout above the button already names that dial. Confidence goes
+        to its own floor, which is the lowest cutoff the run offers; a size
+        bound is opened all the way instead. One press, one dial, and the
+        objects the run paid for are on screen.
+        """
+        bound = getattr(self, "_auto_review_hiding_bound", "confidence")
+        try:
+            if bound == "min":
+                self.auto_min_size_spin.setValue(self.auto_min_size_spin.minimum())
+            elif bound == "max":
+                # 0 is this spin's "No limit" special value, so the way to
+                # remove a max bound is the bottom of its range, not the top.
+                self.auto_max_size_spin.setValue(0.0)
+            else:
+                spin = self.auto_review_confidence_spin
+                spin.setValue(spin.minimum())
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110 -- teardown
+
     def update_auto_review_count(self, visible: int, total: int, pct: int,
                                  bound: str = "confidence") -> None:
         """Update the two-line review header + the Export button label after a
@@ -373,6 +395,12 @@ class DockAutoReviewPanelMixin:
             # count refresh must not hand back a button the lock just took.
             self.auto_export_btn.setEnabled(
                 visible > 0 and not self.review_install_locked())
+            # Remembered for the reveal button, which moves whichever dial
+            # this run is actually bound by.
+            self._auto_review_hiding_bound = bound
+            reveal = getattr(self, "auto_review_reveal_btn", None)
+            if reveal is not None:
+                reveal.setVisible(visible == 0 and total > 0)
             if visible == 0:
                 if bound == "min":
                     tip = tr("Lower the Min size filter to show objects first.")

@@ -3,6 +3,82 @@
 <context>
     <name>AISegmentation</name>
     <message>
+        <source>Show them</source>
+        <translation>表示する</translation>
+    </message>
+    <message>
+        <source>Save them</source>
+        <translation>保存</translation>
+    </message>
+    <message>
+        <source>Discard</source>
+        <translation>破棄</translation>
+    </message>
+    <message>
+        <source>Saving keeps them on the map.</source>
+        <translation>保存すると地図上に残ります。</translation>
+    </message>
+    <message>
+        <source>AI Segmentation {version} is out</source>
+        <translation>AI Segmentation {version} が公開されました</translation>
+    </message>
+    <message>
+        <source>Later</source>
+        <translation>後で</translation>
+    </message>
+    <message>
+        <source>Lower precision to fit</source>
+        <translation>精度を下げて収める</translation>
+    </message>
+    <message>
+        <source>Sweeps the same zone in a coarser grid, so it fits in one run.</source>
+        <translation>同じ範囲を粗いグリッドでスイープするため、1回の実行に収まります。</translation>
+    </message>
+    <message>
+        <source>AI Segmentation {version} is available.</source>
+        <translation>AI Segmentation {version} が利用可能です。</translation>
+    </message>
+    <message>
+        <source>The update applies once QGIS reloads the plugin. Restart QGIS if the panel misbehaves after it.</source>
+        <translation>QGIS がプラグインを再読み込みすると更新が適用されます。パネルの動作に問題がある場合は、QGIS を再起動してください。</translation>
+    </message>
+    <message>
+        <source>Working in a team?</source>
+        <translation>チームで使いますか？</translation>
+    </message>
+    <message>
+        <source>Custom quota, team seats, invoices, or a custom AI solution.</source>
+        <translation>個別のクォータ、チーム用ライセンス、請求書、または個別開発のAIソリューション。</translation>
+    </message>
+    <message>
+        <source>Book a call</source>
+        <translation>打ち合わせを予約</translation>
+    </message>
+    <message>
+        <source>Need more than Pro?</source>
+        <translation>Pro以上が必要ですか？</translation>
+    </message>
+    <message>
+        <source>From {price}/month, {days}-day free trial.</source>
+        <translation>{price}／月から、{days}日間の無料トライアル。</translation>
+    </message>
+    <message>
+        <source>From {price}/month.</source>
+        <translation>{price}／月から。</translation>
+    </message>
+    <message>
+        <source>No matches in this zone. Try one plain word for the object, "building" and not "building footprint", and a smaller zone.</source>
+        <translation>この範囲に一致するものはありません。オブジェクトには「建物」のような単純な単語を使い、「建物のフットプリント」は避け、より小さい範囲で試してください。</translation>
+    </message>
+    <message>
+        <source>Opening the plans page</source>
+        <translation>プランページを開いています</translation>
+    </message>
+    <message>
+        <source>See all plans</source>
+        <translation>すべてのプランを見る</translation>
+    </message>
+    <message>
         <source>Saving...</source>
         <translation>保存中...</translation>
     </message>
@@ -357,10 +433,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
         <translation>未保存のポリゴンが {count} 件あります。</translation>
     </message>
     <message>
-        <source>Changing layer will discard your current segmentation. Continue?</source>
-        <translation>レイヤを変更すると現在のセグメンテーションは失われます。続けますか?</translation>
-    </message>
-    <message>
         <source>Change Layer?</source>
         <translation>レイヤを変更しますか?</translation>
     </message>
@@ -371,10 +443,6 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     <message>
         <source>This will discard {count} polygon(s).</source>
         <translation>これにより {count} 件のポリゴンが失われます。</translation>
-    </message>
-    <message>
-        <source>Use 'Export to layer' to keep them.</source>
-        <translation>保持するには「レイヤへExport」を使用してください。</translation>
     </message>
     <message>
         <source>Do you want to continue?</source>
@@ -4105,10 +4173,6 @@ It may have been moved or renamed, or the drive or network share it is on may be
     <message>
         <source>Sign in to run Automatic.</source>
         <translation>自動を実行するにはサインインしてください。</translation>
-    </message>
-    <message>
-        <source>Team or organization? Write to us: {email}</source>
-        <translation>チームまたは組織でご利用ですか？こちらまでご連絡ください：{email}</translation>
     </message>
     <message>
         <source>The AI Segmentation panel is closed, so there is nothing to detect from. Open it and try again.</source>

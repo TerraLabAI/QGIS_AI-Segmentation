@@ -245,6 +245,40 @@ def is_update_recommended(installed_version: str) -> bool:
     return is_served_update_recommended(installed_version)
 
 
+def is_update_available(installed_version: str) -> bool:
+    """Whether the marketplace already carries a version above this build.
+
+    Reads the served `latest_version`, and fails closed the same way.
+    """
+    from .server_dials import is_served_update_available
+
+    return is_served_update_available(installed_version)
+
+
+def get_latest_version() -> str | None:
+    """The version the server says is on the marketplace, or None."""
+    from .server_dials import served_latest_version
+
+    return served_latest_version()
+
+
+def get_release_notes_line() -> str | None:
+    """One served line saying what the latest version brings, or None."""
+    from .server_dials import served_release_notes_line
+
+    return served_release_notes_line()
+
+
+def get_marketplace_url() -> str:
+    """The plugin's marketplace page, served only when it is a usable https URL.
+
+    Same guard as the tutorial address: the caller opens it in a browser.
+    """
+    from .server_dials import served_marketplace_url
+
+    return served_marketplace_url()
+
+
 def get_tutorial_url() -> str:
     """The tutorial address: the served one only when it is a usable https URL.
 
@@ -345,6 +379,41 @@ def get_pro_checkout_url(cta_source: str) -> str:
 def get_upgrade_url() -> str:
     """The account dialog's Upgrade CTA destination."""
     return get_pro_checkout_url("plugin_account_dialog")
+
+
+# The public plan list. Every Pro button offers it as a second, quieter door,
+# so an organisation reading the card can see there is more than one plan
+# before it opens anything. No account, no server call, no login.
+PLANS_URL_FALLBACK = "https://terra-lab.ai/pricing"
+
+
+def book_a_call_url() -> str:
+    """Where "Book a call" goes, or ``""`` when the server serves no address.
+
+    Deliberately without a shipped fallback. A booking page we cannot fill,
+    or one that moves after a release, sends a buyer to a dead link; a button
+    that is simply not there costs nothing. The caller hides it on "".
+    """
+    from .server_dials import dial_url
+
+    return dial_url("contact.book_call_url", "")
+
+
+def get_plans_page_url(cta_source: str = "plugin") -> str:
+    """The pricing page, served as ``plans_url``, tagged with the surface.
+
+    Guarded like every other served address: anything that is not a plain
+    https web address with a host yields the shipped constant.
+    """
+    from .server_dials import dial_url
+
+    source = "".join(
+        ch for ch in str(cta_source or "") if ch.isalnum() or ch == "_"
+    ) or "plugin"
+    url = dial_url("plans_url", PLANS_URL_FALLBACK)
+    joiner = "&" if "?" in url else "?"
+    return (f"{url}{joiner}utm_source=qgis&utm_medium=plugin"
+            f"&utm_campaign=ai-segmentation-pro&utm_content={source}")
 
 
 # -- activation key validation ---------------------------------------------

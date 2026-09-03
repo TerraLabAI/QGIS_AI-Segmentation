@@ -338,6 +338,7 @@ class DockAutoRunBlockMixin:
             dial_copy("upsell.cta", tr("Upgrade to Pro")),
             escape=escape,
         )
+        card.set_pro_offer("plugin_run_block")
         return False
 
     # -- handlers -------------------------------------------------------------

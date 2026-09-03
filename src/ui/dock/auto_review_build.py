@@ -39,6 +39,7 @@ from .guidance import (
     DismissibleHint,
 )
 from .styles import (
+    _BTN_CHIP,
     _BTN_GREEN_STEP,
     _BTN_LINK_MUTED,
     _BTN_LINK_STRONG,
@@ -475,6 +476,21 @@ class DockAutoReviewBuildMixin:
         self._auto_review_count_label.setStyleSheet(
             "font-size: 11px; color: palette(text);")
         _conf_col.addWidget(self._auto_review_count_label)
+
+        # The line above already says which dial hides everything. This is the
+        # press that moves it: a review can come back empty with the objects
+        # sitting just under the cutoff, and naming the dial still leaves the
+        # user to find it and drag it. Hidden unless the review really is
+        # showing nothing.
+        self.auto_review_reveal_btn = QPushButton(tr("Show them"))
+        self.auto_review_reveal_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.auto_review_reveal_btn.setStyleSheet(_BTN_CHIP)
+        self.auto_review_reveal_btn.setMinimumHeight(26)
+        self.auto_review_reveal_btn.setAutoDefault(False)
+        self.auto_review_reveal_btn.setVisible(False)
+        self.auto_review_reveal_btn.clicked.connect(
+            self._on_auto_review_reveal_clicked)
+        _conf_col.addWidget(self.auto_review_reveal_btn)
 
         # Stands in for the whole Confidence group on a run whose objects all
         # came back rated the same. There the control is not a filter but a

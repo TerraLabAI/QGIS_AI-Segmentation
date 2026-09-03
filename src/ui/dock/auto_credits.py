@@ -26,10 +26,8 @@ class DockAutoCreditsMixin:
     gate, plus every upsell surface that sends the user to the dashboard."""
 
     def _on_upgrade_clicked(self) -> None:
-        from ..external_links import open_external_url
-        cta_source = "plugin_upsell_card"
+        source, cta_source = "upsell_card", "plugin_upsell_card"
         try:
-            from ...core import telemetry_session_events
             sender = self.sender()
             if sender is getattr(self, "_subscribe_pill", None):
                 source, cta_source = "subscribe_pill", "plugin_subscribe_pill"
@@ -41,15 +39,14 @@ class DockAutoCreditsMixin:
                 source, cta_source = "upsell_card", "plugin_objects_wall"
             elif sender is getattr(self, "auto_upgrade_btn", None):
                 source, cta_source = "upsell_card", "plugin_free_exhausted_wall"
-            else:
-                source = "upsell_card"
-            telemetry_session_events.track_pro_upsell_clicked(source=source)
         except Exception:
             pass  # nosec B110
-        url = self._build_upgrade_url(cta_source)
-        open_external_url(url, parent=self)
+        from ...core.pro_page_link import open_pro_page
+        open_pro_page(cta_source, source, parent=self)
 
     def _build_upgrade_url(self, cta_source: str = "plugin_upsell_card") -> str:
+        """The dashboard URL, still the destination whenever the server cannot
+        mint a checkout. Kept because the cards carry it into their handlers."""
         from ...core.activation_manager import get_pro_checkout_url
         return get_pro_checkout_url(cta_source)
 
@@ -438,6 +435,8 @@ class DockAutoCreditsMixin:
                     dial_copy("upsell.cta", tr("Upgrade to Pro")),
                     escape=fill(escape),
                 )
+                if free_user:
+                    card.set_pro_offer("plugin_km2_wall")
             # The offer button is the one part a subscriber must not see. The
             # way out stays: it is the only move they have left on this card.
             self.auto_km2_block_upgrade.setVisible(free_user or pro_contact)
@@ -467,6 +466,16 @@ class DockAutoCreditsMixin:
         # Remember the estimate: the detail-change telemetry reads it, and a
         # later balance change re-runs this method (see set_auto_credits).
         self._auto_est_credits = credits
+        # The tile count only means something once the object is named: the
+        # precision it is measured at is a placeholder until the prompt commits
+        # and re-seeds the slider. Reading the cap against that placeholder put
+        # "Zone too large" in red over a small zone whose only fault was having
+        # no prompt yet, and it disabled Detect with it. No object, no verdict.
+        if credits < 0 and not self._auto_detail_object_known():
+            self._auto_zone_too_large = False
+            self.set_auto_zone_fit_visible(False)
+            self.auto_credit_cost_label.setVisible(False)
+            return
         if credits < 0:
             self.auto_credit_cost_label.setText(self._auto_zone_too_large_text())
             self._set_credit_cost_style(scale_qss_font_px(
@@ -477,10 +486,14 @@ class DockAutoCreditsMixin:
             self.auto_credit_cost_label.setToolTip(
                 self._auto_zone_too_large_tooltip())
             self._auto_zone_too_large = True
+            # The row says what is wrong; the chip under the slider is the
+            # second way out, and until now it lived only in that tooltip.
+            self.set_auto_zone_fit_visible(True)
         else:
             self._set_credit_cost_style(scale_qss_font_px(
                 "color: palette(text); font-size: 11px;"))
             self._auto_zone_too_large = False
+            self.set_auto_zone_fit_visible(False)
             # The surface reaches the row first and the tile count lands here,
             # so the duration can only be written once both are known. Same
             # turn of the event loop, so nothing is repainted in between and
@@ -540,6 +553,7 @@ class DockAutoCreditsMixin:
         fill = lambda t: t.replace("{area}", area).replace("{max}", cap)  # noqa: E731
         card.set_text(fill(title), fill(body),
                       dial_copy("upsell.cta", tr("Upgrade to Pro")), fill(smaller))
+        card.set_pro_offer("plugin_zone_cap")
         card.setVisible(True)
         # Impression tracked so the click has a denominator. Deduped per
         # trigger, so once per session.
@@ -566,14 +580,12 @@ class DockAutoCreditsMixin:
 
     def _on_zone_cap_link_activated(self, url: str) -> None:
         """Subscribe link inside the zone-cap message: same destination as the
-        footer pill, tracked with its own upsell source."""
-        from ..external_links import open_external_url
-        try:
-            from ...core import telemetry_session_events
-            telemetry_session_events.track_pro_upsell_clicked(source="zone_too_large")
-        except Exception:
-            pass  # nosec B110
-        open_external_url(url, parent=self)
+        footer pill, tracked with its own upsell source. ``url`` is the
+        dashboard address the card was built with, used when the server cannot
+        mint a checkout."""
+        from ...core.pro_page_link import open_pro_page
+        open_pro_page("plugin_zone_cap", "zone_too_large",
+                      parent=self, fallback_url=url)
 
     def _update_auto_low_credit_note(self) -> None:
         """Free-tier low-credit nudge on the Automatic Start step (step 0).
@@ -690,6 +702,7 @@ class DockAutoCreditsMixin:
                "working."))
         line.set_text(title, body, dial_copy("upsell.cta",
                                              tr("Upgrade to Pro")))
+        line.set_pro_offer("plugin_low_credit_note")
         line.setVisible(True)
         # Track the banner view once per session (the click was already
         # tracked, the view was not). Never on the surface envelope: the event
@@ -748,14 +761,12 @@ class DockAutoCreditsMixin:
 
     def _on_low_credit_link_activated(self, url: str) -> None:
         """Upgrade button on the low-credit note: same destination as the
-        footer pill, tracked with its own upsell source."""
-        from ..external_links import open_external_url
-        try:
-            from ...core import telemetry_session_events
-            telemetry_session_events.track_pro_upsell_clicked(source="low_credit")
-        except Exception:
-            pass  # nosec B110
-        open_external_url(url, parent=self)
+        footer pill, tracked with its own upsell source. ``url`` is the
+        dashboard address the note was built with, used when the server cannot
+        mint a checkout."""
+        from ...core.pro_page_link import open_pro_page
+        open_pro_page("plugin_low_credit_note", "low_credit",
+                      parent=self, fallback_url=url)
 
     def set_auto_exhausted_subscribe_visible(self, visible: bool) -> None:
         """Show/hide the free-user offer shown under the status when a run

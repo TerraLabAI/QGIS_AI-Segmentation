@@ -472,14 +472,9 @@ class DockManualEngineMixin:
         it into the other would leave the impression this mode already tracks
         with nothing to divide it by.
         """
-        from ..external_links import open_external_url
-        try:
-            from ...core import telemetry_session_events
-            telemetry_session_events.track_pro_upsell_clicked(
-                source="manual_credits_low")
-        except Exception:  # noqa: BLE001 -- telemetry never blocks a click
-            pass  # nosec B110
-        open_external_url(url, parent=self)
+        from ...core.pro_page_link import open_pro_page
+        open_pro_page("plugin_objects_low_note", "manual_credits_low",
+                      parent=self, fallback_url=url)
 
     def _on_manual_low_credit_cta(self) -> None:
         """The card button, one hop to the link handler above.
@@ -584,6 +579,7 @@ class DockManualEngineMixin:
                 "upsell.low_body_objects",
                 tr("Pro gives you 500 cloud objects a month in Semi-Auto."))
             line.set_text(title, body, cta)
+            line.set_pro_offer("plugin_objects_low_note")
             line.setVisible(True)
         except (RuntimeError, AttributeError):
             pass  # nosec B110 -- teardown

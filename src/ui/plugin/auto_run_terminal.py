@@ -524,10 +524,20 @@ class AutoRunTerminalMixin:
         # matches in this zone" would blame the model for a run that never
         # looked, so this one keeps its own line. It replaces the old message
         # bar banner, which fired on every partial hole as well.
+        #
+        # blank_n belongs here too: a tile only lands in it once the render
+        # retry ladder is exhausted and the basemap still answers with nodata,
+        # which is the same "no picture of this ground" family as the other
+        # two. Leaving it out sends a run of blank tiles to the empty-result
+        # line, telling the user to change a word for imagery that never
+        # loaded.
+        # prefilt_n stays out on purpose: those tiles rendered fine and were
+        # proved objectless, so "no matches in this zone" is the true answer.
         coverage_dead = bool(
             not network_failed and not quota_stop and tiles_billed <= 0
             and (int(getattr(self, "_auto_unavailable_tiles", 0) or 0)
-                 + int(getattr(self, "_auto_render_failed_tiles", 0) or 0))
+                 + int(getattr(self, "_auto_render_failed_tiles", 0) or 0)
+                 + int(getattr(self, "_auto_skipped_blank_tiles", 0) or 0))
         )
         # The user stopped the run (or it stopped responding) before a single
         # tile answered. Nothing was ever looked at, so "no matches, try
@@ -566,19 +576,14 @@ class AutoRunTerminalMixin:
             msg = tr("Detection stopped before any result came back. "
                      "Run Detect again when you are ready.")
             log_msg = "Auto detection: stopped before any tile answered"
-        elif _can_add_example:
-            # One info per state: the banner states the fact, the rescue
-            # button right below it carries the action (draw an example -
-            # the proven lever against empty results).
-            msg = tr("No matches in this zone. A different object word often "
-                     "fixes it.")
-            log_msg = "Auto detection: run completed with zero detections"
         else:
-            # Example store full (examples were already the strategy): the
-            # remaining levers are the word and the detail level.
-            msg = tr(
-                "No detection in this zone. Try a more specific object "
-                "word, or more precision.")
+            # The two levers that move an empty run, in the order they pay.
+            # A plain object word comes back empty far less often than a
+            # qualified phrase, so it is the first thing to try, and the
+            # example is what the rescue row below offers next.
+            msg = tr('No matches in this zone. Try one plain word for the '
+                     'object, "building" and not "building footprint", and a '
+                     'smaller zone.')
             log_msg = "Auto detection: run completed with zero detections"
         if self.dock_widget and not self._auto_headless_run:
             try:

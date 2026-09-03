@@ -141,11 +141,12 @@ class DockManualCreditGateMixin:
             title,
             None,
             dial_copy("upsell.cta", tr("Upgrade to Pro")),
-            escape=dial_copy(
-                "upsell.cta_hint",
-                tr("39 EUR a month, cancel anytime.")),
             star=star,
         )
+        lane.set_pro_offer(
+            "plugin_objects_wall",
+            price_fallback=dial_copy(
+                "upsell.cta_hint", tr("39 EUR a month, cancel anytime.")))
         return lane
 
     def _build_manual_credit_contact_lane(self) -> QWidget:
@@ -444,7 +445,7 @@ class DockManualCreditGateMixin:
         try:
             from ...core import telemetry_session_events
             telemetry_session_events.track_pro_upsell_viewed(
-                trigger="manual_credits_exhausted")
+                trigger="manual_credits_exhausted", cta_source="upsell_card")
         except Exception:  # noqa: BLE001 -- telemetry never blocks the UI  # nosec B110
             pass
 

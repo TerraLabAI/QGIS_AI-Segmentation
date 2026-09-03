@@ -553,11 +553,45 @@ def parse_version(text) -> tuple[int, ...] | None:
 def is_served_update_recommended(installed_version: str) -> bool:
     """True when the served ``min_recommended_version`` parses strictly higher
     than the installed version. Garbage or missing on either side means no."""
+    return _served_version_above(installed_version, "min_recommended_version")
+
+
+def _served_version_above(installed_version: str, key: str) -> bool:
+    """True when the served version at ``key`` is strictly above the installed
+    one. Garbage or missing on either side means no."""
     installed = parse_version(installed_version)
-    minimum = parse_version(read_value("min_recommended_version"))
-    if installed is None or minimum is None:
+    served = parse_version(read_value(key))
+    if installed is None or served is None:
         return False
-    width = max(len(installed), len(minimum))
+    width = max(len(installed), len(served))
     installed += (0,) * (width - len(installed))
-    minimum += (0,) * (width - len(minimum))
-    return minimum > installed
+    served += (0,) * (width - len(served))
+    return served > installed
+
+
+def served_latest_version() -> str | None:
+    """The version the server says is on the marketplace, or None."""
+    value = read_value("latest_version")
+    return value.strip() if parse_version(value) is not None else None
+
+
+def is_served_update_available(installed_version: str) -> bool:
+    """True when the served ``latest_version`` is above the installed one."""
+    return _served_version_above(installed_version, "latest_version")
+
+
+# One line, so anything longer is a mistake or an attempt at a paragraph.
+_MAX_RELEASE_NOTES_CHARS = 160
+
+
+def served_release_notes_line() -> str | None:
+    """One served line saying what the latest version brings, or None."""
+    return clean_served_text(read_value("release_notes_line"), _MAX_RELEASE_NOTES_CHARS)
+
+
+MARKETPLACE_URL = "https://plugins.qgis.org/plugins/AI_Segmentation/"
+
+
+def served_marketplace_url() -> str:
+    """The marketplace page for this plugin, served or shipped."""
+    return dial_url("marketplace_url", MARKETPLACE_URL)

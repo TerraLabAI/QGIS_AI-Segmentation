@@ -20,12 +20,14 @@ from qgis.PyQt.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
 from ..core.activation_manager import (
     PRODUCT_ID,
+    book_a_call_url,
     get_dashboard_url,
     get_privacy_url,
     get_terms_url,
@@ -458,6 +460,10 @@ class AccountSettingsDialog(QDialog):
         sub = self._find_subscription(account_data)
         if sub:
             self._content_layout.addWidget(self._build_subscription_card(sub, usage_data))
+            # Right under the plan, where a reader who just saw what their plan
+            # holds is asking whether there is more.
+            self._content_layout.addWidget(self._build_contact_card(
+                resolve_plan_credits(usage_data or {}, sub).is_subscriber))
 
         # Dependencies and Privacy are secondary, same-weight info: side by
         # side they read as one quiet row instead of extending the tower of
@@ -973,49 +979,26 @@ class AccountSettingsDialog(QDialog):
                     "account.upgrade_body",
                     tr("The same AI on every machine you work on.")),
                 cta=dial_copy("upsell.cta", tr("Upgrade to Pro")),
-                escape=dial_copy(
-                    "upsell.cta_hint",
-                    tr("39 EUR a month, cancel anytime.")),
                 star=dial_copy(
                     "upsell.bullet_quota_manual",
                     tr("500 cloud objects every month in Semi-Auto")),
             )
+            upgrade_card.set_pro_offer(
+                "plugin_account_dialog",
+                price_fallback=dial_copy(
+                    "upsell.cta_hint", tr("39 EUR a month, cancel anytime.")))
             upgrade_card.button.setToolTip(dial_copy(
                 "account.upgrade_tooltip",
                 tr("Opens terra-lab.ai in your browser.")))
             card_layout.addWidget(upgrade_card)
-
-        # One sentence, one key. Glued fragments cannot be reordered, and every
-        # language that needs a different order lost it here. The address is
-        # served so it can be moved without a plugin release.
-        contact_email = dial_copy(
-            "account.contact_email", "yvann.barbot@terra-lab.ai", max_chars=120,
-            escape=True)
-        contact = QLabel(
-            tr("Team or organization? Write to us: {email}").format(
-                email=f"<b>{contact_email}</b>")
-        )
-        contact.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        contact.setWordWrap(True)
-        contact.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        contact.setStyleSheet("font-size: 10px; color: rgba(128,128,128,0.9);")
-        # The address is one click to copy: the same served button label as
-        # the dock's cards, outlined so the Upgrade button above stays the
-        # only loud one. It copies what the line shows.
-        import html
-        address = html.unescape(contact_email)
-        copy_btn = QPushButton(copy_cta_text().replace("&", "&&"))
-        copy_btn.setStyleSheet(_BTN_BLUE_OUTLINE)
-        copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        copy_btn.setAutoDefault(False)
-        copy_btn.clicked.connect(
-            lambda _=False, btn=copy_btn: copy_with_feedback(btn, address))
-        contact_row = QHBoxLayout()
-        contact_row.setContentsMargins(0, 0, 0, 0)
-        contact_row.setSpacing(8)
-        contact_row.addWidget(contact, 1)
-        contact_row.addWidget(copy_btn, 0, Qt.AlignmentFlag.AlignVCenter)
-        card_layout.addLayout(contact_row)
+            # A real offer on screen, so it reports a view, once per session
+            # and under the same name its click sends.
+            try:
+                from ..core import telemetry_session_events
+                telemetry_session_events.track_pro_upsell_viewed(
+                    trigger="account_dialog", cta_source="account_dialog")
+            except Exception:  # noqa: BLE001 -- telemetry never blocks the UI
+                pass  # nosec B110
 
         return card
 
@@ -1104,12 +1087,103 @@ class AccountSettingsDialog(QDialog):
         """The account dialog's Upgrade CTA. Reports through the same event as
         every other upsell surface, so the card can be compared with the pill
         and the cards inside the dock."""
+        from ..core.pro_page_link import open_pro_page
+        open_pro_page("plugin_account_dialog", "account_dialog", parent=self,
+                      fallback_url=get_upgrade_url())
+
+    def _build_contact_card(self, is_subscriber: bool) -> QFrame:
+        """Custom needs, as one row under the plan.
+
+        It used to be ten grey pixels under the quota bars, at 10px, with the
+        one person on this screen most likely to need seats or invoices given
+        nothing to press. It is now its own card, in the same frame as the
+        cards under it, but one row deep: the words on the left, the two things
+        to press on the right, and no paragraph in between.
+        """
+        card = QFrame()
+        card.setStyleSheet(_CARD_STYLE)
+        # One row deep and no taller: without this the card absorbs the slack
+        # the dialog has left over and the two labels drift apart around the
+        # buttons, which is the shape the first version was rejected for.
+        card.setSizePolicy(QSizePolicy.Policy.Preferred,
+                           QSizePolicy.Policy.Maximum)
+        row = QHBoxLayout(card)
+        row.setContentsMargins(12, 10, 12, 10)
+        row.setSpacing(10)
+
+        words = QVBoxLayout()
+        words.setContentsMargins(0, 0, 0, 0)
+        words.setSpacing(2)
+        title_text = (dial_copy("account.contact_pro_title",
+                                tr("Need more than Pro?"))
+                      if is_subscriber
+                      else dial_copy("account.contact_free_title",
+                                     tr("Working in a team?")))
+        title = QLabel(f"<b>{title_text}</b>")
+        title.setStyleSheet("font-size: 13px; color: palette(text);")
+        title.setWordWrap(True)
+        words.addWidget(title)
+        body = QLabel(dial_copy(
+            "account.contact_body",
+            tr("Custom quota, team seats, invoices, or a custom AI "
+               "solution.")))
+        body.setWordWrap(True)
+        body.setStyleSheet("font-size: 12px; color: palette(text);")
+        words.addWidget(body)
+        row.addLayout(words, 1)
+
+        # Served, so the address can move without a plugin release.
+        import html
+        address = html.unescape(dial_copy(
+            "account.contact_email", "yvann.barbot@terra-lab.ai",
+            max_chars=120, escape=True))
+        buttons = QHBoxLayout()
+        buttons.setContentsMargins(0, 0, 0, 0)
+        buttons.setSpacing(8)
+        copy_btn = QPushButton(copy_cta_text().replace("&", "&&"))
+        copy_btn.setStyleSheet(_BTN_BLUE_OUTLINE)
+        copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        copy_btn.setAutoDefault(False)
+        copy_btn.clicked.connect(
+            lambda _=False, btn=copy_btn: self._on_contact_copy(btn, address))
+        buttons.addWidget(copy_btn, 0)
+
+        # No shipped fallback on purpose: a booking page we cannot fill is
+        # worse than no button, so the button exists only while the server
+        # serves the address.
+        call_url = book_a_call_url()
+        if call_url:
+            call_btn = QPushButton(dial_copy("account.contact_call_cta",
+                                             tr("Book a call")))
+            call_btn.setStyleSheet(_BTN_BLUE_OUTLINE)
+            call_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            call_btn.setAutoDefault(False)
+            call_btn.clicked.connect(
+                lambda _=False, url=call_url: self._on_contact_call(url))
+            buttons.addWidget(call_btn, 0)
+        row.addLayout(buttons, 0)
+        row.setAlignment(buttons, Qt.AlignmentFlag.AlignVCenter)
+        return card
+
+    def _track_contact_click(self, action: str) -> None:
+        """Reported through pro_upsell_clicked, the event every other contact
+        button in the plugin already uses, so this card sits in the same
+        funnel as the Pro ceiling cards rather than beside it."""
         try:
             from ..core import telemetry_session_events
-            telemetry_session_events.track_pro_upsell_clicked(source="account_dialog")
-        except Exception:
+            telemetry_session_events.track_pro_upsell_clicked(
+                source="account_contact_" + action)
+        except Exception:  # noqa: BLE001 -- telemetry never blocks a click
             pass  # nosec B110
-        open_external_url(get_upgrade_url(), parent=self)
+
+    def _on_contact_copy(self, button, address: str) -> None:
+        self._track_contact_click("copy")
+        copy_with_feedback(button, address)
+
+    def _on_contact_call(self, url: str) -> None:
+        self._track_contact_click("call")
+        from .external_links import open_external_url
+        open_external_url(url, parent=self)
 
     def _build_dependencies_card(self) -> QFrame:
         """Local AI dependencies: where they live, how big, and an Open button.

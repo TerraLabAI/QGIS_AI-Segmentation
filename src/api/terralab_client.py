@@ -34,6 +34,11 @@ _TIMEOUT_WARMUP = 5_000              # ms: warmup is a tiny best-effort ping
 # than hold the run. Long enough that a slow link still gets an answer: giving
 # up costs the user the tuned run, which is worth more than the seconds saved.
 _TIMEOUT_TRANSLATE = 12_000
+# ms: the one-time login link and the ready-made checkout link. The
+# user is holding a button they just pressed, so this gives up fast and the
+# caller opens the plain URL it has always opened. Waiting longer buys nothing:
+# a slow answer and no answer lead to the same browser tab.
+_TIMEOUT_CHECKOUT_LINK = 4_000
 # ms: final-output upload can carry a few MB of geometry; background task only.
 _TIMEOUT_RUN_EXPORT = 60_000
 # ms past a request's own deadline before the wall-clock backstop ends the wait.
@@ -1293,6 +1298,78 @@ class TerraLabClient:
         )
         _note_skipped_tuning("run plan", answer)
         return answer
+
+    def get_plugin_login_link(
+        self,
+        target: str,
+        cta_source: str,
+        auth: dict | None = None,
+        locale: str | None = None,
+    ) -> dict:
+        """A one-time link that opens ``target`` on the website, signed in.
+
+        The plugin holds an activation key; the browser usually holds no
+        session. Sending the user to the plans page logged out asked them for
+        a magic link in their mail, and most of them stopped there. This asks
+        the server to mint the sign-in instead, so the page opens on the plans
+        and the price with the account already loaded.
+
+        Additive and optional: a server that does not serve the route yet, a
+        timeout, or a key the route refuses all come back as {"error", "code"}
+        or {"url": None, "reason": ...}, and the caller opens the plain URL
+        exactly as before.
+        """
+        from ..core.request_context import plugin_version
+
+        payload: dict = {
+            "target": target,
+            "cta_source": cta_source,
+            "plugin_version": plugin_version() or "unknown",
+        }
+        if locale:
+            payload["locale"] = locale
+        body = json.dumps(payload).encode("utf-8")
+        return self._request(
+            "POST", "/api/plugin/login-link", auth=auth, body=body,
+            timeout_ms=_TIMEOUT_CHECKOUT_LINK, require_body=True,
+        )
+
+    def get_pro_checkout_link(
+        self,
+        product: str,
+        cta_source: str,
+        auth: dict | None = None,
+        interval: str | None = None,
+        locale: str | None = None,
+    ) -> dict:
+        """A ready checkout URL for the account this key belongs to.
+
+        NOT CALLED TODAY. Every Pro button opens the plans page through
+        get_plugin_login_link, because the user has to read what the plans
+        contain before paying. This is the second door, kept working for the
+        day a CTA sells a plan the user has already chosen.
+
+        Additive and optional: a server that does not serve the route yet, a
+        timeout, or an account that already subscribes all come back as
+        {"error", "code"} or {"url": None, "reason": ...}, and the caller opens
+        the dashboard URL exactly as before.
+        """
+        from ..core.request_context import plugin_version
+
+        payload: dict = {
+            "product": product,
+            "cta_source": cta_source,
+            "plugin_version": plugin_version() or "unknown",
+        }
+        if interval:
+            payload["interval"] = interval
+        if locale:
+            payload["locale"] = locale
+        body = json.dumps(payload).encode("utf-8")
+        return self._request(
+            "POST", "/api/plugin/checkout-session", auth=auth, body=body,
+            timeout_ms=_TIMEOUT_CHECKOUT_LINK, require_body=True,
+        )
 
     # ---- Run history (Library 2.0) ----------------------------------------
     # Additive, off-GUI-thread only (the library dialog drives these from its

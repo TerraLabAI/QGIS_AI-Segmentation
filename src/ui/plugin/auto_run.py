@@ -1276,6 +1276,11 @@ class AutoRunMixin:
         self._auto_skipped_blank_tiles = 0
         self._auto_render_failed_tiles = 0
         self._auto_unavailable_tiles = 0
+        # Set from the worker at the terminal like the three above, so a run
+        # that ends before that capture (network dead end, cancel) would read
+        # the previous run's numbers.
+        self._auto_prefiltered_tiles = 0
+        self._auto_gate_skipped_tiles = 0
         # Waiting-room (cold start / queue) wall time, accumulated by
         # _on_auto_queue_state and reported as warming_ms at the terminal.
         self._auto_warming_t0 = None

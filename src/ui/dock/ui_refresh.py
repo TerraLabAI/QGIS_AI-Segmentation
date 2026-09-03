@@ -1104,7 +1104,8 @@ class DockStateMixin:
         if exhausted:
             try:
                 from ...core import telemetry_session_events
-                telemetry_session_events.track_pro_upsell_viewed(trigger="free_exhausted")
+                telemetry_session_events.track_pro_upsell_viewed(
+                    trigger="free_exhausted", cta_source="upsell_card")
             except Exception:
                 pass  # nosec B110
         # Land on the first incomplete step when (re)entering the page; never
@@ -1785,17 +1786,13 @@ class DockStateMixin:
             self._footer_credits_label.setVisible(False)
 
         pill_shown = signed_in and not self._auto_is_subscriber
+        self.refresh_subscribe_pill_tooltip()
         self._subscribe_pill.setVisible(pill_shown)
-        # The pill carries most of the upsell clicks in the product and used to
-        # report none of the matching impressions, so its click-through rate
-        # could not be computed at all. track_pro_upsell_viewed dedupes per
-        # trigger, so calling it on every refresh reports once per session.
-        if pill_shown:
-            try:
-                from ...core import telemetry_session_events
-                telemetry_session_events.track_pro_upsell_viewed(trigger="subscribe_pill")
-            except Exception:
-                pass  # nosec B110
+        # The pill reports NO view. It sits in the footer for the whole
+        # session, so "shown" says nothing about anyone meeting an offer, and
+        # counting it as one makes every view-to-click ratio meaningless. Its
+        # clicks are still reported, and their denominator is the session,
+        # not a view.
         # Free-tier low-credit nudge on the Start page (driven by the same
         # remaining/total the ring uses).
         self._update_auto_low_credit_note()

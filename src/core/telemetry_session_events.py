@@ -300,7 +300,8 @@ _upsell_viewed_triggers: set[str] = set()
 _low_credit_banner_viewed_this_session = False
 
 
-def track_pro_upsell_viewed(trigger: str = "free_exhausted") -> None:
+def track_pro_upsell_viewed(trigger: str = "free_exhausted",
+                            cta_source: str | None = None) -> None:
     """Fire at most once per session PER TRIGGER when an upsell first renders.
 
     Deduplicated by trigger, not by process. A single flag for every trigger
@@ -308,18 +309,41 @@ def track_pro_upsell_viewed(trigger: str = "free_exhausted") -> None:
     session silenced the others for its whole lifetime, so the view count came
     out below the click count, which is impossible and made every view-to-click
     ratio unusable.
+
+    Only a real offer calls this: a wall, an upsell card or the account
+    dialog's Pro block. The footer pill and the credit gauge are furniture,
+    on screen for a whole session whether or not anyone is being sold
+    anything, and counting them as views made every passing session look
+    like it had met an offer.
+
+    ``cta_source`` is the value the click from the SAME surface sends as its
+    source, so a view and its click join on one property. It defaults to the
+    trigger, which the surfaces already name the same way; the two walls whose
+    click reports the generic "upsell_card" pass it explicitly.
     """
     if trigger in _upsell_viewed_triggers:
         return
     _upsell_viewed_triggers.add(trigger)
-    track(ev.PRO_UPSELL_VIEWED, {"trigger": trigger})
+    track(ev.PRO_UPSELL_VIEWED,
+          {"trigger": trigger, "cta_source": cta_source or trigger})
 
 
-def track_pro_upsell_clicked(source: str = "upsell_card") -> None:
+def track_pro_upsell_clicked(
+    source: str = "upsell_card", checkout_link: str | None = None
+) -> None:
     """source: upsell_card / subscribe_pill / low_credit_banner /
     exhausted_status / credit_gauge (the footer balance, which opens the
-    dashboard rather than the checkout)."""
-    track(ev.PRO_UPSELL_CLICKED, {"source": source})
+    dashboard rather than the checkout).
+
+    checkout_link: "direct" when the server minted a checkout URL for this
+    account and the browser opened it signed in, "fallback" when the
+    dashboard URL was opened instead. Omitted by the surfaces that open no
+    checkout at all (the credit gauge, the subscriber contact buttons).
+    """
+    props = {"source": source}
+    if checkout_link:
+        props["checkout_link"] = checkout_link
+    track(ev.PRO_UPSELL_CLICKED, props)
 
 
 def track_free_taste_consumed(remaining: int, run_id: str = "") -> None:

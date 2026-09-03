@@ -149,6 +149,83 @@ class DockAutoDetailLevelMixin:
             self._auto_detail_emit_timer = timer
         timer.start(150)
 
+    def _on_auto_zone_fit_clicked(self) -> None:
+        """Take the zone as drawn and sweep it coarser, in one press.
+
+        The slider goes to the coarse end of the band it is allowed today,
+        which is the fewest tiles this zone can be run in. Nothing else moves:
+        the zone the user drew, the object and the examples all stand. The
+        normal recompute follows the value change, so the cost row answers on
+        its own and says whether it fits now.
+
+        Below the band's own floor the object is too few pixels across to be
+        found, so the floor is where this stops. A zone still over the cap at
+        the floor has to get smaller, and the row keeps saying so.
+        """
+        if getattr(self, "_auto_zone_fit_action", "fit") != "fit":
+            # The button is offering a redraw, not a precision change.
+            handler = getattr(self, "_on_auto_run_block_redraw", None)
+            if handler is not None:
+                handler()
+            return
+        slider = getattr(self, "auto_detail_slider", None)
+        if slider is None:
+            return
+        try:
+            if slider.value() > slider.minimum():
+                slider.setValue(slider.minimum())
+        except RuntimeError:
+            pass  # nosec B110 -- teardown
+
+    def set_auto_zone_fit_available(self, can_fit: bool | None) -> None:
+        """Whether the coarse end of the band would actually fit this zone.
+
+        Measured by the plugin on the real grid, not guessed here: True only
+        when a run at the lowest precision the object allows comes in under
+        the ceiling. None means it could not be measured, which is treated as
+        "cannot promise".
+        """
+        self._auto_zone_can_fit = bool(can_fit)
+
+    def set_auto_zone_fit_visible(self, visible: bool) -> None:
+        """One button under the slider, and it says what will actually work.
+
+        Precision is the fix only when the coarse end of the band really fits.
+        Offering it on a zone that would still be refused there sends the user
+        through a press that changes nothing, so in that case the same slot
+        offers the move that does work: draw a smaller zone.
+
+        Hidden entirely while the zone is accepted. Offered on a zone that
+        fits, it reads as a quality control the user should be touching, which
+        is the opposite of what precision is for.
+        """
+        btn = getattr(self, "auto_zone_fit_btn", None)
+        if btn is None:
+            return
+        slider = getattr(self, "auto_detail_slider", None)
+        room = bool(slider is not None and slider.value() > slider.minimum())
+        can_fit = bool(getattr(self, "_auto_zone_can_fit", False)) and room
+        try:
+            if not visible:
+                btn.setVisible(False)
+                return
+            if can_fit:
+                btn.setText(dial_copy("zone.fit_precision_cta",
+                                      tr("Lower precision to fit")))
+                btn.setToolTip(tr("Sweeps the same zone in a coarser grid, so "
+                                  "it fits in one run."))
+            else:
+                # The same slot, the move that works. Served under the id the
+                # takeover's own redraw chip already uses, so both say it the
+                # same way in every language.
+                btn.setText(dial_copy("run_block.redraw_cta",
+                                      tr("Draw a smaller zone")))
+                btn.setToolTip("")
+            self._auto_zone_fit_action = "fit" if can_fit else "redraw"
+            btn.setVisible(True)
+        except RuntimeError:
+            pass  # nosec B110 -- teardown
+
     def _flush_auto_detail_changed(self) -> None:
         """Emit the Precision change once the drag has settled."""
         value = getattr(self, "_auto_detail_pending_value", None)
@@ -223,18 +300,15 @@ class DockAutoDetailLevelMixin:
                 tr("Each tile covers a lot of ground at this precision. Raise"
                    " the precision in Advanced settings for sharper"
                    " detections."))
-        was_on = bool(getattr(self, "_auto_gsd_warning_on", False))
         self._auto_gsd_warning_on = coarse
         self.auto_detail_warning.setVisible(coarse)
         self.auto_detail_hint.setVisible(not coarse)
-        if coarse and not was_on and self._auto_detail_object_known():
-            # The control the sentence names sits inside a fold most runs never
-            # open, so a warning that arrives while it is shut points at
-            # nothing. Opening it also puts the tile grid on the canvas, which
-            # is the picture of the problem. Only on the way IN, so a user who
-            # shuts it again is left alone. The flag is written before the call
-            # because opening re-enters this method through the estimate.
-            self.set_auto_advanced_open(True)
+        # The fold is NEVER opened from here. It used to open itself on the way
+        # into this warning, on the reading that a sentence naming a control
+        # should show the control. What it actually did was put the tile grid
+        # on the canvas unasked, and leave the fold open for every later run,
+        # carrying one run's precision into the next. The fold opens on a click
+        # and on nothing else (see set_auto_advanced_open).
 
     def set_auto_detail_range(
         self, lo: int, hi: int, object_bound: bool = False
@@ -388,6 +462,15 @@ class DockAutoDetailLevelMixin:
             self.auto_detail_hint.setText(_detail_hint_copy("capped", tr(
                 "Max precision for this zone - draw a larger zone to go finer.")))
         else:
+            # Nothing specific to say about this level and this object. The
+            # always-on subtitle above the slider already says what precision
+            # does, and repeating it here printed the same sentence twice, once
+            # over the slider and once under it. The served id stays, so a
+            # deploy can still put a sentence in this slot.
             self._set_detail_hint_style(_plain_hint)
-            self.auto_detail_hint.setText(_detail_hint_copy(
-                "default", tr("More precision finds smaller objects.")))
+            self.auto_detail_hint.setText(_detail_hint_copy("default", ""))
+        # An empty hint takes no room. The GSD warning still owns the slot
+        # while it is up (see the coarse branch above), so this never brings
+        # the hint back over it.
+        if not getattr(self, "_auto_gsd_warning_on", False):
+            self.auto_detail_hint.setVisible(bool(self.auto_detail_hint.text()))

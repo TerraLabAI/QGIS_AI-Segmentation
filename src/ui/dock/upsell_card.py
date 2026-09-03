@@ -33,10 +33,12 @@ from qgis.PyQt.QtWidgets import (
     QVBoxLayout,
 )
 
+from ...core.i18n import tr
 from .contact_copy import CopyEmailLabel
 from .font_scale import scale_qss_font_px
 from .styles import (
     _BTN_BLUE,
+    _BTN_LINK_MUTED,
     _CARD_CHILD_BTN_RESET_QSS,
     _PREMIUM_STAR,
     _SUBCARD_MARGINS,
@@ -72,6 +74,11 @@ class UpsellCard(QFrame):
         # a user who prefers to drag it into a mail must be able to.
         self.detail = QLabel()
         self.button = QPushButton()
+        # The quiet second door, under the blue button: the public plan list.
+        # An organisation reading one price on one card has no way to know
+        # there is a yearly plan and a team plan, and a card cannot hold them.
+        # Hidden until a caller calls set_pro_offer.
+        self.plans_link = QPushButton()
         self.escape = QLabel()
         # Under everything else: the invitation to write to us with a custom
         # need. A click copies the address. Hidden until a caller fills it.
@@ -93,6 +100,17 @@ class UpsellCard(QFrame):
         self.note.setVisible(False)
         self.detail.setVisible(False)
         self.button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.plans_link.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.plans_link.setStyleSheet(_BTN_LINK_MUTED)
+        self.plans_link.setVisible(False)
+        self.plans_link.clicked.connect(self._on_plans_link_clicked)
+        self._plans_cta_source = ""
+        self._pro_offer_armed = False
+        self._pro_offer_fallback: str | None = None
+        # The line the price is added to, as the caller wrote it. Kept apart
+        # from what the label shows, so re-applying the price never stacks a
+        # second copy on top of the first.
+        self._pro_offer_base: str | None = None
         self._on_cta = on_cta
         if on_cta is not None:
             self.button.clicked.connect(on_cta)
@@ -112,6 +130,8 @@ class UpsellCard(QFrame):
             layout.addLayout(row)
             layout.addWidget(self.body)
             layout.addWidget(self.detail)
+            layout.addWidget(self.plans_link, 0,
+                             Qt.AlignmentFlag.AlignRight)
             self.star.setVisible(False)
             self.escape.setVisible(False)
             self.contact.setVisible(False)
@@ -137,6 +157,8 @@ class UpsellCard(QFrame):
             layout.addSpacing(4)
             layout.addWidget(self.button)
             layout.addWidget(self.escape)
+            layout.addWidget(self.plans_link, 0,
+                             Qt.AlignmentFlag.AlignCenter)
             layout.addWidget(self.contact)
 
     def set_tint(self, kind: str) -> None:
@@ -194,6 +216,74 @@ class UpsellCard(QFrame):
         if self.variant in ("star", "wall"):
             self.star.setText(f"{_PREMIUM_STAR}  {star}" if star else "")
             self.star.setVisible(bool(star))
+        # A refill replaces the line the price was added to, so the price is
+        # taken from the new one. A no-op on a card that sells nothing.
+        self._pro_offer_base = None
+        self._apply_pro_offer()
+
+    def set_pro_offer(self, cta_source: str,
+                      price_fallback: str | None = None) -> None:
+        """Put the served price on this card and show the See all plans link.
+
+        Call it right after ``set_text`` on any card that sells Pro. Two rules
+        keep the card the size it was. The price joins a line the card already
+        has, the muted one under the button where there is one and the body
+        line on a compact card, so no card grows a line to hold it. And the
+        plan list is a small text link, never a second button: one card, one
+        thing to press.
+
+        ``price_fallback`` is the sentence to show when the server serves no
+        price: the shipped or served hint the card carried before this. A
+        served price always wins over it, so the number the website charges is
+        the number the card shows.
+
+        A compact card takes the link and no price: see _apply_pro_offer.
+        """
+        self._plans_cta_source = cta_source
+        self._pro_offer_fallback = price_fallback
+        self._pro_offer_armed = True
+        self._pro_offer_base = None
+        self._apply_pro_offer()
+        self.plans_link.setText(tr("See all plans"))
+        self.plans_link.setVisible(True)
+
+    def _apply_pro_offer(self) -> None:
+        """Write the price into the card's own line, from the config in force.
+
+        Read late, never once. Two of these cards are filled while the plugin
+        starts, before the first configuration has landed, so a price read at
+        build time is the shipped fallback for the whole session. This runs
+        again on every refill and every time the card is shown, which is when
+        the number has to be right.
+        """
+        if not self._pro_offer_armed or self.variant == "compact":
+            # A compact card is one line and a button on the same row. Measured
+            # at the dock's real width, the price wraps that line in two and
+            # pushes the card over the widget under it, so this nudge carries
+            # the plan link alone and the price waits for the card that sells.
+            return
+        from ...core.pro_offer_copy import join_offer_line, pro_price_phrase
+
+        if self._pro_offer_base is None:
+            self._pro_offer_base = self.escape.text()
+        phrase = pro_price_phrase() or (self._pro_offer_fallback or "")
+        line = join_offer_line(self._pro_offer_base, phrase)
+        self.escape.setText(line)
+        self.escape.setVisible(bool(line))
+
+    def showEvent(self, event):  # noqa: N802 -- Qt name
+        """The last chance to get the price right before it is read."""
+        self._apply_pro_offer()
+        super().showEvent(event)
+
+    def _on_plans_link_clicked(self) -> None:
+        """The plan list, opened as it always was: a plain public page, no
+        account, no server call, no waiting."""
+        from ...core.activation_manager import get_plans_page_url
+        from ..external_links import open_external_url
+        open_external_url(
+            get_plans_page_url(self._plans_cta_source or "plugin"),
+            parent=self)
 
     def set_contact_email(self, email: str | None) -> None:
         """Show the custom-needs line under the card with ``email`` in it,

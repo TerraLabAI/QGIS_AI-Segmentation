@@ -78,6 +78,7 @@ from .guidance import (
 )
 from .styles import (
     _BTN_BLUE,
+    _BTN_BLUE_OUTLINE,
     _BTN_BLUE_PRIMARY,
     _BTN_CHIP,
     _BTN_GHOST,
@@ -206,16 +207,18 @@ class DockAutoBuildMixin:
                 tr("Draw a whole city and let it run, at the finest "
                    "precision.")),
             dial_copy("upsell.cta", tr("Upgrade to Pro")),
-            # The price ships in the line and stays served (see the same read
-            # in manual_credit_gate.py): served alone it is absent on a cold
-            # cache, which is the launch where a buyer first meets this card.
-            escape=dial_copy(
-                "upsell.cta_hint",
-                tr("39 EUR a month, cancel anytime.")),
             star=dial_copy(
                 "upsell.bullet_quota",
                 tr("200 km² of Automatic every month, on zones of any size")),
         )
+        # The price goes in that same muted line, from the served pricing when
+        # there is one. The shipped sentence stays the fallback: served alone
+        # it is absent on a cold cache, which is the launch where a buyer first
+        # meets this card.
+        _wall.set_pro_offer(
+            "plugin_free_exhausted_wall",
+            price_fallback=dial_copy(
+                "upsell.cta_hint", tr("39 EUR a month, cancel anytime.")))
         # Under the offer, in grey: many who hit this wall have a need no
         # plan names, and the address is one click to copy. Refilled by
         # _refresh_auto_upsell_title once the served copy lands.
@@ -944,6 +947,24 @@ class DockAutoBuildMixin:
         _fine_lbl.setStyleSheet("font-size: 10px; color: palette(text);")
         _slider_row.addWidget(_fine_lbl)
         _adv_layout.addWidget(self.auto_detail_slider_row)
+        # The second way out of a zone that is too large, and the one nobody
+        # found while precision was named only in a tooltip. It sits under the
+        # slider it moves, hidden until the cap is actually hit.
+        # See set_auto_zone_fit_visible.
+        self.auto_zone_fit_btn = QPushButton(dial_copy(
+            "zone.fit_precision_cta", tr("Lower precision to fit")))
+        self.auto_zone_fit_btn.setMinimumHeight(26)
+        self.auto_zone_fit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        # Blue outline, like every other secondary action in the plugin. The
+        # grey chip it wore first read as a disabled control, which is the one
+        # thing an offer to fix the refusal must not look like.
+        self.auto_zone_fit_btn.setObjectName("autoZoneFitBtn")
+        self.auto_zone_fit_btn.setStyleSheet(_BTN_BLUE_OUTLINE)
+        self.auto_zone_fit_btn.setToolTip(tr(
+            "Sweeps the same zone in a coarser grid, so it fits in one run."))
+        self.auto_zone_fit_btn.clicked.connect(self._on_auto_zone_fit_clicked)
+        self.auto_zone_fit_btn.setVisible(False)
+        _adv_layout.addWidget(self.auto_zone_fit_btn)
         # One-line plain-language hint instead of a m/px figure. Empty at
         # build: the fold body is hidden until an object is named, and the fold
         # head carries the reason (_apply_auto_detail_gate).
@@ -1267,6 +1288,7 @@ class DockAutoBuildMixin:
                 tr("Pro picks it up where it stopped and finishes the zone.")),
             dial_copy("upsell.exhausted_cta", tr("Finish with Pro")),
         )
+        self.auto_exhausted_subscribe.set_pro_offer("plugin_exhausted_offer")
         self.auto_exhausted_subscribe.setVisible(False)
         _s3_layout.addWidget(self.auto_exhausted_subscribe)
 

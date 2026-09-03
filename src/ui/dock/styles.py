@@ -555,6 +555,29 @@ _BTN_BLUE_AUTH = (
 # Primary blue CTA: same heft as _BTN_GREEN (8px 16px) but in the Automatic
 # brand blue. Used for the Automatic-mode "Start" so it echoes the blue tab
 # underline, the way the green Start echoes the green Interactive underline.
+# The update banner is the loudest thing on the dock while an update is
+# pending, and it still has to belong to the panel: the dock's own card ground
+# with a 2px accent border, the way the tutorial card is built. Copied from the
+# AI Edit banner so both plugins offer an update the same way.
+_UPDATE_CARD_STYLE = (
+    "QWidget#updateCard { background-color: rgba(30, 136, 229, 0.10);"
+    f" border: 2px solid {BRAND_BLUE}; border-radius: 10px; }}"
+    "QLabel { background: transparent; border: none; }"
+)
+_UPDATE_TITLE_STYLE = (
+    "font-size: 13px; font-weight: 700; color: palette(text);"
+    " background: transparent;"
+)
+_UPDATE_NOTE_STYLE = (
+    "font-size: 11px; color: rgba(160, 164, 170, 0.95); background: transparent;"
+)
+_UPDATE_LATER_STYLE = (
+    "QPushButton { background: transparent; color: rgba(150, 154, 160, 0.95);"
+    f" border: none; font-size: 11px; padding: 2px 6px; {_BTN_LABEL_WEIGHT} }}"
+    "QPushButton:hover { color: palette(text); text-decoration: underline; }"
+)
+
+
 _BTN_BLUE_PRIMARY = (
     f"QPushButton {{ background-color: {BRAND_BLUE}; color: #000000;"
     f" padding: 8px 16px; border: none; border-radius: 4px;"
@@ -657,6 +680,8 @@ _CHIP_QSS = (
 # pill at rest, TerraLab-green tint on hover/press. For guided-path side
 # buttons that sit NEXT TO an input and must not compete with the primary
 # flow (an outlined brand-blue button there read as a competing action).
+
+
 _BTN_CHIP = (
     "QPushButton { background: rgba(128, 128, 128, 0.08);"
     " border: 1px solid rgba(128, 128, 128, 0.40); border-radius: 6px;"
