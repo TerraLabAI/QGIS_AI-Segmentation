@@ -1,0 +1,279 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Tag or SHA to gate and package (default: this branch)'
+        required: false
+        type: string
+
+concurrency:
+  group: release-${{ github.event.inputs.ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PLUGIN_NAME: AI_Segmentation
+
+jobs:
+  gate:
+    name: payload gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Tools
+        run: |
+          uv pip install --system --quiet \
+            "ruff>=0.6,<1" "flake8>=7,<8" "bandit>=1.7,<2" "detect-secrets>=1.5,<2" \
+            pytest pytest-xdist
+
+      - name: metadata.txt agrees with the tag
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import configparser, os, sys
+          cp = configparser.ConfigParser()
+          cp.read("metadata.txt", encoding="utf-8")
+          g = cp["general"]
+          ref = os.environ.get("GITHUB_REF", "")
+          problems = []
+          for key in ("name", "version", "qgisMinimumVersion", "description",
+                      "about", "repository", "tracker"):
+              if not g.get(key, "").strip():
+                  problems.append(f"metadata.txt: {key} is empty or missing")
+          if g.get("supportsQt6", "").strip() != "True":
+              problems.append("metadata.txt: supportsQt6 must be True")
+          if ref.startswith("refs/tags/"):
+              tag = ref.split("/", 2)[2]
+              if tag != "v" + g.get("version", "").strip():
+                  problems.append(
+                      f"tag {tag} does not match metadata.txt version "
+                      f"{g.get('version','').strip()}")
+          for p in problems:
+              print("FAIL:", p)
+          sys.exit(1 if problems else 0)
+          PY
+
+      - name: The payload compiles
+        run: python -m compileall -q src __init__.py
+
+      - name: ruff
+        run: ruff check --isolated --no-cache --select E4,E7,E9,F src/
+
+      - name: flake8 W504 (plugins.qgis.org)
+        run: flake8 --isolated --select=W504 --disable-noqa --max-line-length 120 src/
+
+      - name: bandit
+        run: bandit -r src/ -f screen --quiet --severity-level medium
+
+      - name: detect-secrets
+        run: |
+          set -euo pipefail
+          detect-secrets scan src/ __init__.py > "$RUNNER_TEMP/ds.json"
+          python - <<'PY'
+          import json, os, sys
+          data = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "ds.json")))
+          hits = data.get("results", {})
+          for path, entries in hits.items():
+              for e in entries:
+                  print(f"FAIL: secret-shaped value {path}:{e.get('line_number')} "
+                        f"({e.get('type')})")
+          sys.exit(1 if hits else 0)
+          PY
+
+      - name: No credential-shaped string in the payload
+        run: |
+          set -euo pipefail
+          PATTERN='Bearer [A-Za-z0-9_-]{20}|X-Api-Key|sk-[A-Za-z0-9]{20}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----'
+          if grep -rInE "$PATTERN" src/ __init__.py metadata.txt README.md 2>/dev/null; then
+            echo "FAIL: the lines above look like credentials and must not ship."
+            exit 1
+          fi
+          echo "ok: no credential-shaped string"
+
+      - name: The tree carries nothing but the plugin
+        run: |
+          set -euo pipefail
+          fail=0
+          for e in .[!.]*; do
+            case "$e" in
+              .git|.github|.gitattributes|.gitignore|'.[!.]*') ;;
+              *) echo "FAIL: $e is not part of a plugin payload"; fail=1 ;;
+            esac
+          done
+          for e in *.md; do
+            case "$e" in
+              README.md|CHANGELOG.md|LICENSE.md|MCP.md|'*.md') ;;
+              *) echo "FAIL: $e is not part of a plugin payload"; fail=1 ;;
+            esac
+          done
+          for d in scripts tests docs plans; do
+            if [ -d "$d" ]; then echo "FAIL: $d/ is in the public tree"; fail=1; fi
+          done
+          exit $fail
+
+  qgis-import:
+    name: the shipped payload imports under QGIS
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: qgis/qgis:stable
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QT_OPENGL: software
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - name: git for the checkout
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Import the plugin package
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/profile/python/plugins/${PLUGIN_NAME}
+          cp -R . /tmp/profile/python/plugins/${PLUGIN_NAME}
+          rm -rf /tmp/profile/python/plugins/${PLUGIN_NAME}/.git \
+                 /tmp/profile/python/plugins/${PLUGIN_NAME}/.github
+          cd /tmp/profile/python/plugins
+          python3 -c "
+          import importlib, os, sys
+          sys.path.insert(0, os.getcwd())
+          m = importlib.import_module(os.environ['PLUGIN_NAME'])
+          assert hasattr(m, 'classFactory'), 'no classFactory in __init__.py'
+          print('ok:', m.__name__, 'imports and exposes classFactory')
+          "
+
+  qt6:
+    name: PyQt6 checker (plugins.qgis.org)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    container:
+      image: ghcr.io/qgis/pyqgis4-checker:main-ubuntu
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Stage the shipped python and run the checker
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/p/plugin
+          cp __init__.py /tmp/p/plugin/
+          cp -R src /tmp/p/plugin/src
+          find /tmp/p -name __pycache__ -type d -prune -exec rm -rf {} +
+          python3 /usr/local/bin/pyqt5_to_pyqt6.py /tmp/p --dry_run 2>&1 | tee checker.log
+          count=$(grep -cE '^/tmp/p/.*:[0-9]+:[0-9]+ - ' checker.log || true)
+          echo "findings: $count"
+          test "$count" -eq 0
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: pyqt6-checker.log
+          path: checker.log
+
+  package:
+    name: build and attach the ZIP
+    needs: [gate, qgis-import, qt6]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+          fetch-depth: 0
+
+      - name: Stage the payload
+        run: |
+          set -euo pipefail
+          mkdir -p build/${PLUGIN_NAME}
+          git archive --format=tar HEAD | tar -x -C build/${PLUGIN_NAME}
+          cd "build/${PLUGIN_NAME}"
+          for e in .[!.]* *.md scripts tests docs plans; do
+            case "$e" in
+              .gitattributes|README.md|CHANGELOG.md|LICENSE.md|MCP.md|'.[!.]*'|'*.md') continue ;;
+            esac
+            if [ -e "$e" ]; then
+              echo "FAIL: $e survived export-ignore, fix .gitattributes"; exit 1
+            fi
+          done
+          cd - >/dev/null
+
+      - name: Build ${{ env.PLUGIN_NAME }}.zip
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os, sys, zipfile
+          name = os.environ["PLUGIN_NAME"]
+          build, out = "build", f"{name}.zip"
+          root = os.path.join(build, name)
+          skip_dirs, skip_names = {"__pycache__"}, {".DS_Store"}
+          entry = lambda p: os.path.relpath(p, build).replace(os.sep, "/")
+          n = 0
+          with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
+              zf.writestr(name + "/", ""); n += 1
+              for cur, dirs, files in os.walk(root):
+                  dirs[:] = sorted(d for d in dirs if d not in skip_dirs)
+                  for d in dirs:
+                      zf.writestr(entry(os.path.join(cur, d)) + "/", ""); n += 1
+                  for f in sorted(files):
+                      if f in skip_names or f.endswith(".pyc"):
+                          continue
+                      full = os.path.join(cur, f)
+                      zf.write(full, entry(full)); n += 1
+          print(f"OK: wrote {out} ({n} entries)")
+          PY
+
+      - name: The archive has the layout the repository requires
+        run: |
+          set -euo pipefail
+          first=$(python -c "
+          import os, zipfile
+          print(zipfile.ZipFile(os.environ['PLUGIN_NAME'] + '.zip').namelist()[0])")
+          test "$first" = "${PLUGIN_NAME}/" || {
+            echo "FAIL: first entry is '$first', expected '${PLUGIN_NAME}/'"; exit 1; }
+          unzip -l ${PLUGIN_NAME}.zip | head -20
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PLUGIN_NAME }}-zip
+          path: ${{ env.PLUGIN_NAME }}.zip
+          retention-days: 30
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF#refs/tags/}"
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes ""
+          fi
+          gh release upload "$TAG" "${PLUGIN_NAME}.zip" \
+            --repo "$GITHUB_REPOSITORY" --clobber
