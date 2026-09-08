@@ -1,0 +1,334 @@
+# Public repository: TerraLabAI/QGIS_AI-Segmentation
+# Path in that repository: .github/workflows/release.yml
+#
+# The release gate. It runs on the public mirror, on a tag, and the plugin ZIP
+# is built and attached to the GitHub release ONLY if every gate job is green.
+#
+# Why this file cannot simply call scripts/check.sh: the public tree is
+# `git archive HEAD` of the private main, and .gitattributes marks scripts/,
+# tests/, ruff.toml, .flake8 and setup.cfg as export-ignore. None of them exist
+# here. So every check below is self-contained, needs no private file, and
+# reads only the payload a user installs. That is also what makes it the right
+# gate for a release: it checks the artifact, not the working tree.
+#
+# No secret other than the automatic GITHUB_TOKEN is referenced, and no private
+# host, provider or endpoint appears anywhere in this file.
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Tag or SHA to gate and package (default: this branch)'
+        required: false
+        type: string
+
+concurrency:
+  group: release-${{ github.event.inputs.ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # The zip file name and its single root folder. Strict QGIS plugin format:
+  # no version suffix on either.
+  PLUGIN_NAME: AI_Segmentation
+
+jobs:
+  gate:
+    name: payload gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # uv resolves and installs these five wheels in about two seconds where
+      # pip takes fifteen, and the cache survives between runs.
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Tools
+        run: |
+          uv pip install --system --quiet \
+            "ruff>=0.6,<1" "flake8>=7,<8" "bandit>=1.7,<2" "detect-secrets>=1.5,<2" \
+            pytest pytest-xdist
+
+      # The tag is the release. A metadata.txt that disagrees with it ships a
+      # version QGIS shows in the plugin manager and the repository indexes,
+      # and nobody notices until a user reports the wrong number.
+      - name: metadata.txt agrees with the tag
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import configparser, os, sys
+          cp = configparser.ConfigParser()
+          cp.read("metadata.txt", encoding="utf-8")
+          g = cp["general"]
+          ref = os.environ.get("GITHUB_REF", "")
+          problems = []
+          for key in ("name", "version", "qgisMinimumVersion", "description",
+                      "about", "repository", "tracker"):
+              if not g.get(key, "").strip():
+                  problems.append(f"metadata.txt: {key} is empty or missing")
+          if g.get("supportsQt6", "").strip() != "True":
+              problems.append("metadata.txt: supportsQt6 must be True")
+          if ref.startswith("refs/tags/"):
+              tag = ref.split("/", 2)[2]
+              if tag != "v" + g.get("version", "").strip():
+                  problems.append(
+                      f"tag {tag} does not match metadata.txt version "
+                      f"{g.get('version','').strip()}")
+          for p in problems:
+              print("FAIL:", p)
+          sys.exit(1 if problems else 0)
+          PY
+
+      - name: The payload compiles
+        run: python -m compileall -q src __init__.py
+
+      # --isolated because ruff.toml is private and absent here: the public
+      # gate must not silently change rule set with a file it cannot see.
+      - name: ruff
+        run: ruff check --isolated src/
+
+      # The exact config-blind line plugins.qgis.org runs. W504 is the one that
+      # has rejected an upload before.
+      - name: flake8 W504 (plugins.qgis.org)
+        run: flake8 --isolated --select=W504 --disable-noqa --max-line-length 120 src/
+
+      # QEP 409: the security scan the plugin repository runs on every upload.
+      # Finding it here costs a minute; finding it at the upload costs a
+      # release.
+      - name: bandit
+        run: bandit -r src/ -f screen --quiet --severity-level medium
+
+      - name: detect-secrets
+        run: |
+          set -euo pipefail
+          detect-secrets scan src/ __init__.py > .ds.json
+          python - <<'PY'
+          import json, sys
+          data = json.load(open(".ds.json"))
+          hits = data.get("results", {})
+          for path, entries in hits.items():
+              for e in entries:
+                  print(f"FAIL: secret-shaped value {path}:{e.get('line_number')} "
+                        f"({e.get('type')})")
+          sys.exit(1 if hits else 0)
+          PY
+
+      # Credential-shaped strings only. The list of providers we do NOT ship is
+      # itself the thing we do not ship: naming them here would publish our
+      # vendor stack in a public file, which is exactly the leak this step
+      # exists to prevent. That scan belongs to the private release step, which
+      # runs before anything reaches this repository.
+      - name: No credential-shaped string in the payload
+        run: |
+          set -euo pipefail
+          PATTERN='Bearer [A-Za-z0-9_-]{20}|X-Api-Key|sk-[A-Za-z0-9]{20}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----'
+          if grep -rInE "$PATTERN" src/ __init__.py metadata.txt README.md 2>/dev/null; then
+            echo "FAIL: the lines above look like credentials and must not ship."
+            exit 1
+          fi
+          echo "ok: no credential-shaped string"
+
+      # Shaped as a rule, not as a list. Naming the private files here would
+      # publish the layout of our tooling in a public file, which is part of
+      # what export-ignore exists to keep back. The rule catches the same
+      # failure: a plugin payload has no dot-directories of its own and no
+      # prose beyond its readme.
+      - name: The tree carries nothing but the plugin
+        run: |
+          set -euo pipefail
+          fail=0
+          for e in .[!.]*; do
+            case "$e" in
+              .git|.github|.gitattributes|.gitignore|'.[!.]*') ;;
+              *) echo "FAIL: $e is not part of a plugin payload"; fail=1 ;;
+            esac
+          done
+          for e in *.md; do
+            case "$e" in
+              README.md|CHANGELOG.md|LICENSE.md|MCP.md|'*.md') ;;
+              *) echo "FAIL: $e is not part of a plugin payload"; fail=1 ;;
+            esac
+          done
+          for d in scripts tests docs plans; do
+            if [ -d "$d" ]; then echo "FAIL: $d/ is in the public tree"; fail=1; fi
+          done
+          exit $fail
+
+  qgis-import:
+    name: the shipped payload imports under QGIS
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: qgis/qgis:stable
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QT_OPENGL: software
+      PYTHONUNBUFFERED: '1'
+    steps:
+      # The image ships no git, and without it checkout falls back to the REST
+      # archive, which applies export-ignore and would hand us a different tree.
+      - name: git for the checkout
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      # A module that reaches for a file the ZIP does not carry passes every
+      # static check and fails on the first machine that installs it.
+      - name: Import the plugin package
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/profile/python/plugins/${PLUGIN_NAME}
+          cp -R . /tmp/profile/python/plugins/${PLUGIN_NAME}
+          rm -rf /tmp/profile/python/plugins/${PLUGIN_NAME}/.git \
+                 /tmp/profile/python/plugins/${PLUGIN_NAME}/.github
+          cd /tmp/profile/python/plugins
+          python3 -c "
+          import importlib, os, sys
+          sys.path.insert(0, os.getcwd())
+          m = importlib.import_module(os.environ['PLUGIN_NAME'])
+          assert hasattr(m, 'classFactory'), 'no classFactory in __init__.py'
+          print('ok:', m.__name__, 'imports and exposes classFactory')
+          "
+
+  qt6:
+    name: PyQt6 checker (plugins.qgis.org)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    container:
+      image: ghcr.io/qgis/pyqgis4-checker:main-ubuntu
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      # The tool exits 0 with findings, so the log is counted the way the
+      # website counts it.
+      - name: Stage the shipped python and run the checker
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/p/plugin
+          cp __init__.py /tmp/p/plugin/
+          cp -R src /tmp/p/plugin/src
+          find /tmp/p -name __pycache__ -type d -prune -exec rm -rf {} +
+          python3 /usr/local/bin/pyqt5_to_pyqt6.py /tmp/p --dry_run 2>&1 | tee checker.log
+          count=$(grep -cE '^/tmp/p/.*:[0-9]+:[0-9]+ - ' checker.log || true)
+          echo "findings: $count"
+          test "$count" -eq 0
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: pyqt6-checker.log
+          path: checker.log
+
+  package:
+    name: build and attach the ZIP
+    # This is the gate. No green gate, no ZIP: the three jobs above must all
+    # pass before a single byte is packaged or uploaded.
+    needs: [gate, qgis-import, qt6]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+          fetch-depth: 0
+
+      # git archive honours .gitattributes, so `.github/ export-ignore` in the
+      # public repository keeps this workflow out of the plugin a user
+      # installs. Identical to what the release skill builds today.
+      - name: Stage the payload
+        run: |
+          set -euo pipefail
+          mkdir -p build/${PLUGIN_NAME}
+          git archive --format=tar HEAD | tar -x -C build/${PLUGIN_NAME}
+          cd "build/${PLUGIN_NAME}"
+          for e in .[!.]* *.md scripts tests docs plans; do
+            case "$e" in
+              .gitattributes|README.md|CHANGELOG.md|LICENSE.md|MCP.md|'.[!.]*'|'*.md') continue ;;
+            esac
+            if [ -e "$e" ]; then
+              echo "FAIL: $e survived export-ignore, fix .gitattributes"; exit 1
+            fi
+          done
+          cd - >/dev/null
+
+      # Not `zip -rq`: the entry names must be "/"-separated and the archive
+      # must carry explicit directory entries, or the repository validator
+      # rejects it. Same rules as the private scripts/build_release_zip.py.
+      - name: Build ${{ env.PLUGIN_NAME }}.zip
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os, sys, zipfile
+          name = os.environ["PLUGIN_NAME"]
+          build, out = "build", f"{name}.zip"
+          root = os.path.join(build, name)
+          skip_dirs, skip_names = {"__pycache__"}, {".DS_Store"}
+          entry = lambda p: os.path.relpath(p, build).replace(os.sep, "/")
+          n = 0
+          with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
+              zf.writestr(name + "/", ""); n += 1
+              for cur, dirs, files in os.walk(root):
+                  dirs[:] = sorted(d for d in dirs if d not in skip_dirs)
+                  for d in dirs:
+                      zf.writestr(entry(os.path.join(cur, d)) + "/", ""); n += 1
+                  for f in sorted(files):
+                      if f in skip_names or f.endswith(".pyc"):
+                          continue
+                      full = os.path.join(cur, f)
+                      zf.write(full, entry(full)); n += 1
+          print(f"OK: wrote {out} ({n} entries)")
+          PY
+
+      - name: The archive has the layout the repository requires
+        run: |
+          set -euo pipefail
+          first=$(python -c "
+          import os, zipfile
+          print(zipfile.ZipFile(os.environ['PLUGIN_NAME'] + '.zip').namelist()[0])")
+          test "$first" = "${PLUGIN_NAME}/" || {
+            echo "FAIL: first entry is '$first', expected '${PLUGIN_NAME}/'"; exit 1; }
+          unzip -l ${PLUGIN_NAME}.zip | head -20
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PLUGIN_NAME }}-zip
+          path: ${{ env.PLUGIN_NAME }}.zip
+          retention-days: 30
+
+      # Only on a tag, and only after the gate. A workflow_dispatch run leaves
+      # the ZIP as an artifact and touches no release.
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF#refs/tags/}"
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes ""
+          fi
+          gh release upload "$TAG" "${PLUGIN_NAME}.zip" \
+            --repo "$GITHUB_REPOSITORY" --clobber

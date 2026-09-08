@@ -1,0 +1,5 @@
+# The release workflow is repository infrastructure, not part of the plugin a
+# user installs. `git archive` honours this, so the ZIP the workflow builds
+# never carries it.
+.github/        export-ignore
+.gitattributes  export-ignore
