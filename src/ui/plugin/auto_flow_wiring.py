@@ -23,6 +23,12 @@ class AutoFlowWiringMixin:
 
     _WARMUP_MIN_INTERVAL_S = 90.0
 
+
+
+
+
+    _WARMUP_FAILURE_BACKOFF_S = 10.0
+
     def _maybe_warmup_auto(self) -> None:
 
 
@@ -118,8 +124,10 @@ class AutoFlowWiringMixin:
                 return
             from ...api.detection_session import claim_session_end
             from ...core.activation_manager import get_auth_header, is_plugin_activated
-            from ...core.server_dials import dial_in_range
+            from ...core.server_dials import dial_in_range, feature_enabled
 
+            if not feature_enabled("session_end_ping"):
+                return
             if not is_plugin_activated():
                 return
             auth = get_auth_header()
@@ -164,6 +172,16 @@ class AutoFlowWiringMixin:
 
 
 
+
+
+
+
+
+
+
+
+
+
         try:
             if not getattr(client, "detection_direct", False):
                 return
@@ -177,18 +195,35 @@ class AutoFlowWiringMixin:
 
 
 
+
+
+
+        import time
+
         self._warmup_task = None
         if ok is False:
-            self._last_warmup_monotonic = 0.0
+            from ...core.server_dials import dial_in_range
+            interval_s = dial_in_range(
+                "tuning.auto.warmup_min_interval_s", self._WARMUP_MIN_INTERVAL_S, 10.0, 600.0)
+            backoff = dial_in_range(
+                "tuning.auto.warmup_failure_backoff_s",
+                self._WARMUP_FAILURE_BACKOFF_S, 1.0, 60.0)
+            self._last_warmup_monotonic = time.monotonic() - interval_s + backoff
 
     @slot_guard(stage="segment", user_message=tr(
         "Something went wrong starting the detection. Please try again."))
     def _on_auto_detect_requested(self) -> None:
+        from ...core import run_timeline
+        run_timeline.begin("detect_click")
 
 
 
         dock = self.dock_widget
         if dock is not None and not dock.confirm_prompt_for_detect():
+            return
+
+
+        if not self._run_plan_gate_at_detect():
             return
 
 

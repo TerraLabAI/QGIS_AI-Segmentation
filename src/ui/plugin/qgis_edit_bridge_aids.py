@@ -193,6 +193,12 @@ class EditBridgeAidsMixin:
 
 
 
+
+        try:
+            from .shared import wait_for_snapping_index
+            wait_for_snapping_index(layer)
+        except ImportError:
+            pass
         try:
             layer.dataChanged.emit()
         except (RuntimeError, AttributeError):
@@ -318,7 +324,12 @@ class EditBridgeAidsMixin:
 
         self._qgis_bridge_saved_selection_colour = saved
         try:
-            setter(QColor(255, 255, 0, 60))
+            from ...core.server_dials import dial_in_range
+            alpha = int(dial_in_range("tuning.agent.bridge_selection_alpha", 60, 20, 140))
+        except Exception:  # noqa: BLE001
+            alpha = 60
+        try:
+            setter(QColor(255, 255, 0, alpha))
             canvas.refresh()
         except (RuntimeError, AttributeError, TypeError):
             pass

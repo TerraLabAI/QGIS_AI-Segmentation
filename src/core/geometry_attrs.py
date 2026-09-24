@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import math
+from typing import Any
 
 
 
@@ -53,8 +54,10 @@ def matches_drop_rule(attrs: dict, rules: list | None) -> bool:
         value = attrs.get(rule.get("attr"))
         if value is None:
             continue
+        op: Any = rule.get("op")
+        threshold: Any = rule.get("value")
         try:
-            if _compare(float(value), rule.get("op"), float(rule.get("value"))):
+            if _compare(float(value), op, float(threshold)):
                 return True
         except (TypeError, ValueError):
             continue

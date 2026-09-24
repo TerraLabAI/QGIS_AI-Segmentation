@@ -18,12 +18,23 @@ _MIN_DROP_ROUNDS = 20
 
 
 
+_REACH_MARGIN = 1e-12
+
+
+
+
+_CORNER_KEEP_MARGIN = 1e-9
+
+
+
 
 _SIMPLE_ALL_PAIRS_MAX = 96
 
 
 _PAIR_INDEX_CACHE: dict[int, tuple[np.ndarray, np.ndarray]] = {}
 _PAIR_INDEX_CACHE_MAX = 128
+
+_PAIR_GATHER_CACHE: dict[int, tuple] = {}
 
 
 def angle_diff_mod90(a: float, b: float) -> float:
@@ -71,7 +82,11 @@ def ring_dominant_angle(coords: np.ndarray, bin_deg: float,
     hist = np.bincount(bins, weights=lengths, minlength=nbins)
     win = int(np.argmax(hist))
     idx = [(win + k) % nbins for k in range(-halo, halo + 1)]
-    mask = np.isin(bins, idx)
+
+
+    in_window = np.zeros(nbins, dtype=bool)
+    in_window[idx] = True
+    mask = in_window[bins]
     if not mask.any():
         return float(win * bin_deg), 0.0
     angle = weighted_circular_mean_mod90(az[mask], lengths[mask])
@@ -104,22 +119,38 @@ def ring_snap_segments(coords: np.ndarray, base_deg: float,
 
 
 
+
+
+
+
+
+    coords = np.asarray(coords)
+    if len(coords) < 2:
+        return []
+    starts, ends = coords[:-1], coords[1:]
+    mids = ((starts + ends) / 2.0).tolist()
+    deltas = ends - starts
+    lengths = np.hypot(deltas[:, 0], deltas[:, 1]).tolist()
+    units: dict = {}
     lines = []
-    for i in range(len(coords) - 1):
-        a, b = coords[i], coords[i + 1]
-        mid = (a + b) / 2.0
-        theta = math.degrees(math.atan2(b[1] - a[1], b[0] - a[0])) % 180.0
+    for i, (dx, dy) in enumerate(deltas.tolist()):
+        theta = math.degrees(math.atan2(dy, dx)) % 180.0
         snapped = _snapped_azimuth(
             theta, base_deg, ortho_window_deg, diag_window_deg)
         if snapped is None:
             snapped = theta
-        u = np.array([math.cos(math.radians(snapped)),
-                      math.sin(math.radians(snapped))])
-        lines.append([mid, u, float(np.hypot(*(b - a)))])
+        u = units.get(snapped)
+        if u is None:
+            u = (math.cos(math.radians(snapped)), math.sin(math.radians(snapped)))
+            units[snapped] = u
+        lines.append([tuple(mids[i]), u, lengths[i]])
     return lines
 
 
 def _merge_parallel_lines(lines: list, parallel_threshold: float) -> list:
+
+
+
 
 
 
@@ -132,11 +163,12 @@ def _merge_parallel_lines(lines: list, parallel_threshold: float) -> list:
         pm, pu, pl = merged[-1]
         cross = abs(pu[0] * u[1] - pu[1] * u[0])
         if cross < eps:
-            dv = mid - pm
-            offset = abs(dv[0] * pu[1] - dv[1] * pu[0])
+            dvx, dvy = mid[0] - pm[0], mid[1] - pm[1]
+            offset = abs(dvx * pu[1] - dvy * pu[0])
             if offset <= parallel_threshold:
                 w = pl + ln
-                merged[-1] = [(pm * pl + mid * ln) / w, pu, w]
+                merged[-1] = [((pm[0] * pl + mid[0] * ln) / w,
+                               (pm[1] * pl + mid[1] * ln) / w), pu, w]
                 continue
         merged.append([mid, u, ln])
     if len(merged) > 1:
@@ -144,11 +176,12 @@ def _merge_parallel_lines(lines: list, parallel_threshold: float) -> list:
         m1, u1, l1 = merged[-1]
         cross = abs(u1[0] * u0[1] - u1[1] * u0[0])
         if cross < eps:
-            dv = m0 - m1
-            offset = abs(dv[0] * u1[1] - dv[1] * u1[0])
+            dvx, dvy = m0[0] - m1[0], m0[1] - m1[1]
+            offset = abs(dvx * u1[1] - dvy * u1[0])
             if offset <= parallel_threshold:
                 w = l0 + l1
-                merged[0] = [(m1 * l1 + m0 * l0) / w, u1, w]
+                merged[0] = [((m1[0] * l1 + m0[0] * l0) / w,
+                              (m1[1] * l1 + m0[1] * l0) / w), u1, w]
                 merged.pop()
     return merged
 
@@ -175,11 +208,14 @@ def ring_is_simple(coords: np.ndarray) -> bool:
 
 
 
-        i_idx, j_idx = _non_adjacent_pairs(n)
-        if i_idx.size == 0:
+        gather = _pair_gather(n)
+        if gather is None:
             return True
-        return not bool(np.any(_pairs_cross(
-            starts[i_idx], ends[i_idx], starts[j_idx], ends[j_idx])))
+
+
+        origin, first, second, count = gather
+        signs = _cross_sign(pts[origin], pts[first], pts[second]).reshape(4, count)
+        return not bool(np.any((signs[0] * signs[1] < 0) & (signs[2] * signs[3] < 0)))
     for i in range(n - 2):
         lo = i + 2
         hi = n - 1 if i == 0 else n
@@ -219,6 +255,28 @@ def _non_adjacent_pairs(n: int) -> tuple[np.ndarray, np.ndarray]:
     return pair
 
 
+def _pair_gather(n: int) -> tuple | None:
+
+
+
+
+
+
+    hit = _PAIR_GATHER_CACHE.get(n)
+    if hit is not None:
+        return hit
+    i_idx, j_idx = _non_adjacent_pairs(n)
+    if i_idx.size == 0:
+        return None
+    origin = np.concatenate((j_idx, j_idx, i_idx, i_idx))
+    first = np.concatenate((j_idx + 1, j_idx + 1, i_idx + 1, i_idx + 1))
+    second = np.concatenate((i_idx, i_idx + 1, j_idx, j_idx + 1))
+    gather = (origin, first, second, int(i_idx.size))
+    if len(_PAIR_GATHER_CACHE) < _PAIR_INDEX_CACHE_MAX:
+        _PAIR_GATHER_CACHE[n] = gather
+    return gather
+
+
 def _cross_sign(origin: np.ndarray, first: np.ndarray,
                 second: np.ndarray) -> np.ndarray:
 
@@ -238,6 +296,9 @@ def ring_rebuild_corners(lines: list, parallel_threshold: float) -> np.ndarray |
 
 
 
+
+
+
     lines = _merge_parallel_lines(lines, parallel_threshold)
     n = len(lines)
     if n < 3:
@@ -245,34 +306,57 @@ def ring_rebuild_corners(lines: list, parallel_threshold: float) -> np.ndarray |
     near_parallel = math.sin(math.radians(4.0))
     pts = []
     for i in range(n):
-        m1, u1, l1 = lines[i]
-        m2, u2, l2 = lines[(i + 1) % n]
-        cross = u1[0] * u2[1] - u1[1] * u2[0]
-        dv = m2 - m1
-        if abs(cross) < near_parallel:
-            pts.append(m1 + u1 * (l1 / 2.0))
-            pts.append(m2 - u2 * (l2 / 2.0))
-            continue
-        t1 = (dv[0] * u2[1] - dv[1] * u2[0]) / cross
-        inter = m1 + u1 * t1
+        (m1x, m1y), (u1x, u1y), l1 = lines[i]
+        (m2x, m2y), (u2x, u2y), l2 = lines[(i + 1) % n]
+        cross = u1x * u2y - u1y * u2x
+
+        if not abs(cross) < near_parallel:
+            dvx, dvy = m2x - m1x, m2y - m1y
+            t1 = (dvx * u2y - dvy * u2x) / cross
+            ix, iy = m1x + u1x * t1, m1y + u1y * t1
 
 
-        reach = 2.0 * (l1 + l2) + 4.0
-        if float(np.hypot(*(inter - m1))) > reach or \
-                float(np.hypot(*(inter - m2))) > reach:
-            pts.append(m1 + u1 * (l1 / 2.0))
-            pts.append(m2 - u2 * (l2 / 2.0))
-            continue
-        pts.append(inter)
+            reach = 2.0 * (l1 + l2) + 4.0
+            spike = _beyond_reach(ix - m1x, iy - m1y, reach)
+            if not spike:
+                spike = _beyond_reach(ix - m2x, iy - m2y, reach)
+            if not spike:
+                pts.append((ix, iy))
+                continue
+        half1, half2 = l1 / 2.0, l2 / 2.0
+        pts.append((m1x + u1x * half1, m1y + u1y * half1))
+        pts.append((m2x - u2x * half2, m2y - u2y * half2))
     if len(pts) < 3:
         return None
-    ring = np.asarray(pts + [pts[0]])
+    ring = np.asarray(pts + [pts[0]], dtype=float)
     return ring if ring_is_simple(ring) else None
+
+
+def _beyond_reach(dx: float, dy: float, reach: float) -> bool:
+
+
+
+
+    square = dx * dx + dy * dy
+    limit = reach * reach
+    if square < limit * (1.0 - _REACH_MARGIN):
+        return False
+    if square > limit * (1.0 + _REACH_MARGIN):
+        return True
+    return float(np.hypot(dx, dy)) > reach
 
 
 def ring_drop_short_edges(coords: np.ndarray, min_edge_abs: float,
                           min_edge_rel: float,
                           min_corner_deg: float) -> np.ndarray:
+
+
+
+
+
+
+
+
 
 
 
@@ -289,12 +373,18 @@ def ring_drop_short_edges(coords: np.ndarray, min_edge_abs: float,
 
 
     max_rounds = max(_MIN_DROP_ROUNDS, len(pts))
+
+    corners_passed: set = set()
+    keep_below = _corner_keep_below(min_corner_deg)
     while changed and len(pts) > 3 and rounds < max_rounds:
         changed = False
         rounds += 1
         n = len(pts)
-        lengths = [float(np.hypot(*(pts[(i + 1) % n] - pts[i])))
-                   for i in range(n)]
+        ring = np.asarray(pts)
+        step = np.empty_like(ring)
+        step[:-1] = ring[1:] - ring[:-1]
+        step[-1] = ring[0] - ring[-1]
+        lengths = np.hypot(step[:, 0], step[:, 1]).tolist()
         order = np.argsort(lengths)
         for i in order:
             if lengths[i] >= min_edge:
@@ -324,7 +414,13 @@ def ring_drop_short_edges(coords: np.ndarray, min_edge_abs: float,
         if len(pts) <= 3:
             break
         n = len(pts)
+        ring = np.asarray(pts)
+        xy = ring.tolist()
+        clearly_kept = _corners_clearly_kept(ring, keep_below)
         for i in range(n):
+            key = (*xy[i - 1], *xy[i], *xy[(i + 1) % n])
+            if key in corners_passed or clearly_kept[i]:
+                continue
             a, b, c = pts[(i - 1) % n], pts[i], pts[(i + 1) % n]
             v1, v2 = a - b, c - b
             n1, n2 = np.hypot(*v1), np.hypot(*v2)
@@ -338,7 +434,46 @@ def ring_drop_short_edges(coords: np.ndarray, min_edge_abs: float,
                 del pts[i]
                 changed = True
                 break
+            corners_passed.add(key)
     return np.asarray(pts + [pts[0]])
+
+
+def _corner_keep_below(min_corner_deg: float) -> float | None:
+
+
+
+
+    try:
+        floor = float(min_corner_deg)
+    except (TypeError, ValueError):
+        return None
+    if not (math.isfinite(floor) and 0.1 < floor < 180.0):
+        return None
+    return math.cos(math.radians(floor)) - _CORNER_KEEP_MARGIN
+
+
+def _corners_clearly_kept(ring: np.ndarray, keep_below: float | None) -> list:
+
+
+
+
+
+
+
+
+    n = len(ring)
+    if keep_below is None or n == 0:
+        return [False] * n
+    prev = np.concatenate((ring[-1:], ring[:-1]))
+    nxt = np.concatenate((ring[1:], ring[:1]))
+    v1 = prev - ring
+    v2 = nxt - ring
+    n1 = np.hypot(v1[:, 0], v1[:, 1])
+    n2 = np.hypot(v2[:, 0], v2[:, 1])
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        cos = (v1[:, 0] * v2[:, 0] + v1[:, 1] * v2[:, 1]) / (n1 * n2)
+        kept = (cos < keep_below) & (n1 > 0) & (n2 > 0)
+    return kept.tolist()
 
 
 def circle_ring(center_x: float, center_y: float, area: float,

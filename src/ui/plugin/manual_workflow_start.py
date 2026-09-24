@@ -279,6 +279,9 @@ class ManualWorkflowStartMixin:
             from qgis.PyQt.QtCore import QTimer
             QTimer.singleShot(0, self._prewarm_manual_encode)
 
+
+            QTimer.singleShot(250, self._warm_outline_chain)
+
     def _refuse_manual_start(self, title: str, body: str, code: str) -> None:
 
 

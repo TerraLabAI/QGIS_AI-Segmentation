@@ -19,6 +19,7 @@ from qgis.PyQt.QtCore import QRectF, QSize, Qt, QTimer
 from qgis.PyQt.QtGui import QColor, QFont, QLinearGradient, QPainter, QPen
 from qgis.PyQt.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QWidget
 
+from ...core.server_dials import dial_in_range
 from .font_scale import scale_point_size
 from .styles import FONT_BODY, HUE_RUN, INK, INK_2, category_ink
 
@@ -62,7 +63,8 @@ def format_run_elapsed(seconds) -> str:
     if math.isnan(seconds) or math.isinf(seconds):
         seconds = 0.0
     seconds = max(0.0, seconds)
-    if seconds < 60:
+    switch_s = dial_in_range("tuning.ui.run_elapsed_switch_s", 60, 30, 300)
+    if seconds < switch_s:
         return f"{seconds:.1f}s"
     minutes = int(seconds // 60)
     return f"{minutes}m {seconds - minutes * 60:.1f}s"

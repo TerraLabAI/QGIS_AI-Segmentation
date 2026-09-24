@@ -25,6 +25,8 @@ from .regularize_edge_pipeline import (
     _DEFAULT_MULTI_MAX_GROUPS,
     _DEFAULT_MULTI_MIN_SEPARATION_DEG,
     _DESTAIRCASE_NOOP_FRACTION,
+    _ENFORCE_ANGLE_TOL_DEG,
+    _TIDY_AREA_NOOP_FRACTION,
     RegularizeDials,
     _resolve_regularize_dials,
     calculate_distance,
@@ -33,6 +35,14 @@ from .regularize_edge_pipeline import (
 from .regularize_multi_direction import (
     regularize_coordinate_array_multi,
 )
+from .regularize_ring_tidy import tidy_squared_ring
+
+
+
+
+
+_CAP_SQUARE = 3
+_JOIN_MITRE = 2
 
 
 
@@ -60,13 +70,102 @@ def _ensure_deps() -> bool:
         from shapely.ops import unary_union as _uu
     except Exception:  # noqa: BLE001  # nosec B110
         return False
-    np = _numpy
-    Polygon = _Polygon
     MultiPolygon = _MultiPolygon
     LinearRing = _LinearRing
     _unary_union = _uu
     _affine_transform = _affine
+
+
+
+    np = _numpy
+    Polygon = _Polygon
     return True
+
+
+def _segmentize(polygon: Any, max_segment_length: float) -> Any:
+
+
+
+
+
+
+
+
+
+
+    method = getattr(polygon, "segmentize", None)
+    if method is not None:
+        return method(max_segment_length=max_segment_length)
+    if not (max_segment_length and max_segment_length > 0.0):
+        return polygon
+
+    def densify(coords) -> list:
+        pts = [(float(c[0]), float(c[1])) for c in coords]
+        out = []
+        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+            out.append((x0, y0))
+            pieces = int(math.ceil(math.hypot(x1 - x0, y1 - y0) / max_segment_length))
+            for k in range(1, pieces):
+                t = k / pieces
+                out.append((x0 + (x1 - x0) * t, y0 + (y1 - y0) * t))
+        if pts:
+            out.append(pts[-1])
+        return out
+
+    return Polygon(densify(polygon.exterior.coords),
+                   [densify(ring.coords) for ring in polygon.interiors])
+
+
+
+
+_PROBE: list = []
+
+
+def _probe_regularizer() -> tuple[bool, str]:
+
+
+
+
+
+
+
+
+    if _PROBE:
+        return _PROBE[0]
+    if not _ensure_deps():
+        return False, "numpy or shapely does not import"
+    try:
+        import shapely
+
+        version = str(getattr(shapely, "__version__", "?"))
+    except Exception:  # noqa: BLE001
+        version = "?"
+
+
+    angle = math.radians(20.0)
+    ca, sa = math.cos(angle), math.sin(angle)
+    wobble = [(0.0, 0.0), (5.0, 0.3), (10.0, -0.2), (15.0, 0.25), (20.0, 0.0),
+              (20.3, 5.0), (20.0, 10.0), (15.0, 10.25), (10.0, 9.8),
+              (5.0, 10.3), (0.0, 10.0), (-0.25, 5.0)]
+    ring = [(x * ca - y * sa, x * sa + y * ca) for x, y in wobble]
+    try:
+        probe = Polygon(ring)
+        preprocess_polygon(probe, True, 1.0)
+        _result, regularized, _reverted = _regularize_geometry(
+            probe, 1.0, True, False, _DEFAULT_MIN_KEEP_IOU)
+    except Exception as exc:  # noqa: BLE001
+        answer = (False, f"shapely {version}: {type(exc).__name__}: {exc}"[:300])
+    else:
+        answer = ((True, "") if regularized else
+                  (False, f"shapely {version}: the test outline did not square"))
+    _PROBE.append(answer)
+    return answer
+
+
+def dependencies_problem() -> str:
+
+    ok, reason = _probe_regularizer()
+    return "" if ok else (reason or "unknown")
 
 
 class RegularizeResult(NamedTuple):
@@ -152,7 +251,10 @@ def dependencies_available() -> bool:
 
 
 
-    return _ensure_deps()
+
+
+
+    return _probe_regularizer()[0]
 
 
 def _rectangularity(geom: Any) -> float:
@@ -187,7 +289,7 @@ def preprocess_polygon(polygon: Any, simplify: bool, simplify_tolerance: float) 
 
 
 
-    return polygon.segmentize(max_segment_length=simplify_tolerance * 5)
+    return _segmentize(polygon, simplify_tolerance * 5)
 
 
 def flatten_to_polygons(geometries) -> list[Any]:
@@ -296,7 +398,9 @@ def regularize_single_polygon(
 
     if allow_circles and polygon.area > 0 and not simple_polygon.interiors:
         radius = math.sqrt(polygon.area / math.pi)
-        perfect_circle = polygon.centroid.buffer(radius, quad_segs=42)
+
+
+        perfect_circle = polygon.centroid.buffer(radius, 42)
         circle_iou, _ = iou_and_symmetric_fraction(perfect_circle, polygon)
         if circle_iou > circle_threshold:
             regularized_exterior = np.array(
@@ -345,6 +449,7 @@ def _regularize_one_ring(
     dials: RegularizeDials | None = None,
 ) -> tuple[Any, float]:
 
+    angle_tol = dials.enforce_angle_tol_deg if dials is not None else _ENFORCE_ANGLE_TOL_DEG
     if multi_direction:
         return regularize_coordinate_array_multi(
             coordinates=coordinates,
@@ -353,6 +458,7 @@ def _regularize_one_ring(
             diagonal_threshold_reduction=diagonal_threshold_reduction,
             max_groups=multi_max_groups,
             min_separation_deg=multi_min_separation_deg,
+            angle_enforcement_tolerance=angle_tol,
             dials=dials,
         )
     return regularize_coordinate_array(
@@ -360,6 +466,7 @@ def _regularize_one_ring(
         parallel_threshold=parallel_threshold,
         allow_45_degree=allow_45_degree,
         diagonal_threshold_reduction=diagonal_threshold_reduction,
+        angle_enforcement_tolerance=angle_tol,
     )
 
 
@@ -430,6 +537,66 @@ def _regularize_part_local(
     return [_affine_transform(piece, back) for piece in results or []]
 
 
+def _tidy_polygon_corners(polygon: Any, tolerance_m: float,
+                          dials: RegularizeDials, reference: Any = None) -> Any:
+
+
+
+
+
+
+    min_edge = dials.tidy_min_edge_mult * tolerance_m
+    chamfer = dials.tidy_chamfer_mult * tolerance_m
+
+
+    shift = dials.tidy_min_edge_mult * tolerance_m
+    if (polygon is None or polygon.is_empty or tolerance_m <= 0
+            or (min_edge <= 0 and chamfer <= 0)
+            or not isinstance(polygon, Polygon)):
+        return polygon
+    ref_shell = None
+    if isinstance(reference, Polygon) and not reference.is_empty:
+        ref_shell = np.asarray(reference.exterior.coords, dtype=float)
+    try:
+        shell = tidy_squared_ring(
+            np.asarray(polygon.exterior.coords, dtype=float), min_edge, chamfer,
+            shift, ref_shell, dials.tidy)
+        holes = [
+            tidy_squared_ring(
+                np.asarray(r.coords, dtype=float), min_edge, chamfer, shift,
+                tidy=dials.tidy)
+            for r in polygon.interiors
+        ]
+        tidied = Polygon(shell, holes)
+        if tidied.is_empty or not tidied.is_valid:
+            return polygon
+        return _restore_tidied_area(tidied, polygon.area, dials.tidy_area_noop_frac)
+    except Exception:  # noqa: BLE001  # nosec B110
+        return polygon
+
+
+def _restore_tidied_area(tidied: Any, area: float,
+                         noop_frac: float = _TIDY_AREA_NOOP_FRACTION) -> Any:
+
+
+
+
+    try:
+        if area <= 0 or tidied.length <= 0:
+            return tidied
+        gap = tidied.area - area
+        if abs(gap) <= noop_frac * area:
+            return tidied
+        restored = tidied.buffer(-gap / tidied.length, join_style=_JOIN_MITRE)
+        if (not isinstance(restored, Polygon) or restored.is_empty
+                or not restored.is_valid
+                or len(restored.interiors) != len(tidied.interiors)):
+            return tidied
+        return restored
+    except Exception:  # noqa: BLE001  # nosec B110
+        return tidied
+
+
 def _cleanup_polygon(polygon: Any, simplify_tolerance: float) -> Any:
 
 
@@ -454,11 +621,11 @@ def _cleanup_polygon(polygon: Any, simplify_tolerance: float) -> Any:
                 and len(polygon.exterior.coords) == 5):
             return polygon
         buffer_size = simplify_tolerance / 50.0
-        cleaned = polygon.buffer(-buffer_size, cap_style="square", join_style="mitre")
+        cleaned = polygon.buffer(-buffer_size, cap_style=_CAP_SQUARE, join_style=_JOIN_MITRE)
         cleaned = cleaned.buffer(
-            buffer_size * 2, cap_style="square", join_style="mitre"
+            buffer_size * 2, cap_style=_CAP_SQUARE, join_style=_JOIN_MITRE
         )
-        cleaned = cleaned.buffer(-buffer_size, cap_style="square", join_style="mitre")
+        cleaned = cleaned.buffer(-buffer_size, cap_style=_CAP_SQUARE, join_style=_JOIN_MITRE)
         if cleaned.is_empty:
             return polygon
         cleaned = cleaned.simplify(tolerance=buffer_size, preserve_topology=True)
@@ -632,6 +799,21 @@ def _passes_envelope(
         return True
 
 
+def _passes_guards(candidate: Any, original: Any, tolerance_m: float,
+                   min_keep_iou: float, policy: RegularizePolicy) -> bool:
+
+
+
+    try:
+        iou, _sym = iou_and_symmetric_fraction(original, candidate)
+        if iou < min_keep_iou:
+            return False
+        return not policy.envelope_enabled or _passes_envelope(
+            candidate, original, tolerance_m, policy)
+    except Exception:  # noqa: BLE001  # nosec B110
+        return True
+
+
 def _is_eligible(original: Any, policy: RegularizePolicy) -> bool:
 
 
@@ -778,23 +960,41 @@ def _regularize_geometry(
 
 
 
-    if _rings_already_on_grid(parts, tolerance_m, allow_diagonal):
-        return geometry, False, False
-
-
-
     dials = _resolve_regularize_dials()
 
 
+
+
+    if _rings_already_on_grid(parts, tolerance_m, allow_diagonal):
+        tidied_parts = [_tidy_polygon_corners(p, tolerance_m, dials) for p in parts]
+        if all(t is p for t, p in zip(tidied_parts, parts)):
+            return geometry, False, False
+        try:
+            tidied = _assemble_parts([[t] for t in tidied_parts])
+            iou, sym_frac = iou_and_symmetric_fraction(original, tidied)
+        except Exception:  # noqa: BLE001  # nosec B110
+            return geometry, False, False
+        if tidied is None or tidied.is_empty or iou < min_keep_iou:
+            return geometry, False, False
+        return tidied, sym_frac > _CHANGED_MIN_FRACTION, False
+
+
+
+
+
     per_part: list[list[Any]] = []
+    untidied: list[list[Any]] = []
     for part in parts:
         bucket: list[Any] = []
+        plain_bucket: list[Any] = []
         per_part.append(bucket)
+        untidied.append(plain_bucket)
         rect = _ombb_candidate(part, pol) if pol.rectangle_enabled else None
         if rect is not None:
             cleaned = _cleanup_polygon(rect, tolerance_m)
             if cleaned is not None and not cleaned.is_empty:
                 bucket.append(cleaned)
+                plain_bucket.append(cleaned)
             continue
         try:
             results = _regularize_part_local(
@@ -812,9 +1012,14 @@ def _regularize_geometry(
         except Exception:  # noqa: BLE001  # nosec B110
             results = [part]
         for piece in results:
-            cleaned = _cleanup_polygon(piece, tolerance_m)
+            plain = _cleanup_polygon(piece, tolerance_m)
+            tidied = _tidy_polygon_corners(piece, tolerance_m, dials, part)
+            cleaned = plain if tidied is piece else _cleanup_polygon(
+                tidied, tolerance_m)
             if cleaned is not None and not cleaned.is_empty:
                 bucket.append(cleaned)
+            if plain is not None and not plain.is_empty:
+                plain_bucket.append(plain)
 
     if not any(per_part):
         return geometry, False, False
@@ -825,6 +1030,16 @@ def _regularize_geometry(
             return geometry, False, False
     except Exception:  # noqa: BLE001  # nosec B110
         return geometry, False, False
+
+
+
+    if not _passes_guards(regularized, original, tolerance_m, min_keep_iou, pol):
+        try:
+            fallback = _assemble_parts(untidied)
+        except Exception:  # noqa: BLE001  # nosec B110
+            fallback = None
+        if fallback is not None and not fallback.is_empty:
+            regularized = fallback
 
 
 

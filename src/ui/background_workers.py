@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import time
+
 from qgis.PyQt.QtCore import QThread, pyqtSignal
 
 from ..core.i18n import tr
@@ -132,7 +134,12 @@ class DownloadWorker(QThread):
             )
             self.done.emit(success, message)
         except Exception as e:
-            self.done.emit(False, str(e))
+
+
+
+
+
+            self.done.emit(False, str(e) or type(e).__name__)
         finally:
             end_keep_awake(activity)
 
@@ -160,17 +167,25 @@ class SetImageWorker(QThread):
         self._image_np = image_np
         self._generation = generation
 
+
+        self.encode_s = None
+
     def run(self):
         try:
 
 
+            started = time.perf_counter()
             self._predictor.set_image(self._image_np)
+            self.encode_s = time.perf_counter() - started
             self.done.emit(self._generation, True, "")
         except Exception as e:
 
 
 
-            self.done.emit(self._generation, False, str(e))
+
+
+
+            self.done.emit(self._generation, False, str(e) or type(e).__name__)
 
 
 class PredictorLoadWorker(QThread):

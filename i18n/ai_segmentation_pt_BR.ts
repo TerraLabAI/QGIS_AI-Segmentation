@@ -6982,5 +6982,53 @@ Lower thins the smallest detail first while keeping the corners.</source>
         <source>{plan} · {status}</source>
         <translation>{plan} · {status}</translation>
     </message>
+    <message>
+        <source>Layer</source>
+        <translation>Camada</translation>
+    </message>
+    <message>
+        <source>No polygon layer in this project</source>
+        <translation>Nenhuma camada de polígonos neste projeto</translation>
+    </message>
+    <message>
+        <source>Or use an existing zone</source>
+        <translation>Ou use uma zona existente</translation>
+    </message>
+    <message>
+        <source>Saving... {pct}%</source>
+        <translation>Salvando... {pct}%</translation>
+    </message>
+    <message>
+        <source>Signed in (from {}).</source>
+        <translation>Conectado (de {}).</translation>
+    </message>
+    <message>
+        <source>Signed in as {} (from {}).</source>
+        <translation>Conectado como {} (de {}).</translation>
+    </message>
+    <message>
+        <source>Take the zone from a layer or a selection</source>
+        <translation>Pegue a zona de uma camada ou de uma seleção</translation>
+    </message>
+    <message>
+        <source>That zone cannot be moved onto this map. Draw it instead.</source>
+        <translation>Essa zona não pode ser movida para este mapa. Desenhe-a.</translation>
+    </message>
+    <message>
+        <source>That zone is empty. Pick another one.</source>
+        <translation>Essa zona está vazia. Escolha outra.</translation>
+    </message>
+    <message>
+        <source>Use this zone</source>
+        <translation>Usar esta zona</translation>
+    </message>
+    <message>
+        <source>Zone of interest</source>
+        <translation>Zona de interesse</translation>
+    </message>
+    <message>
+        <source>{name}, {n} selected</source>
+        <translation>{name}, {n} selecionado(s)</translation>
+    </message>
 </context>
 </TS>

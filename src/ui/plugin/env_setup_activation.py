@@ -40,10 +40,16 @@ class EnvSetupActivationMixin:
         from ...core.activation_manager import is_plugin_activated
         if not self.dock_widget:
             return
+
+
+
+        self._start_sibling_sign_in()
         if not is_plugin_activated():
             if self._report_locked_activation_key():
                 return
-            if not self.dock_widget.is_activated():
+
+
+            if not self.dock_widget.is_activated() and self.dock_widget.dock_content_built:
                 self.dock_widget._update_full_ui()
             return
 
@@ -125,6 +131,7 @@ class EnvSetupActivationMixin:
             self._last_key_validation_unix = 0.0
 
             self._end_cloud_click_session()
+            self._refresh_config_for_account_change()
             if self.dock_widget:
                 self.dock_widget.set_activated_state(False)
 
@@ -248,13 +255,21 @@ class EnvSetupActivationMixin:
         from qgis.PyQt.QtGui import QDesktopServices
 
         from ...api.terralab_client import TerraLabClient
+        from ...workers.pairing_poll_task import PairingPollTask
 
         client = TerraLabClient()
         self._start_pairing_poll(client, code)
 
 
+        from ...core.device_id import get_device_hash
+
+
+
+
         url = (
             f"{client.base_url}/connect?code={code}&product=ai-segmentation"
+            f"&device_id={get_device_hash()}"
+            f"&ttl={int(PairingPollTask.CODE_TTL_S)}"
             "&utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
             "&utm_content=connect"
         )
@@ -382,13 +397,15 @@ class EnvSetupActivationMixin:
         except Exception:
             return None
 
-    def _on_pairing_succeeded(self, key: str):
+    def _adopt_signed_in_key(self, key: str) -> None:
+
+
         from ...core.activation_manager import save_auth_token
         save_auth_token(key)
 
-        self._clear_pairing_address()
-
         _drop_untagged_account_history()
+
+        self._refresh_config_for_account_change()
 
 
         self._last_key_validation_unix = 0.0
@@ -399,6 +416,60 @@ class EnvSetupActivationMixin:
 
             self._reset_credits_backoff()
             self._refresh_auto_credits()
+
+    def _start_sibling_sign_in(self) -> None:
+        from ...core.server_dials import feature_enabled
+        if not feature_enabled("sibling_sign_in"):
+            return
+        from ...api.terralab_client import TerraLabClient
+        from ...core import sibling_sign_in
+        try:
+            from ...core.device_id import get_device_hash
+            device = get_device_hash()
+        except Exception:  # noqa: BLE001
+            device = ""
+        sibling_sign_in.start("ai-segmentation", TerraLabClient().base_url, device,
+                              self._on_sibling_sign_in)
+
+    def _on_sibling_sign_in(self, result: dict) -> None:
+
+
+
+
+
+
+        from ...core.activation_manager import ACTIVATION_KEY_RE, is_plugin_activated
+        if not result.get("ok") or not self.dock_widget or is_plugin_activated():
+            return
+        worker = self._pairing_worker
+        if worker is not None and worker.is_active():
+            return
+        key = str(result.get("key") or "")
+        if not ACTIVATION_KEY_RE.match(key):
+            return
+        self._adopt_signed_in_key(key)
+        email, label = str(result.get("email") or ""), str(result.get("label") or "")
+        message = (tr("Signed in as {} (from {}).").format(email, label) if email
+                   else tr("Signed in (from {}).").format(label))
+        self.dock_widget.set_activation_message(message, is_error=False, kind="success")
+        try:
+            self.iface.messageBar().pushMessage(
+                "AI Segmentation", message, level=Qgis.MessageLevel.Success, duration=10)
+        except (RuntimeError, AttributeError):
+            pass
+        try:
+            from ...core.telemetry_session_events import track_plugin_activated
+            track_plugin_activated(duration_ms=None)
+        except Exception:  # nosec B110
+            pass
+        QgsMessageLog.logMessage(
+            f"Signed in with the account of {label}", "AI Segmentation",
+            level=Qgis.MessageLevel.Info)
+
+    def _on_pairing_succeeded(self, key: str):
+        self._adopt_signed_in_key(key)
+
+        self._clear_pairing_address()
 
 
         try:

@@ -115,7 +115,6 @@ class CloudFirstPredictor:
 
 
 
-
         return getattr(self._remote, "low_res_side", None)
 
     def warm_up(self) -> bool:

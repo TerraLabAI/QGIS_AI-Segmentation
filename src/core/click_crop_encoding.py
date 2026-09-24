@@ -60,7 +60,6 @@ _WEBP_QUALITY_MAX = 100
 
 
 
-
 _WEBP_LOSSLESS_EFFORT = 20
 
 
@@ -95,6 +94,16 @@ _UPLINK_SMOOTHING = 0.4
 
 
 _UPLINK_MIN_SAMPLE_BYTES = 64 * 1024
+
+
+def _uplink_min_sample_bytes() -> int:
+
+    from .server_dials import dial_in_range
+
+    return dial_in_range(
+        "tuning.click.uplink_min_sample_bytes", _UPLINK_MIN_SAMPLE_BYTES,
+        4096, 1_048_576)
+
 
 
 
@@ -360,7 +369,7 @@ def note_crop_upload(sent_bytes: int, elapsed_s: float) -> None:
     global _link_kbytes_s
     try:
         if (not math.isfinite(sent_bytes) or not math.isfinite(elapsed_s)
-                or sent_bytes < _UPLINK_MIN_SAMPLE_BYTES or elapsed_s <= 0):
+                or sent_bytes < _uplink_min_sample_bytes() or elapsed_s <= 0):
             return
         sample = (float(sent_bytes) / 1024.0) / float(elapsed_s)
         smoothing = _uplink_smoothing()

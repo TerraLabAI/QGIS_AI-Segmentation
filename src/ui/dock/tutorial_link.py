@@ -13,6 +13,7 @@ from qgis.PyQt.QtCore import QSize, Qt
 from qgis.PyQt.QtWidgets import QHBoxLayout, QPushButton, QWidget
 
 from ...core.i18n import tr
+from ...core.server_dials import feature_enabled
 from .font_scale import scale_qss_font_px
 from .styles import (
     ACCENT_BORDER,
@@ -77,6 +78,10 @@ def build_home_tutorial_link(on_click, name: str) -> QWidget:
     layout.addStretch(1)
     layout.addWidget(button)
     layout.addStretch(1)
+
+
+
+    button.setVisible(feature_enabled("home_tutorial_link"))
     return row
 
 

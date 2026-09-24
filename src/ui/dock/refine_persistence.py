@@ -34,6 +34,9 @@
 
 
 
+
+
+
 from __future__ import annotations
 
 from contextlib import suppress
@@ -80,12 +83,27 @@ _WIDGETS: tuple[tuple[str, str], ...] = (
 
 def refine_memory_enabled() -> bool:
 
+
+
+
+
+
+
     try:
         from ...core.server_dials import dial_bool
 
-        return bool(dial_bool("ui.remember_refine_settings", True))
+        return bool(dial_bool("ui.remember_refine_settings", False))
     except Exception:  # noqa: BLE001
-        return True
+        return False
+
+
+def _forget_remembered_refine_settings() -> None:
+
+
+    with suppress(Exception):
+        settings = QSettings()
+        for name, _kind in _REMEMBERED:
+            settings.remove(_KEY_PREFIX + name)
 
 
 def remembered_refine_settings() -> dict:
@@ -96,6 +114,7 @@ def remembered_refine_settings() -> dict:
 
     out: dict = {}
     if not refine_memory_enabled():
+        _forget_remembered_refine_settings()
         return out
     try:
         settings = QSettings()

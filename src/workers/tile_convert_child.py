@@ -28,6 +28,10 @@ STAT_FOLD = {
     "masks_whole_tile_kept_map": "sum",
     "masks_dropped_map_lowscore": "sum",
     "phase_convert_s": "sum",
+    "polygonized_gdal": "sum",
+    "polygonized_tracer": "sum",
+    "polygonized_fallback": "sum",
+    "polygonized_fallback_fast": "sum",
     "map_cover_scores": "extend",
     "observed_mask_gsd": "max",
 }
@@ -170,6 +174,14 @@ def child_main() -> None:
     sys.stdout = sys.stderr
     skip_unused_child_imports()
 
+
+    try:
+        from ..core.macos_activity import promote_current_thread
+
+        promote_current_thread()
+    except Exception:  # noqa: BLE001  # nosec B110
+        pass
+
     try:
         from qgis.core import QgsApplication
 
@@ -224,6 +236,8 @@ def child_main() -> None:
         key, job = payload
         unthrottle_this_process()
         try:
+            if worker is None:
+                raise RuntimeError("job arrived before init")
             t0 = time.monotonic()
             dets = worker._convert_completed(job)
             stats = {n: getattr(worker, n) for n in STAT_FOLD}

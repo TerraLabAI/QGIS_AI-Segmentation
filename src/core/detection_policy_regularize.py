@@ -83,6 +83,16 @@ _REGULARIZE_FALLBACK_MULTI_PARALLEL_EPS_DEG = 1.5
 _REGULARIZE_FALLBACK_MULTI_MIN_GROUP_WEIGHT = 0.20
 
 
+
+
+
+_REGULARIZE_FALLBACK_TIDY_MIN_EDGE_MULT = 2.0
+
+_REGULARIZE_FALLBACK_TIDY_CHAMFER_MULT = 3.0
+
+_REGULARIZE_TIDY_MULT_MAX = 10.0
+
+
 def _positive_number(value: object) -> float | None:
 
     if _is_finite_policy_value(value) and value > 0:
@@ -99,6 +109,11 @@ def regularize_policy(policy: dict | None = None) -> dict:
 
 
 def regularize_settings(policy: dict | None = None) -> dict:
+
+
+
+
+
 
 
 
@@ -178,6 +193,12 @@ def regularize_settings(policy: dict | None = None) -> dict:
         "multi_min_group_weight", _REGULARIZE_FALLBACK_MULTI_MIN_GROUP_WEIGHT)
     if not 0 <= group_weight < 1:
         group_weight = _REGULARIZE_FALLBACK_MULTI_MIN_GROUP_WEIGHT
+    min_edge_mult = _num("min_edge_mult", _REGULARIZE_FALLBACK_TIDY_MIN_EDGE_MULT)
+    if not 0 <= min_edge_mult <= _REGULARIZE_TIDY_MULT_MAX:
+        min_edge_mult = _REGULARIZE_FALLBACK_TIDY_MIN_EDGE_MULT
+    chamfer_mult = _num("chamfer_mult", _REGULARIZE_FALLBACK_TIDY_CHAMFER_MULT)
+    if not 0 <= chamfer_mult <= _REGULARIZE_TIDY_MULT_MAX:
+        chamfer_mult = _REGULARIZE_FALLBACK_TIDY_CHAMFER_MULT
 
     return {
         "keywords": keywords,
@@ -200,6 +221,8 @@ def regularize_settings(policy: dict | None = None) -> dict:
         "multi_min_separation_deg": separation,
         "multi_parallel_eps_deg": parallel_eps,
         "multi_min_group_weight": group_weight,
+        "tidy_min_edge_mult": min_edge_mult,
+        "tidy_chamfer_mult": chamfer_mult,
     }
 
 
@@ -370,6 +393,38 @@ def manual_simplify_multiple_of_px(policy: dict | None = None) -> float:
     return 0.0
 
 
+def manual_outline_smooth_px(cloud: bool, policy: dict | None = None) -> float:
+
+
+
+
+
+
+
+    from .semiauto_outline import SMOOTH_PX_CLOUD_DEFAULT, SMOOTH_PX_LOCAL_DEFAULT
+
+    key = ("manual_outline_smooth_px_cloud" if cloud
+           else "manual_outline_smooth_px_local")
+    fallback = SMOOTH_PX_CLOUD_DEFAULT if cloud else SMOOTH_PX_LOCAL_DEFAULT
+    v = regularize_policy(policy).get(key)
+    if _is_finite_policy_value(v) and v >= 0:
+        return float(v)
+    return float(fallback)
+
+
+def manual_outline_smooth_size_fraction(policy: dict | None = None) -> float:
+
+
+
+
+    from .semiauto_outline import SMOOTH_SIZE_FRACTION_DEFAULT
+
+    v = regularize_policy(policy).get("manual_outline_smooth_size_frac")
+    if _is_finite_policy_value(v) and v >= 0:
+        return float(v)
+    return float(SMOOTH_SIZE_FRACTION_DEFAULT)
+
+
 def progressive_merge_enabled(policy: dict | None = None) -> bool:
 
 
@@ -418,30 +473,31 @@ def regularize_enabled_for(prompt: str, policy: dict | None = None) -> bool:
 
 
 
-_AUTO_REGULARIZE_DEFAULTS: dict[str, float | int] = {
-    "simplify_gsd_factor": 3.0,
-    "simplify_min_m": 0.6,
-    "simplify_max_m": 1.5,
-    "ortho_window_deg": 15.0,
-    "diag_window_deg": 7.0,
-    "min_edge_abs_m": 1.0,
-    "min_edge_rel": 0.02,
-    "min_corner_deg": 30.0,
-    "parallel_threshold_m": 1.0,
-    "circularity_skip": 0.90,
-    "hist_bin_deg": 1.0,
-    "bin_halo": 3,
-    "mrr_when_top_below": 0.50,
-    "consensus_radius_m": 100.0,
-    "consensus_min_neighbours": 3,
-    "consensus_iou_margin": 0.01,
-    "guard_iou_floor": 0.85,
-    "guard_area_ceiling": 0.10,
+_AUTO_REGULARIZE_DEFAULTS: dict[str, type] = {
+    "simplify_gsd_factor": float,
+    "simplify_min_m": float,
+    "simplify_max_m": float,
+    "ortho_window_deg": float,
+    "diag_window_deg": float,
+    "min_edge_abs_m": float,
+    "min_edge_rel": float,
+    "min_corner_deg": float,
+    "parallel_threshold_m": float,
+    "circularity_skip": float,
+    "hist_bin_deg": float,
+    "bin_halo": int,
+    "mrr_when_top_below": float,
+    "consensus_radius_m": float,
+    "consensus_min_neighbours": int,
+    "consensus_iou_margin": float,
+    "guard_iou_floor": float,
+    "guard_area_ceiling": float,
 }
 
 
 def auto_regularize_settings(shape_class: str,
                              policy: dict | None = None) -> dict | None:
+
 
 
 
@@ -483,7 +539,7 @@ _AUTO_REGULARIZE_RANGES: dict[str, tuple[float, float]] = {
 }
 
 
-def _auto_regularize_dials(reg: dict) -> dict:
+def _auto_regularize_dials(reg: dict) -> dict | None:
 
 
 
@@ -497,17 +553,15 @@ def _auto_regularize_dials(reg: dict) -> dict:
     out: dict[str, float | int | bool] = {
         "revert_to_simplified": reg.get("revert_to_simplified") is True,
     }
-    for key, fallback in _AUTO_REGULARIZE_DEFAULTS.items():
+    for key, kind in _AUTO_REGULARIZE_DEFAULTS.items():
         val = reg.get(key)
-        if _is_finite_policy_value(val) and (
+        if not _is_finite_policy_value(val) or not (
                 val >= 0 if key in _AUTO_REGULARIZE_ZERO_OK else val > 0):
-            bounds = _AUTO_REGULARIZE_RANGES.get(key)
-            if bounds is not None and not bounds[0] <= val <= bounds[1]:
-                out[key] = fallback
-                continue
-            out[key] = int(val) if isinstance(fallback, int) else float(val)
-        else:
-            out[key] = fallback
+            return None
+        bounds = _AUTO_REGULARIZE_RANGES.get(key)
+        if bounds is not None and not bounds[0] <= val <= bounds[1]:
+            return None
+        out[key] = kind(val)
     return out
 
 
@@ -528,5 +582,7 @@ def manual_save_alignment_settings(policy: dict | None = None) -> dict | None:
     if reg.get("enabled") is not True:
         return None
     dials = _auto_regularize_dials(reg)
+    if dials is None:
+        return None
     dials["circularity_skip"] = 1.01
     return dials

@@ -144,6 +144,9 @@ class TerraLabDetectionMixin:
 
 
 
+        from ..core.server_dials import feature_enabled
+        if not feature_enabled("click_keep_painting"):
+            return None, None, False
         try:
             from .click_transport import ClickPostAbandoned
         except Exception:  # noqa: BLE001
@@ -526,8 +529,15 @@ class TerraLabDetectionMixin:
 
 
 
+        from ..core.server_dials import dial_in_range
+        warmup_timeout_ms = dial_in_range(
+            "tuning.network.warmup_timeout_ms", _TIMEOUT_WARMUP, 2000, 30000)
         try:
             if self.detection_direct:
+
+
+
+
 
 
 
@@ -535,21 +545,25 @@ class TerraLabDetectionMixin:
                     "GET",
                     f"{self.detection_base_url}/health",
                     auth=auth,
-                    timeout_ms=_TIMEOUT_WARMUP,
+                    timeout_ms=warmup_timeout_ms,
+                    retry_get_failures=False,
                 )
-                return result.get("status") == "ok"
+                if result.get("status") == "ok":
+                    return True
+                return result.get("http_status") == 503
             result = self._request(
                 "POST",
                 "/api/ai-segmentation/warmup",
                 auth=auth,
                 body=b"{}",
-                timeout_ms=_TIMEOUT_WARMUP,
+                timeout_ms=warmup_timeout_ms,
             )
             return result.get("ok") is True
         except Exception:
             return False
 
-    def end_detection_session(self, auth: dict, timeout_ms: int = 2000) -> bool:
+    def end_detection_session(self, auth: dict, timeout_ms: int | None = None) -> bool:
+
 
 
 
@@ -560,6 +574,10 @@ class TerraLabDetectionMixin:
         try:
             from .detection_session import SESSION_END_PATH
 
+            if timeout_ms is None:
+                from ..core.server_dials import dial_in_range
+                timeout_ms = dial_in_range(
+                    "tuning.network.session_end_timeout_ms", 2000, 500, 10000)
             result = self._request(
                 "POST",
                 f"{self.detection_base_url}{SESSION_END_PATH}",

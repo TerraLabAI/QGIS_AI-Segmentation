@@ -164,6 +164,7 @@ from .venv_status import (
     _quick_check_packages,
     get_venv_status,
     local_model_ready,
+    package_missing_behind_error,
 )
 from .venv_subprocess import (
     _apply_cache_containment,
@@ -313,6 +314,7 @@ __all__ = [
     "install_dependencies",
     "local_model_ready",
     "mark_venv_for_rebuild",
+    "package_missing_behind_error",
     "packages_skipped_for_disk_space",
     "purge_cache_dir",
     "purge_package_from_venv",

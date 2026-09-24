@@ -122,9 +122,14 @@ def circle_segments(fallback: int) -> int:
     return dial_in_range(_AUTO_REGULARIZE + "circle_segments", fallback, 8, 128)
 
 
-def align_thread_min_objects(fallback: int) -> int:
+def align_gui_max_objects(fallback: int) -> int:
 
-    return dial_in_range(_AUTO_REGULARIZE + "thread_min_objects", fallback, 1, 1e7)
+
+
+
+
+
+    return dial_in_range(_AUTO_REGULARIZE + "gui_max_objects", fallback, 0, 1e7)
 
 
 def align_process_min_objects(fallback: int) -> int:

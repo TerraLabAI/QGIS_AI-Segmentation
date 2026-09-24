@@ -271,9 +271,6 @@ class AutoRescanPolicyMixin:
 
 
 
-
-
-
             self._tile_outsize[idx] = (min(tw * 2, TILE_SIZE),
                                        min(th * 2, TILE_SIZE))
             pending.append((idx, spec))

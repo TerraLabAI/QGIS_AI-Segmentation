@@ -75,12 +75,38 @@ def _online_basemap_label(layer) -> str | None:
         return None
 
 
+def _served_basemap_host_pairs() -> tuple:
+
+
+
+
+
+
+    try:
+        from .server_dials import read_value
+
+        value = read_value("tuning.ui.basemap_hosts_extra")
+        if not isinstance(value, (list, tuple)):
+            return ()
+        pairs = []
+        for item in value[:32]:
+            if (isinstance(item, (list, tuple)) and len(item) == 2
+                    and all(isinstance(v, str) and 0 < len(v) <= 64 for v in item)):
+                pairs.append((item[0].strip().lower(), item[1].strip()))
+        return tuple(pairs)
+    except Exception:  # noqa: BLE001
+        return ()
+
+
 def _host_provider_label(host: str) -> str | None:
 
     if not host:
         return None
     for needle, label in _BASEMAP_HOSTS:
         if needle in host:
+            return label
+    for needle, label in _served_basemap_host_pairs():
+        if needle and needle in host:
             return label
     return None
 

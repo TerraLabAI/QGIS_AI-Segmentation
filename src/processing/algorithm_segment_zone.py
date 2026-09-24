@@ -101,6 +101,11 @@ class SegmentZoneAlgorithm(QgsProcessingAlgorithm):
         return main_thread_run_refusal()
 
     def shortHelpString(self):
+        from ..core.server_dials import dial_text
+
+        served = dial_text("tuning.agent", "zone_help_text", 4000)
+        if served:
+            return served
         return (
             f"This run can take up to {ZONE_RUN_TIMEOUT_SECONDS} seconds, and QGIS stays busy "
             "until it ends. Wait for it. Never start it again while it is running: a second run "

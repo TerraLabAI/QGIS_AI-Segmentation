@@ -30,6 +30,7 @@
 from __future__ import annotations
 
 import math
+import struct
 from dataclasses import dataclass
 
 import numpy as np
@@ -43,7 +44,7 @@ from qgis.core import (
     QgsSpatialIndex,
 )
 
-from .footprint_neighbour_cache import cached_neighbour_prep
+from .footprint_neighbour_cache import cached_neighbour_prep, sync_neighbour_cache_limit
 from .footprint_ring_math import (
     angle_diff_mod90,
     circle_ring,
@@ -207,6 +208,9 @@ def _crs_unit_is_metre(crs: QgsCoordinateReferenceSystem) -> bool:
 def _geometry_rings(geom: QgsGeometry) -> list[np.ndarray]:
 
 
+    rings = _wkb_polygon_rings(geom)
+    if rings is not None:
+        return rings
     polygon = geom.asPolygon()
     if not polygon:
         return []
@@ -218,15 +222,77 @@ def _geometry_rings(geom: QgsGeometry) -> list[np.ndarray]:
     return out
 
 
+def _wkb_polygon_rings(geom: QgsGeometry) -> list[np.ndarray] | None:
+
+
+
+
+
+
+
+    try:
+        buf = bytes(geom.asWkb())
+    except (RuntimeError, AttributeError, TypeError):
+        return None
+    if len(buf) < 9 or buf[0] != 1 or int.from_bytes(buf[1:5], "little") != 3:
+        return None
+    ring_count = int.from_bytes(buf[5:9], "little")
+    offset = 9
+    out = []
+    for _ in range(ring_count):
+        if offset + 4 > len(buf):
+            return None
+        count = int.from_bytes(buf[offset:offset + 4], "little")
+        offset += 4
+        end = offset + 16 * count
+        if end > len(buf):
+            return None
+        if count >= 4:
+            out.append(np.frombuffer(buf, dtype="<f8", count=2 * count,
+                                     offset=offset).reshape(count, 2).astype(float))
+        offset = end
+    return out
+
+
 def _geometry_from_rings(rings: list[np.ndarray]) -> QgsGeometry | None:
 
     if not rings:
         return None
+    geom = _geometry_from_closed_rings(rings)
+    if geom is not None:
+        return geom if not geom.isEmpty() else None
     qgs_rings = []
     for ring in rings:
-        qgs_rings.append([QgsPointXY(float(x), float(y)) for x, y in ring])
+
+
+        qgs_rings.append([QgsPointXY(x, y)
+                          for x, y in np.asarray(ring, dtype=float).tolist()])
     geom = QgsGeometry.fromPolygonXY(qgs_rings)
     return geom if geom is not None and not geom.isEmpty() else None
+
+
+def _geometry_from_closed_rings(rings: list[np.ndarray]) -> QgsGeometry | None:
+
+
+
+
+
+
+    chunks = [struct.pack("<BII", 1, 3, len(rings))]
+    for ring in rings:
+        arr = np.asarray(ring, dtype=float)
+        if arr.ndim != 2 or arr.shape[1] != 2 or len(arr) < 4:
+            return None
+        if not (arr[0, 0] == arr[-1, 0] and arr[0, 1] == arr[-1, 1]):
+            return None
+        chunks.append(struct.pack("<I", len(arr)))
+        chunks.append(np.ascontiguousarray(arr, dtype="<f8").tobytes())
+    geom = QgsGeometry()
+    try:
+        geom.fromWkb(b"".join(chunks))
+    except (RuntimeError, TypeError, ValueError):
+        return None
+    return geom
 
 
 def _scaled_rings(rings: list[np.ndarray], kx: float, ky: float) -> list[np.ndarray]:
@@ -280,6 +346,11 @@ def _largest_valid_polygon(geom: QgsGeometry) -> QgsGeometry | None:
         g = g.makeValid()
         if g is None or g.isEmpty():
             return None
+    if _is_closed_flat_polygon(g):
+
+
+
+        return g if g.area() > 0.0 else None
     best = None
     best_area = 0.0
     for rings in _polygon_parts(g):
@@ -292,20 +363,43 @@ def _largest_valid_polygon(geom: QgsGeometry) -> QgsGeometry | None:
     return best
 
 
+def _is_closed_flat_polygon(geom: QgsGeometry) -> bool:
+
+
+
+
+    try:
+        kind = geom.wkbType()
+        if int(getattr(kind, "value", kind)) != 3:
+            return False
+        polygon = geom.constGet()
+        rings = [polygon.exteriorRing()] + [
+            polygon.interiorRing(i) for i in range(polygon.numInteriorRings())]
+        return all(ring is not None and ring.isClosed() for ring in rings)
+    except (RuntimeError, AttributeError, TypeError, ValueError):
+        return False
+
+
 def _exterior_perimeter(rings: list[np.ndarray]) -> float:
 
     if not rings:
         return 0.0
-    d = np.diff(rings[0], axis=0)
+    ring = rings[0]
+    d = ring[1:] - ring[:-1]
     return float(np.sum(np.hypot(d[:, 0], d[:, 1])))
 
 
-def _geometry_iou(a: QgsGeometry, b: QgsGeometry) -> float:
+def _geometry_iou(a: QgsGeometry, b: QgsGeometry,
+                  a_area: float | None = None) -> float:
+
+
 
     try:
         inter = a.intersection(b)
         inter_area = inter.area() if inter is not None and not inter.isEmpty() else 0.0
-        union = a.area() + b.area() - inter_area
+        if a_area is None:
+            a_area = a.area()
+        union = a_area + b.area() - inter_area
         return inter_area / union if union > 0 else 0.0
     except Exception:  # noqa: BLE001
         return 0.0
@@ -411,7 +505,7 @@ def _guarded_candidate(raw: QgsGeometry, cand: QgsGeometry,
     if raw_area is None:
         raw_area = raw.area()
     cand = _restore_footprint_area(raw, cand, params, raw_area)
-    iou = _geometry_iou(raw, cand)
+    iou = _geometry_iou(raw, cand, raw_area)
     if iou < params.guard_iou_floor:
         return None, iou
     change = (cand.area() - raw_area) / raw_area if raw_area > 0 else 0.0
@@ -439,12 +533,15 @@ def _snap_candidate(coords: np.ndarray, base_deg: float,
 
     lines = ring_snap_segments(
         coords, base_deg, params.ortho_window_deg, params.diag_window_deg)
-    ring = ring_rebuild_corners(lines, params.parallel_threshold_m)
-    if ring is None:
+    rebuilt = ring_rebuild_corners(lines, params.parallel_threshold_m)
+    if rebuilt is None:
         return None
     ring = ring_drop_short_edges(
-        ring, params.min_edge_abs_m, params.min_edge_rel, params.min_corner_deg)
-    if not ring_is_simple(ring):
+        rebuilt, params.min_edge_abs_m, params.min_edge_rel, params.min_corner_deg)
+
+
+    unchanged = len(ring) == len(rebuilt) and np.array_equal(ring, rebuilt)
+    if not unchanged and not ring_is_simple(ring):
         return None
     geom = _geometry_from_rings([ring])
     if geom is None:
@@ -482,6 +579,9 @@ class FootprintAlignSweep:
         self._consensus: list = [None] * len(self._rows)
         self._out: list = list(self._rows)
         self._index: QgsSpatialIndex | None = None
+
+
+        self._neighbours: list = []
         self.aligned_count = 0
         self.reverted_count = 0
         self.circle_count = 0
@@ -546,6 +646,9 @@ class FootprintAlignSweep:
     def _build_neighbour_index(self) -> None:
 
         index = QgsSpatialIndex()
+        self._neighbours = [
+            None if prep is None else (*prep["center"], prep["own"][0], prep["perimeter"])
+            for prep in self._prepared]
         for i, prep in enumerate(self._prepared):
             if prep is None:
                 continue
@@ -566,17 +669,18 @@ class FootprintAlignSweep:
         hits = self._index.intersects(
             QgsRectangle(cx - radius, cy - radius, cx + radius, cy + radius))
         near = []
+        neighbours = self._neighbours
         for j in hits:
             if j == i:
                 continue
-            other = self._prepared[j]
+            other = neighbours[j]
             if other is None:
                 continue
-            ox, oy = other["center"]
+            ox, oy, angle, perimeter = other
             dist = math.hypot(ox - cx, oy - cy)
             if dist > radius:
                 continue
-            near.append((dist, other["own"][0], other["perimeter"]))
+            near.append((dist, angle, perimeter))
         if len(near) < self._params.consensus_min_neighbours:
             return
 
@@ -615,8 +719,10 @@ class FootprintAlignSweep:
             return
 
 
-        simp_rings = _geometry_rings(simp)
-        perimeter = _exterior_perimeter(simp_rings)
+
+
+
+        perimeter = _exterior_perimeter([coords])
         area = simp.area()
         circularity = (4 * math.pi * area / (perimeter * perimeter)
                        if perimeter > 0 else 0.0)
@@ -787,6 +893,7 @@ def align_saved_footprint(geom: QgsGeometry, neighbour_geoms: list,
             (i + 1, other, None)
             for i, (_dist, other) in enumerate(near[:save_neighbour_cap(_SAVE_NEIGHBOUR_CAP)])]
         sweep = FootprintAlignSweep(rows, params, scale)
+        sync_neighbour_cache_limit()
         try:
             sweep._prepare_one(0)
         except Exception:  # noqa: BLE001

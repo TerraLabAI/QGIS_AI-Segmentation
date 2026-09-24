@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from qgis.core import Qgis, QgsMessageLog, QgsPointXY
 
+from ...core.click_phase_clock import ClickPhaseClock, activate_click_clock, click_clock_now
 from ...core.i18n import tr
 from ...core.telemetry_errors import slot_guard
 from ..error_report_dialog import show_error_report
@@ -36,6 +37,15 @@ _CLICK_OFFLINE_CODES = frozenset({
     "NO_INTERNET", "DNS_ERROR", "CONNECTION_REFUSED", "PROXY_ERROR",
     "SSL_ERROR",
 })
+
+
+def _click_offline_codes() -> frozenset:
+
+    try:
+        from ...core.server_dials import dial_list
+        return dial_list("tuning.click.offline_codes_extra", _CLICK_OFFLINE_CODES, normalize=str.upper)
+    except Exception:  # noqa: BLE001
+        return _CLICK_OFFLINE_CODES
 
 
 def _click_was_superseded(err: Exception) -> bool:
@@ -97,11 +107,12 @@ def _click_connectivity_code(err: Exception) -> str:
 
 
 
+    offline_codes = _click_offline_codes()
     code = str(getattr(err, "code", "") or "").strip().upper()
     if code:
-        return code if code in _CLICK_OFFLINE_CODES else ""
+        return code if code in offline_codes else ""
     text = str(err).upper()
-    for known in _CLICK_OFFLINE_CODES:
+    for known in offline_codes:
         if known in text:
             return known
     return ""
@@ -119,6 +130,17 @@ class ManualClickMixin:
 
 
     _HOVER_REUSE_NEAR_PX = 32
+
+    def _start_click_clock(self) -> None:
+
+
+        carried = getattr(self, "_replayed_click_clock", None)
+        self._replayed_click_clock = None
+        if carried is not None:
+            carried.note_crop_ready(getattr(self, "_replayed_crop_encode_s", None))
+            self._click_clock_in_hand = carried
+        else:
+            self._click_clock_in_hand = ClickPhaseClock()
 
     def _report_click_without_model(self) -> None:
 
@@ -219,6 +241,7 @@ class ManualClickMixin:
 
 
 
+        self._start_click_clock()
         held_hover_answer = self._take_hover_preview_answer()
         self._hover_click_answer = None
         self._stop_hover_preview("click")
@@ -332,12 +355,6 @@ class ManualClickMixin:
         self.prompts.add_positive_point(raster_pt.x(), raster_pt.y())
         self._active_crop_points_positive.append((raster_pt.x(), raster_pt.y()))
 
-        QgsMessageLog.logMessage(
-            "Keep click registered",
-            "AI Segmentation",
-            level=Qgis.MessageLevel.Info
-        )
-
 
 
 
@@ -400,6 +417,7 @@ class ManualClickMixin:
 
 
 
+        self._start_click_clock()
         self._stop_hover_preview("click")
         if self._refine_click_is_stale():
             self._drop_stale_refine_click()
@@ -529,12 +547,6 @@ class ManualClickMixin:
         self.prompts.add_negative_point(raster_pt.x(), raster_pt.y())
         self._active_crop_points_negative.append((raster_pt.x(), raster_pt.y()))
 
-        QgsMessageLog.logMessage(
-            "Remove click registered",
-            "AI Segmentation",
-            level=Qgis.MessageLevel.Info
-        )
-
 
 
 
@@ -663,9 +675,19 @@ class ManualClickMixin:
                 "Crop window has no size - cannot place the click in it",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning)
             return False
+        img_clip_transform = None
         if rio_transform is not None:
-            img_clip_transform = transform_from_bounds(
-                minx, miny, maxx, maxy, img_width, img_height)
+
+
+
+
+            try:
+                img_clip_transform = transform_from_bounds(
+                    minx, miny, maxx, maxy, img_width, img_height)
+                rio_transform.rowcol(img_clip_transform, minx, maxy)
+            except Exception:  # noqa: BLE001
+                img_clip_transform = None
+        if img_clip_transform is not None:
 
             def crop_pixel_of(px, py):
 
@@ -774,6 +796,7 @@ class ManualClickMixin:
         import time as _click_clock
         self._manual_click_fell_back = False
         click_started_at = _click_clock.monotonic()
+        clock = getattr(self, "_click_clock_in_hand", None)
 
 
 
@@ -798,12 +821,22 @@ class ManualClickMixin:
                 except (RuntimeError, AttributeError):
                     pass  # nosec B110
             else:
-                masks, scores, low_res_masks = self.predictor.predict(
-                    point_coords=point_coords,
-                    point_labels=point_labels,
-                    mask_input=mask_input,
-                    multimask_output=use_multimask,
-                )
+
+
+                if clock is not None:
+                    clock.predict_started_at = click_clock_now()
+                activate_click_clock(clock)
+                try:
+                    masks, scores, low_res_masks = self.predictor.predict(
+                        point_coords=point_coords,
+                        point_labels=point_labels,
+                        mask_input=mask_input,
+                        multimask_output=use_multimask,
+                    )
+                finally:
+                    activate_click_clock(None)
+                    if clock is not None:
+                        clock.answered_at = click_clock_now()
         except RuntimeError as e:
             if _click_was_superseded(e):
 
@@ -947,10 +980,15 @@ class ManualClickMixin:
             self._track_manual_run_failed()
             try:
                 from ...core import telemetry_errors
+
+
+
+
                 telemetry_errors.track_plugin_error(
                     stage="segment",
-                    error_code=type(e).__name__ or "predict_unexpected_error",
-                    message=str(e))
+                    error_code="predict_unexpected_error",
+                    message=f"{type(e).__name__}: {e}",
+                    module="manual_predict_clicks")
             except Exception:
                 pass  # nosec B110
             if not self._headless and not self._degrade_correct_ai_to_manual(str(e)):
@@ -966,18 +1004,26 @@ class ManualClickMixin:
                 )
             return False
 
-        self._track_manual_click_answered(click_started_at)
+
+
+        predict_ms = int((_click_clock.monotonic() - click_started_at) * 1000)
 
         if use_multimask:
             total_pixels = masks[0].shape[0] * masks[0].shape[1]
             mask_areas = [int(np.count_nonzero(m)) for m in masks]
+            try:
+                from ...core.server_dials import dial_in_range
+                whole_crop_ratio = dial_in_range(
+                    "tuning.click.multimask_whole_crop_ratio", 0.8, 0.5, 0.95)
+            except Exception:  # noqa: BLE001
+                whole_crop_ratio = 0.8
 
 
 
 
             small_enough = [
                 i for i in range(len(scores))
-                if 0 < mask_areas[i] < 0.8 * total_pixels
+                if 0 < mask_areas[i] < whole_crop_ratio * total_pixels
             ]
             if small_enough:
                 best_idx = max(small_enough, key=lambda i: scores[i])
@@ -1102,7 +1148,22 @@ class ManualClickMixin:
             "crs": crs_value,
         }
 
-        self._update_ui_after_prediction()
+        if reused is not None:
+
+
+            self._adopt_ghost_shape(held_hover[3], getattr(self, "_hover_click_shape", None))
+        self._hover_click_shape = None
+
+
+
+        self._score_goes_in_click_line = clock is not None
+        try:
+            self._update_ui_after_prediction()
+        finally:
+            self._score_goes_in_click_line = False
+        if clock is not None:
+            clock.drawn_at = click_clock_now()
+        self._track_manual_click_answered(predict_ms, clock)
         return True
 
     def _reused_hover_answer(self, held, crop_bounds, img_shape, points):
@@ -1253,11 +1314,12 @@ class ManualClickMixin:
 
 
             score = self.current_score if self.current_score is not None else 0.0
-            QgsMessageLog.logMessage(
-                f"Segmentation result: score={score:.3f}",
-                "AI Segmentation",
-                level=Qgis.MessageLevel.Info
-            )
+            if not getattr(self, "_score_goes_in_click_line", False):
+                QgsMessageLog.logMessage(
+                    f"Segmentation result: score={score:.3f}",
+                    "AI Segmentation",
+                    level=Qgis.MessageLevel.Info
+                )
             self._warn_if_unsure(score)
             self._update_mask_visualization()
         else:

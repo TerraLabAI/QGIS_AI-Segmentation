@@ -269,7 +269,8 @@ class LayerTreeComboBox(QComboBox):
 
     def _schedule_refresh(self, *_args):
 
-        self._refresh_timer.start(100)
+        self._refresh_timer.start(
+            dial_in_range("tuning.ui.tree_refresh_debounce_ms", 100, 25, 500))
 
     def _refresh(self):
 

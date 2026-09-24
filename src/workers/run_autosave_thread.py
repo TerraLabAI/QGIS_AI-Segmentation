@@ -63,7 +63,8 @@ class RunAutosaveThread(QThread):
             self._info = None
         return info
 
-    def join_run(self, timeout_ms: int = RUN_AUTOSAVE_JOIN_TIMEOUT_MS) -> bool:
+    def join_run(self, timeout_ms: int | None = None) -> bool:
+
 
 
 
@@ -72,6 +73,15 @@ class RunAutosaveThread(QThread):
 
         if not self.isRunning():
             return True
+        if timeout_ms is None:
+            timeout_ms = RUN_AUTOSAVE_JOIN_TIMEOUT_MS
+            try:
+                from ..core.server_dials import dial_in_range
+                timeout_ms = dial_in_range(
+                    "tuning.export.autosave_join_timeout_ms",
+                    RUN_AUTOSAVE_JOIN_TIMEOUT_MS, 1000, 60000)
+            except Exception:  # noqa: BLE001
+                timeout_ms = RUN_AUTOSAVE_JOIN_TIMEOUT_MS
         return bool(self.wait(timeout_ms))
 
 

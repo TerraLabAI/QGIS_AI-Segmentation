@@ -23,6 +23,8 @@ except ImportError:  # pragma: no cover
 
 from typing import Any, NamedTuple
 
+from .regularize_ring_tidy import DEFAULT_TIDY_DIALS, TidyDials, resolve_tidy_dials
+
 __all__ = [
     "RegularizeDials",
     "_ASPECT_IDENTITY_EPSILON",
@@ -35,9 +37,11 @@ __all__ = [
     "_DEFAULT_MULTI_MAX_GROUPS",
     "_DEFAULT_MULTI_MIN_SEPARATION_DEG",
     "_DESTAIRCASE_NOOP_FRACTION",
+    "_ENFORCE_ANGLE_TOL_DEG",
     "_MULTI_MIN_GROUP_WEIGHT_FRACTION",
     "_MULTI_PARALLEL_ANGLE_EPS",
     "_RING_MIN_IOU",
+    "_TIDY_AREA_NOOP_FRACTION",
     "_create_weighted_histogram",
     "_find_best_symmetric_bin",
     "_resolve_regularize_dials",
@@ -111,6 +115,17 @@ _MULTI_MIN_GROUP_WEIGHT_FRACTION = 0.20
 
 
 _DESTAIRCASE_NOOP_FRACTION = 1.0e-9
+
+
+
+
+_TIDY_MIN_EDGE_MULT = 2.0
+_TIDY_CHAMFER_MULT = 3.0
+
+_TIDY_AREA_NOOP_FRACTION = 0.01
+
+
+_ENFORCE_ANGLE_TOL_DEG = 0.1
 
 
 
@@ -629,12 +644,53 @@ class RegularizeDials(NamedTuple):
 
 
 
+
+
+
+
+
+
+
+
+
     ring_min_iou: float = _RING_MIN_IOU
     multi_parallel_eps_deg: float = _MULTI_PARALLEL_ANGLE_EPS
     multi_min_group_weight: float = _MULTI_MIN_GROUP_WEIGHT_FRACTION
+    tidy_min_edge_mult: float = _TIDY_MIN_EDGE_MULT
+    tidy_chamfer_mult: float = _TIDY_CHAMFER_MULT
+    tidy: TidyDials = DEFAULT_TIDY_DIALS
+    tidy_area_noop_frac: float = _TIDY_AREA_NOOP_FRACTION
+    enforce_angle_tol_deg: float = _ENFORCE_ANGLE_TOL_DEG
 
 
 _DEFAULT_DIALS = RegularizeDials()
+
+
+
+
+_TUNING_CACHE: list = []
+
+
+def _resolve_tuning_dials() -> tuple[TidyDials, float, float]:
+
+
+    try:
+        from .server_dials import _server_config, dial_in_range
+
+        token = _server_config()
+        if _TUNING_CACHE and _TUNING_CACHE[0] is token:
+            return _TUNING_CACHE[1]
+        values = (
+            resolve_tidy_dials(),
+            dial_in_range("tuning.review.tidy_area_noop_frac",
+                          _TIDY_AREA_NOOP_FRACTION, 0.0, 0.05),
+            dial_in_range("tuning.review.enforce_angle_tol_deg",
+                          _ENFORCE_ANGLE_TOL_DEG, 0.01, 1.0),
+        )
+        _TUNING_CACHE[:] = [token, values]
+        return values
+    except Exception:  # noqa: BLE001  # nosec B110
+        return DEFAULT_TIDY_DIALS, _TIDY_AREA_NOOP_FRACTION, _ENFORCE_ANGLE_TOL_DEG
 
 
 def _resolve_regularize_dials() -> RegularizeDials:
@@ -642,6 +698,7 @@ def _resolve_regularize_dials() -> RegularizeDials:
 
 
 
+    tidy, tidy_area_noop_frac, enforce_angle_tol_deg = _resolve_tuning_dials()
     try:
         from .detection_policy import regularize_settings
 
@@ -651,6 +708,13 @@ def _resolve_regularize_dials() -> RegularizeDials:
             ring_min_iou=ring_iou if 0.0 < ring_iou < 1.0 else _RING_MIN_IOU,
             multi_parallel_eps_deg=float(settings["multi_parallel_eps_deg"]),
             multi_min_group_weight=float(settings["multi_min_group_weight"]),
+            tidy_min_edge_mult=float(settings["tidy_min_edge_mult"]),
+            tidy_chamfer_mult=float(settings["tidy_chamfer_mult"]),
+            tidy=tidy,
+            tidy_area_noop_frac=tidy_area_noop_frac,
+            enforce_angle_tol_deg=enforce_angle_tol_deg,
         )
     except Exception:  # noqa: BLE001
-        return _DEFAULT_DIALS
+        return _DEFAULT_DIALS._replace(
+            tidy=tidy, tidy_area_noop_frac=tidy_area_noop_frac,
+            enforce_angle_tol_deg=enforce_angle_tol_deg)

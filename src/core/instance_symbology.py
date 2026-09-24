@@ -119,6 +119,28 @@ def instance_palette_in_force() -> tuple[float, float, float]:
         return (INSTANCE_SATURATION, INSTANCE_VALUE, MAX_RELATIVE_LUMINANCE)
 
 
+def instance_style_in_force() -> tuple[int, int, str]:
+
+
+
+
+
+    try:
+        from .server_dials import dial_in_range
+
+        buckets = int(dial_in_range(
+            "tuning.symbology.instance_hue_buckets", INSTANCE_HUE_BUCKETS, 8, 256))
+        alpha = int(dial_in_range(
+            "tuning.symbology.instance_fill_alpha", INSTANCE_FILL_ALPHA, 16, 160))
+        shipped_width = float(INSTANCE_OUTLINE_WIDTH)
+        width = float(dial_in_range(
+            "tuning.symbology.instance_outline_width", shipped_width, 0.2, 2.0))
+        width_text = INSTANCE_OUTLINE_WIDTH if width == shipped_width else f"{width:g}"
+        return buckets, alpha, width_text
+    except Exception:  # noqa: BLE001  # nosec B110
+        return INSTANCE_HUE_BUCKETS, INSTANCE_FILL_ALPHA, INSTANCE_OUTLINE_WIDTH
+
+
 def _under_the_lightness_ceiling(
     red: float, green: float, blue: float, ceiling: float = MAX_RELATIVE_LUMINANCE
 ) -> tuple[float, float, float]:
@@ -209,7 +231,7 @@ def instance_color_expression(
             f" color_rgba({channels}, {int(alpha)})))")
 
 
-def _bucket_classifier(layer) -> str | None:
+def _bucket_classifier(layer, buckets: int = INSTANCE_HUE_BUCKETS) -> str | None:
 
 
 
@@ -231,11 +253,11 @@ def _bucket_classifier(layer) -> str | None:
     for candidate in ("det_id", "fid"):
         real = names.get(candidate)
         if real:
-            return f'(to_int(abs("{real}")) * 67) % {INSTANCE_HUE_BUCKETS}'
+            return f'(to_int(abs("{real}")) * 67) % {int(buckets)}'
     return None
 
 
-def _bucketed_instance_renderer(layer, palette):
+def _bucketed_instance_renderer(layer, palette, style=None):
 
 
 
@@ -247,20 +269,21 @@ def _bucketed_instance_renderer(layer, palette):
 
     from qgis.core import QgsCategorizedSymbolRenderer, QgsRendererCategory
 
-    classifier = _bucket_classifier(layer)
+    buckets, fill_alpha, outline_width = style or instance_style_in_force()
+    classifier = _bucket_classifier(layer, buckets)
     if classifier is None:
         return None
     categories = []
-    for bucket in range(INSTANCE_HUE_BUCKETS):
+    for bucket in range(buckets):
         color = QColor(instance_color_hex(bucket, palette))
         outline = color.darker(115)
         fill = QColor(color)
-        fill.setAlpha(INSTANCE_FILL_ALPHA)
+        fill.setAlpha(fill_alpha)
         symbol = QgsFillSymbol.createSimple({
             "color": f"{fill.red()},{fill.green()},{fill.blue()},{fill.alpha()}",
             "style": "solid",
             "outline_color": f"{outline.red()},{outline.green()},{outline.blue()},255",
-            "outline_width": INSTANCE_OUTLINE_WIDTH,
+            "outline_width": outline_width,
             "outline_style": "solid",
         })
 
@@ -268,10 +291,10 @@ def _bucketed_instance_renderer(layer, palette):
         categories.append(QgsRendererCategory(bucket, symbol, ""))
 
     fallback = QgsFillSymbol.createSimple({
-        "color": f"160,160,160,{INSTANCE_FILL_ALPHA}",
+        "color": f"160,160,160,{fill_alpha}",
         "style": "solid",
         "outline_color": "60,60,60,255",
-        "outline_width": INSTANCE_OUTLINE_WIDTH,
+        "outline_width": outline_width,
         "outline_style": "solid",
     })
     categories.append(QgsRendererCategory(None, fallback, "", True))
@@ -305,22 +328,24 @@ def make_instance_renderer(layer, *, feature_ids=None):
     if not ids:
         return None
     palette = instance_palette_in_force()
-    bucketed = _bucketed_instance_renderer(layer, palette)
+    style = instance_style_in_force()
+    _buckets, fill_alpha, outline_width = style
+    bucketed = _bucketed_instance_renderer(layer, palette, style)
     if bucketed is not None:
         return bucketed
     first_id = int(ids[0])
     fill_expr = instance_color_expression(
-        first_id, alpha=INSTANCE_FILL_ALPHA, palette=palette)
+        first_id, alpha=fill_alpha, palette=palette)
     stroke_expr = instance_color_expression(
         first_id, alpha=255, scale=INSTANCE_OUTLINE_DARKEN, palette=palette)
 
 
 
     symbol = QgsFillSymbol.createSimple({
-        "color": f"160,160,160,{INSTANCE_FILL_ALPHA}",
+        "color": f"160,160,160,{fill_alpha}",
         "style": "solid",
         "outline_color": "60,60,60,255",
-        "outline_width": INSTANCE_OUTLINE_WIDTH,
+        "outline_width": outline_width,
         "outline_style": "solid",
     })
     symbol_layer = symbol.symbolLayer(0)

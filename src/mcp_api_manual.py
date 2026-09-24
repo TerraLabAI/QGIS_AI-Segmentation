@@ -34,6 +34,23 @@ _CEILING_SLACK = 0.01
 _CAPPED_RETRY_FACTOR = 8.0
 
 
+
+
+
+
+_DETECT_RESPONSE_FORMATS = ("detailed", "concise")
+
+
+def _detect_response_format(value) -> tuple[str | None, dict | None]:
+
+    wanted = value.strip().lower() if isinstance(value, str) else ""
+    if wanted in _DETECT_RESPONSE_FORMATS:
+        return wanted, None
+    from .mcp_api import not_found_error
+    return None, not_found_error(
+        "response format", str(value), list(_DETECT_RESPONSE_FORMATS))
+
+
 def _capped_retry_factor() -> float:
 
     from .core.server_dials import dial_in_range
@@ -53,7 +70,16 @@ class SegmentationManualMixin:
         layer_name: str | None = None,
         discard_unsaved: bool = False,
         output_dir: str | None = None,
+        response_format: str = "detailed",
     ) -> dict:
+
+
+
+
+
+
+
+
 
 
 
@@ -103,9 +129,13 @@ class SegmentationManualMixin:
         discard_unsaved, bool_err = coerce_bool_param("discard_unsaved", discard_unsaved)
         if bool_err:
             return bool_err
+        answer_format, format_err = _detect_response_format(response_format)
+        if format_err:
+            return format_err
 
         return self._detect_from_points(
-            [(px, py)], [], layer_name, discard_unsaved, output_dir)
+            [(px, py)], [], layer_name, discard_unsaved, output_dir,
+            response_format=answer_format)
 
     @gui_thread_only
     def detect_points(
@@ -115,7 +145,12 @@ class SegmentationManualMixin:
         layer_name: str | None = None,
         discard_unsaved: bool = False,
         output_dir: str | None = None,
+        response_format: str = "detailed",
     ) -> dict:
+
+
+
+
 
 
 
@@ -177,8 +212,12 @@ class SegmentationManualMixin:
         discard_unsaved, bool_err = coerce_bool_param("discard_unsaved", discard_unsaved)
         if bool_err:
             return bool_err
+        answer_format, format_err = _detect_response_format(response_format)
+        if format_err:
+            return format_err
         return self._detect_from_points(
-            pos, neg, layer_name, discard_unsaved, output_dir)
+            pos, neg, layer_name, discard_unsaved, output_dir,
+            response_format=answer_format)
 
     def _points_as_pairs(self, points, label: str):
 
@@ -209,6 +248,7 @@ class SegmentationManualMixin:
         layer_name: str | None,
         discard_unsaved: bool,
         output_dir: str | None,
+        response_format: str = "detailed",
     ) -> dict:
 
 
@@ -399,7 +439,10 @@ class SegmentationManualMixin:
 
 
                 result["export_error"] = export_result["_error"]
-                result["hint"] = (
+                from .core.server_dials import dial_text
+
+                result["hint"] = dial_text(
+                    "tuning.agent.hints", "manual_export_failed", 400) or (
                     "The outline is in polygon_wkt and nothing was written: "
                     "call export_polygon() with it once the folder is writable."
                 )
@@ -408,6 +451,8 @@ class SegmentationManualMixin:
 
             self._add_run_facts(result, loaded_here, crop_width_m,
                                 retried, still_capped)
+            if response_format == "concise":
+                self._make_detect_answer_concise(result, combined, crs_authid)
             return result
 
         except Exception as e:
@@ -429,6 +474,33 @@ class SegmentationManualMixin:
                     plugin.unload()
                 except Exception:  # noqa: BLE001
                     pass  # nosec B110
+
+    @staticmethod
+    def _make_detect_answer_concise(result: dict, geom, crs_authid: str) -> None:
+
+
+
+
+
+
+        from qgis.core import QgsCoordinateReferenceSystem
+
+        crs = QgsCoordinateReferenceSystem(crs_authid)
+        digits = 7 if crs.isValid() and crs.isGeographic() else 2
+        try:
+            box = geom.boundingBox()
+            result["bbox"] = [round(box.xMinimum(), digits), round(box.yMinimum(), digits),
+                              round(box.xMaximum(), digits), round(box.yMaximum(), digits)]
+            result["vertex_count"] = int(geom.constGet().nCoordinates())
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            pass
+        try:
+            from .core.layer_conventions import make_area_measurer
+            result["area_m2"] = round(float(make_area_measurer(crs).measureArea(geom)), 2)
+        except Exception:  # noqa: BLE001
+            pass  # nosec B110
+        if result.get("exported_layer") and "bbox" in result:
+            result.pop("polygon_wkt", None)
 
     @staticmethod
     def _ground_width_in_metres(raster_layer, width_in_raster_units: float) -> float:
@@ -593,13 +665,14 @@ class SegmentationManualMixin:
             from rasterio.transform import from_bounds as transform_from_bounds
 
             clip = transform_from_bounds(minx, miny, maxx, maxy, img_width, img_height)
+            rio_transform.rowcol(clip, minx, maxy)
 
             def _mapper(point):
                 row, col = rio_transform.rowcol(clip, point.x(), point.y())
                 return [float(col), float(row)]
 
             return _mapper
-        except ImportError:
+        except Exception:  # noqa: BLE001
             def _mapper(point):
                 return [
                     (point.x() - minx) / (maxx - minx) * img_width,

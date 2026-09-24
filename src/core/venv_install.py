@@ -156,7 +156,7 @@ def _build_install_cmd(python_path: str, pip_args: list) -> list:
 
 
 def create_venv(
-    venv_dir: str = None,
+    venv_dir: str | None = None,
     progress_callback: Callable[[int, str], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
 ) -> tuple[bool, str]:
@@ -397,7 +397,7 @@ def _bootstrap_pip_in_venv(
 
 
 def install_dependencies(
-    venv_dir: str = None,
+    venv_dir: str | None = None,
     progress_callback: Callable[[int, str], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
     include_local_model: bool = True,
@@ -494,9 +494,10 @@ def install_dependencies(
 
 
     os.makedirs(PLUGIN_CACHE_DIR, exist_ok=True)
-    constraints_fd, constraints_path = tempfile.mkstemp(
+    constraints_fd, constraints_path_str = tempfile.mkstemp(
         suffix=".txt", prefix="pip_constraints_", dir=PLUGIN_CACHE_DIR
     )
+    constraints_path: str | None = constraints_path_str
     try:
         with os.fdopen(constraints_fd, "w", encoding="utf-8") as f:
             if sys.version_info >= (3, 13):
@@ -512,7 +513,7 @@ def install_dependencies(
         except Exception:
             pass  # nosec B110
         try:
-            os.unlink(constraints_path)
+            os.unlink(constraints_path_str)
         except Exception:
             pass  # nosec B110
         constraints_path = None

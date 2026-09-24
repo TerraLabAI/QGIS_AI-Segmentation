@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Iterator, Tuple
 
 
 
@@ -202,6 +202,7 @@ def _match_by_centroid(
             gy0, gy1 = int(by0 // cell), int(by1 // cell)
         except (ValueError, OverflowError):
             continue
+        candidates: Iterator[int]
         if (gx1 - gx0 + 1) * (gy1 - gy0 + 1) <= _MAX_QUERY_CELLS:
             candidates = (oidx
                           for gx in range(gx0, gx1 + 1)
@@ -220,7 +221,7 @@ def _match_by_centroid(
             if not (bx0 <= ocx <= bx1 and by0 <= ocy <= by1):
                 continue
             d = (ocx - ncx) ** 2 + (ocy - ncy) ** 2
-            if best_d is None or d < best_d or (d == best_d and oidx < best):
+            if best_d is None or d < best_d or (d == best_d and best is not None and oidx < best):
                 best, best_d = oidx, d
         if best is not None:
             used.add(best)

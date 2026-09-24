@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from qgis.core import (
     Qgis,
     QgsCategorizedSymbolRenderer,
@@ -240,8 +242,6 @@ MIN_LAYER_GROUND_SPAN_M = 1.0
 
 
 def crs_disagrees_with_extent(crs, extent) -> str:
-
-
 
 
 
@@ -1289,7 +1289,7 @@ def attribute_values_for_fields(
 
     if measurer is None:
         measurer = make_area_measurer(crs)
-    values = []
+    values: list[Any] = []
     for field in fields:
         name = field.name().lower()
         if name == "det_id":

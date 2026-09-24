@@ -59,10 +59,70 @@ class AutoZoneCrsMixin:
         self._auto_free_zone_fit = None
         if zone is None:
             self._auto_zone = None
+            self._auto_zone_pick_label = ""
             self._forget_zone_crs()
+
+
+
+
             return
         self._auto_zone = zone
         self._record_zone_crs(zone, crs)
+        self._publish_shared_zone(zone)
+
+    def _publish_shared_zone(self, zone: QgsRectangle) -> None:
+
+
+
+
+
+
+
+
+
+
+
+
+        label = str(getattr(self, "_auto_zone_pick_label", "") or "")
+        self._auto_zone_pick_label = ""
+        try:
+            from ...core import zone_of_interest as zoi
+
+            crs = getattr(self, "_auto_zone_crs", None)
+            if crs is None or not crs.isValid():
+                return
+            zoi.write_zone(self._shared_zone_shape(zone), crs, label=label,
+                           project=QgsProject.instance())
+        except Exception:  # noqa: BLE001
+            return
+
+    def _shared_zone_shape(self, zone: QgsRectangle) -> QgsGeometry:
+
+
+
+
+
+
+
+
+        outline = getattr(self, "_auto_zone_polygon", None)
+        try:
+            if outline is None or outline.isEmpty():
+                return QgsGeometry.fromRect(zone)
+            box = outline.boundingBox()
+            span = max(zone.width(), zone.height())
+            tolerance = (span if span > 0 else 1.0) * 1e-6
+            edges = (
+                (box.xMinimum(), zone.xMinimum()),
+                (box.yMinimum(), zone.yMinimum()),
+                (box.xMaximum(), zone.xMaximum()),
+                (box.yMaximum(), zone.yMaximum()),
+            )
+            if all(abs(a - b) <= tolerance for a, b in edges):
+                return QgsGeometry(outline)
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            pass  # nosec B110
+        return QgsGeometry.fromRect(zone)
 
     def _record_zone_crs(self, zone: QgsRectangle, crs=None) -> None:
 

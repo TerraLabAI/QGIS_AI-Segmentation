@@ -91,9 +91,19 @@ def _drop_superseded(held: OrderedDict, identity: tuple) -> None:
         _close_quietly(held.pop(key))
 
 
+def _held_slots() -> int:
+
+    try:
+        from .server_dials import dial_in_range
+
+        return dial_in_range("tuning.network.raster_held_slots", _HELD_SLOTS, 1, 8)
+    except Exception:  # noqa: BLE001
+        return _HELD_SLOTS
+
+
 def _evict_extra(held: OrderedDict) -> None:
 
-    while len(held) > _HELD_SLOTS:
+    while len(held) > _held_slots():
         _close_quietly(held.popitem(last=False)[1])
 
 

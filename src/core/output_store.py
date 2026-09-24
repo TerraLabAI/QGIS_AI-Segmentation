@@ -13,6 +13,8 @@
 
 
 
+
+
 from __future__ import annotations
 
 import os
@@ -303,6 +305,20 @@ def _table_exists(gpkg_path: str, table: str, tables: set[str] | None) -> bool:
         return False
 
 
+
+_NAME_MAX_CHARS = 40
+
+
+def _name_max_chars() -> int:
+
+    try:
+        from .server_dials import dial_in_range
+
+        return int(dial_in_range("tuning.export.name_max_chars", _NAME_MAX_CHARS, 20, 80))
+    except Exception:  # noqa: BLE001  # nosec B110
+        return _NAME_MAX_CHARS
+
+
 def snake_table_name(prompt: str, gpkg_path: str) -> str:
 
 
@@ -310,7 +326,7 @@ def snake_table_name(prompt: str, gpkg_path: str) -> str:
 
 
     base = re.sub(r"[^\w]+", "_", (prompt or "").strip().lower()).strip("_")
-    base = _ascii_table_stem(base)[:40].strip("_") or "segmentation"
+    base = _ascii_table_stem(base)[:_name_max_chars()].strip("_") or "segmentation"
 
 
 
@@ -408,13 +424,26 @@ def output_directory_candidates(source_layer, first_only: bool = False) -> list[
 
 
 
+    return writable_directories(
+        output_directory_candidate_paths(source_layer), first_only=first_only)
+
+
+def output_directory_candidate_paths(source_layer) -> list[str]:
+
+
+
     project = QgsProject.instance()
-    home = str(Path.home())
-    ordered = [
+    return [
         project.homePath() or project.absolutePath(),
         _source_layer_dir(source_layer),
-        home,
+        str(Path.home()),
     ]
+
+
+def writable_directories(ordered: list[str], first_only: bool = False) -> list[str]:
+
+
+    home = str(Path.home())
     seen: set[str] = set()
     writable: list[str] = []
     for candidate in ordered:
@@ -451,7 +480,11 @@ def project_gpkg_path(source_layer) -> str:
         next_output_gpkg(_output_directory(source_layer), GPKG_FILENAME))
 
 
-def _ground_metre_transform(memory_layer):
+def _ground_metre_transform(memory_layer, plan: dict | None = None):
+
+
+
+
 
 
 
@@ -464,17 +497,27 @@ def _ground_metre_transform(memory_layer):
 
     try:
         source = memory_layer.crs()
-        target = pick_output_crs(source, memory_layer.extent())
+        if plan is None:
+            target = pick_output_crs(source, memory_layer.extent())
+            if target is None or not target.isValid() or target == source:
+                return None
+            return QgsCoordinateTransform(source, target, QgsProject.instance())
+        target = pick_output_crs(
+            source, memory_layer.extent(), project_crs=plan["project_crs"],
+            transform_context=plan["context"], ellipsoid=plan["ellipsoid"])
         if target is None or not target.isValid() or target == source:
             return None
-        return QgsCoordinateTransform(source, target, QgsProject.instance())
-    except (RuntimeError, AttributeError, TypeError):
+        return QgsCoordinateTransform(source, target, plan["context"])
+    except (RuntimeError, AttributeError, TypeError, KeyError):
         return None
 
 
 def _write_gpkg(memory_layer, path: str, table: str, overwrite_file: bool,
                 transform=None, identifier: str = "",
-                description: str = "") -> str:
+                description: str = "", transform_context=None) -> str:
+
+
+
 
     options = QgsVectorFileWriter.SaveVectorOptions()
     options.driverName = "GPKG"
@@ -497,10 +540,12 @@ def _write_gpkg(memory_layer, path: str, table: str, overwrite_file: bool,
         if overwrite_file
         else QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteLayer
     )
+    if transform_context is None:
+        transform_context = QgsProject.instance().transformContext()
     result = QgsVectorFileWriter.writeAsVectorFormatV3(
         memory_layer,
         path,
-        QgsProject.instance().transformContext(),
+        transform_context,
         options,
     )
     if result[0] == QgsVectorFileWriter.WriterError.NoError:
@@ -557,13 +602,51 @@ def write_run_table(memory_layer, *, prompt: str, source_layer, fallback_stem: s
 
 
 
-    from .output_gpkg_rollover import file_size
+
+
+
+
+    plan = plan_run_table(prompt, source_layer, fallback_stem)
+    return write_planned_run_table(memory_layer, plan, load=_load_table)
+
+
+def plan_run_table(prompt: str, source_layer, fallback_stem: str) -> dict:
+
+
+
 
     gpkg_path = project_gpkg_path(source_layer)
     note_unexpected_output_folder(os.path.dirname(gpkg_path), source_layer)
-    table = snake_table_name(prompt, gpkg_path)
-    friendly = friendly_layer_name(prompt, gpkg_path)
-    transform = _ground_metre_transform(memory_layer)
+    project = QgsProject.instance()
+    return {
+        "gpkg_path": gpkg_path,
+        "table": snake_table_name(prompt, gpkg_path),
+        "friendly": friendly_layer_name(prompt, gpkg_path),
+        "fallback_stem": fallback_stem,
+        "context": project.transformContext(),
+        "project_crs": project.crs(),
+        "ellipsoid": project.ellipsoid(),
+        "candidate_dirs": output_directory_candidate_paths(source_layer),
+    }
+
+
+def write_planned_run_table(memory_layer, plan: dict, load=None) -> WriteResult | None:
+
+
+
+
+
+
+
+
+
+    from .output_gpkg_rollover import file_size
+
+    gpkg_path = plan["gpkg_path"]
+    table = plan["table"]
+    friendly = plan["friendly"]
+    context = plan["context"]
+    transform = _ground_metre_transform(memory_layer, plan)
 
 
 
@@ -576,9 +659,12 @@ def write_run_table(memory_layer, *, prompt: str, source_layer, fallback_stem: s
         memory_layer, gpkg_path, table,
         overwrite_file=file_size(gpkg_path) == 0, transform=transform,
         identifier=friendly, description=description,
+        transform_context=context,
     )
     if not error_message:
-        layer = _load_table(gpkg_path, table, friendly)
+        if load is None:
+            return WriteResult(gpkg_path, table, None, False, "", gpkg_path)
+        layer = load(gpkg_path, table, friendly)
         if layer is not None:
             return WriteResult(gpkg_path, table, layer, False, "", gpkg_path)
         error_message = "saved table could not be reloaded"
@@ -587,8 +673,8 @@ def write_run_table(memory_layer, *, prompt: str, source_layer, fallback_stem: s
         _LOG_TAG, level=Qgis.MessageLevel.Warning,
     )
 
-    stem = re.sub(r"[^\w\- ]", "", fallback_stem or "").strip().replace(" ", "_")
-    stem = stem[:40] or "detection"
+    stem = re.sub(r"[^\w\- ]", "", plan.get("fallback_stem") or "").strip().replace(" ", "_")
+    stem = stem[:_name_max_chars()] or "detection"
     timestamp = time.strftime("%Y%m%d_%H%M%S")
 
 
@@ -599,7 +685,7 @@ def write_run_table(memory_layer, *, prompt: str, source_layer, fallback_stem: s
 
 
     failures: list[tuple[str, str]] = []
-    for directory in output_directory_candidates(source_layer):
+    for directory in writable_directories(plan.get("candidate_dirs") or []):
 
 
 
@@ -613,11 +699,14 @@ def write_run_table(memory_layer, *, prompt: str, source_layer, fallback_stem: s
                 fallback_path = target.name
             fallback_error = _write_gpkg(
                 memory_layer, fallback_path, table, overwrite_file=True,
-                transform=transform, identifier=friendly, description=description)
+                transform=transform, identifier=friendly, description=description,
+                transform_context=context)
         except OSError as exc:
             fallback_error = str(exc)
         if not fallback_error:
-            layer = _load_table(fallback_path, table, friendly)
+            if load is None:
+                return WriteResult(fallback_path, table, None, True, error_message, gpkg_path)
+            layer = load(fallback_path, table, friendly)
             if layer is not None:
                 return WriteResult(fallback_path, table, layer, True, error_message, gpkg_path)
             fallback_error = "saved file could not be reloaded"
@@ -637,6 +726,20 @@ def write_run_table(memory_layer, *, prompt: str, source_layer, fallback_stem: s
         _LOG_TAG, level=Qgis.MessageLevel.Critical,
     )
     return None
+
+
+def load_written_run_table(written: WriteResult | None,
+                           friendly: str) -> WriteResult | None:
+
+
+
+    if written is None:
+        return None
+    layer = _load_table(written.gpkg_path, written.table_name,
+                        friendly or written.table_name)
+    if layer is None:
+        return None
+    return written._replace(layer=layer)
 
 
 
@@ -779,6 +882,30 @@ def render_simplify_px() -> float:
         return RENDER_SIMPLIFY_PX
 
 
+def _apply_render_simplify(layer) -> None:
+
+    try:
+        from qgis.core import QgsVectorSimplifyMethod
+
+        from .qt_compat import (
+            SimplifyDistanceAlgorithm,
+            SimplifyFullHint,
+            SimplifyGeometryHint,
+        )
+
+        method = QgsVectorSimplifyMethod()
+        hint = SimplifyFullHint if SimplifyFullHint is not None else SimplifyGeometryHint
+        if hint is not None:
+            method.setSimplifyHints(hint)
+        if SimplifyDistanceAlgorithm is not None:
+            method.setSimplifyAlgorithm(SimplifyDistanceAlgorithm)
+        method.setThreshold(render_simplify_px())
+        method.setForceLocalOptimization(True)
+        layer.setSimplifyMethod(method)
+    except Exception:  # noqa: BLE001  # nosec B110
+        pass
+
+
 def apply_fast_canvas_render(layer) -> None:
 
 
@@ -806,25 +933,14 @@ def apply_fast_canvas_render(layer) -> None:
 
 
     try:
-        from qgis.core import QgsVectorSimplifyMethod
+        from .server_dials import feature_enabled
 
-        from .qt_compat import (
-            SimplifyDistanceAlgorithm,
-            SimplifyFullHint,
-            SimplifyGeometryHint,
-        )
-
-        method = QgsVectorSimplifyMethod()
-        hint = SimplifyFullHint if SimplifyFullHint is not None else SimplifyGeometryHint
-        if hint is not None:
-            method.setSimplifyHints(hint)
-        if SimplifyDistanceAlgorithm is not None:
-            method.setSimplifyAlgorithm(SimplifyDistanceAlgorithm)
-        method.setThreshold(render_simplify_px())
-        method.setForceLocalOptimization(True)
-        layer.setSimplifyMethod(method)
+        simplify = feature_enabled("render_simplify")
     except Exception:  # noqa: BLE001  # nosec B110
-        pass
+        simplify = True
+
+    if simplify:
+        _apply_render_simplify(layer)
     try:
         provider = layer.dataProvider()
         if _provider_lacks_spatial_index(provider):

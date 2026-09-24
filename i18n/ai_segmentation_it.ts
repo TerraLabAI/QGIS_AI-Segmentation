@@ -6959,5 +6959,53 @@ Un valore più basso assottiglia prima i dettagli più piccoli, mantenendo gli a
         <source>{plan} · {status}</source>
         <translation>{plan} · {status}</translation>
     </message>
+    <message>
+        <source>Layer</source>
+        <translation>Layer</translation>
+    </message>
+    <message>
+        <source>No polygon layer in this project</source>
+        <translation>Nessun layer poligonale in questo progetto</translation>
+    </message>
+    <message>
+        <source>Or use an existing zone</source>
+        <translation>Oppure usa una zona esistente</translation>
+    </message>
+    <message>
+        <source>Saving... {pct}%</source>
+        <translation>Salvataggio... {pct}%</translation>
+    </message>
+    <message>
+        <source>Signed in (from {}).</source>
+        <translation>Accesso effettuato (da {}).</translation>
+    </message>
+    <message>
+        <source>Signed in as {} (from {}).</source>
+        <translation>Accesso effettuato come {} (da {}).</translation>
+    </message>
+    <message>
+        <source>Take the zone from a layer or a selection</source>
+        <translation>Prendi la zona da un layer o da una selezione</translation>
+    </message>
+    <message>
+        <source>That zone cannot be moved onto this map. Draw it instead.</source>
+        <translation>Questa zona non può essere spostata su questa mappa. Disegnala invece.</translation>
+    </message>
+    <message>
+        <source>That zone is empty. Pick another one.</source>
+        <translation>Questa zona è vuota. Scegline un'altra.</translation>
+    </message>
+    <message>
+        <source>Use this zone</source>
+        <translation>Usa questa zona</translation>
+    </message>
+    <message>
+        <source>Zone of interest</source>
+        <translation>Zona di interesse</translation>
+    </message>
+    <message>
+        <source>{name}, {n} selected</source>
+        <translation>{name}, {n} selezionati</translation>
+    </message>
 </context>
 </TS>

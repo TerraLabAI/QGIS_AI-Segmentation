@@ -23,6 +23,19 @@ from __future__ import annotations
 from qgis.core import QgsGeometry
 
 
+def _mask_pixel_units(mask, info) -> float:
+
+
+    try:
+        minx, maxx, miny, maxy = (float(v) for v in info["bbox"])
+        rows, cols = int(mask.shape[0]), int(mask.shape[1])
+        if rows <= 0 or cols <= 0:
+            return 0.0
+        return max(0.0, min(abs(maxx - minx) / cols, abs(maxy - miny) / rows))
+    except Exception:  # noqa: BLE001
+        return 0.0
+
+
 class ManualShapeCacheMixin:
 
 
@@ -31,6 +44,38 @@ class ManualShapeCacheMixin:
 
         self._mask_preview_memo = None
         self._manual_outline_memo = None
+
+    def _manual_outline_smooth_px(self) -> float:
+
+
+        try:
+            from ...core.detection_policy import manual_outline_smooth_px
+
+            cloud = bool(self._manual_cloud_predictor_active())
+            return max(0.0, float(manual_outline_smooth_px(cloud)))
+        except Exception:  # noqa: BLE001
+            return 0.0
+
+    def _manual_mask_stage_key(self, fill_holes, max_hole_px, simplify_tol):
+
+
+
+
+
+
+        return (self._refine_expand, fill_holes, self._refine_min_area,
+                max_hole_px, simplify_tol,
+                (self._manual_outline_smooth_px(),
+                 self._manual_outline_smooth_size_fraction()))
+
+    def _manual_outline_smooth_size_fraction(self) -> float:
+
+        try:
+            from ...core.detection_policy import manual_outline_smooth_size_fraction
+
+            return max(0.0, float(manual_outline_smooth_size_fraction()))
+        except Exception:  # noqa: BLE001
+            return 0.0
 
     def _manual_mask_polygons(self, fill_holes, max_hole_px, simplify_tol,
                               mask=None, info=None):
@@ -52,8 +97,8 @@ class ManualShapeCacheMixin:
             info = self.current_transform_info
         is_active = (mask is self.current_mask
                      and info is self.current_transform_info)
-        key = (self._refine_expand, fill_holes, self._refine_min_area,
-               max_hole_px, simplify_tol)
+        key = self._manual_mask_stage_key(fill_holes, max_hole_px, simplify_tol)
+        smooth_px, smooth_size_fraction = key[-1]
         if is_active:
             memo = getattr(self, "_mask_preview_memo", None)
             if (memo is not None and memo[0] is mask and memo[1] is info
@@ -85,11 +130,32 @@ class ManualShapeCacheMixin:
                     min_area=0,
                     max_hole_px=max_hole_px,
                 )
+        if smooth_px > 0:
+
+
+
+
+
+            from ...core.semiauto_outline import (
+                CORNER_CUT_PX,
+                cut_corners,
+                smooth_mask,
+            )
+            cleaned = smooth_mask(cleaned, smooth_px, smooth_size_fraction)
         geometries = mask_to_polygons(cleaned, info, simplify_tol)
+        if smooth_px > 0 and geometries:
+            cut = CORNER_CUT_PX * _mask_pixel_units(cleaned, info)
+            if cut > 0:
+                geometries = [cut_corners(g, cut) for g in geometries]
         if is_active:
 
 
             self._mask_preview_memo = (mask, info, key, cleaned, geometries)
+        else:
+
+
+
+            self._ghost_mask_stage = (mask, dict(info), key, cleaned, geometries)
         return cleaned, geometries
 
     def _manual_outline_for(self, mask, info):
@@ -123,6 +189,88 @@ class ManualShapeCacheMixin:
         if combined is None or combined.isEmpty():
             return None
         return combined
+
+    def _adopt_ghost_shape(self, ghost_mask, ghost_outline) -> bool:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        try:
+            import numpy as np
+            from qgis.core import QgsGeometry as _Geometry
+
+            from ...core.config_cache import get_config
+            from ...core.detection_policy import manual_simplify_multiple_of_px
+
+            mask = self.current_mask
+            info = self.current_transform_info
+            stage = getattr(self, "_ghost_mask_stage", None)
+            if (mask is None or info is None or stage is None or ghost_outline is None
+                    or stage[0] is not ghost_mask or ghost_outline[0] is not ghost_mask):
+                return False
+            ghost_info = stage[1]
+            if (tuple(ghost_info.get("bbox") or ()) != tuple(info.get("bbox") or ())
+                    or tuple(ghost_info.get("img_shape") or ()) != tuple(info.get("img_shape") or ())
+                    or ghost_info.get("crs") != info.get("crs")):
+                return False
+            if mask.shape != ghost_mask.shape or not np.array_equal(mask, ghost_mask):
+                return False
+            multiple = manual_simplify_multiple_of_px()
+            tolerance = (multiple * self._crop_pixel_size_units(info)
+                         if multiple > 0 else 0.0)
+            fill_holes, max_hole_px = self._fill_holes_arguments()
+            key = self._manual_mask_stage_key(fill_holes, max_hole_px, tolerance)
+            config = get_config()
+            outline_key = self._manual_outline_key(key)
+            _mask, ghost_config, ghost_settings, outline = ghost_outline
+            if stage[2] != key or ghost_config is not config or ghost_settings != outline_key:
+                return False
+            self._mask_preview_memo = (mask, info, key, stage[3], stage[4])
+            self._manual_outline_memo = (
+                mask, info, config, outline_key,
+                _Geometry(outline) if outline is not None else None)
+            return True
+        except Exception:  # noqa: BLE001  # nosec B110
+            return False
+
+    def _warm_outline_chain(self) -> None:
+
+
+
+
+
+
+
+
+        if getattr(self, "_headless", False):
+            return
+        try:
+            import numpy as np
+
+
+            from ...core import polygon_exporter, progressive_merge  # noqa: F401
+
+            if self._manual_cloud_predictor_active():
+                from ...core.cloud_detection import decode_rle_to_mask  # noqa: F401
+            side = 32
+            mask = np.zeros((side, side), dtype=bool)
+            mask[8:24, 10:22] = True
+            info = {"bbox": (0.0, float(side), 0.0, float(side)),
+                    "img_shape": (side, side), "crs": None}
+            self._manual_outline_for(mask, info)
+            self._ghost_mask_stage = None
+        except Exception:  # noqa: BLE001  # nosec B110
+            pass
 
     def _manual_outline_key(self, mask_stage):
 
@@ -173,8 +321,7 @@ class ManualShapeCacheMixin:
         tolerance = (multiple * self._crop_pixel_size_units(info)
                      if multiple > 0 else 0.0)
         fill_holes, max_hole_px = self._fill_holes_arguments()
-        mask_stage = (self._refine_expand, fill_holes, self._refine_min_area,
-                      max_hole_px, tolerance)
+        mask_stage = self._manual_mask_stage_key(fill_holes, max_hole_px, tolerance)
 
         config = get_config()
         key = self._manual_outline_key(mask_stage)

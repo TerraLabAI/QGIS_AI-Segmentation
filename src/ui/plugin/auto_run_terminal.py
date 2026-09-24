@@ -18,6 +18,8 @@ class AutoRunTerminalMixin:
 
     def _on_auto_all_finished(self, results: list) -> None:
 
+        from ...core import run_timeline
+        run_timeline.mark("all_finished_slot")
         self._set_zone_badge_enabled(True)
         if self.dock_widget:
             try:
@@ -291,23 +293,28 @@ class AutoRunTerminalMixin:
 
 
 
-        merged_ided = self._resolve_exemplar_finalize_ided()
-        self._auto_merger = None
-        if not merged_ided:
-            self._record_auto_zero_result(tiles_succeeded)
-            return
+        merged_ided = self._server_finalize_rows_now()
+        if merged_ided is None:
+
+
+
+            merged_ided = self._resolve_exemplar_finalize_ided()
+            self._auto_merger = None
+            if not merged_ided:
+                self._record_auto_zero_result(tiles_succeeded)
+                return
 
 
 
 
-        from ...core.polygon_exporter import drop_covered_objects
-        merged_ided = drop_covered_objects(merged_ided)
-        if not merged_ided:
-            self._record_auto_zero_result(tiles_succeeded)
-            return
+            from ...core.polygon_exporter import drop_covered_objects
+            merged_ided = drop_covered_objects(merged_ided)
+            if not merged_ided:
+                self._record_auto_zero_result(tiles_succeeded)
+                return
 
 
-        merged_ided = self._align_auto_footprints_now(merged_ided)
+            merged_ided = self._align_auto_footprints_now(merged_ided)
         self._auto_objects = self._build_auto_objects(merged_ided)
         self._reset_review_refine_cache()
         visible, vis_scores = self._compute_visible_objects(
@@ -340,6 +347,10 @@ class AutoRunTerminalMixin:
 
 
 
+
+
+        if self._begin_server_finalize_phase(state):
+            return
         self._mark_finalize_phase(state, "restore")
         merged_ided, remerge = self._begin_exemplar_finalize_merge()
         self._auto_merger = None
@@ -472,6 +483,10 @@ class AutoRunTerminalMixin:
             pass  # nosec B110
 
 
+        from .auto_client_profile import stop_gui_gap_watch
+        stop_gui_gap_watch(self)
+
+
         try:
             from ...core.run_log_capture import send_run_log
             send_run_log("completed")
@@ -561,7 +576,6 @@ class AutoRunTerminalMixin:
 
 
 
-
         convert_failed_n = int(getattr(self, "_auto_convert_failed_tiles", 0) or 0)
         convert_dead = bool(
             not quota_stop and not network_failed and not coverage_dead
@@ -623,13 +637,13 @@ class AutoRunTerminalMixin:
             except (RuntimeError, AttributeError):
                 typed = "?"
             if typed:
+
+
                 msg = tr('No matches in this zone. Try one plain word for the '
-                         'object, "building" and not "building footprint", and a '
-                         'smaller zone.')
+                         'object, "building" and not "building footprint".')
             else:
                 msg = tr('No matches in this zone. Add the object\'s name, like '
-                         '"building", or draw a clearer example, and try a '
-                         'smaller zone.')
+                         '"building", or draw a clearer example.')
             log_msg = "Auto detection: run completed with zero detections"
         if self.dock_widget and not self._auto_headless_run:
             try:

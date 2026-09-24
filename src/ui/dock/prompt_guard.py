@@ -87,7 +87,7 @@ _MULTI_OBJECT_SEPARATORS = (",", ";", "/", "+", "&", " and ", " or ")
 
 _LEAD_ARTICLES = {
     "the", "a", "an", "le", "la", "les", "l", "un", "une", "des", "du",
-    "el", "los", "las", "una", "unos", "unas", "o", "os", "um", "uma",
+    "el", "los", "las", "una", "unos", "unas", "o", "os", "as", "um", "uma",
     "uns", "umas", "il", "lo", "gli", "i", "der", "die", "das", "ein",
     "eine", "de", "d",
 
@@ -224,10 +224,19 @@ def _prompt_tables() -> dict:
     return tables
 
 
+
+
+
+_LETTERS_WITHOUT_DECOMPOSITION = str.maketrans(
+    {"ł": "l", "Ł": "L", "ß": "ss", "ø": "o", "Ø": "O", "đ": "d", "Đ": "D",
+     "æ": "ae", "Æ": "AE", "œ": "oe", "Œ": "OE", "ı": "i"}
+)
+
+
 def _fold_ascii(text: str) -> str:
 
     return (
-        unicodedata.normalize("NFKD", text)
+        unicodedata.normalize("NFKD", text.translate(_LETTERS_WITHOUT_DECOMPOSITION))
         .encode("ascii", "ignore")
         .decode("ascii")
     )
@@ -321,13 +330,23 @@ def _localized_label_index() -> dict[str, str]:
     return index
 
 
+def _collapse_reduplication(word: str) -> str:
+
+    head, sep, tail = word.partition("-")
+    return head if sep and head and head == tail else word
+
+
 def _lookup_variants(phrase: str) -> list[str]:
 
 
-    words = phrase.split(" ")
-    singular = " ".join(
-        w[:-1] if len(w) > 3 and w[-1] in "sx" else w for w in words)
-    return [phrase] if singular == phrase else [phrase, singular]
+
+    words = [_collapse_reduplication(w) for w in phrase.split(" ")]
+    out = [phrase]
+    for variant in (" ".join(words), " ".join(
+            w[:-1] if len(w) > 3 and w[-1] in "sx" else w for w in words)):
+        if variant not in out:
+            out.append(variant)
+    return out
 
 
 def english_token_for(text: str) -> str | None:
@@ -343,12 +362,20 @@ def english_token_for(text: str) -> str | None:
     norm = re.sub(r"\s+", " ", (text or "")).strip().lower().strip("?.!,;:")
     folded = _fold_ascii(norm)
     words = [w for w in folded.split(" ") if w]
-    while words and words[0] in _LEAD_ARTICLES:
+    while len(words) > 1 and words[0] in _LEAD_ARTICLES:
+
+
         words = words[1:]
+    index = _localized_label_index()
+    if any(c.isalpha() and ord(c) > 0x024F for c in norm):
+
+
+        hit = index.get(norm)
+        if hit:
+            return hit
     if not words:
         return None
     candidate = " ".join(words)
-    index = _localized_label_index()
     for probe in _lookup_variants(candidate):
         hit = index.get(probe) or foreign.get(probe)
         if hit:
@@ -712,6 +739,49 @@ def is_exemplar_boost_prompt(text: str) -> bool:
         return any(probe in boost for probe in _lookup_variants(" ".join(core)))
     except Exception:  # noqa: BLE001
         return False
+
+
+def server_lookup_wanted(text: str, ok: bool, reason: str | None,
+                         suggestion: str | None) -> bool:
+
+
+
+
+
+
+
+
+    if ok and reason is None:
+        return not is_known_object(text)
+    if not ok and reason == "language":
+        return True
+    if ok and reason == "plural" and suggestion:
+        return not is_known_object(suggestion)
+    return False
+
+
+def vet_server_token(token: str | None) -> str | None:
+
+
+
+
+
+
+
+    if not token:
+        return None
+    ok, reason, suggestion = validate_prompt(token)
+    if not ok:
+        return None
+    if reason in ("translated", "plural", "alias"):
+        return suggestion or None
+    if reason == "steer":
+
+
+        return _singular_token(token)
+    if reason is None:
+        return token
+    return None
 
 
 def validate_prompt(text: str) -> tuple[bool, str | None, str | None]:

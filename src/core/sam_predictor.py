@@ -10,6 +10,7 @@ import tempfile
 import threading
 import time
 from collections import OrderedDict
+from typing import IO, Any
 
 import numpy as np
 from qgis.core import Qgis, QgsMessageLog
@@ -134,8 +135,8 @@ class SamPredictor:
         self.venv_python = sam_config["venv_python"]
         self.worker_script = sam_config["worker_script"]
         self.checkpoint = sam_config["checkpoint"]
-        self.process = None
-        self._stderr_file = None
+        self.process: subprocess.Popen[str] | None = None
+        self._stderr_file: IO[str] | None = None
 
 
 
@@ -143,12 +144,12 @@ class SamPredictor:
 
 
 
-        self._worker_crop_keys = OrderedDict()
+        self._worker_crop_keys: OrderedDict[str, str] = OrderedDict()
         self._warming_up = False
         self._last_worker_error = None
         self.is_image_set = False
-        self.original_size = None
-        self.input_size = None
+        self.original_size: tuple[Any, ...] | None = None
+        self.input_size: tuple[Any, ...] | None = None
 
 
 
@@ -428,6 +429,8 @@ class SamPredictor:
                 "parent_pid": os.getpid(),
             }
 
+            if self.process.stdin is None:
+                raise RuntimeError("Prediction worker started without an input pipe")
             self.process.stdin.write(json.dumps(init_request) + "\n")
             self.process.stdin.flush()
             return True
@@ -582,6 +585,8 @@ class SamPredictor:
                 try:
                     if proc.poll() is None:
                         try:
+                            if proc.stdin is None:
+                                raise BrokenPipeError("worker has no input pipe")
                             proc.stdin.write(json.dumps({"action": "quit"}) + "\n")
                             proc.stdin.flush()
                             proc.wait(timeout=2)
@@ -635,6 +640,8 @@ class SamPredictor:
         if self.process is not None and self.process.poll() is None:
             try:
                 request = {"action": "reset"}
+                if self.process.stdin is None:
+                    raise BrokenPipeError("worker has no input pipe")
                 self.process.stdin.write(json.dumps(request) + "\n")
                 self.process.stdin.flush()
 
@@ -676,6 +683,8 @@ class SamPredictor:
         try:
             if self.process.poll() is not None:
                 return False
+            if self.process.stdin is None:
+                return False
             self.process.stdin.write(json.dumps(request) + "\n")
             self.process.stdin.flush()
         except (BrokenPipeError, OSError, ValueError, AttributeError):
@@ -683,6 +692,8 @@ class SamPredictor:
         return True
 
     def _write_request(self, request: dict) -> None:
+        if self.process is None or self.process.stdin is None:
+            raise BrokenPipeError("no live prediction worker")
         self.process.stdin.write(json.dumps(request) + "\n")
         self.process.stdin.flush()
 
@@ -827,6 +838,8 @@ class SamPredictor:
                 request["mask_input_shape"] = list(mask_input.shape)
                 request["mask_input_dtype"] = str(mask_input.dtype)
 
+            if self.process.stdin is None:
+                raise BrokenPipeError("worker has no input pipe")
             self.process.stdin.write(json.dumps(request) + "\n")
             self.process.stdin.flush()
 

@@ -24,7 +24,7 @@ from __future__ import annotations
 import os
 import time
 from contextlib import suppress
-from typing import Callable, NamedTuple
+from typing import Any, BinaryIO, Callable, NamedTuple
 
 
 def tr(text: str) -> str:
@@ -94,7 +94,7 @@ class _FileSlot:
 
 
 
-    handle = None
+    handle: BinaryIO | None = None
 
 
 def stream_url_to_file(
@@ -133,8 +133,8 @@ def stream_url_to_file(
     if on_disk and not resume_offset:
         with suppress(OSError):
             os.unlink(part_path)
-    state = {"error": "", "cancelled": False, "written": 0,
-             "resume": resume_offset, "status_checked": False}
+    state: dict[str, Any] = {"error": "", "cancelled": False, "written": 0,
+                             "resume": resume_offset, "status_checked": False}
     file_slot = _FileSlot()
 
     try:

@@ -60,6 +60,7 @@ from qgis.PyQt.QtCore import QByteArray, QSettings, QThread, QTimer, QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
 from . import transport_dials as _td
+from .gil_safe_qobject import prime as _gil_safe
 from .qt_compat import HttpStatusCodeAttribute, silent_task_flags
 from .telemetry_events import FLUSH_NOW, NO_CONSENT_EVENTS, REGISTRY_VERSION
 from .telemetry_payload import _scrub_telemetry_properties, scrub_payload_value  # noqa: F401
@@ -105,6 +106,16 @@ def _batch_max() -> int:
         return int(dial_in_range("telemetry.batch_max", _BATCH_MAX, 1, 200))
     except Exception:  # noqa: BLE001
         return _BATCH_MAX
+
+
+def _inflight_max() -> int:
+
+    try:
+        from .server_dials import dial_in_range
+
+        return int(dial_in_range("telemetry.inflight_max", _INFLIGHT_MAX, 1, 32))
+    except Exception:  # noqa: BLE001
+        return _INFLIGHT_MAX
 
 
 def _timeout_ms() -> int:
@@ -408,7 +419,7 @@ class _TelemetryFlushTask(QgsTask):
 
 
 
-        self._feedback = QgsFeedback()
+        self._feedback = _gil_safe(QgsFeedback())
 
     def cancel(self) -> None:
         try:
@@ -459,7 +470,9 @@ class _TelemetryFlushTask(QgsTask):
                 req.setTransferTimeout(_timeout_ms())
             for k, v in self._auth.items():
                 req.setRawHeader(k.encode("utf-8"), v.encode("utf-8"))
-            blocker = QgsBlockingNetworkRequest()
+
+
+            blocker = _gil_safe(QgsBlockingNetworkRequest())
             try:
                 err = blocker.post(req, QByteArray(payload), False, self._feedback)
             except TypeError:
@@ -686,7 +699,7 @@ def flush() -> None:
     with _lock:
         if not _batch and not _pending_pre_auth:
             return
-        available = max(0, _INFLIGHT_MAX - len(_inflight))
+        available = max(0, _inflight_max() - len(_inflight))
         if not available:
             return
 

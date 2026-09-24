@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess  # nosec B404
 import sys
 
@@ -20,7 +21,7 @@ from .logging_utils import log as _log
 from .subprocess_utils import run_unthrottled  # nosec B404
 
 
-def _quick_check_packages(venv_dir: str = None) -> tuple[bool, str]:
+def _quick_check_packages(venv_dir: str | None = None) -> tuple[bool, str]:
 
 
 
@@ -103,7 +104,7 @@ def _packages_missing_from_venv(venv_dir: str, package_names: list[str]) -> list
             if _normalize_dist_name(name) not in dist_names]
 
 
-def local_model_ready(venv_dir: str = None) -> tuple[bool, str]:
+def local_model_ready(venv_dir: str | None = None) -> tuple[bool, str]:
 
 
 
@@ -121,7 +122,7 @@ def local_model_ready(venv_dir: str = None) -> tuple[bool, str]:
     return answer
 
 
-def _probe_local_model(venv_dir: str = None) -> tuple[bool, str]:
+def _probe_local_model(venv_dir: str | None = None) -> tuple[bool, str]:
 
 
 
@@ -165,6 +166,41 @@ def _probe_local_model(venv_dir: str = None) -> tuple[bool, str]:
             )
             return False, f"Package {name} is damaged"
     return True, "Local model packages found"
+
+
+_MISSING_MODULE_RE = re.compile(r"No module named '([A-Za-z_][\w.]*)'")
+
+
+def package_missing_behind_error(error_text: str, venv_dir: str = None) -> str | None:
+
+
+
+
+
+
+
+
+
+
+    modules = {name.split(".", 1)[0] for name in _MISSING_MODULE_RE.findall(error_text or "")}
+    if not modules:
+        return None
+    if venv_dir is None:
+        venv_dir = VENV_DIR
+    site_packages = get_venv_site_packages(venv_dir)
+    try:
+        dist_names = _installed_dist_names(site_packages)
+    except OSError:
+        return None
+    for name, _spec in resolved_packages():
+        dir_name = name.replace("-", "_")
+        if dir_name not in modules:
+            continue
+        package_dir = os.path.join(site_packages, dir_name)
+        if (not os.path.isfile(os.path.join(package_dir, "__init__.py"))
+                or _normalize_dist_name(name) not in dist_names):
+            return name
+    return None
 
 
 def _fallback_python_answers(allow_subprocess_probe: bool) -> bool:

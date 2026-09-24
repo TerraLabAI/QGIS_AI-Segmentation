@@ -214,7 +214,7 @@ class TerraLabAccountMixin:
             else None)
         return {"usage": usage, "account": account_ok}
 
-    def get_config(self, product: str) -> dict:
+    def get_config(self, product: str, auth: dict | None = None) -> dict:
 
 
 
@@ -222,12 +222,50 @@ class TerraLabAccountMixin:
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        from ..core import config_cache
         from ..core.request_context import config_query
 
-        return self._request(
-            "GET", config_query(product), timeout_ms=_td.interactive_timeout_ms(_TIMEOUT_INTERACTIVE),
+        path = config_query(product)
+        etag = config_cache.config_etag()
+        auth = auth or None
+        answer = self._request(
+            "GET", path, auth=auth,
+            extra_headers={"If-None-Match": etag} if etag else None,
+            timeout_ms=_td.interactive_timeout_ms(_TIMEOUT_INTERACTIVE),
             require_body=True,
         )
+        if isinstance(answer, dict) and answer.get("not_modified") is True:
+            cached = config_cache.get_config()
+            if cached:
+                return cached
+
+
+
+            return self._request(
+                "GET", path, auth=auth,
+                timeout_ms=_td.interactive_timeout_ms(_TIMEOUT_INTERACTIVE),
+                require_body=True,
+            )
+        if isinstance(answer, dict):
+            new_etag = answer.pop("etag", None)
+            if new_etag:
+                config_cache.remember_etag(new_etag)
+        return answer
 
     def get_segment_catalog(self, timeout_ms: int | None = None) -> dict:
 
@@ -259,6 +297,7 @@ class TerraLabAccountMixin:
         native_mupp: float | None,
         auth: dict | None = None,
         exemplar_size_m: float | None = None,
+        rewritten_from: str | None = None,
     ) -> dict:
 
 
@@ -281,6 +320,11 @@ class TerraLabAccountMixin:
 
         if exemplar_size_m is not None and exemplar_size_m > 0:
             payload["exemplar_size_m"] = float(exemplar_size_m)
+
+
+
+        if isinstance(rewritten_from, str) and rewritten_from.strip():
+            payload["rewritten_from"] = rewritten_from.strip()
         body = json.dumps(payload).encode("utf-8")
         answer = self._request(
             "POST", "/api/plugin/seg-run-plan", auth=auth, body=body,
@@ -422,7 +466,9 @@ class TerraLabAccountMixin:
             "GET", path, auth=auth, timeout_ms=_td.api_timeout_ms(_TIMEOUT_API), allow_list=True,
             require_body=True)
 
-    def poll_pairing(self, code: str, timeout_ms: int = 10_000) -> dict:
+    def poll_pairing(self, code: str, timeout_ms: int | None = None) -> dict:
+
+
 
 
 
@@ -430,6 +476,8 @@ class TerraLabAccountMixin:
 
 
         from urllib.parse import quote
+        if timeout_ms is None:
+            timeout_ms = dial_in_range("tuning.pairing.poll_timeout_ms", 10_000, 2000, 30000)
         return self._request(
             "GET",
             f"/api/plugin/pair/poll?code={quote(code, safe='')}",

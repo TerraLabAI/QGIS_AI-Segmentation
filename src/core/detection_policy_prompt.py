@@ -49,4 +49,7 @@ def prompt_hint_for(
         return None
     first = next(iter_keywords(entry))
     slug = "".join(c if c.isalnum() else "_" for c in first.lower()).strip("_")
-    return f"prompt_hint_{slug}", clean_served_text(entry["hint"])
+    hint_text = clean_served_text(entry["hint"])
+    if hint_text is None:
+        return None
+    return f"prompt_hint_{slug}", hint_text

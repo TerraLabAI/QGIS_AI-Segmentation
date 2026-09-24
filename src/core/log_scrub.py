@@ -70,6 +70,17 @@ def _literal_home_patterns() -> list[re.Pattern[str]]:
     return patterns
 
 
+
+
+
+
+
+
+_POSIX_ACCOUNT = r"(?:[^/\s]+(?: [^/\s:]+){0,3}(?=/)|[^/\s]+(?=/|$|\s))"
+_WINDOWS_ACCOUNT = (r"(?:[^/\\\s]+(?: [^/\\\s:]+){0,3}(?=[/\\])"
+                    r"|[^/\\\s]+(?=[/\\]|$|\s))")
+
+
 def anonymize_paths(text: str) -> str:
 
 
@@ -96,13 +107,10 @@ def anonymize_paths(text: str) -> str:
 
 
 
-    text = re.sub(r"/Users/[^/\s]+(?=/|$|\s)", "<USER>", text)
+    text = re.sub(r"/Users/" + _POSIX_ACCOUNT, "<USER>", text)
 
 
-    text = re.sub(r"/home/[^/\s]+(?=/|$|\s)", "<USER>", text)
-
-
-
+    text = re.sub(r"/home/" + _POSIX_ACCOUNT, "<USER>", text)
 
 
 
@@ -110,11 +118,14 @@ def anonymize_paths(text: str) -> str:
 
 
 
-    text = re.sub(r"[A-Za-z]:[/\\]+Users[/\\]+[^/\\\s]+(?=[/\\]|$|\s)", "<USER>", text,
+
+
+
+    text = re.sub(r"[A-Za-z]:[/\\]+Users[/\\]+" + _WINDOWS_ACCOUNT, "<USER>", text,
                   flags=re.IGNORECASE)
 
 
-    return re.sub(r"\\{2,}[^\\]+\\+Users\\+[^/\\\s]+(?=[/\\]|$|\s)", "<USER>", text,
+    return re.sub(r"\\{2,}[^\\]+\\+Users\\+" + _WINDOWS_ACCOUNT, "<USER>", text,
                   flags=re.IGNORECASE)
 
 

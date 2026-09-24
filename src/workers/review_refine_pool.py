@@ -35,7 +35,6 @@
 
 
 
-
 from __future__ import annotations
 
 import logging
@@ -339,10 +338,23 @@ class ReviewRefineProcessPool:
             self._queue.put(None)
         self._kill_all()
 
-    def join_run(self, timeout_ms: int = REVIEW_POOL_JOIN_TIMEOUT_MS) -> bool:
+    def join_run(self, timeout_ms: int | None = None) -> bool:
+
+
+
+
 
         import time
 
+        if timeout_ms is None:
+            timeout_ms = REVIEW_POOL_JOIN_TIMEOUT_MS
+            try:
+                from ..core.server_dials import dial_in_range
+                timeout_ms = dial_in_range(
+                    "tuning.review.refine_pool_join_timeout_ms",
+                    REVIEW_POOL_JOIN_TIMEOUT_MS, 500, 30000)
+            except Exception:  # noqa: BLE001
+                timeout_ms = REVIEW_POOL_JOIN_TIMEOUT_MS
         deadline = time.monotonic() + max(0.0, timeout_ms) / 1000.0
         for proc in self._children:
             left = deadline - time.monotonic()
@@ -472,7 +484,10 @@ def child_main() -> None:
         if kind == "init":
 
 
-            config_cache.save_config = lambda config: False
+
+
+
+            config_cache.save_config = lambda config: False  # type: ignore[assignment, misc]
             if payload:
                 config_cache.set_config(payload)
             _send(stdout, ("init_ok", None))

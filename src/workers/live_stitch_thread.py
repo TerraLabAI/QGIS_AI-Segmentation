@@ -22,10 +22,15 @@ import logging
 import queue
 import threading
 import time
+from typing import TYPE_CHECKING
 
 from qgis.PyQt.QtCore import QThread, pyqtSignal
 
 from ..core import transport_dials as _td
+
+if TYPE_CHECKING:
+    from ..core.live_refine import LiveRefiner
+    from .stitch_shape_pool import ShapeFanout
 
 logger = logging.getLogger(__name__)
 
@@ -163,9 +168,9 @@ class LiveStitchThread(QThread):
 
 
         self._area_of: dict[int, tuple] = {}
-        self._refiner = None
+        self._refiner: LiveRefiner | None = None
 
-        self._shape_pool = None
+        self._shape_pool: ShapeFanout | None = None
 
 
 
@@ -205,7 +210,12 @@ class LiveStitchThread(QThread):
 
 
 
-    def submit(self, detections: list, pixel_size: float = 0.0) -> None:
+        self.fragment_log: list | None = None
+
+
+
+    def submit(self, detections: list, pixel_size: float = 0.0,
+               tile_idx: int = -1) -> None:
 
 
 
@@ -215,7 +225,8 @@ class LiveStitchThread(QThread):
 
         if self._aborted:
             return
-        self._inbox.put((list(detections or ()), float(pixel_size or 0.0)))
+        self._inbox.put((list(detections or ()), float(pixel_size or 0.0),
+                         int(tile_idx)))
 
     def take_deltas(self) -> list:
 
@@ -271,6 +282,10 @@ class LiveStitchThread(QThread):
 
 
     def run(self) -> None:  # noqa: D102
+
+
+        from ..core.macos_activity import promote_current_thread
+        promote_current_thread()
         try:
             self._build_tools()
             while True:
@@ -279,10 +294,10 @@ class LiveStitchThread(QThread):
                     break
                 if self._aborted:
                     continue
-                detections, pixel_size = item
+                detections, pixel_size, tile_idx = item
                 started = time.perf_counter()
                 try:
-                    self._fold_tile(detections, pixel_size)
+                    self._fold_tile(detections, pixel_size, tile_idx)
                 except Exception:  # noqa: BLE001
                     logger.warning(
                         "LiveStitchThread: tile fold failed", exc_info=True)
@@ -379,7 +394,8 @@ class LiveStitchThread(QThread):
             self._unit_aspect)
         self._merger.mark_changed(list(self._shown))
 
-    def _fold_tile(self, detections: list, pixel_size: float) -> None:
+    def _fold_tile(self, detections: list, pixel_size: float,
+                   tile_idx: int = -1) -> None:
 
         from qgis.core import QgsGeometry
 
@@ -407,6 +423,8 @@ class LiveStitchThread(QThread):
                     self.raw_fragments = None
                 else:
                     self.raw_fragments.append((wkb, float(score)))
+            if self.fragment_log is not None:
+                self.fragment_log.append((tile_idx, wkb, float(score)))
 
 
 
@@ -599,6 +617,8 @@ class LiveStitchThread(QThread):
             held = self._shaped_ahead.pop(fid, None)
             if held is not None and held[0] is geom:
                 shape = held[1]
+            elif self._refiner is None:
+                shape = None
             else:
                 try:
                     shape = self._refiner.refine(geom)

@@ -78,7 +78,9 @@ class AutoRunLifecycleMixin:
 
     def _run_detection(self) -> None:
         from ...api.terralab_client import TerraLabClient
+        from ...core import run_timeline
 
+        run_timeline.mark("worker_run")
         self._client = TerraLabClient()
 
 
@@ -86,6 +88,7 @@ class AutoRunLifecycleMixin:
 
 
         self._run_nam = self._client.acquire_predict_nam()
+        run_timeline.mark("client_ready")
         total = len(self._tiles)
 
         if total == 0:
@@ -150,7 +153,9 @@ class AutoRunLifecycleMixin:
 
 
             self._prespawn_convert_children()
+            run_timeline.mark("prep_done")
             self._run_gate_scan()
+            run_timeline.mark("gate_done")
             if self._terminal_sent or self._stop_requested:
 
 
@@ -243,12 +248,25 @@ class AutoRunLifecycleMixin:
             setbacks = int(self._aimd.setbacks)
         except (AttributeError, TypeError, ValueError):
             cap, setbacks = 0, 0
+
+
+
+        polygonizer, most = None, 0
+        for name in ("gdal", "tracer", "fallback", "fallback_fast"):
+            try:
+                crops = int(getattr(self, f"polygonized_{name}", 0) or 0)
+            except (TypeError, ValueError):
+                crops = 0
+            if crops > most:
+                polygonizer, most = name, crops
         return {
+            **self._density_profile(),
             "convert_pool": self._convert_pool_kind or "",
             "convert_workers": int(self._convert_pool_workers),
             "convert_fallback_reason": self._convert_fallback_reason or "",
             "tiles_convert_failed": int(self.tiles_convert_failed),
             "convert_fail_reason": self._convert_fail_reason or "",
+            "polygonizer": polygonizer,
             "convert_rescued_tiles": int(self._convert_rescued_tiles),
             "render_wait_s": float(self.phase_render_s),
             "encode_s": float(self.phase_encode_s),
@@ -397,6 +415,8 @@ class AutoRunLifecycleMixin:
         if self._terminal_sent:
             return
         self._terminal_sent = True
+        from ...core import run_timeline
+        run_timeline.mark("worker_terminal")
 
 
 
@@ -405,6 +425,8 @@ class AutoRunLifecycleMixin:
             if self._stop_requested:
                 if self._stop_reason == "user":
                     self.cancelled.emit()
+                elif self._density_replan_asked():
+                    self.density_replan.emit(self._density_decision)
             else:
                 self.all_tiles_finished.emit([])
         except RuntimeError:

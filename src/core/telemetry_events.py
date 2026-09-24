@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-REGISTRY_VERSION = 50
+REGISTRY_VERSION = 58
 
 
 PLUGIN_FIRST_OPEN = "plugin_first_open"
@@ -319,9 +319,9 @@ REQUIRED_PROPS: dict[str, tuple[str, ...]] = {
     EXEMPLAR_NUDGE_SHOWN: (),
     EXEMPLAR_NUDGE_CLICKED: (),
     TUTORIAL_OPENED: (),
-    REVIEW_CORRECT_BOX: ("run_id", "label", "outcome", "objects"),
+    REVIEW_CORRECT_BOX: ("run_id", "label", "outcome", "objects", "sample_rate"),
     REVIEW_CORRECT_UNDO: ("run_id", "kind"),
-    REVIEW_STEP: ("run_id", "step"),
+    REVIEW_STEP: ("run_id", "step", "sample_rate"),
     AUTO_EDIT_IN_QGIS: ("run_id", "outcome"),
 
 

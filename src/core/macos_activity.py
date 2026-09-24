@@ -46,8 +46,12 @@ def _load_objc() -> dict | None:
 
     try:
 
-        ctypes.cdll.LoadLibrary(ctypes.util.find_library("Foundation"))
-        objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
+        foundation_lib = ctypes.util.find_library("Foundation")
+        objc_lib = ctypes.util.find_library("objc")
+        if foundation_lib is None or objc_lib is None:
+            raise OSError("Foundation/objc shared library not found")
+        ctypes.cdll.LoadLibrary(foundation_lib)
+        objc = ctypes.cdll.LoadLibrary(objc_lib)
 
         objc.objc_getClass.restype = ctypes.c_void_p
         objc.objc_getClass.argtypes = [ctypes.c_char_p]
@@ -138,3 +142,34 @@ def end_app_nap_activity(token) -> None:
         objc["send_end"](objc["process_info"], objc["sel_end"], token)
     except Exception as exc:
         logger.debug("macos_activity: end_app_nap_activity failed: %s", exc)
+
+
+
+
+_QOS_CLASS_USER_INITIATED = 0x19
+
+
+def promote_current_thread() -> bool:
+
+
+
+
+
+
+
+
+
+
+    if not _IS_MACOS:
+        return False
+    try:
+        import ctypes
+
+        libsystem = ctypes.CDLL("/usr/lib/libSystem.B.dylib", use_errno=True)
+        setter = libsystem.pthread_set_qos_class_self_np
+        setter.restype = ctypes.c_int
+        setter.argtypes = [ctypes.c_uint, ctypes.c_int]
+        return setter(_QOS_CLASS_USER_INITIATED, 0) == 0
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("macos_activity: thread QoS unchanged: %s", exc)
+        return False

@@ -54,7 +54,10 @@ class PairingPollTask(QgsTask):
 
 
 
-    CODE_TTL_S = 600.0
+
+
+
+    CODE_TTL_S = 1800.0
     EXPIRY_HINT_LEAD_S = 30.0
 
 
@@ -70,7 +73,7 @@ class PairingPollTask(QgsTask):
         client,
         code: str,
         interval_s: float = 3.0,
-        total_timeout_s: float = 600.0,
+        total_timeout_s: float = CODE_TTL_S,
     ):
         super().__init__(tr("Connecting AI Segmentation"), QgsTask.Flag.CanCancel)
         self._client = client
@@ -184,8 +187,7 @@ class PairingPollTask(QgsTask):
             waited_s = time.monotonic() - started
             stall_after_s = dial_in_range(
                 "tuning.pairing.stall_after_s", self.STALL_AFTER_S, 10.0, 300.0)
-            code_ttl_s = dial_in_range(
-                "tuning.pairing.code_ttl_s", self.CODE_TTL_S, 60.0, 3600.0)
+            code_ttl_s = self._total_timeout_s
             expiry_hint_lead_s = dial_in_range(
                 "tuning.pairing.expiry_hint_lead_s", self.EXPIRY_HINT_LEAD_S, 5.0, 120.0)
             if status == "pending" and not error_code and not browser_seen:

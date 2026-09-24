@@ -19,6 +19,8 @@ from qgis.PyQt.QtCore import (
     pyqtSlot,
 )
 
+from ..core import run_timeline as _timeline
+
 logger = logging.getLogger(__name__)
 
 
@@ -100,6 +102,13 @@ class TileRenderBridge(QObject):
 
 
         self._render_timeout_ms = _resolve_render_timeout_ms()
+
+
+
+
+        self._deadline_is_final: bool | None = None
+        self._rendered_any = False
+        self._refuse_renders = False
 
 
 
@@ -202,6 +211,7 @@ class TileRenderBridge(QObject):
         )
 
         slot_t0 = time.monotonic()
+        _timeline.mark("render_slot")
         self._mutex.lock()
         try:
             asked_at = self._requested_at.get(seq)
@@ -213,7 +223,7 @@ class TileRenderBridge(QObject):
         finally:
             self._mutex.unlock()
 
-        if self._cancelled:
+        if self._cancelled or self._refuse_renders:
 
 
 
@@ -239,9 +249,10 @@ class TileRenderBridge(QObject):
                     logger.warning(
                         "TileRenderBridge: render clone unavailable, this tile "
                         "renders through the layer itself: %s", exc)
+            job_t0 = time.monotonic()
             started = start_tile_render_job(
                 self._layer, extent, out_w or tw, out_h or th,
-                lambda img, s=seq: self._store_result(s, img),
+                lambda img, s=seq: self._render_landed(s, img, job_t0),
                 timeout_ms=self._render_timeout_ms,
                 render_clone=self._render_clone,
                 clone_resolved=self._render_clone_built,
@@ -253,6 +264,50 @@ class TileRenderBridge(QObject):
         if not started:
             self._store_result(seq, None)
         self._slot_s += time.monotonic() - slot_t0
+
+    def _render_landed(self, seq: int, img, job_t0: float) -> None:
+
+
+
+        if img is not None:
+            self._rendered_any = True
+        elif (not self._rendered_any and not self._refuse_renders
+                and time.monotonic() - job_t0
+                >= 0.9 * self._render_timeout_ms / 1000.0
+                and self._missed_deadline_is_final()):
+            self._refuse_renders = True
+            try:
+                from qgis.core import Qgis, QgsMessageLog
+
+                QgsMessageLog.logMessage(
+                    "Auto detection: a tile of this local raster took over "
+                    f"{self._render_timeout_ms / 1000.0:.0f}s to render and "
+                    "none has rendered yet; the remaining tiles are not "
+                    "rendered",
+                    "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            except Exception:  # noqa: BLE001
+                pass  # nosec B110
+        self._store_result(seq, img)
+
+    def _missed_deadline_is_final(self) -> bool:
+
+
+
+
+        if self._deadline_is_final is None:
+            final = False
+            try:
+                import os
+
+                source = self._layer.source() or ""
+                low = source.lower()
+                final = (self._layer.providerType() == "gdal"
+                         and not low.startswith("/vsi") and "://" not in low
+                         and os.path.isfile(source))
+            except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
+                final = False
+            self._deadline_is_final = final
+        return self._deadline_is_final
 
     def gui_thread_summary(self) -> dict:
 
@@ -289,6 +344,7 @@ class TileRenderBridge(QObject):
                 return
             self._results[seq] = img
             self._done.add(seq)
+            _timeline.mark("render_done")
             started = self._requested_at.pop(seq, None)
             if started is not None:
                 self._durations[seq] = max(0.0, time.monotonic() - started)

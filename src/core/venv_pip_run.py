@@ -13,7 +13,7 @@ import re
 import subprocess  # nosec B404
 import tempfile
 import time
-from typing import Callable
+from typing import IO, Callable
 
 from qgis.core import Qgis
 
@@ -259,16 +259,18 @@ def _run_pip_install(
 
     try:
         os.makedirs(PLUGIN_CACHE_DIR, exist_ok=True)
-        _tmp_kwargs = {"dir": PLUGIN_CACHE_DIR}
+        _tmp_dir: str | None = PLUGIN_CACHE_DIR
     except OSError:
-        _tmp_kwargs = {}
+        _tmp_dir = None
     stdout_fd, stdout_path = tempfile.mkstemp(
-        suffix="_stdout.txt", prefix="pip_", **_tmp_kwargs
+        suffix="_stdout.txt", prefix="pip_", dir=_tmp_dir
     )
     stderr_fd, stderr_path = tempfile.mkstemp(
-        suffix="_stderr.txt", prefix="pip_", **_tmp_kwargs
+        suffix="_stderr.txt", prefix="pip_", dir=_tmp_dir
     )
 
+    stdout_file: IO[str] | None
+    stderr_file: IO[str] | None
     try:
         stdout_file = os.fdopen(stdout_fd, "w", encoding="utf-8")
         stderr_file = os.fdopen(stderr_fd, "w", encoding="utf-8")

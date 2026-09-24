@@ -64,10 +64,31 @@ def unavailable_tooltip() -> str:
         "carries it.")
 
 
+def _report_right_angles_unavailable() -> None:
+
+
+
+
+
+
+
+
+    try:
+        from ...core.building_regularizer import dependencies_problem
+        from ...core.telemetry_errors import track_plugin_error
+
+        track_plugin_error(
+            stage="segment", error_code="right_angles_unavailable",
+            message=dependencies_problem() or "unknown")
+    except Exception:  # noqa: BLE001
+        pass  # nosec B110
+
+
 def _warn_once() -> None:
     if _state["warned"]:
         return
     _state["warned"] = True
+    _report_right_angles_unavailable()
     try:
         from qgis.utils import iface as _iface
 

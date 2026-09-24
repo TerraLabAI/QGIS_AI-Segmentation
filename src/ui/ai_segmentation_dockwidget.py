@@ -1,18 +1,7 @@
 from __future__ import annotations
 
-from qgis.core import QgsProject
 from qgis.PyQt.QtCore import Qt, QTimer, pyqtSignal
-from qgis.PyQt.QtWidgets import (
-    QComboBox,
-    QDockWidget,
-    QDoubleSpinBox,
-    QFrame,
-    QScrollArea,
-    QSlider,
-    QSpinBox,
-    QVBoxLayout,
-    QWidget,
-)
+from qgis.PyQt.QtWidgets import QDockWidget
 
 from ..core.activation_manager import (
     is_plugin_activated,
@@ -34,10 +23,12 @@ from .dock.auto_review_panel import DockAutoReviewPanelMixin
 from .dock.auto_run_block import DockAutoRunBlockMixin
 from .dock.auto_run_lifecycle import DockAutoRunLifecycleMixin
 from .dock.auto_run_status import DockAutoRunStatusMixin
+from .dock.auto_zone_reuse import DockAutoZoneReuseMixin
 from .dock.build import DockBuildMixin
 from .dock.dock_sizing import dock_minimum_height
 from .dock.exemplar_upsell import DockExemplarUpsellMixin
 from .dock.install_lock import DockInstallLockMixin
+from .dock.lazy_build import DockLazyBuildMixin
 from .dock.manual_credit_gate import DockManualCreditGateMixin
 from .dock.manual_engine import DockManualEngineMixin
 from .dock.manual_local_install import DockManualLocalInstallMixin
@@ -47,16 +38,13 @@ from .dock.pro_nudges import DockProNudgesMixin
 from .dock.qgis_bridge import DockQgisBridgeMixin
 from .dock.refine import DockRefineMixin
 from .dock.server_switches import DockServerSwitchesMixin
-from .dock.styles import (
-    apply_input_theme_to_tree,
-    apply_keyboard_focus_policy,
-    apply_quiet_scrollbar,  # noqa: F401
-)
+from .dock.styles import apply_quiet_scrollbar  # noqa: F401
 from .dock.ui_refresh import DockStateMixin
-from .dock.widgets import Mode, _WheelGuard
+from .dock.widgets import Mode
 
 
 class AISegmentationDockWidget(
+    DockLazyBuildMixin,
     DockBuildMixin,
     DockAutoBuildMixin,
     DockAutoReviewBuildMixin,
@@ -81,6 +69,7 @@ class AISegmentationDockWidget(
     DockAutoRunBlockMixin,
     DockAutoRunLifecycleMixin,
     DockAutoRunStatusMixin,
+    DockAutoZoneReuseMixin,
     DockExemplarUpsellMixin,
     DockAutoReviewPanelMixin,
     DockAutoReviewCorrectMixin,
@@ -133,6 +122,10 @@ class AISegmentationDockWidget(
     history_rerun_requested = pyqtSignal(dict)
     history_reuse_prompt_requested = pyqtSignal(str)
     zone_draw_requested = pyqtSignal()
+
+
+
+    auto_zone_source_picked = pyqtSignal(str, str)
     auto_detail_changed = pyqtSignal(int)
     auto_advanced_toggled = pyqtSignal(bool)
     auto_prompt_committed = pyqtSignal(str)
@@ -209,6 +202,14 @@ class AISegmentationDockWidget(
         return feature_enabled("exemplars")
 
     def __init__(self, parent=None):
+
+
+
+
+
+
+
+
         super().__init__(tr("AI Segmentation by TerraLab"), parent)
 
 
@@ -225,7 +226,37 @@ class AISegmentationDockWidget(
 
         self.setMinimumHeight(dock_minimum_height(self))
 
-        self._setup_title_bar()
+
+
+
+
+        self._dock_content_state = "pending"
+
+
+        self._dock_content_trigger = ""
+
+
+        self._dock_content_callbacks: list = []
+
+
+        self._dock_pending_parts: list = []
+        self._dock_parts_building = False
+
+
+
+
+
+
+        self._plugin_opened_emitted = False
+        self._theme_follow_queued = False
+
+
+
+
+        self._quota_envelopes = None
+        self._auto_low_credit_line = None
+        self._update_card_pending = False
+        self._update_card_required = False
 
 
 
@@ -278,60 +309,8 @@ class AISegmentationDockWidget(
 
         self._auto_started: bool = False
 
-        self.main_widget = QWidget()
-        self.main_layout = QVBoxLayout(self.main_widget)
-        self.main_layout.setSpacing(8)
-        self.main_layout.setContentsMargins(8, 8, 8, 8)
-
-        self._setup_ui()
 
 
-
-        from .dock.font_scale import apply_font_scale_to_tree
-
-        apply_font_scale_to_tree(self.main_widget)
-
-
-
-
-        apply_input_theme_to_tree(self.main_widget)
-
-
-        apply_keyboard_focus_policy(self.main_widget)
-        apply_keyboard_focus_policy(self._custom_title_bar)
-
-        scroll_area = QScrollArea()
-        scroll_area.setWidget(self.main_widget)
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
-
-
-
-        apply_quiet_scrollbar(scroll_area)
-
-
-        body_holder = QWidget()
-        body_col = QVBoxLayout(body_holder)
-        body_col.setContentsMargins(0, 0, 0, 0)
-        body_col.setSpacing(0)
-        body_col.addWidget(scroll_area, 1)
-        body_col.addWidget(self.update_gate_page, 1)
-        apply_keyboard_focus_policy(self.update_gate_page)
-        self.setWidget(body_holder)
-
-
-        self._dock_scroll_area = scroll_area
-
-
-
-
-        self._wheel_guard = _WheelGuard(scroll_area.viewport(), self)
-
-
-
-        for _w in self.main_widget.findChildren((QComboBox, QSpinBox, QDoubleSpinBox, QSlider)):
-            _w.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-            _w.installEventFilter(self._wheel_guard)
 
         self._dependencies_ok = False
         self._checkpoint_ok = False
@@ -372,6 +351,8 @@ class AISegmentationDockWidget(
         self._refine_debounce_timer = QTimer(self)
         self._refine_debounce_timer.setSingleShot(True)
         self._refine_debounce_timer.timeout.connect(self._emit_refine_changed)
+
+
 
         self._auto_review_debounce_timer = QTimer(self)
         self._auto_review_debounce_timer.setSingleShot(True)
@@ -415,17 +396,3 @@ class AISegmentationDockWidget(
         self._visibility_debounce_timer = QTimer(self)
         self._visibility_debounce_timer.setSingleShot(True)
         self._visibility_debounce_timer.timeout.connect(self._update_ui_state)
-
-
-        QgsProject.instance().layersAdded.connect(self._on_layers_added)
-        QgsProject.instance().layersRemoved.connect(self._on_layers_removed)
-
-        QgsProject.instance().layerTreeRoot().visibilityChanged.connect(
-            self._on_layer_visibility_changed)
-
-
-
-        self.visibilityChanged.connect(self._on_dock_hidden_reset_engine)
-
-
-        self._update_full_ui()

@@ -146,6 +146,9 @@ class AutoRunCancelMixin:
         worker = self._auto_worker
         if worker is None:
             self._take_auto_cancel_gesture()
+
+
+            self._density_clear_forced()
             if self._auto_review is not None:
 
 
@@ -293,6 +296,8 @@ class AutoRunCancelMixin:
 
         self._stop_auto_stall_watchdog()
         self._pop_nothing_found_notice()
+
+        self._density_clear_forced()
 
 
 

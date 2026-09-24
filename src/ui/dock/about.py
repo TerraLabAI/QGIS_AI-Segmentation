@@ -741,10 +741,6 @@ class DockAboutMixin:
 
 
 
-        self._setup_auto_review_view_block(self.main_layout)
-
-
-
 
 
     def _on_open_guide_footer(self):

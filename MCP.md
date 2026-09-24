@@ -75,8 +75,30 @@ ready, and how to call it. `terralab.help()` says the same thing in prose.
     import terralab
     print(terralab.segmentation.get_status())
     print(terralab.segmentation.detect(X, Y))
-    print(terralab.segmentation.detect_auto(zone_wkt="Polygon ((...))", object_class="building"))
-    print(terralab.segmentation.auto_detect_status())
+    print(terralab.segmentation.detect_auto(zone_wkt="Polygon ((...))", object_class="building", wait=False))
+    print(terralab.segmentation.auto_detect_status(wait_s=45))
+
+### A zone run, start to finish
+
+A zone run can take a quarter of an hour. Start it detached, then wait on it:
+
+    import terralab
+    seg = terralab.segmentation
+    print(seg.set_auto_zone("Polygon ((...))"))   # free: km2, rough duration, allowance left
+    print(seg.detect_auto(zone_wkt="Polygon ((...))", object_class="building", wait=False))
+    # -> {"started": True, "running": True, "run_id": "...", "eta_s": ..., "poll_after_s": ...}
+    print(seg.auto_detect_status(run_id="...", wait_s=45))
+
+Repeat the last call until `running` and `finishing` are both False. Each call
+returns the moment the run ends, or after 45 seconds (the most it waits is 50,
+under the minute most MCP clients allow a call). A 15 minute sweep is about 21
+calls. `last_result` then holds the outcome and the same `run_id`. The default
+`detect_auto` call blocks and gives up after a few minutes, which is only right
+for a small zone.
+
+`set_auto_zone` costs nothing and returns the zone's billed surface (`km2`), a
+rough duration (`estimate`) and what the account has left this month
+(`allowance`), so the cost can be confirmed with the user before the run.
 
 Before a zone run, ask which words work instead of guessing one:
 
@@ -106,6 +128,16 @@ An outline that came back wrong is corrected with more points, not re-clicked:
 
 `BX, BY` sits on the part you want left out.
 
+`detect` and `detect_points` return the outline as full-precision WKT, which
+runs to kilobytes for one traced object. Pass `response_format="concise"` to
+get its `bbox`, `area_m2` and `vertex_count` instead; the saved layer holds the
+shape either way.
+
+When a person left a finished run open in the panel, `review_objects()` lists
+its objects a page at a time (`offset`, `limit`, `sort_by`), with the index
+`review_remove_object` and `review_merge_objects` take, plus each object's
+score, area, centroid and box.
+
 The same handle is available the long way round, if you prefer it:
 
     import qgis.utils
@@ -123,8 +155,14 @@ Every method returns a plain dictionary and never raises. A failure comes back
 under the key `_error`. The one exception is `guide()`, which returns text.
 
 Only one zone run goes at a time. A second `detect_auto` while one is running
-comes back with `busy: True` and starts nothing, so poll `auto_detect_status()`
-rather than calling again.
+comes back with `busy: True` and starts nothing, so wait with
+`auto_detect_status(wait_s=45)` rather than calling again.
+
+Building tools rather than calling by hand? `terralab.tools()` returns one tool
+definition per method, with billed and slow calls marked in their description
+and in `_meta`. `terralab.describe()` returns every method with its parameters;
+`terralab.describe(detail="concise")` is the same without the docstring text
+each parameter already carries.
 
 Nothing here installs software or signs anyone in. When `get_status()` or
 `install_status()` says a piece is missing, relay the sentence in

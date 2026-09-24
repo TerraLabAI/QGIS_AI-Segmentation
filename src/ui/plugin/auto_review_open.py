@@ -60,6 +60,8 @@ class AutoReviewOpenMixin:
 
 
 
+        from ...core import run_timeline
+        run_timeline.mark("review_opening")
 
         source_layer = self._get_active_raster_layer()
         source_layer_name = ""
@@ -252,6 +254,27 @@ class AutoReviewOpenMixin:
             f"Auto detection: {len(visible)} object(s) ready for review",
             "AI Segmentation", level=Qgis.MessageLevel.Info,
         )
+        self._note_review_open_on_timeline()
+
+    def _note_review_open_on_timeline(self) -> None:
+
+
+        from ...core import run_timeline
+        if not run_timeline.enabled():
+            return
+        run_timeline.mark("review_open")
+
+        def _idle() -> None:
+            run_timeline.mark("review_idle")
+            QgsMessageLog.logMessage(
+                "Auto detection: timeline - " + run_timeline.summary_line(),
+                "AI Segmentation", level=Qgis.MessageLevel.Info)
+
+        try:
+            from ...core.qt_compat import safe_single_shot
+            safe_single_shot(0, self.dock_widget, _idle)
+        except (RuntimeError, AttributeError):
+            _idle()
 
     def _remember_auto_run_pace(self, tiles_succeeded: int) -> None:
 

@@ -833,7 +833,8 @@ def _spin_arrow_icons() -> tuple[str, str] | None:
     if _SPIN_ICON_URLS is not None:
         return _SPIN_ICON_URLS
     import os
-    import tempfile
+
+    from .temp_icon_dirs import make_icon_dir
 
     box = _SPIN_ARROW_BOX
     head = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{box}"'
@@ -845,7 +846,7 @@ def _spin_arrow_icons() -> tuple[str, str] | None:
         "spin_down.svg": f'{head}<path d="M2 3.4 L4.5 5.9 L7 3.4" {stroke}/></svg>',
     }
     try:
-        icon_dir = tempfile.mkdtemp(prefix="qgis_ai_seg_spin_")
+        icon_dir = make_icon_dir("qgis_ai_seg_spin_")
         urls = []
         for name, body in bodies.items():
             path = os.path.join(icon_dir, name).replace("\\", "/")

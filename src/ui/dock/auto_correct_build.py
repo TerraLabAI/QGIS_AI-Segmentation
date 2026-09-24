@@ -456,7 +456,7 @@ class DockAutoCorrectBuildMixin:
         _zero_body = _curly_quotes(dial_copy(
             "correct.zero_detection",
             tr("This run found nothing. Add the object yourself below, or use "
-               '"Re-run the whole zone" with another word or a smaller zone.')))
+               '"Re-run the whole zone" with another word.')))
         self.auto_correct_zero_line = QLabel(msg_rich(
             "info",
             f"<b>{_html.escape(tr('No objects found'))}</b><br>"

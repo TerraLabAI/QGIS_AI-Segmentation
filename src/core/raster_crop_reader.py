@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import re
 
@@ -88,6 +89,12 @@ def _normalize_to_uint8(bands, nodata_value=None):
         done[src] = b
 
         band = bands[src]
+        if is_uint8 and num_bands == 3:
+
+
+
+            result[b] = band
+            continue
 
 
 
@@ -300,6 +307,39 @@ def _read_palette_rgb_rasterio(src, window, out_h, out_w):
         return None
 
 
+_GDAL_NUMPY_TYPES = {
+    "Byte": np.uint8, "Int8": np.int8, "UInt16": np.uint16, "Int16": np.int16,
+    "UInt32": np.uint32, "Int32": np.int32, "UInt64": np.uint64,
+    "Int64": np.int64, "Float32": np.float32, "Float64": np.float64,
+}
+
+
+def _band_array(band, xoff, yoff, xsize, ysize, buf_xsize, buf_ysize, **kwargs):
+
+
+
+
+
+
+
+    try:
+        return band.ReadAsArray(xoff, yoff, xsize, ysize,
+                                buf_xsize=buf_xsize, buf_ysize=buf_ysize, **kwargs)
+    except ImportError:
+        pass
+    from osgeo import gdal
+
+    dtype = _GDAL_NUMPY_TYPES.get(gdal.GetDataTypeName(band.DataType))
+    buf_type = band.DataType
+    if dtype is None:
+        dtype, buf_type = np.float32, gdal.GDT_Float32
+    raw = band.ReadRaster(xoff, yoff, xsize, ysize, buf_xsize, buf_ysize,
+                          buf_type, **kwargs)
+    if raw is None:
+        return None
+    return np.frombuffer(raw, dtype=dtype).reshape(buf_ysize, buf_xsize).copy()
+
+
 def _read_palette_rgb_gdal(ds, col_off, row_off, actual_w, actual_h, out_w, out_h):
 
 
@@ -311,14 +351,46 @@ def _read_palette_rgb_gdal(ds, col_off, row_off, actual_w, actual_h, out_w, out_
         ctable = band1.GetColorTable()
         if ctable is None or band1.GetColorInterpretation() != gdal.GCI_PaletteIndex:
             return None
-        idx = band1.ReadAsArray(
-            col_off, row_off, actual_w, actual_h,
-            buf_xsize=out_w, buf_ysize=out_h,
-        )
+        idx = _band_array(band1, col_off, row_off, actual_w, actual_h, out_w, out_h)
+        if idx is None:
+            return None
         cmap = {ci: ctable.GetColorEntry(ci) for ci in range(ctable.GetCount())}
         return _apply_colormap(idx, cmap)
     except Exception:  # noqa: BLE001
         return None
+
+
+def _declared_rgb_bands_rasterio(src):
+
+    try:
+        from rasterio.enums import ColorInterp
+
+        indexes = [src.colorinterp.index(colour) + 1 for colour in
+                   (ColorInterp.red, ColorInterp.green, ColorInterp.blue)]
+        if all(src.dtypes[index - 1] == "uint8" for index in indexes):
+            return indexes
+    except (AttributeError, IndexError, TypeError, ValueError):
+        pass
+    return None
+
+
+def _declared_rgb_bands_gdal(ds):
+
+    try:
+        from osgeo import gdal
+
+        colours = (gdal.GCI_RedBand, gdal.GCI_GreenBand, gdal.GCI_BlueBand)
+        found = {}
+        for index in range(1, ds.RasterCount + 1):
+            band = ds.GetRasterBand(index)
+            colour = band.GetColorInterpretation()
+            if colour in colours and band.DataType == gdal.GDT_Byte:
+                found.setdefault(colour, index)
+            if len(found) == 3:
+                return [found[colour] for colour in colours]
+    except (AttributeError, IndexError, TypeError, ValueError):
+        pass
+    return None
 
 
 def _needs_gdal_conversion(raster_path):
@@ -509,13 +581,64 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
         if layer_extent:
             if gt is None or gt == (0, 1, 0, 0, 0, 1):
                 use_layer_extent = True
-            else:
+            elif not ds.GetProjectionRef():
                 left_near = abs(gt[0]) < 10
                 top_near = abs(gt[3]) < 10
                 right_near = abs(gt[0] + gt[1] * raster_width) < 10
                 bottom_near = abs(gt[3] + gt[5] * raster_height) < 10
                 if left_near and top_near and right_near and bottom_near:
                     use_layer_extent = True
+
+
+
+
+        if not use_layer_extent and gt is not None and gt != (0, 1, 0, 0, 0, 1) and (
+                gt[2] != 0 or gt[4] != 0 or gt[1] < 0 or gt[5] > 0):
+
+
+
+            rgb_bands = _declared_rgb_bands_gdal(ds)
+            if rgb_bands is not None and (
+                    ds.RasterCount != 3 or rgb_bands != [1, 2, 3]):
+
+
+                ds = gdal.Translate("", ds, format="VRT", bandList=rgb_bands)
+                if ds is None:
+                    raise ValueError("Cannot select the raster colour bands")
+            first_band = ds.GetRasterBand(1)
+            resampling = (gdal.GRA_NearestNeighbour
+                          if first_band.GetColorInterpretation() == gdal.GCI_PaletteIndex
+                          else gdal.GRA_Bilinear)
+            source_step_x = math.hypot(gt[1], gt[4])
+            source_step_y = math.hypot(gt[2], gt[5])
+            step = min(source_step_x, source_step_y)
+            corners = [
+                (gt[0] + col * gt[1] + row * gt[2],
+                 gt[3] + col * gt[4] + row * gt[5])
+                for col in (0, raster_width) for row in (0, raster_height)
+            ]
+            xs, ys = zip(*corners)
+            warp_kwargs = {}
+            if rgb_bands is not None:
+
+
+
+                warp_kwargs = {
+                    "warpOptions": ["UNIFIED_SRC_NODATA=YES", "INIT_DEST=0"],
+                    "dstNodata": "None",
+                }
+            ds = gdal.Warp(
+                "", ds, format="VRT", resampleAlg=resampling,
+                outputBounds=(min(xs), min(ys), max(xs), max(ys)),
+                xRes=step, yRes=step, **warp_kwargs)
+            if ds is None:
+                raise ValueError("Cannot orient the raster crop")
+            raster_width, raster_height = ds.RasterXSize, ds.RasterYSize
+            gt = ds.GetGeoTransform()
+
+
+
+            scale_factor *= source_step_x / gt[1]
 
         if use_layer_extent and layer_extent:
             xmin_le, ymin_le, xmax_le, ymax_le = layer_extent
@@ -541,8 +664,12 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
         read_cols = int(crop_size * scale_factor)
         read_rows = (read_cols if row_ratio == 1.0
                      else max(1, int(round(read_cols * row_ratio))))
-        col_off = max(0, int(round(col_center - read_cols // 2)))
-        row_off = max(0, int(round(row_center - read_rows // 2)))
+
+
+        col_off = min(max(0, int(round(col_center - read_cols // 2))),
+                      max(0, raster_width - read_cols))
+        row_off = min(max(0, int(round(row_center - read_rows // 2))),
+                      max(0, raster_height - read_rows))
 
         actual_width = min(read_cols, raster_width - col_off)
         actual_height = min(read_rows, raster_height - row_off)
@@ -591,12 +718,14 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
                 bilinear = getattr(gdal, "GRIORA_Bilinear", None)
                 if bilinear is not None:
                     read_kwargs["resample_alg"] = bilinear
+            rgb_bands = _declared_rgb_bands_gdal(ds)
+            read_bands = rgb_bands or list(range(1, num_bands + 1))
             bands = []
-            for b_idx in range(1, num_bands + 1):
+            for b_idx in read_bands:
                 band = ds.GetRasterBand(b_idx)
-                data = band.ReadAsArray(
-                    col_off, row_off, actual_width, actual_height,
-                    buf_xsize=out_w, buf_ysize=out_h, **read_kwargs
+                data = _band_array(
+                    band, col_off, row_off, actual_width, actual_height,
+                    out_w, out_h, **read_kwargs
                 )
 
 
@@ -612,7 +741,7 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
                     ).format(ext=ext), "crop_error_read_failed"
                 bands.append(data)
 
-            nodata = ds.GetRasterBand(1).GetNoDataValue()
+            nodata = ds.GetRasterBand(read_bands[0]).GetNoDataValue()
 
 
 
@@ -620,7 +749,8 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
             del band, ds
 
             tile_data = np.stack(bands, axis=0)
-            image_np = _normalize_to_uint8(tile_data, nodata_value=nodata)
+            image_np = _normalize_to_uint8(
+                tile_data, nodata_value=nodata)
 
         if out_h < crop_size or out_w < crop_size:
             pad_bottom = crop_size - out_h
@@ -650,10 +780,12 @@ def _read_crop_with_gdal(raster_path, center_x, center_y, crop_size,
         return image_np, crop_info, None, None
 
     except Exception as e:
+
+
         return None, None, tr(
             "Failed to read {ext} file: {error}\n"
             "Please convert your raster to GeoTIFF (.tif) manually."
-        ).format(ext=ext, error=str(e)), "crop_error_read_failed"
+        ).format(ext=ext, error=str(e) or type(e).__name__), "crop_error_read_failed"
 
     finally:
 
@@ -784,6 +916,15 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
                     if left_near and bottom_near and right_near and top_near:
                         use_layer_extent = True
 
+            if not use_layer_extent and not raster_transform.is_identity and (
+                    raster_transform.b != 0 or raster_transform.d != 0
+                    or raster_transform.a < 0 or raster_transform.e > 0):
+
+
+                return _read_crop_with_gdal(
+                    raster_path, center_x, center_y, crop_size,
+                    scale_factor, layer_extent, ground_aspect)
+
             if use_layer_extent and layer_extent:
                 xmin_le, ymin_le, xmax_le, ymax_le = layer_extent
                 pixel_size_x = (xmax_le - xmin_le) / raster_width
@@ -810,8 +951,12 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
             read_cols = int(crop_size * scale_factor)
             read_rows = (read_cols if row_ratio == 1.0
                          else max(1, int(round(read_cols * row_ratio))))
-            col_off = max(0, int(round(col_center - read_cols // 2)))
-            row_off = max(0, int(round(row_center - read_rows // 2)))
+
+
+            col_off = min(max(0, int(round(col_center - read_cols // 2))),
+                          max(0, raster_width - read_cols))
+            row_off = min(max(0, int(round(row_center - read_rows // 2))),
+                          max(0, raster_height - read_rows))
 
             actual_width = min(read_cols, raster_width - col_off)
             actual_height = min(read_rows, raster_height - row_off)
@@ -824,8 +969,8 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
 
 
 
-
-            read_bands = list(range(1, min(max(int(src.count), 1), 3) + 1))
+            rgb_bands = _declared_rgb_bands_rasterio(src)
+            read_bands = rgb_bands or list(range(1, min(max(int(src.count), 1), 3) + 1))
             n_read = len(read_bands)
 
             if scale_factor > 1.0:
@@ -869,7 +1014,10 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
                         out_shape=(n_read, out_h, out_w),
                         resampling=Resampling.bilinear
                     )
-                image_np = _normalize_to_uint8(tile_data, nodata_value=src.nodata)
+                nodata = (src.nodatavals[read_bands[0] - 1]
+                          if rgb_bands is not None else src.nodata)
+                image_np = _normalize_to_uint8(
+                    tile_data, nodata_value=nodata)
 
 
 

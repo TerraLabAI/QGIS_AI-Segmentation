@@ -10,7 +10,7 @@ from __future__ import annotations
 from ...core.i18n import tr
 from ...core.qt_compat import safe_single_shot
 from ...core.telemetry_errors import slot_guard
-from .prompt_guard import is_known_object, validate_prompt
+from .prompt_guard import server_lookup_wanted, validate_prompt, vet_server_token
 
 
 
@@ -95,17 +95,10 @@ class DockAutoPromptGateMixin:
             self._apply_prompt_hint_on_edit()
             return True
         ok, reason, suggestion = validate_prompt(text)
-        if ok and reason is None and not is_known_object(text):
+        if server_lookup_wanted(text, ok, reason, suggestion):
 
 
 
-
-            token, waiting = self._resolve_prompt_via_server(text)
-            if waiting:
-                return False
-            if token:
-                reason, suggestion = "translated", token
-        elif not ok and reason == "language":
 
 
             token, waiting = self._resolve_prompt_via_server(text)
@@ -225,6 +218,7 @@ class DockAutoPromptGateMixin:
 
 
 
+
         if not prompt_server_lookup_enabled():
 
 
@@ -233,13 +227,24 @@ class DockAutoPromptGateMixin:
         if not key:
             return None, False
         cache = self._prompt_lookup_answers()
+        failed = self._prompt_lookup_failed_keys()
+        if key in failed and not getattr(self, "_prompt_lookup_resuming", False):
+
+
+
+            failed.discard(key)
+            cache.pop(key, None)
         if key not in cache:
             return None, self._start_prompt_lookup(text, key)
-        token = cache.get(key)
-        if not token:
-            return None, False
-        ok, reason, _suggestion = validate_prompt(token)
-        return (token if ok and reason is None else None), False
+        return vet_server_token(cache.get(key)), False
+
+    def _prompt_lookup_failed_keys(self) -> set:
+
+        failed = getattr(self, "_prompt_lookup_failed", None)
+        if failed is None:
+            failed = set()
+            self._prompt_lookup_failed = failed
+        return failed
 
     def _start_prompt_lookup(self, text: str, key: str) -> bool:
 
@@ -252,7 +257,10 @@ class DockAutoPromptGateMixin:
         try:
             from qgis.core import QgsApplication
 
-            from ...api.prompt_translation import resolve_english_prompt
+            from ...api.prompt_translation import (
+                english_prompt_answered,
+                resolve_english_prompt,
+            )
             from ...workers.generic_request_task import GenericRequestTask
         except Exception:  # noqa: BLE001
             self._prompt_lookup_answers()[key] = None
@@ -263,7 +271,8 @@ class DockAutoPromptGateMixin:
         try:
             task = GenericRequestTask(
                 tr("Checking the object name"),
-                lambda word=text: {"token": resolve_english_prompt(word)},
+                lambda word=text: {"token": resolve_english_prompt(word),
+                                   "answered": english_prompt_answered(word)},
                 hidden=True,
             )
             task.succeeded.connect(
@@ -312,6 +321,10 @@ class DockAutoPromptGateMixin:
         self._prompt_lookup_task = None
         token = answer.get("token") if isinstance(answer, dict) else None
         self._prompt_lookup_answers()[key] = token if isinstance(token, str) else None
+        if not (isinstance(answer, dict) and answer.get("answered", True)):
+
+
+            self._prompt_lookup_failed_keys().add(key)
         self._set_prompt_lookup_busy(False)
         self._set_prompt_info()
         if self._prompt_lookup_key(self.auto_prompt_input.text()) != key:
@@ -327,7 +340,11 @@ class DockAutoPromptGateMixin:
                 return
         except (ImportError, TypeError):
             pass
-        self.auto_detect_requested.emit()
+        self._prompt_lookup_resuming = True
+        try:
+            self.auto_detect_requested.emit()
+        finally:
+            self._prompt_lookup_resuming = False
 
     def _abandon_prompt_lookup(self) -> None:
 

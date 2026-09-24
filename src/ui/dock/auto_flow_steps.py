@@ -176,6 +176,11 @@ class DockAutoFlowStepsMixin:
         self.auto_steps.setVisible(
             index != 0 or self.auto_layer_combo.count_layers() > 0)
         self.auto_steps.setCurrentIndex(index)
+
+
+
+        if index == 1:
+            self.refresh_auto_zone_ready_card()
         self._refresh_auto_layer_lock()
 
 

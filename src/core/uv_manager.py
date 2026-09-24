@@ -28,6 +28,7 @@ from qgis.PyQt.QtNetwork import QNetworkRequest
 from .archive_utils import safe_extract_tar as _safe_extract_tar
 from .archive_utils import safe_extract_zip as _safe_extract_zip
 from .cache_paths import PLUGIN_CACHE_DIR, plugin_cache_tmp_dir, remove_tree_quietly
+from .gil_safe_qobject import prime as gil_safe
 from .logging_utils import log as _log
 from .model_config import IS_ROSETTA
 from .streamed_download import sleep_unless_cancelled
@@ -399,7 +400,9 @@ def download_uv(
         return False, "Download cancelled"
 
 
-    max_retries = 3
+    from .server_dials import dial_in_range
+    max_retries = dial_in_range("tuning.install.uv_download_max_retries", 3, 1, 10)
+    backoff_base_s = dial_in_range("tuning.install.uv_download_backoff_base_s", 5, 1, 60)
     err = None
     error_msg = ""
     restore_proxy = _apply_resolved_proxy()
@@ -408,7 +411,9 @@ def download_uv(
             if cancel_check and cancel_check():
                 return False, "Download cancelled"
 
-            request = QgsBlockingNetworkRequest()
+
+
+            request = gil_safe(QgsBlockingNetworkRequest())
             net_req = QNetworkRequest(QUrl(url))
             timeout_ms = resolved_download_timeout_ms()
             if hasattr(net_req, "setTransferTimeout"):
@@ -427,7 +432,7 @@ def download_uv(
             if guard.aborted_reason == "stalled":
                 error_msg = "the download stalled, no data was received"
             if attempt < max_retries - 1:
-                wait = 5 * (2 ** attempt)
+                wait = backoff_base_s * (2 ** attempt)
                 _log(
                     f"uv download failed (attempt {attempt + 1}/{max_retries}): {error_msg}. "
                     f"Retrying in {wait}s...",
@@ -549,7 +554,10 @@ def download_uv(
                 pass
 
 
-def verify_uv(retries: int = 3) -> bool:
+def verify_uv(retries: int | None = None) -> bool:
+
+
+
 
 
 
@@ -566,6 +574,10 @@ def verify_uv(retries: int = 3) -> bool:
     if not os.path.isfile(uv_path):
         return False
 
+    from .server_dials import dial_in_range
+    if retries is None:
+        retries = dial_in_range("tuning.install.uv_verify_retries", 3, 1, 10)
+    verify_timeout_s = dial_in_range("tuning.install.uv_verify_timeout_s", 15, 5, 60)
     attempts = max(1, retries)
     last_error = ""
     clean_env = get_clean_env_for_venv()
@@ -573,7 +585,7 @@ def verify_uv(retries: int = 3) -> bool:
         try:
             result = run_unthrottled(
                 [uv_path, "--version"],
-                text=True, encoding="utf-8", errors="replace", timeout=15,
+                text=True, encoding="utf-8", errors="replace", timeout=verify_timeout_s,
                 env=clean_env,
                 **get_subprocess_kwargs(),
             )

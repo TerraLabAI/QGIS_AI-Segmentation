@@ -175,6 +175,27 @@ def _note_window_hint(answer, reply):
     return answer
 
 
+
+
+
+_ETAG_MAX_CHARS = 300
+
+
+def _response_etag(reply) -> str | None:
+
+
+
+
+
+    try:
+        raw = bytes(reply.rawHeader(b"ETag")).decode("utf-8", "replace").strip()
+    except Exception:  # noqa: BLE001
+        return None
+    if not raw or len(raw) > _ETAG_MAX_CHARS:
+        return None
+    return raw
+
+
 def _retry_after_s(reply) -> float:
 
 

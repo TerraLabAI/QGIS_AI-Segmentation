@@ -22,6 +22,49 @@ _NO_OPEN_REVIEW = (
 )
 
 
+
+_REVIEW_OBJECT_ORDERS = ("confidence", "area", "index")
+_REVIEW_PAGE_MAX = 200
+
+
+def _review_page_args(offset, limit, sort_by):
+
+    values = []
+    for name, value, low in (("offset", offset, 0), ("limit", limit, 1)):
+        if isinstance(value, bool):
+            return 0, 0, "", {"_error": f"{name} must be a whole number, got {value!r}."}
+        try:
+            number = int(value)
+            if not isinstance(value, str) and number != value:
+                raise ValueError
+        except (TypeError, ValueError, OverflowError):
+            return 0, 0, "", {"_error": f"{name} must be a whole number, got {value!r}."}
+        if number < low:
+            return 0, 0, "", {"_error": f"{name} must be {low} or more, got {number}."}
+        values.append(number)
+    order = sort_by.strip().lower() if isinstance(sort_by, str) else ""
+    if order not in _REVIEW_OBJECT_ORDERS:
+        from .mcp_api import not_found_error
+        return 0, 0, "", not_found_error("sort order", str(sort_by), list(_REVIEW_OBJECT_ORDERS))
+    return values[0], min(values[1], _REVIEW_PAGE_MAX), order, None
+
+
+def _review_crs_facts(plugin) -> tuple[str, bool]:
+
+    crs = (getattr(plugin, "_auto_review", None) or {}).get("crs")
+    try:
+        if crs is not None and crs.isValid():
+            return crs.authid(), bool(crs.isGeographic())
+    except (RuntimeError, AttributeError):
+        pass
+    authid = str(getattr(plugin, "_auto_crs_authid", "") or crs or "")
+    try:
+        from qgis.core import QgsCoordinateReferenceSystem
+        return authid, bool(QgsCoordinateReferenceSystem(authid).isGeographic())
+    except Exception:  # noqa: BLE001
+        return authid, False
+
+
 class SegmentationReviewMixin:
 
 
@@ -36,6 +79,7 @@ class SegmentationReviewMixin:
         return None
 
     def review_status(self) -> dict:
+
 
 
 
@@ -69,6 +113,123 @@ class SegmentationReviewMixin:
         journal = getattr(plugin, "_auto_correct_journal", None)
         out["corrections"] = int(getattr(journal, "count", 0) or 0)
         return out
+
+    @gui_thread_only
+    def review_objects(
+        self,
+        offset: int = 0,
+        limit: int = 50,
+        sort_by: str = "confidence",
+    ) -> dict:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        plugin = self._plugin
+        if getattr(plugin, "_auto_review", None) is None:
+            return {"open": False, "_error": _NO_OPEN_REVIEW}
+        page_offset, page_limit, order, arg_err = _review_page_args(
+            offset, limit, sort_by)
+        if arg_err:
+            return arg_err
+
+        objects = list(getattr(plugin, "_auto_objects", None) or [])
+        total = len(objects)
+        try:
+            removed = set(plugin._review_removed_fids())
+        except Exception:  # noqa: BLE001
+            removed = set()
+        try:
+            params = plugin._widget_review_params()
+        except Exception:  # noqa: BLE001
+            params = None
+
+        def _score(idx: int) -> float:
+            try:
+                return float(objects[idx][1])
+            except (TypeError, ValueError, IndexError):
+                return 0.0
+
+        def _area(idx: int) -> float:
+            try:
+                return float(objects[idx][2])
+            except (TypeError, ValueError, IndexError):
+                return 0.0
+
+        indexes = list(range(total))
+        if order == "confidence":
+            indexes.sort(key=lambda i: (-_score(i), i))
+        elif order == "area":
+            indexes.sort(key=lambda i: (-_area(i), i))
+
+        crs_text, geographic = _review_crs_facts(plugin)
+        digits = 7 if geographic else 2
+        page = []
+        for idx in indexes[page_offset:page_offset + page_limit]:
+            geom = objects[idx][0] if objects[idx] else None
+            row: dict = {
+                "index": idx,
+                "score": round(_score(idx), 4),
+                "area_m2": round(_area(idx), 2),
+                "centroid": None,
+                "bbox": None,
+                "removed": idx in removed,
+            }
+            kept = False
+            try:
+                if geom is not None and not geom.isEmpty():
+                    box = geom.boundingBox()
+                    row["bbox"] = [round(box.xMinimum(), digits), round(box.yMinimum(), digits),
+                                   round(box.xMaximum(), digits), round(box.yMaximum(), digits)]
+                    point = geom.centroid().asPoint()
+                    row["centroid"] = [round(point.x(), digits), round(point.y(), digits)]
+                    kept = idx not in removed and (
+                        params is None or plugin._object_is_manual(idx)
+                        or plugin._passes_review_filters(_score(idx), _area(idx), params))
+            except Exception:  # noqa: BLE001
+                kept = False
+            row["kept"] = bool(kept)
+            page.append(row)
+
+        end = page_offset + len(page)
+        return {
+            "objects": page,
+            "crs": crs_text,
+            "total": total,
+            "offset": page_offset,
+            "next_offset": end if end < total else None,
+        }
 
     @gui_thread_only
     def review_filter(
@@ -408,7 +569,7 @@ class SegmentationReviewMixin:
             from .mcp_api import not_found_error
             return None, not_found_error(
                 "object index", str(idx), [],
-                note="Read them from review_status().",
+                note="Read them from review_objects().",
                 valid_range=(0, len(objects) - 1),
             )
         return idx, None

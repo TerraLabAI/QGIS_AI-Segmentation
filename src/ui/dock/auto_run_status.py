@@ -414,6 +414,16 @@ class DockAutoRunStatusMixin:
         return friendly_time_left(left) if left is not None else ""
 
     def set_auto_tile_progress(self, current: int, total: int) -> None:
+
+
+
+
+
+
+
+
+        if not (self._auto_run_active or getattr(self, "_auto_finalizing", False)):
+            return
         self.auto_status_banner.setVisible(False)
         self.hide_auto_zero_assist()
 

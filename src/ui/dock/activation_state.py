@@ -150,7 +150,12 @@ class DockActivationMixin:
         self.auto_page.setVisible(False)
 
 
-        self.auto_review_view_row.setVisible(False)
+
+
+        try:
+            self.auto_review_view_row.setVisible(False)
+        except AttributeError:
+            pass
 
         self.activation_group.setVisible(True)
         if hasattr(self, "_connect_hint_label"):

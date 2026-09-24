@@ -329,6 +329,11 @@ class AutoReviewParamsMixin:
 
         if len(self._auto_objects) < 2:
             return True
+        try:
+            from ...core.server_dials import dial_in_range
+            tolerance = dial_in_range("tuning.review.flat_score_tolerance", 0.005, 0.001, 0.05)
+        except Exception:  # noqa: BLE001
+            tolerance = 0.005
 
 
         lo = hi = None
@@ -337,7 +342,7 @@ class AutoReviewParamsMixin:
                 lo = s
             if hi is None or s > hi:
                 hi = s
-            if (hi - lo) > 0.005:
+            if (hi - lo) > tolerance:
                 return True
         return False
 
@@ -363,8 +368,12 @@ class AutoReviewParamsMixin:
 
 
 
+
             import math
-            step = max(0, int(math.floor(best * 100 / 5.0)) * 5)
+
+            from ..dock.styles import review_conf_step
+            step_pct = review_conf_step()
+            step = max(0, int(math.floor(best * 100 / step_pct)) * step_pct)
             return step / 100.0
         from ...core.review_defaults import adaptive_review_confidence
         adaptive = adaptive_review_confidence(

@@ -162,7 +162,17 @@ def _settings_row(layout: QHBoxLayout) -> QWidget:
 class DockRefineMixin:
 
 
-    def _setup_refine_panel(self, parent_layout):
+    def _build_deferred_refine_panel(self, parent_layout, after_widget) -> None:
+
+
+
+
+
+
+        self._setup_refine_panel(parent_layout, parent_layout.indexOf(after_widget) + 1)
+        self._finish_dock_part(self.refine_group)
+
+    def _setup_refine_panel(self, parent_layout, index: int = -1):
 
 
 
@@ -482,7 +492,7 @@ class DockRefineMixin:
 
         self._apply_refine_start_values()
         self._sync_refine_shape_toggles()
-        parent_layout.addWidget(self.refine_group)
+        parent_layout.insertWidget(index, self.refine_group)
 
     def _on_refine_more_toggled(self, _open: bool) -> None:
 

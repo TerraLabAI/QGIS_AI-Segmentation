@@ -24,7 +24,7 @@ def _is_rosetta() -> bool:
     if sys.platform != "darwin" or platform.machine() != "x86_64":
         return False
     try:
-        result = subprocess.run(  # nosec B603
+        result = subprocess.run(  # nosec B603 B607
             ["sysctl", "-n", "sysctl.proc_translated"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=5,

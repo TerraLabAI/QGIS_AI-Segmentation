@@ -6981,5 +6981,53 @@ Ein niedrigerer Wert entfernt zuerst die kleinsten Details und behält dabei die
         <source>{plan} · {status}</source>
         <translation>{plan} · {status}</translation>
     </message>
+    <message>
+        <source>Layer</source>
+        <translation>Layer</translation>
+    </message>
+    <message>
+        <source>No polygon layer in this project</source>
+        <translation>Kein Polygon-Layer in diesem Projekt</translation>
+    </message>
+    <message>
+        <source>Or use an existing zone</source>
+        <translation>Oder eine vorhandene Zone verwenden</translation>
+    </message>
+    <message>
+        <source>Saving... {pct}%</source>
+        <translation>Speichern... {pct}%</translation>
+    </message>
+    <message>
+        <source>Signed in (from {}).</source>
+        <translation>Angemeldet (von {}).</translation>
+    </message>
+    <message>
+        <source>Signed in as {} (from {}).</source>
+        <translation>Angemeldet als {} (von {}).</translation>
+    </message>
+    <message>
+        <source>Take the zone from a layer or a selection</source>
+        <translation>Zone aus einem Layer oder einer Auswahl übernehmen</translation>
+    </message>
+    <message>
+        <source>That zone cannot be moved onto this map. Draw it instead.</source>
+        <translation>Diese Zone kann nicht auf dieser Karte verschoben werden. Zeichnen Sie sie stattdessen.</translation>
+    </message>
+    <message>
+        <source>That zone is empty. Pick another one.</source>
+        <translation>Diese Zone ist leer. Wählen Sie eine andere.</translation>
+    </message>
+    <message>
+        <source>Use this zone</source>
+        <translation>Diese Zone verwenden</translation>
+    </message>
+    <message>
+        <source>Zone of interest</source>
+        <translation>Interessenszone</translation>
+    </message>
+    <message>
+        <source>{name}, {n} selected</source>
+        <translation>{name}, {n} ausgewählt</translation>
+    </message>
 </context>
 </TS>

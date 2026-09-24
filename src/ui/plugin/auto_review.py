@@ -698,6 +698,26 @@ class AutoReviewMixin:
 
 
 
+
+
+
+        self._finish_auto_review_export_offload()
+        collected = self._collect_auto_review_export(include_hidden, autosave)
+        if collected is None:
+            return None
+        review = collected["review"]
+        name = self._export_auto_detections(
+            collected["refined"], review["crs"], review["source_layer_name"],
+            review["prompt"], scores=collected["refined_scores"],
+            confidence_applied=collected["conf_applied"])
+        return self._conclude_auto_review_export(collected, name)
+
+    def _collect_auto_review_export(self, include_hidden: bool,
+                                    autosave: bool) -> dict | None:
+
+
+
+
         review = self._auto_review
         if not review:
             return None
@@ -750,9 +770,22 @@ class AutoReviewMixin:
 
 
         self._drop_preview_geom_cache()
-        name = self._export_auto_detections(
-            refined, review["crs"], review["source_layer_name"], review["prompt"],
-            scores=refined_scores, confidence_applied=conf_applied)
+        return {"review": review, "refined": refined,
+                "refined_scores": refined_scores, "conf_applied": conf_applied,
+                "include_hidden": include_hidden, "autosave": autosave}
+
+    def _conclude_auto_review_export(self, collected: dict,
+                                     name: str | None) -> tuple[str | None, int]:
+
+
+
+
+        review = collected["review"]
+        refined = collected["refined"]
+        refined_scores = collected["refined_scores"]
+        conf_applied = collected["conf_applied"]
+        include_hidden = collected["include_hidden"]
+        autosave = collected["autosave"]
         if name:
 
 
@@ -893,16 +926,32 @@ class AutoReviewMixin:
 
 
 
+        if self._auto_review_export_busy():
+            return
+
+
         include_hidden = False
 
 
 
-        from qgis.PyQt.QtCore import Qt
-        from qgis.PyQt.QtWidgets import QApplication
         try:
             self.dock_widget.set_auto_export_saving(True)
         except (RuntimeError, AttributeError):
             pass
+        try:
+            started = self._start_auto_review_export_async(include_hidden)
+        except Exception:
+
+            try:
+                self.dock_widget.set_auto_export_saving(False)
+            except (RuntimeError, AttributeError):
+                pass
+            raise
+        if started:
+            return
+
+        from qgis.PyQt.QtCore import Qt
+        from qgis.PyQt.QtWidgets import QApplication
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             exported = self._export_auto_review(include_hidden=include_hidden)
@@ -912,6 +961,12 @@ class AutoReviewMixin:
                 self.dock_widget.set_auto_export_saving(False)
             except (RuntimeError, AttributeError):
                 pass
+        self._finish_auto_export_click(exported)
+
+    def _finish_auto_export_click(self, exported) -> None:
+
+
+
         if exported is None:
             return
         name, count = exported
@@ -983,6 +1038,7 @@ class AutoReviewMixin:
 
         self._auto_run_plan = None
         self._auto_attribute_filters = []
+        self._drop_detect_plan_wait()
         self._cancel_task("_auto_run_plan_task")
         self._cancel_task("_auto_token_task")
         self._auto_zone = None
@@ -1031,6 +1087,9 @@ class AutoReviewMixin:
 
 
 
+
+
+        self._finish_auto_review_export_offload()
         self._track_review_abandoned(exit_path)
 
 
@@ -1079,6 +1138,10 @@ class AutoReviewMixin:
 
 
 
+
+
+        if self._auto_review_export_busy():
+            return
         try:
             if getattr(self, "_refine_add_mode_active", False):
                 self._exit_ai_add_mode()

@@ -32,6 +32,13 @@ _REVIEW_OFFLOAD_MIN_OBJECTS = 300
 
 
 
+
+_FINALIZE_OFFLOAD_MIN_OBJECTS = 1
+
+
+
+
+
 _REVIEW_OFFLOAD_QUEUE_MAX = 3000
 
 
@@ -48,15 +55,25 @@ class AutoReviewOffloadMixin:
 
 
 
-    def _review_refine_thread_for(self, pending_count: int):
+    def _review_refine_thread_for(self, pending_count: int,
+                                  finalize: bool = False):
 
 
 
 
 
 
-        if int(pending_count or 0) < dial_in_range(
-                "tuning.review.offload_min_objects", _REVIEW_OFFLOAD_MIN_OBJECTS, 1, 100000):
+
+
+        if finalize:
+            floor = dial_in_range(
+                "tuning.review.finalize_offload_min_objects",
+                _FINALIZE_OFFLOAD_MIN_OBJECTS, 1, 100000)
+        else:
+            floor = dial_in_range(
+                "tuning.review.offload_min_objects",
+                _REVIEW_OFFLOAD_MIN_OBJECTS, 1, 100000)
+        if int(pending_count or 0) < floor:
             return None
         thread = getattr(self, "_review_refine_thread", None)
         if thread is not None:
@@ -116,7 +133,7 @@ class AutoReviewOffloadMixin:
             return None
         try:
             floor = int(dial_in_range(
-                "review.refine_pool_min_objects", DEFAULT_MIN_OBJECTS, 0, 1000000))
+                "tuning.review.refine_pool_min_objects", DEFAULT_MIN_OBJECTS, 0, 1000000))
         except Exception:  # noqa: BLE001
             floor = DEFAULT_MIN_OBJECTS
         if floor <= 0:
@@ -167,12 +184,9 @@ class AutoReviewOffloadMixin:
         if thread is None:
             return
         try:
-            from ...workers.review_refine_thread import (
-                REVIEW_REFINE_JOIN_TIMEOUT_MS,
-            )
-
             thread.abort()
-            if not thread.join_run(REVIEW_REFINE_JOIN_TIMEOUT_MS):
+
+            if not thread.join_run():
 
 
 
@@ -395,7 +409,8 @@ class AutoReviewOffloadMixin:
             pending = sum(1 for row in filter_pending if row[0] not in cached)
         else:
             pending = len(filter_pending)
-        thread = self._review_refine_thread_for(pending + len(awaiting))
+        thread = self._review_refine_thread_for(
+            pending + len(awaiting), finalize=state.get("mode") == "finalize")
         state["offload"] = thread
         return thread
 

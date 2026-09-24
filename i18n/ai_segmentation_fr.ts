@@ -6983,5 +6983,53 @@ Une valeur plus basse affine d'abord le plus petit détail tout en conservant le
         <source>{plan} · {status}</source>
         <translation>{plan} · {status}</translation>
     </message>
+    <message>
+        <source>Layer</source>
+        <translation>Couche</translation>
+    </message>
+    <message>
+        <source>No polygon layer in this project</source>
+        <translation>Aucune couche de polygones dans ce projet</translation>
+    </message>
+    <message>
+        <source>Or use an existing zone</source>
+        <translation>Ou utiliser une zone existante</translation>
+    </message>
+    <message>
+        <source>Saving... {pct}%</source>
+        <translation>Enregistrement... {pct}%</translation>
+    </message>
+    <message>
+        <source>Signed in (from {}).</source>
+        <translation>Connecté (via {}).</translation>
+    </message>
+    <message>
+        <source>Signed in as {} (from {}).</source>
+        <translation>Connecté en tant que {} (via {}).</translation>
+    </message>
+    <message>
+        <source>Take the zone from a layer or a selection</source>
+        <translation>Prendre la zone depuis une couche ou une sélection</translation>
+    </message>
+    <message>
+        <source>That zone cannot be moved onto this map. Draw it instead.</source>
+        <translation>Cette zone ne peut pas être déplacée sur cette carte. Dessinez-la plutôt.</translation>
+    </message>
+    <message>
+        <source>That zone is empty. Pick another one.</source>
+        <translation>Cette zone est vide. Choisissez-en une autre.</translation>
+    </message>
+    <message>
+        <source>Use this zone</source>
+        <translation>Utiliser cette zone</translation>
+    </message>
+    <message>
+        <source>Zone of interest</source>
+        <translation>Zone d'intérêt</translation>
+    </message>
+    <message>
+        <source>{name}, {n} selected</source>
+        <translation>{name}, {n} sélectionné(s)</translation>
+    </message>
 </context>
 </TS>

@@ -101,6 +101,33 @@ def _ready_hint() -> str:
     return dial_text("tuning.agent.hints", "load_model_ready", 400) or _READY_HINT
 
 
+
+_INSTALL_NO_ACCOUNT_HINT = (
+    "No account is signed in. Open the AI Segmentation panel and "
+    "click Sign in. Only the person at this computer can do that."
+)
+
+
+_INSTALL_RUNNING_HINT = (
+    "The one-time setup is running. Nobody has to click anything "
+    "while it does."
+)
+
+
+def _install_no_account_hint() -> str:
+
+    from .core.server_dials import dial_text
+
+    return dial_text("tuning.agent.hints", "install_no_account", 400) or _INSTALL_NO_ACCOUNT_HINT
+
+
+def _install_running_hint() -> str:
+
+    from .core.server_dials import dial_text
+
+    return dial_text("tuning.agent.hints", "install_running", 400) or _INSTALL_RUNNING_HINT
+
+
 class SegmentationLifecycleMixin:
 
 
@@ -163,15 +190,9 @@ class SegmentationLifecycleMixin:
         status["install_running"] = running
 
         if not status["account_active"]:
-            status["action_required"] = (
-                "No account is signed in. Open the AI Segmentation panel and "
-                "click Sign in. Only the person at this computer can do that."
-            )
+            status["action_required"] = _install_no_account_hint()
         elif running:
-            status["action_required"] = (
-                "The one-time setup is running. Nobody has to click anything "
-                "while it does."
-            )
+            status["action_required"] = _install_running_hint()
             status["hint"] = (
                 "Call install_status() again every 20 to 30 seconds until "
                 "install_running is False. A first install takes minutes."

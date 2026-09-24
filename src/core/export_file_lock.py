@@ -55,7 +55,7 @@ def _held_by_another_program(path: str) -> bool:
         import ctypes
         from ctypes import wintypes
 
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
         create = kernel32.CreateFileW
         create.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
                            ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
@@ -66,7 +66,7 @@ def _held_by_another_program(path: str) -> bool:
         invalid = wintypes.HANDLE(-1).value
         handle = create(path, _GENERIC_READ, 0, None, _OPEN_EXISTING, 0, None)
         if handle is None or handle == invalid:
-            error = ctypes.get_last_error()
+            error = ctypes.get_last_error()  # type: ignore[attr-defined]
             return error in (_ERROR_SHARING_VIOLATION, _ERROR_LOCK_VIOLATION)
         close(handle)
         return False

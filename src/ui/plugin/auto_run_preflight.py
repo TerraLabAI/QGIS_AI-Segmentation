@@ -30,7 +30,6 @@ class AutoRunPreflightMixin:
 
 
 
-
         self._auto_raster_guard_reason = "raster_shape"
 
 
@@ -125,8 +124,6 @@ class AutoRunPreflightMixin:
 
 
 
-
-
     _DRAWN_MAP_BASEMAPS = ("OSM", "Carto")
 
     def _warn_drawn_map_basemap(self, layer) -> None:
@@ -137,6 +134,9 @@ class AutoRunPreflightMixin:
 
 
 
+
+        if getattr(self, "_auto_imagery_resume", None) is not None:
+            return
         try:
             from ...core.basemap_label import detect_basemap_label
             label = detect_basemap_label(layer)
@@ -304,7 +304,7 @@ class AutoRunPreflightMixin:
         except (RuntimeError, AttributeError):
             pass
 
-    def _probe_imagery_behind_banner(self, layer, grid) -> tuple[float, str | None]:
+    def _probe_imagery_behind_banner(self, layer, grid) -> tuple[float, str | None] | None:
 
 
 
@@ -313,30 +313,161 @@ class AutoRunPreflightMixin:
 
 
 
-        banner = None
-        if not self._auto_headless_run and self.dock_widget is not None:
-            try:
-                banner = self.dock_widget.auto_status_banner
-                banner.setText(tr("Preparing your zone..."))
-                banner.setVisible(True)
-            except (RuntimeError, AttributeError):
-                banner = None
-        if banner is not None:
-            from qgis.PyQt.QtCore import QEventLoop
-            from qgis.PyQt.QtWidgets import QApplication
 
 
 
-            QApplication.processEvents(
-                QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
-        try:
+
+
+
+        resume = getattr(self, "_auto_imagery_resume", None)
+        self._auto_imagery_resume = None
+        if self._auto_headless_run or self.dock_widget is None:
             return self._online_imagery_verdict(layer, grid)
+        signature = self._imagery_probe_signature(layer, grid)
+        if resume is not None:
+            if resume.get("signature") == signature:
+                return resume["verdict"]
+            QgsMessageLog.logMessage(
+                "Auto detection: the zone changed during the imagery check; "
+                "not starting", "AI Segmentation", level=Qgis.MessageLevel.Info)
+            return None
+        from ...core import run_timeline
+
+
+        early = self._early_imagery_answer(signature)
+        if early is not None:
+            run_timeline.mark("imagery_probe_early_hit")
+            return early
+        probe = {"signature": signature, "banner": None}
+        self._auto_imagery_probe = probe
+        run_timeline.mark("imagery_probe_start")
+
+        def _done(verdict) -> None:
+            self._on_imagery_probe_done(probe, verdict)
+
+        if self._adopt_early_imagery_probe(signature, probe):
+
+
+            run_timeline.mark("imagery_probe_early_adopted")
+        elif not self._start_online_imagery_verdict(layer, grid, _done):
+            self._auto_imagery_probe = None
+            return 0.0, None
+        if self._auto_imagery_probe is not probe:
+
+
+            return None
+        try:
+            banner = self.dock_widget.auto_status_banner
+            banner.setText(tr("Preparing your zone..."))
+            banner.setVisible(True)
+            probe["banner"] = banner
+        except (RuntimeError, AttributeError):
+            probe["banner"] = None
+        return None
+
+    def _imagery_probe_signature(self, layer, grid) -> tuple:
+
+
+        try:
+            layer_id = layer.id()
+        except (RuntimeError, AttributeError):
+            layer_id = ""
+        try:
+            bbox = tuple(round(float(v), 6) for v in (grid or {}).get("bbox") or ())
+        except (TypeError, ValueError):
+            bbox = ()
+        outline = b""
+        try:
+            polygon = getattr(self, "_auto_zone_polygon", None)
+            if polygon is not None and not polygon.isEmpty():
+                outline = bytes(polygon.asWkb())
+        except (RuntimeError, AttributeError):
+            outline = b""
+        return (layer_id, bbox, (grid or {}).get("pixel_w"),
+                (grid or {}).get("pixel_h"), (grid or {}).get("crs") or "",
+                outline)
+
+    def _on_imagery_probe_done(self, probe: dict, verdict) -> None:
+
+
+
+        if getattr(self, "_auto_imagery_probe", None) is not probe:
+            return
+        self._auto_imagery_probe = None
+        from ...core import run_timeline
+        run_timeline.mark("imagery_probe_done")
+        self._hide_imagery_probe_banner(probe)
+        if verdict is None:
+            return
+        try:
+            from ...core.qt_compat import safe_single_shot
+
+            safe_single_shot(0, self.dock_widget,
+                             lambda: self._resume_detect_after_imagery(probe, verdict))
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _resume_detect_after_imagery(self, probe: dict, verdict) -> None:
+
+
+        if getattr(self, "_auto_imagery_probe", None) is not None:
+            return
+        dock = self.dock_widget
+        if dock is None:
+            return
+        try:
+            from ..dock.widgets import Mode
+            if getattr(dock, "_mode", None) != Mode.AUTOMATIC:
+                return
+        except (ImportError, RuntimeError, AttributeError):
+            return
+
+
+
+        try:
+            layer = self._get_active_raster_layer()
+            grid = self._compute_auto_grid(layer) if layer is not None else None
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            grid = None
+        if grid is None or self._imagery_probe_signature(layer, grid) != probe["signature"]:
+            QgsMessageLog.logMessage(
+                "Auto detection: the zone changed during the imagery check; "
+                "not starting", "AI Segmentation", level=Qgis.MessageLevel.Info)
+            return
+        self._auto_imagery_resume = {
+            "signature": probe["signature"], "verdict": verdict}
+        try:
+            self._start_auto_detection()
         finally:
-            if banner is not None:
-                try:
-                    banner.setVisible(False)
-                except RuntimeError:
-                    pass
+            self._auto_imagery_resume = None
+
+    def _abandon_imagery_probe(self) -> None:
+
+
+
+
+        probe = getattr(self, "_auto_imagery_probe", None)
+        self._auto_imagery_resume = None
+        early_out = self._drop_early_imagery_probe()
+        if probe is None and not early_out:
+            return
+        self._auto_imagery_probe = None
+        if probe is not None:
+            self._hide_imagery_probe_banner(probe)
+
+
+        self._cancel_active_tile_render()
+
+    @staticmethod
+    def _hide_imagery_probe_banner(probe: dict) -> None:
+        banner = probe.get("banner")
+        probe["banner"] = None
+        if banner is None:
+            return
+        try:
+            banner.setVisible(False)
+        except RuntimeError:
+            pass
 
     def _abort_zone_outside_layer(self) -> None:
 

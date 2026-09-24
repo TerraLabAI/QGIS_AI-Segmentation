@@ -457,6 +457,14 @@ class DockAutoBuildMixin:
 
 
 
+
+
+        from .auto_zone_reuse import build_zone_ready_card, build_zone_reuse_link
+        self.auto_zone_ready_card = build_zone_ready_card(
+            self._on_auto_zone_ready_use)
+        _s2_layout.addWidget(self.auto_zone_ready_card)
+
+
         from ..canvas_palette import CHROME_BLUE
         self.auto_zone_hero = QWidget()
         _hero_layout = QVBoxLayout(self.auto_zone_hero)
@@ -475,6 +483,12 @@ class DockAutoBuildMixin:
         self._auto_zone_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._auto_zone_hint.setObjectName("autoHint")
         _hero_layout.addWidget(self._auto_zone_hint)
+
+
+
+        self.auto_zone_reuse_row = build_zone_reuse_link(
+            self._on_auto_zone_reuse_link)
+        _hero_layout.addWidget(self.auto_zone_reuse_row)
 
 
 
@@ -1426,7 +1440,11 @@ class DockAutoBuildMixin:
 
 
 
-        self._setup_auto_review_panel(_s3_layout)
+
+
+
+        self._defer_dock_part(
+            lambda: self._build_deferred_review_panel(_s3_layout, self.auto_exhausted_subscribe))
 
 
 

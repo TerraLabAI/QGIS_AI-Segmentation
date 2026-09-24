@@ -27,6 +27,8 @@
 
 from __future__ import annotations
 
+from typing import Any, Iterable
+
 from qgis.PyQt.QtCore import QSettings
 
 from .segmentation_search_terms import preset_search_terms
@@ -462,6 +464,7 @@ def search_terms_of(preset) -> list[str]:
     if not isinstance(preset, dict):
         return []
     terms = preset.get("search_terms")
+    values: Iterable[Any]
     if isinstance(terms, dict):
         values = terms.values()
     elif isinstance(terms, (list, tuple)):

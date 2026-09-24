@@ -41,6 +41,13 @@ class ManualMaskMixin:
 
     _REMOTE_CLICK_NOTE_MS = 1_200
 
+
+
+
+
+
+    _REMOTE_CLICK_BUSY_MS = 150
+
     def _click_answer_travels(self) -> bool:
 
 
@@ -81,16 +88,44 @@ class ManualMaskMixin:
         travels = self._click_answer_travels()
         self._remote_click_wait_active = True
         self._remote_click_wait_cursor = False
-        if not self._headless:
+        if travels and not self._headless:
+
+
+            self._arm_remote_click_busy()
+            self._arm_remote_click_note()
+            return True
+        self._show_click_busy()
+        return True
+
+    def _show_click_busy(self) -> None:
+
+
+        if not self._remote_click_wait_showing():
+            return
+        if not self._headless and not getattr(self, "_remote_click_wait_cursor", False):
             try:
                 QApplication.setOverrideCursor(WaitCursor)
                 self._remote_click_wait_cursor = True
             except (RuntimeError, AttributeError):
                 self._remote_click_wait_cursor = False
-        if travels:
-            self._arm_remote_click_note()
         self._apply_mask_band_style()
-        return True
+
+    def _arm_remote_click_busy(self) -> None:
+
+
+        try:
+            from ...core.server_dials import dial_in_range
+            from .shared import _debounce_timer
+
+            busy_ms = dial_in_range(
+                "tuning.manual.remote_click_busy_ms", self._REMOTE_CLICK_BUSY_MS, 0, 2000)
+            if busy_ms <= 0 or self.dock_widget is None:
+                self._show_click_busy()
+                return
+            _debounce_timer(self, "_remote_click_busy_timer", self.dock_widget,
+                            busy_ms, self._show_click_busy)
+        except Exception:  # noqa: BLE001
+            self._show_click_busy()
 
     def _arm_remote_click_note(self) -> None:
 
@@ -145,6 +180,12 @@ class ManualMaskMixin:
             self._end_correct_wait()
             return
         self._remote_click_wait_active = False
+        busy_timer = getattr(self, "_remote_click_busy_timer", None)
+        if busy_timer is not None:
+            try:
+                busy_timer.stop()
+            except (RuntimeError, AttributeError):
+                pass
         if getattr(self, "_remote_click_wait_cursor", False):
             self._remote_click_wait_cursor = False
             try:

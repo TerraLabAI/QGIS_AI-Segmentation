@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 from functools import lru_cache
 from itertools import islice
+from typing import Any
 
 
 _PROPERTY_MAX_CHARS = 4096
@@ -41,7 +42,7 @@ def _scrub_telemetry_properties(value, depth: int = 0, budget=None):
     if isinstance(value, float):
         return value if math.isfinite(value) else None
     if isinstance(value, dict):
-        result = {}
+        result: dict[str, Any] = {}
         for key, child in islice(value.items(), _PROPERTY_MAX_ITEMS):
             if len(result) >= _PROPERTY_MAX_ITEMS or budget[0] <= 0:
                 break

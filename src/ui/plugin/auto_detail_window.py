@@ -67,6 +67,10 @@ class AutoDetailWindowMixin:
             seed_headroom_levels,
         )
 
+        if self._tile_plan_active():
+            window = self._tile_plan_window(layer, zone_in_layer)
+            if window is not None:
+                return window[0], window[1]
         machine_max = self._max_useful_detail(layer, zone_in_layer)
         obj = (object_class or "").strip()
 
@@ -194,7 +198,12 @@ class AutoDetailWindowMixin:
 
 
 
-        from ...core.detection_policy import drawn_object_tile_frac, zone_seed_mupp
+        from ...core.detection_policy import (
+            drawn_object_tile_frac,
+            exemplar_ladder_mupp,
+            tile_fit_object_frac,
+            zone_seed_mupp,
+        )
         from ...core.tile_manager import TILE_SIZE
 
         try:
@@ -204,9 +213,14 @@ class AutoDetailWindowMixin:
         if drawn_m <= 0:
             return 0.0
         try:
+            ladder_mupp = exemplar_ladder_mupp(drawn_m)
+            if ladder_mupp > 0:
+                fit = tile_fit_object_frac()
+                return max(ladder_mupp, drawn_m / (TILE_SIZE * fit))
             frac = drawn_object_tile_frac()
             floor_tile_m = zone_seed_mupp() * TILE_SIZE
-        except (RuntimeError, AttributeError, TypeError, ValueError):
+        except (RuntimeError, AttributeError, TypeError, ValueError,
+                ZeroDivisionError):
             return 0.0
         if frac <= 0 or floor_tile_m <= 0:
             return 0.0

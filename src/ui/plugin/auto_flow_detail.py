@@ -130,6 +130,10 @@ class AutoFlowDetailMixin:
         from ...core.detection_policy import seed_headroom_levels
         from ...core.tile_manager import TILE_SIZE
 
+        if self._tile_plan_active():
+
+
+            return self._tile_plan_centre_step()
         cap = self._max_useful_detail(layer, zone_in_layer)
         ceiling = max(1, cap - seed_headroom_levels())
         tile_cap = self._seed_tile_cap_for_plan()
@@ -309,12 +313,14 @@ class AutoFlowDetailMixin:
         raw = (object_class or "").strip()
         token = self._resolve_object_token(raw)
         self._reseed_auto_detail_from_blob(token)
-        self._fetch_auto_run_plan(token)
 
 
 
-        if raw and token == raw:
-            self._fetch_auto_token(raw)
+
+
+
+        if not (raw and self._fetch_auto_token(raw)):
+            self._fetch_auto_run_plan(token)
 
 
 

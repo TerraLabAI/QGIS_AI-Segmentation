@@ -16,7 +16,7 @@ from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtWidgets import QLabel
 
 from ...core.i18n import tr
-from ...core.server_dials import dial_copy
+from ...core.server_dials import dial_copy, feature_enabled
 from ..account_settings_plan import _STATUS_DISPLAY, resolve_plan_credits
 from ..dock.font_scale import apply_font_scale_to_tree, scale_px_length, scale_qss_font_px
 from ..dock.styles import (
@@ -148,7 +148,7 @@ class AccountPageMixin:
         group.add_row(self._identity_row(account, email, sub, plan))
 
         group.add_row(self._usage_link_row())
-        if not plan.is_subscriber:
+        if not plan.is_subscriber and feature_enabled("account_pro_row"):
             group.add_row(self._pro_row())
         self._account_col.addWidget(group)
 

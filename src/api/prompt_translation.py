@@ -176,6 +176,15 @@ def resolve_english_prompt(text: str) -> str | None:
                 _lookup_locks[norm] = (lock, users - 1)
 
 
+def english_prompt_answered(text: str) -> bool:
+
+
+
+    norm = _normalize_lookup_key(text)
+    with _session_lock:
+        return norm in _session_cache
+
+
 def _remember_session(norm: str, token: str | None) -> None:
     with _session_lock:
         _session_cache[norm] = token
@@ -225,7 +234,10 @@ def _resolve_english_prompt(text: str) -> str | None:
     token = None
     if isinstance(resp, dict) and not resp.get("error"):
         token = _sanitize_token(resp.get("token"))
-    if token == norm:
+    if token is not None and token == _sanitize_token(norm):
+
+
+
         token = None
     if _server_answered(resp):
         _remember_session(norm, token)

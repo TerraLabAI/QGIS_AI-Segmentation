@@ -172,6 +172,8 @@ class AutoMaskGeometryMixin:
 
         decoded_count = detection_mask_count(response, self._score_threshold)
 
+        self._density_note_count(tile_idx, decoded_count)
+
 
         if self._tile_depth.get(tile_idx, 0) == 0:
             self._paid_tiles_done += 1
@@ -204,6 +206,12 @@ class AutoMaskGeometryMixin:
             "transform": tile_transform,
             "count": decoded_count,
             "resplit": resplit,
+
+
+
+
+
+            "stamp": self._tile_stamp_norm.get(tile_idx),
         }
 
     def _convert_completed(self, job: dict) -> list:
@@ -232,7 +240,7 @@ class AutoMaskGeometryMixin:
         convert_t0 = time.monotonic()
         out = self._detections_to_geoms(
             self._iter_kept_masks(
-                mask_iter, job["response"], job["tile_idx"],
+                mask_iter, job["response"], job.get("stamp"),
                 job["tile_w"], job["tile_h"], job["count"],
             ),
             job["transform"],
@@ -310,7 +318,7 @@ class AutoMaskGeometryMixin:
         return True
 
     def _iter_kept_masks(
-        self, mask_iter, response: dict, tile_idx: int, tile_w: int, tile_h: int,
+        self, mask_iter, response: dict, stamp, tile_w: int, tile_h: int,
         instance_count: int,
     ):
 
@@ -328,7 +336,8 @@ class AutoMaskGeometryMixin:
 
 
 
-        stamp = self._tile_stamp_norm.get(tile_idx)
+
+
         for mask, score, box in mask_iter:
             if stamp and self._centroid_in_stamp(box, mask, stamp):
                 continue
@@ -458,6 +467,7 @@ class AutoMaskGeometryMixin:
             fill_small_holes,
             masks_to_polygons_packed,
         )
+        from ...core.polygon_trace import trace_crops_rings
 
 
 
@@ -521,6 +531,12 @@ class AutoMaskGeometryMixin:
 
         pending_crops: dict = {}
         pending_meta: dict = {}
+
+
+        pending_outlines: dict = {}
+
+
+        queued: list = []
         for mask, score in kept:
 
 
@@ -626,18 +642,8 @@ class AutoMaskGeometryMixin:
 
 
 
-
-
-
-
-            if crop_has_no_holes(sub):
-                sub = sub.astype(np.uint8)
-            else:
-                sub = fill_small_holes(
-                    sub,
-                    pinhole_fill_limit_px(
-                        self._gsd * length_scale, cell * length_scale,
-                        self._pinhole_m))
+            fill_limit = pinhole_fill_limit_px(
+                self._gsd * length_scale, cell * length_scale, self._pinhole_m)
 
 
 
@@ -647,14 +653,50 @@ class AutoMaskGeometryMixin:
                 tile_simplify_tolerance(
                     self._gsd, cell, self._tile_simplify_mult),
             )
-            pending_crops.setdefault(key, []).append((sub, (row0 - 1, col0 - 1)))
-            pending_meta.setdefault(key, []).append((float(score), blob_check))
+            queued.append((sub, row0, col0, key, float(score), blob_check, fill_limit))
 
+
+
+
+
+
+
+
+
+
+
+
+        outlines = trace_crops_rings([q[0] for q in queued], saddles=False)
+        for (sub, row0, col0, key, score, blob_check, fill_limit), outline in zip(
+                queued, outlines):
+            if outline is not None and outline.has_holes:
+                outline = outline.after_pinhole_fill(
+                    fill_limit,
+                    lambda unfilled, limit=fill_limit: fill_small_holes(unfilled, limit))
+            if outline is not None:
+                if outline.pixels is None:
+                    sub = sub.astype(np.uint8)
+            elif crop_has_no_holes(sub):
+                sub = sub.astype(np.uint8)
+            else:
+                sub = fill_small_holes(sub, fill_limit)
+            pending_crops.setdefault(key, []).append((sub, (row0 - 1, col0 - 1)))
+            pending_meta.setdefault(key, []).append((score, blob_check))
+            pending_outlines.setdefault(key, []).append(outline)
+
+
+
+        path_counts: dict = {}
         for key, crops in pending_crops.items():
             full_shape, simplify_tolerance = key
             polygon_lists = masks_to_polygons_packed(
                 crops, tile_transform, full_shape,
                 simplify_tolerance=simplify_tolerance,
+                outlines=pending_outlines[key],
+
+
+                skip_below_area=min_keep_area,
+                path_counts=path_counts,
             )
             for (score, blob_check), geoms in zip(pending_meta[key], polygon_lists):
                 for geom in geoms:
@@ -727,6 +769,11 @@ class AutoMaskGeometryMixin:
             self.map_cover_scores.extend(map_cover_scores)
             if observed_cell > self.observed_mask_gsd:
                 self.observed_mask_gsd = observed_cell
+            if path_counts:
+                self.polygonized_gdal += path_counts.get("gdal", 0)
+                self.polygonized_tracer += path_counts.get("tracer", 0)
+                self.polygonized_fallback += path_counts.get("fallback", 0)
+                self.polygonized_fallback_fast += path_counts.get("fallback_fast", 0)
 
 
 

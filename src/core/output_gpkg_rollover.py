@@ -90,6 +90,23 @@ def gpkg_byte_ceiling() -> int:
         return GPKG_MAX_BYTES
 
 
+
+
+_GPKG_PROBE_TIMEOUT_S = 0.5
+
+
+def gpkg_probe_timeout_s() -> float:
+
+
+    try:
+        from .server_dials import dial_in_range
+
+        return float(dial_in_range(
+            "tuning.export.gpkg_probe_timeout_s", _GPKG_PROBE_TIMEOUT_S, 0.1, 2.0))
+    except Exception:  # noqa: BLE001  # nosec B110
+        return _GPKG_PROBE_TIMEOUT_S
+
+
 def read_only_gpkg_uri(path: str) -> str:
 
 
@@ -149,7 +166,7 @@ def table_names(path: str) -> set[str] | None:
         import sqlite3
 
         connection = sqlite3.connect(
-            read_only_gpkg_uri(path), uri=True, timeout=0.5)
+            read_only_gpkg_uri(path), uri=True, timeout=gpkg_probe_timeout_s())
         rows = connection.execute(
             "SELECT table_name FROM gpkg_contents").fetchall()
         names = {str(row[0]) for row in rows if row and row[0]}
@@ -191,7 +208,7 @@ def layer_identifiers(path: str) -> set[str] | None:
         import sqlite3
 
         connection = sqlite3.connect(
-            read_only_gpkg_uri(path), uri=True, timeout=0.5)
+            read_only_gpkg_uri(path), uri=True, timeout=gpkg_probe_timeout_s())
         rows = connection.execute(
             "SELECT identifier FROM gpkg_contents").fetchall()
         return {str(row[0]) for row in rows if row and row[0]}

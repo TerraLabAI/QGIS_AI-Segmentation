@@ -26,10 +26,14 @@ from .auto_zone_grid import (
 from .auto_zone_history import (
     AutoZoneHistoryMixin,
 )
+from .auto_zone_pick import (
+    AutoZonePickMixin,
+)
 
 
 class AutoZoneMixin(
     AutoZoneDrawMixin,
+    AutoZonePickMixin,
     AutoZoneFreeFitMixin,
     AutoZoneHistoryMixin,
     AutoZoneGridMixin,

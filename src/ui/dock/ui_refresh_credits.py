@@ -11,6 +11,7 @@ from __future__ import annotations
 from qgis.PyQt.QtCore import QLocale
 
 from ...core.i18n import tr
+from ...core.server_dials import dial_in_range
 
 
 def grouped_locale() -> QLocale:
@@ -73,7 +74,7 @@ def _gauge_percent_used(used, cap, left) -> int:
     except (TypeError, ValueError, ZeroDivisionError):
         return 0
     if percent >= 100 and (left or 0) > 0:
-        return 99
+        return dial_in_range("tuning.credits.ring_cap_percent", 99, 90, 99)
     return max(0, percent)
 
 

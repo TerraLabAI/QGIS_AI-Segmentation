@@ -154,8 +154,12 @@ class SessionLinkRow(QWidget):
             return QSize(0, 0)
 
     def sizeHint(self) -> QSize:  # noqa: N802
-        hint = self._links_col.sizeHint()
-        return QSize(min(hint.width(), max(1, self.width())), hint.height())
+
+        try:
+            hint = self._links_col.sizeHint()
+            return QSize(min(hint.width(), max(1, self.width())), hint.height())
+        except RuntimeError:
+            return QSize(0, 0)
 
     def hasHeightForWidth(self) -> bool:  # noqa: N802
         return False

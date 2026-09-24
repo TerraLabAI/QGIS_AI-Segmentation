@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import time
+from typing import Any, Callable
 
 import numpy as np
 from qgis.core import Qgis, QgsMessageLog
@@ -373,7 +374,7 @@ class TileRequestErrorWatch:
         self._tile_url_pattern = tile_url_pattern
         self._manager = None
         self._created_signal = None
-        self._reply_callbacks = []
+        self._reply_callbacks: list[tuple[Any, Callable[[], None]]] = []
         self.failed = False
 
 

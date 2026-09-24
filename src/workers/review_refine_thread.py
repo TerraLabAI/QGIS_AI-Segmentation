@@ -161,7 +161,9 @@ class ReviewRefineThread(QThread):
         self._stopping = True
         self._inbox.put(None)
 
-    def join_run(self, timeout_ms: int = REVIEW_REFINE_JOIN_TIMEOUT_MS) -> bool:
+    def join_run(self, timeout_ms: int | None = None) -> bool:
+
+
 
 
 
@@ -170,13 +172,26 @@ class ReviewRefineThread(QThread):
 
         if not self.isRunning():
             return True
+        if timeout_ms is None:
+            timeout_ms = REVIEW_REFINE_JOIN_TIMEOUT_MS
+            try:
+                from ..core.server_dials import dial_in_range
+                timeout_ms = dial_in_range(
+                    "tuning.review.refine_thread_join_timeout_ms",
+                    REVIEW_REFINE_JOIN_TIMEOUT_MS, 500, 30000)
+            except Exception:  # noqa: BLE001
+                timeout_ms = REVIEW_REFINE_JOIN_TIMEOUT_MS
         return bool(self.wait(timeout_ms))
 
 
 
     def run(self) -> None:  # noqa: D102
         from ..core.live_refine import refine_review_geom
+        from ..core.macos_activity import promote_current_thread
 
+
+
+        promote_current_thread()
         try:
             while True:
                 item = self._inbox.get()

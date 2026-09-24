@@ -6977,5 +6977,53 @@ Lower thins the smallest detail first while keeping the corners.</source>
         <source>{plan} · {status}</source>
         <translation>{plan} · {status}</translation>
     </message>
+    <message>
+        <source>Layer</source>
+        <translation>图层</translation>
+    </message>
+    <message>
+        <source>No polygon layer in this project</source>
+        <translation>此项目中没有面图层</translation>
+    </message>
+    <message>
+        <source>Or use an existing zone</source>
+        <translation>或使用现有区域</translation>
+    </message>
+    <message>
+        <source>Saving... {pct}%</source>
+        <translation>正在保存... {pct}%</translation>
+    </message>
+    <message>
+        <source>Signed in (from {}).</source>
+        <translation>已登录（来自 {}）。</translation>
+    </message>
+    <message>
+        <source>Signed in as {} (from {}).</source>
+        <translation>以 {} 身份登录（来自 {}）。</translation>
+    </message>
+    <message>
+        <source>Take the zone from a layer or a selection</source>
+        <translation>从图层或选区获取区域</translation>
+    </message>
+    <message>
+        <source>That zone cannot be moved onto this map. Draw it instead.</source>
+        <translation>该区域无法移到这张地图上。请改为绘制。</translation>
+    </message>
+    <message>
+        <source>That zone is empty. Pick another one.</source>
+        <translation>该区域为空。请另选一个。</translation>
+    </message>
+    <message>
+        <source>Use this zone</source>
+        <translation>使用此区域</translation>
+    </message>
+    <message>
+        <source>Zone of interest</source>
+        <translation>感兴趣区域</translation>
+    </message>
+    <message>
+        <source>{name}, {n} selected</source>
+        <translation>{name}，已选择 {n} 个</translation>
+    </message>
 </context>
 </TS>

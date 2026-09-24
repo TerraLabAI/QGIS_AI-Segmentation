@@ -250,11 +250,35 @@ class AutoFlowGridMixin:
 
 
 
-        from ...core.source_resolution import oversample_allowance
         from ...core.tile_manager import OVERLAP_FRACTION, TILE_SIZE
 
         longer_side = max(zone_in_layer.width(), zone_in_layer.height())
         if longer_side <= 0:
+            return None
+
+
+
+        mupp = 0.0
+        if self._tile_plan_active():
+            mupp = self._tile_plan_step_run_mupp(layer, zone_in_layer, detail_n)
+        if mupp <= 0:
+
+
+
+            stride = int(TILE_SIZE * (1.0 - OVERLAP_FRACTION))
+            target_px = TILE_SIZE + (max(1, detail_n) - 1) * stride
+            mupp = longer_side / target_px
+        return self._grid_for_run_mupp(layer, zone_in_layer, mupp, mupp_floor)
+
+    def _grid_for_run_mupp(self, layer, zone_in_layer, mupp: float,
+                           mupp_floor: float = 0.0):
+
+
+
+        from ...core.source_resolution import oversample_allowance
+        from ...core.tile_manager import TILE_SIZE
+
+        if mupp <= 0:
             return None
         try:
             layer_w = layer.width()
@@ -264,12 +288,6 @@ class AutoFlowGridMixin:
             return None
 
         use_online = layer_w <= 0 or layer_h <= 0 or self._needs_canvas_render(layer)
-
-
-
-        stride = int(TILE_SIZE * (1.0 - OVERLAP_FRACTION))
-        target_px = TILE_SIZE + (max(1, detail_n) - 1) * stride
-        mupp = longer_side / target_px
 
 
 
@@ -342,6 +360,10 @@ class AutoFlowGridMixin:
 
         from ...core.tile_manager import MAX_DETAIL_LEVEL
 
+        if self._tile_plan_active():
+            window = self._tile_plan_window(layer, zone_in_layer)
+            if window is not None:
+                return window[2]
 
 
 
@@ -500,6 +522,11 @@ class AutoFlowGridMixin:
 
             minx = zone_in_layer.xMinimum()
             maxy = zone_in_layer.yMaximum()
+            if self._tile_plan_active():
+
+
+                minx, maxy = self._tile_plan_grid_origin(
+                    zone_in_layer, pixel_w, pixel_h, mupp)
             maxx = minx + pixel_w * mupp
             miny = maxy - pixel_h * mupp
 

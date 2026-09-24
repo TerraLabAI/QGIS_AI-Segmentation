@@ -43,12 +43,33 @@ if TYPE_CHECKING:
 
 
 
-
 _TILE_IMAGE_FORMAT: str = "JPEG"
 _TILE_JPEG_QUALITY: int = 90
 
 
 _ARCHIVE_JPEG_QUALITY: int = 80
+
+
+def _save_jpeg(image, buf, quality: int) -> None:
+
+
+
+
+
+
+
+
+    from qgis.PyQt.QtGui import QImageWriter
+
+    writer = QImageWriter(buf, b"JPEG")
+    writer.setQuality(int(quality))
+    writer.setProgressiveScanWrite(True)
+    if not writer.write(image):
+        mode = buf.openMode()
+        buf.close()
+        buf.setData(b"")
+        buf.open(mode)
+        image.save(buf, _TILE_IMAGE_FORMAT, int(quality))
 
 
 def _tile_jpeg_quality() -> int:
@@ -482,6 +503,18 @@ _active_render_jobs: list = []
 _tile_render_hooks: list = []
 
 
+
+_draining_hooks: list = []
+
+
+def _drop_drain_hook(job) -> None:
+
+    for i, entry in enumerate(_draining_hooks):
+        if entry[0] is job:
+            del _draining_hooks[i]
+            return
+
+
 def _drop_tile_render_hook(job) -> None:
 
     for i, entry in enumerate(_tile_render_hooks):
@@ -514,6 +547,8 @@ def cancel_active_tile_render() -> None:
 
     hooks = list(_tile_render_hooks)
     _tile_render_hooks.clear()
+    drains = list(_draining_hooks)
+    _draining_hooks.clear()
     jobs = list(_active_render_jobs)
     _active_render_jobs.clear()
     for job in jobs:
@@ -521,6 +556,11 @@ def cancel_active_tile_render() -> None:
             job.cancel()
         except (RuntimeError, AttributeError):
             pass
+    for _job, drained in drains:
+        try:
+            drained()
+        except Exception:  # noqa: BLE001
+            logger.warning("cancel_active_tile_render: drain release failed")
 
 
 
@@ -739,7 +779,11 @@ def start_tile_render_job(
     render_clone=None,
     render_crs=None,
     clone_resolved: bool = False,
+    report_cancel: bool = False,
 ) -> bool:
+
+
+
 
 
 
@@ -768,14 +812,27 @@ def start_tile_render_job(
     state = {"done": False, "clone": render_clone, "job": job,
              "cancelled": False}
 
+    def _drained() -> None:
+
+
+        if state.get("drained"):
+            return
+        state["drained"] = True
+        rjob = state["job"]
+        if rjob in _active_render_jobs:
+            _active_render_jobs.remove(rjob)
+        _drop_drain_hook(rjob)
+        state["clone"] = None
+        _release_job_later(state)
+
     def _finish(timed_out: bool = False) -> None:
         if state["done"]:
+            if state.get("draining") and not timed_out:
+                _drained()
             return
         state["done"] = True
         rjob = state["job"]
         _drop_tile_render_hook(rjob)
-        if rjob in _active_render_jobs:
-            _active_render_jobs.remove(rjob)
         img = None
         try:
             if state["cancelled"]:
@@ -785,6 +842,18 @@ def start_tile_render_job(
                 img = None
             elif not rjob.isActive():
                 img = rjob.renderedImage()
+            elif timed_out and hasattr(rjob, "cancelWithoutBlocking"):
+
+
+
+
+
+
+                state["draining"] = True
+                _draining_hooks.append((rjob, _drained))
+                rjob.cancelWithoutBlocking()
+                logger.warning(
+                    "start_tile_render_job: render timed out after %d ms", timeout_ms)
             else:
 
 
@@ -794,15 +863,28 @@ def start_tile_render_job(
                         "start_tile_render_job: render timed out after %d ms", timeout_ms)
         except (RuntimeError, AttributeError):
             img = None
-        state["clone"] = None
+        if state.get("draining"):
+
+            try:
+                if not rjob.isActive():
+                    _drained()
+            except (RuntimeError, AttributeError):
+                _drained()
+        else:
+            if rjob in _active_render_jobs:
+                _active_render_jobs.remove(rjob)
+            state["clone"] = None
 
 
 
-        _release_job_later(state)
+            _release_job_later(state)
         if img is not None and img.isNull():
             img = None
         try:
-            on_done(img)
+            if report_cancel:
+                on_done(img, bool(state["cancelled"]))
+            else:
+                on_done(img)
         except Exception:  # noqa: BLE001
             logger.warning("start_tile_render_job: on_done callback failed")
 
@@ -874,6 +956,94 @@ def probe_depth_chain(
     return images
 
 
+def start_probe_depth_chain(
+    layer,
+    extent,
+    on_done,
+    render_crs=None,
+    count: int = 2,
+    side_px: int | None = None,
+    min_side_px: int = 32,
+    timeout_ms: int | None = None,
+) -> bool:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    if side_px is None:
+        side_px = imagery_probe_px(_IMAGERY_PROBE_PX)
+    if timeout_ms is None:
+        timeout_ms = imagery_probe_timeout_ms(_IMAGERY_PROBE_TIMEOUT_MS)
+    sides = []
+    side = int(side_px)
+    for _ in range(max(2, int(count))):
+        if side < int(min_side_px):
+            break
+        sides.append(side)
+        side //= 2
+    if not sides:
+        return False
+    state = {"results": [None] * len(sides), "pending": len(sides),
+             "cancelled": False, "reported": False}
+
+    def _report() -> None:
+        if state["reported"] or state["pending"] > 0:
+            return
+        state["reported"] = True
+        images = []
+        for img in state["results"]:
+            if img is None:
+                break
+            images.append(img)
+        state["results"] = []
+        try:
+            on_done(images, bool(state["cancelled"]))
+        except Exception:  # noqa: BLE001
+            logger.warning("start_probe_depth_chain: on_done callback failed")
+
+    def _level_done(index: int):
+        def _done(img, cancelled) -> None:
+            state["results"][index] = img
+            state["cancelled"] = state["cancelled"] or bool(cancelled)
+            state["pending"] -= 1
+            _report()
+        return _done
+
+    started = 0
+    for index, level_side in enumerate(sides):
+        try:
+            ok = start_tile_render_job(
+                layer, extent, level_side, level_side, _level_done(index),
+                timeout_ms=int(timeout_ms), render_clone=None,
+                render_crs=render_crs, clone_resolved=True, report_cancel=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("probe render failed to start: %s", exc)
+            ok = False
+        if ok:
+            started += 1
+        else:
+
+
+            state["pending"] -= 1
+    if started == 0:
+        return False
+    _report()
+    return True
+
+
 def _probe_render(layer, extent, side_px: int, render_crs, timeout_ms: int):
 
     try:
@@ -927,7 +1097,7 @@ def encode_tile_png(
            else img.copy(QRect(tx, ty, cw, ch)))
     buf = QBuffer()
     buf.open(WriteOnly)
-    sub.save(buf, _TILE_IMAGE_FORMAT, _tile_jpeg_quality())
+    _save_jpeg(sub, buf, _tile_jpeg_quality())
     data = bytes(buf.data())
     buf.close()
     if not data:
@@ -972,7 +1142,7 @@ def encode_tile_archive_copy(
     )
     buf = QBuffer()
     buf.open(WriteOnly)
-    small.save(buf, _TILE_IMAGE_FORMAT, archive_jpeg_quality(_ARCHIVE_JPEG_QUALITY))
+    _save_jpeg(small, buf, archive_jpeg_quality(_ARCHIVE_JPEG_QUALITY))
     data = bytes(buf.data())
     buf.close()
     return data or None
@@ -1094,7 +1264,7 @@ def composite_tile_with_stamps(img, tx, ty, tw, th, stamps, bottom=False):
 
     buf = QBuffer()
     buf.open(WriteOnly)
-    sub.save(buf, _TILE_IMAGE_FORMAT, _tile_jpeg_quality())
+    _save_jpeg(sub, buf, _tile_jpeg_quality())
     data = bytes(buf.data())
     buf.close()
     if not data:

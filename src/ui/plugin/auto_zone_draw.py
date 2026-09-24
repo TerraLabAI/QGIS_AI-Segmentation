@@ -343,7 +343,13 @@ class AutoZoneDrawMixin:
         try:
             if geom is None or geom.isEmpty():
                 return None
-            if geom.isGeosValid() and not geom.isMultipart():
+
+
+
+
+
+
+            if geom.isGeosValid():
                 return geom
             from ...core.layer_conventions import repair_polygon
             repaired = repair_polygon(QgsGeometry(geom))
@@ -356,7 +362,13 @@ class AutoZoneDrawMixin:
             if total <= 0:
                 return None
             main = max(range(len(parts)), key=lambda i: areas[i])
-            if areas[main] / total < self._ZONE_MAIN_PART_MIN_SHARE:
+            try:
+                from ...core.server_dials import dial_in_range
+                main_part_min_share = dial_in_range(
+                    "tuning.auto.zone_repair_main_share", self._ZONE_MAIN_PART_MIN_SHARE, 0.8, 1.0)
+            except Exception:  # noqa: BLE001
+                main_part_min_share = self._ZONE_MAIN_PART_MIN_SHARE
+            if areas[main] / total < main_part_min_share:
                 return None
             return QgsGeometry(parts[main])
         except Exception:  # nosec B110
@@ -424,7 +436,13 @@ class AutoZoneDrawMixin:
             if zone_area <= 0:
                 return "ok"
             inside_fraction = zone.intersection(extent_geom).area() / zone_area
-            if inside_fraction < self._ZONE_OUTSIDE_INFO_FRACTION:
+            try:
+                from ...core.server_dials import dial_in_range
+                outside_info_fraction = dial_in_range(
+                    "tuning.auto.zone_outside_info_fraction", self._ZONE_OUTSIDE_INFO_FRACTION, 0.1, 0.9)
+            except Exception:  # noqa: BLE001
+                outside_info_fraction = self._ZONE_OUTSIDE_INFO_FRACTION
+            if inside_fraction < outside_info_fraction:
                 return "partial"
         except Exception:  # nosec B110
             return "ok"

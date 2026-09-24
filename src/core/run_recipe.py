@@ -91,7 +91,7 @@ _REFINE_ALIASES = {
 
 
 def _normalize_refine(settings: dict) -> dict:
-    normalized = {}
+    normalized: dict[str, float | bool] = {}
     for key, value in settings.items():
         key = _REFINE_ALIASES.get(key, key)
         if key not in _REFINE_DEFAULTS or not isinstance(value, (int, float)):

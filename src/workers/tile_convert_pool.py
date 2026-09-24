@@ -17,12 +17,27 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 from __future__ import annotations
 
+import collections
 import logging
-import os
 import queue
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 from .tile_convert_child import (  # noqa: F401
     STAT_FOLD,
@@ -38,6 +53,12 @@ from .tile_convert_child import (  # noqa: F401
     skip_unused_child_imports,
     unthrottle_this_process,
 )
+from .tile_convert_handshake import (  # noqa: F401
+    _await_ready,
+    _init_all,
+    _silent_end,
+)
+from .tile_convert_lifecycle import TileConvertLifecycleMixin
 from .tile_convert_threads import (  # noqa: F401
     _ANY_FAILURE,
     DEFAULT_MAX_WORKERS,
@@ -52,7 +73,6 @@ logger = logging.getLogger(__name__)
 
 
 PROCESS_POOL_MIN_TILES = 24
-
 
 
 
@@ -106,7 +126,10 @@ def process_workers(default_max: int | None = None,
     return children if children >= 2 else 0
 
 
-class TileConvertProcessPool:
+class TileConvertProcessPool(TileConvertLifecycleMixin):
+
+
+
 
 
 
@@ -171,265 +194,26 @@ class TileConvertProcessPool:
 
 
 
-    def set_snapshot(self, snapshot: dict) -> None:
 
-
-        self._snapshot = snapshot
-
-    def spawn(self) -> bool:
-
-
-
-
-
-
-
-        if self._spawn_tried:
-            return bool(self._children)
-        self._spawn_tried = True
-        return self._launch_children()
-
-    def start(self, while_booting=None) -> bool:
-
-
-
-
-
-
-
-
-
-
-
-
-        if not self.spawn():
-            return False
-        if self._snapshot is None:
-            self._fail("no run snapshot")
-            return False
-        if while_booting is not None:
-            try:
-                while_booting()
-            except Exception:  # noqa: BLE001
-                logger.info("TileConvertProcessPool: boot-time work failed",
-                            exc_info=True)
-        import sys
-
-        if sys.platform == "win32":
-            answers = self._await_children_ready()
-        else:
-            answers = self._await_children_in_turn()
-        return self._finish_start(answers)
-
-    def _await_children_in_turn(self) -> list:
-
-
-        import time
-
-
-
-
-        deadline = time.monotonic() + self._ready_timeout
-
-        floor = min(1.0, self._ready_timeout)
-        answers = []
-        for proc in self._children:
-            answers.append(_await_ready(
-                proc, max(floor, deadline - time.monotonic())))
-            if not answers[-1][0]:
-                break
-        answers += [(False, "")] * (len(self._children) - len(answers))
-        return answers
-
-    def _await_children_ready(self) -> list:
-
-
-
-
-
-
-
-
-        import time
-
-        procs = list(self._children)
-        slots: list = [None] * len(procs)
-        done = threading.Event()
-
-        def wait_one(index: int, proc) -> None:
-            slots[index] = _await_ready(proc, self._ready_timeout)
-            done.set()
-
-        helpers = []
-        for index, proc in enumerate(procs):
-            helper = threading.Thread(target=wait_one, args=(index, proc),
-                                      daemon=True, name="tileconvready")
-            helper.start()
-            helpers.append(helper)
-        started = self._spawned_at or time.monotonic()
-        deadline = time.monotonic() + self._ready_timeout
-        first_ready = None
-        while time.monotonic() < deadline:
-            done.wait(0.05)
-            done.clear()
-            if all(slot is not None for slot in slots):
-                break
-            ready = sum(1 for slot in slots if slot is not None and slot[0])
-            if ready and first_ready is None:
-                first_ready = time.monotonic() - started
-            if (ready >= 2 and first_ready is not None
-                    and time.monotonic() - started >= 2 * first_ready + 1.0):
-                break
-        else:
-
-
-
-            for helper in helpers:
-                helper.join(max(0.0, deadline - time.monotonic()) + 1.5)
-        return [slot if slot is not None else (False, "no answer in time")
-                for slot in slots]
-
-    def _launch_children(self) -> bool:
-        import subprocess  # nosec B404
-
-        exe = child_python()
-        if not exe:
-            logger.info("TileConvertProcessPool: no child interpreter found")
-            self.last_failure = "no child interpreter found"
-            return False
-        import time
-
-        self._spawned_at = time.monotonic()
-        env = child_environment()
-        boot = (
-            "from src.workers.tile_convert_child import child_main; child_main()"
-        )
-        try:
-            for _ in range(self._workers):
-                errfile = _child_stderr_file()
-                if errfile is not None:
-                    self._stderr_files.append(errfile)
-
-
-                proc = subprocess.Popen(  # nosec B603
-                    [exe, "-s", "-c", boot],
-                    stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                    stderr=errfile if errfile is not None else subprocess.DEVNULL,
-                    env=env, cwd=child_cwd(), close_fds=True,
-                    creationflags=child_creation_flags())
-                keep_child_off_power_throttling(proc)
-                self._children.append(proc)
-        except Exception as exc:  # noqa: BLE001
-            logger.info("TileConvertProcessPool: could not start a child",
-                        exc_info=True)
-            self._fail(f"spawn error {type(exc).__name__}")
-            return False
-        return True
-
-    def _finish_start(self, answers: list) -> bool:
-        import sys
-
-        ready = [ok for ok, _why in answers]
-        if (sys.platform == "win32" and not all(ready)
-                and sum(1 for r in ready if r) >= 2):
-
-
-
-
-            logger.info("TileConvertProcessPool: keeping %d of %d children",
-                        sum(1 for r in ready if r), len(self._children))
-            kept = []
-            for proc, ok in zip(self._children, ready):
-                if ok:
-                    kept.append(proc)
-                else:
-                    try:
-                        proc.kill()
-                    except Exception:  # noqa: BLE001  # nosec B110
-                        pass
-            self._children = kept
-            ready = [True] * len(kept)
-        if not all(ready):
-            came_up = sum(1 for r in ready if r)
-            logger.info("TileConvertProcessPool: %d of %d children came up",
-                        came_up, len(self._children))
-            whys = [why for ok, why in answers if not ok and why]
-            detail = f"{came_up} of {len(self._children)} came up"
-            if whys:
-                detail = f"{detail}; child said: {whys[0]}"
-            self._fail(detail)
-            return False
-
-
-
-
-
-        answers = _init_all(self._children, ("init", self._snapshot),
-                            self._ready_timeout)
-        for ok, why in answers:
-            if not ok:
-                logger.info("TileConvertProcessPool: a child refused the run")
-                self._fail("a child refused the run" + (f": {why}" if why else ""))
-                return False
-        for proc in self._children:
-            reader = threading.Thread(
-                target=self._read_from, args=(proc,), daemon=True,
-                name="tileconvproc")
-            reader.start()
-            self._readers.append(reader)
-            outbox: queue.Queue = queue.Queue()
-            feeder = threading.Thread(
-                target=self._feed, args=(proc, outbox), daemon=True,
-                name="tileconvfeed")
-            feeder.start()
-            self._outboxes.append(outbox)
-            self._feeders.append(feeder)
-        logger.info("TileConvertProcessPool: %d converter process(es) ready",
-                    len(self._children))
-        return True
-
-    def _fail(self, detail: str) -> None:
-
-
-        tail = self._stderr_tail()
-        self.last_failure = f"{detail}; stderr: {tail}" if tail else detail
-        self._kill_all()
-
-    def _stderr_tail(self, limit: int = 2048) -> str:
-
-
-        pieces = []
-        for errfile in self._stderr_files:
-            try:
-                errfile.flush()
-                size = errfile.seek(0, os.SEEK_END)
-                errfile.seek(max(0, size - limit))
-                text = errfile.read().decode("utf-8", "replace")
-            except Exception:  # noqa: BLE001  # nosec B112
-                continue
-            text = " | ".join(part.strip() for part in text.splitlines() if part.strip())
-            if text:
-                pieces.append(text)
-        return " || ".join(pieces)[-limit:]
-
-    def _kill_all(self) -> None:
-        for proc in self._children:
-            try:
-                proc.kill()
-            except Exception:  # noqa: BLE001  # nosec B110
-                pass
-        self._children = []
-        for errfile in self._stderr_files:
-            try:
-                errfile.close()
-            except Exception:  # noqa: BLE001  # nosec B110
-                pass
-        self._stderr_files = []
+        self._boot_state = ""
+        self._boot_taken = False
+        self._boot_s = 0.0
+        self._bridged_at = 0.0
+        self._live = False
+        self._local_threads = 0
+        self._local_busy = 0
+        self._local_queue: collections.deque = collections.deque()
+        self._local_pool: ThreadPoolExecutor | None = None
+        self.local_converted = 0
 
 
 
     @property
     def workers(self) -> int:
+
+
+        if self._boot_state and not self._live:
+            return self._local_threads
         return len(self._children) or self._workers
 
     @property
@@ -443,6 +227,9 @@ class TileConvertProcessPool:
 
 
 
+
+
+        pump = False
         with self._lock:
             if self._closed:
                 raise RuntimeError("TileConvertProcessPool is closed")
@@ -450,25 +237,72 @@ class TileConvertProcessPool:
             self._next_key += 1
             self._jobs[key] = job
             self._pending += 1
-            live = [i for i, proc in enumerate(self._children)
-                    if proc not in self._dead_children]
-            if live:
-
-
-
-
-                n = len(self._children)
-                start = self._round % n
-                self._round += 1
-                slot = min(live, key=lambda i: (
-                    self._outboxes[i].qsize(), (i - start) % n))
-                self._owners[key] = self._children[slot]
-                self._outboxes[slot].put((key, job))
+            if (not self._boot_state or self._live) and self._hand_to_child(key, job):
                 return
             self._owners[key] = None
-        self._convert_here(key, job)
+            local = self._local_pool
+            if local is not None:
+                self._local_queue.append(key)
+                pump = self._local_busy < self._local_threads
+                if pump:
+                    self._local_busy += 1
+        if local is None:
+            self._convert_here(key, job)
+        elif pump:
+            try:
+                local.submit(self._local_pump)
+            except RuntimeError:
+                with self._lock:
+                    self._local_busy -= 1
 
-    def _feed(self, proc, outbox: queue.Queue) -> None:
+    def _hand_to_child(self, key, job) -> bool:
+
+
+
+
+
+
+        live = [i for i, proc in enumerate(self._children)
+                if proc not in self._dead_children]
+        if not live:
+            return False
+        n = len(self._children)
+        start = self._round % n
+        self._round += 1
+        slot = min(live, key=lambda i: (
+            self._outboxes[i].qsize(), (i - start) % n))
+        self._owners[key] = self._children[slot]
+        self._outboxes[slot].put((key, job))
+        return True
+
+    def _local_pump(self) -> None:
+
+
+
+
+
+
+
+
+
+        while True:
+            with self._lock:
+                if self._closed or not self._local_queue:
+                    self._local_busy -= 1
+                    return
+                key = self._local_queue.popleft()
+                job = self._jobs.get(key)
+            if job is None:
+                continue
+            try:
+                self._convert_here(key, job)
+            except Exception:  # noqa: BLE001
+                logger.warning("TileConvertProcessPool: a local conversion "
+                               "could not be published", exc_info=True)
+            with self._lock:
+                self.local_converted += 1
+
+    def _feed(self, proc: Any, outbox: queue.Queue) -> None:
 
 
 
@@ -484,6 +318,11 @@ class TileConvertProcessPool:
                     if self._owners.get(key) is not proc:
                         continue
                 try:
+
+
+
+                    if proc is None or proc.stdin is None:
+                        raise BrokenPipeError("converter child has no input pipe")
                     _send(proc.stdin, ("job", (key, job)))
                 except Exception:  # noqa: BLE001
                     self._child_failed(proc)
@@ -620,24 +459,40 @@ class TileConvertProcessPool:
 
     def close(self, wait: bool = False) -> list:
 
+
+
+
+
+
+
         with self._lock:
             already_closed = self._closed
             self._closed = True
+            booting = self._boot_state == "booting"
+            if booting:
+                self._boot_state = "abandoned"
+                self._boot_s = time.monotonic() - self._bridged_at
+            self._local_queue.clear()
         if already_closed:
             return self.drain()
+        if self._local_pool is not None:
+            try:
+                self._local_pool.shutdown(wait=False)
+            except Exception:  # noqa: BLE001  # nosec B110
+                pass
         for outbox in self._outboxes:
 
 
             with outbox.mutex:
                 outbox.queue.clear()
             outbox.put(None)
-        if not wait:
+        if not wait or booting:
 
 
 
 
 
-            for proc in self._children:
+            for proc in list(self._children):
                 try:
                     proc.kill()
                 except Exception:  # noqa: BLE001  # nosec B110
@@ -649,77 +504,10 @@ class TileConvertProcessPool:
                 except Exception:  # noqa: BLE001  # nosec B110
                     pass
         results = self.drain()
-        self._kill_all()
+        if not booting:
+            self._kill_all()
         with self._lock:
             self._pending = 0
             self._jobs.clear()
             self._owners.clear()
         return results
-
-
-def _init_all(procs: list, request, timeout: float) -> list:
-
-
-
-    answers: list = [(False, "no answer")] * len(procs)
-
-    def exchange(index: int, proc) -> None:
-        answers[index] = _await_ready(proc, timeout, request=request)
-
-    threads = []
-    for index, proc in enumerate(procs):
-        thread = threading.Thread(target=exchange, args=(index, proc),
-                                  daemon=True, name="tileconvinit")
-        thread.start()
-        threads.append(thread)
-    for thread in threads:
-        thread.join(timeout + 2.0)
-    return list(answers)
-
-
-def _await_ready(proc, timeout: float, request=None) -> tuple[bool, str]:
-
-
-
-
-
-
-
-
-
-
-    answer: list = []
-
-    def read() -> None:
-        try:
-            if request is not None:
-                _send(proc.stdin, request)
-            answer.append(_recv(proc.stdout))
-        except Exception:  # noqa: BLE001
-            answer.append(None)
-
-    thread = threading.Thread(target=read, daemon=True, name="tileconv-handshake")
-    thread.start()
-    thread.join(timeout)
-    if not answer:
-        try:
-            proc.kill()
-        except Exception:  # noqa: BLE001  # nosec B110
-            pass
-        thread.join(timeout=1.0)
-        if not thread.is_alive():
-            for stream in (proc.stdin, proc.stdout):
-                try:
-                    stream.close()
-                except Exception:  # noqa: BLE001  # nosec B110
-                    pass
-        return False, f"no answer within {timeout:.0f}s"
-    frame = answer[0]
-    if not frame:
-        return False, "died before answering"
-    if frame[0] == "no":
-        logger.info("TileConvertProcessPool: child could not start (%s)",
-                    frame[1])
-        return False, str(frame[1])[:300]
-    expected = "init_ok" if request is not None else "ready"
-    return frame[0] == expected, ""

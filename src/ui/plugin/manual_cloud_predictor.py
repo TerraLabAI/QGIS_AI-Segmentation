@@ -189,26 +189,36 @@ class ManualCloudPredictorMixin:
         except Exception:  # noqa: BLE001  # nosec B110
             pass
 
-    def _track_manual_click_answered(self, started_at: float) -> None:
+    def _track_manual_click_answered(self, predict_ms: int, clock=None) -> None:
+
+
 
 
 
 
 
         try:
-            import time
-
             from ...core import telemetry_session_events
 
+            phases = clock.phase_properties() if clock is not None else {}
+            if clock is not None:
+                line = clock.summary_line()
+                score = getattr(self, "current_score", None)
+                if score is not None:
+                    line += f", score {float(score):.3f}"
+                QgsMessageLog.logMessage(line, "AI Segmentation",
+                                         level=Qgis.MessageLevel.Info)
             on_cloud = (self._manual_cloud_predictor_active()
                         or self._cloud_correct_predictor_active())
             telemetry_session_events.track_manual_click_answered(
                 engine="cloud" if on_cloud else "local",
-                duration_ms=int((time.monotonic() - started_at) * 1000),
+                duration_ms=int(predict_ms),
                 used_fallback=bool(getattr(self, "_manual_click_fell_back", False)),
                 is_correct=bool(getattr(self, "_refine_handoff_active", False)),
+                phases=phases,
             )
-            if on_cloud:
+            if on_cloud and not getattr(self, "_cloud_notice_marked", False):
+
 
 
 
@@ -216,6 +226,7 @@ class ManualCloudPredictorMixin:
                 from ...core.cloud_notice_seen import mark_cloud_notice_seen
 
                 mark_cloud_notice_seen()
+                self._cloud_notice_marked = True
         except Exception:  # noqa: BLE001  # nosec B110
             pass
 

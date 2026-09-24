@@ -208,54 +208,45 @@ def _label_components(mask_bool: np.ndarray) -> tuple[np.ndarray, int]:
     rows = starts // (w + 2)
     col_start = starts - rows * (w + 2) - 1
     col_stop = stops - rows * (w + 2) - 1
-
     n_runs = int(starts.size)
-    parent = list(range(n_runs))
-
-    def _find(a: int) -> int:
-        root = a
-        while parent[root] != root:
-            root = parent[root]
-        while parent[a] != root:
-            parent[a], a = root, parent[a]
-        return root
 
 
-    row_lo = np.searchsorted(rows, np.arange(h), side="left").tolist()
-    row_hi = np.searchsorted(rows, np.arange(h), side="right").tolist()
-    cs = col_start.tolist()
-    ce = col_stop.tolist()
-    for r in range(h - 1):
-        i, i_end = row_lo[r], row_hi[r]
-        j, j_end = row_lo[r + 1], row_hi[r + 1]
-        while i < i_end and j < j_end:
-            if cs[i] < ce[j] and cs[j] < ce[i]:
-                ri, rj = _find(i), _find(j)
-                if ri != rj:
-                    if ri < rj:
-                        parent[rj] = ri
-                    else:
-                        parent[ri] = rj
-            if ce[i] < ce[j]:
-                i += 1
-            else:
-                j += 1
 
 
-    numbering: dict[int, int] = {}
-    run_label = [0] * n_runs
-    for i in range(n_runs):
-        root = _find(i)
-        lab = numbering.get(root)
-        if lab is None:
-            lab = len(numbering) + 1
-            numbering[root] = lab
-        run_label[i] = lab
+    stride = w + 2
+    key = rows * stride + col_start
+    lo = np.searchsorted(key, (rows + 1) * stride, side="left")
+    hi = np.searchsorted(key, (rows + 1) * stride + col_stop, side="left")
+    counts = hi - lo
+    src = np.repeat(np.arange(n_runs), counts)
+    dst = (np.arange(int(counts.sum())) - np.repeat(np.cumsum(counts) - counts, counts)
+           + np.repeat(lo, counts))
+    touch = col_stop[dst] > col_start[src]
+    src, dst = src[touch], dst[touch]
 
-    row_list = rows.tolist()
-    for i in range(n_runs):
-        labels[row_list[i], cs[i]:ce[i]] = run_label[i]
-    return labels, len(numbering)
+
+
+
+    parent = np.arange(n_runs)
+    while src.size:
+        ra, rb = parent[src], parent[dst]
+        apart = ra != rb
+        if not apart.any():
+            break
+        np.minimum.at(parent, np.maximum(ra, rb)[apart], np.minimum(ra, rb)[apart])
+        while True:
+            nxt = parent[parent]
+            if not (nxt != parent).any():
+                break
+            parent = nxt
+
+    roots, run_label = np.unique(parent, return_inverse=True)
+    lengths = col_stop - col_start
+    first = rows * w + col_start
+    offsets = np.cumsum(lengths) - lengths
+    pixels = np.repeat(first - offsets, lengths) + np.arange(int(lengths.sum()))
+    labels.ravel()[pixels] = np.repeat(run_label.astype(np.int32) + 1, lengths)
+    return labels, int(roots.size)
 
 
 def _fill_holes(mask: np.ndarray) -> np.ndarray:

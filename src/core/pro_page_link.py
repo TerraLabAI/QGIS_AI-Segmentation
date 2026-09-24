@@ -103,6 +103,11 @@ def open_pro_page(
             except Exception:  # noqa: BLE001
                 pass  # nosec B110
 
+    from .server_dials import feature_enabled
+    if not feature_enabled("pro_login_link"):
+        finish(plain_url, "fallback")
+        return
+
     auth = get_auth_header() if is_plugin_activated() else {}
     if not auth:
 

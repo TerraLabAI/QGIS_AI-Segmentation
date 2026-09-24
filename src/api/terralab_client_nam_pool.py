@@ -23,7 +23,6 @@ from .terralab_client_retry import (
 
 
 
-
 _CONNECTIONS_PER_MANAGER = 6
 
 

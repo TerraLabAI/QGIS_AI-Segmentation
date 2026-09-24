@@ -266,6 +266,27 @@ def polygon_part_count(geom: QgsGeometry | None) -> int:
         return 1
 
 
+
+_SEAM_BUFFER_SEGMENTS = 8
+_SEAM_MITER_LIMIT = 2.0
+
+
+def _seam_buffer_dials() -> tuple[int, float]:
+
+
+    try:
+        from .server_dials import dial_in_range
+
+        return (
+            int(dial_in_range("tuning.review.merge_seam_buffer_segments",
+                              _SEAM_BUFFER_SEGMENTS, 2, 32)),
+            float(dial_in_range("tuning.review.merge_seam_miter_limit",
+                                _SEAM_MITER_LIMIT, 1.0, 10.0)),
+        )
+    except Exception:  # noqa: BLE001  # nosec B110
+        return _SEAM_BUFFER_SEGMENTS, _SEAM_MITER_LIMIT
+
+
 def bridge_seam_gap(geom: QgsGeometry | None,
                     tolerance: float) -> QgsGeometry | None:
 
@@ -279,11 +300,12 @@ def bridge_seam_gap(geom: QgsGeometry | None,
 
     if geom is None or tolerance <= 0:
         return None
+    segments, miter = _seam_buffer_dials()
     try:
-        grown = _seam_buffer_square_corners(geom, tolerance)
+        grown = _seam_buffer_square_corners(geom, tolerance, segments, miter)
         if grown is None or grown.isEmpty():
             return None
-        closed = _seam_buffer_square_corners(grown, -tolerance)
+        closed = _seam_buffer_square_corners(grown, -tolerance, segments, miter)
     except (RuntimeError, AttributeError, TypeError, ValueError):
         return None
     if closed is None or closed.isEmpty():
@@ -294,7 +316,9 @@ def bridge_seam_gap(geom: QgsGeometry | None,
 
 
 def _seam_buffer_square_corners(geom: QgsGeometry,
-                                distance: float) -> QgsGeometry | None:
+                                distance: float,
+                                segments: int = _SEAM_BUFFER_SEGMENTS,
+                                miter: float = _SEAM_MITER_LIMIT) -> QgsGeometry | None:
 
 
 
@@ -310,7 +334,7 @@ def _seam_buffer_square_corners(geom: QgsGeometry,
         join = getattr(QgsGeometry, "JoinStyleMiter", None)
     if cap is not None and join is not None:
         try:
-            return geom.buffer(distance, 8, cap, join, 2.0)
+            return geom.buffer(distance, segments, cap, join, miter)
         except (TypeError, AttributeError):
             pass
-    return geom.buffer(distance, 8)
+    return geom.buffer(distance, segments)

@@ -340,6 +340,7 @@ class AutoRunHandoffMixin:
         gate_config: dict | None = None,
         mask_scale: int | None = None,
         client_meta: dict | None = None,
+        density_probe: dict | None = None,
     ):
 
 
@@ -395,6 +396,8 @@ class AutoRunHandoffMixin:
 
 
             transform_context=getattr(self, "_auto_transform_context", None),
+
+            density_probe=density_probe,
         )
 
     def _wind_down_unstarted_auto_worker(self, worker) -> None:
@@ -433,6 +436,7 @@ class AutoRunHandoffMixin:
         return_semantic: bool = False,
         gate_config: dict | None = None,
         client_meta: dict | None = None,
+        density_probe: dict | None = None,
     ) -> None:
 
 
@@ -467,6 +471,7 @@ class AutoRunHandoffMixin:
 
             mask_scale=getattr(self, "_auto_mask_scale", 1),
             client_meta=client_meta,
+            density_probe=density_probe,
         )
         worker = self._auto_worker
 
@@ -495,6 +500,11 @@ class AutoRunHandoffMixin:
         self._auto_cancelled_slot = (
             lambda w=self._auto_worker: self._on_auto_cancelled(worker=w))
         self._auto_worker.cancelled.connect(self._auto_cancelled_slot, _queued)
+
+        self._auto_replan_slot = (
+            lambda decision, w=self._auto_worker: self._on_auto_density_replan(
+                decision, worker=w))
+        self._auto_worker.density_replan.connect(self._auto_replan_slot, _queued)
         self._auto_worker.queue_state.connect(self._on_auto_queue_state, _queued)
         self._auto_worker.rescan_state.connect(self._on_auto_rescan_state, _queued)
         self._auto_worker.run_phase.connect(self._on_auto_run_phase, _queued)
@@ -545,10 +555,19 @@ class AutoRunHandoffMixin:
             self._wind_down_unstarted_auto_worker(worker)
             return
         worker.start()
+        from ...core import run_timeline
+        run_timeline.mark("worker_started")
+
+
+
 
 
         import time as _time
-        self._auto_run_started_mono = _time.monotonic()
+        now = _time.monotonic()
+        clicked = getattr(self, "_auto_click_mono", None)
+        self._auto_click_mono = None
+        self._auto_run_started_mono = (
+            clicked if clicked is not None and 0.0 <= now - clicked < 120.0 else now)
 
 
         try:

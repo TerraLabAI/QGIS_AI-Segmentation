@@ -25,10 +25,13 @@
 
 
 
+
+
 from __future__ import annotations
 
 import heapq
 import math
+from itertools import chain
 from typing import Any
 
 from .shape_policy_dials import floor_max_chord_steps
@@ -73,6 +76,77 @@ def thin_ring_indices(pts: list, budget: int,
     budget = max(int(budget), MIN_RING_VERTICES)
     if n <= budget:
         return list(range(n))
+    if not _ring_costs_well_ordered(pts):
+        return _thin_ring_indices_requeue(pts, budget, max_deviation)
+
+
+
+
+
+
+    prev = [(i - 1) % n for i in range(n)]
+    nxt = [(i + 1) % n for i in range(n)]
+    alive = [True] * n
+    heap: list[tuple[float, int]] = []
+    for i in range(n):
+        ax, ay = pts[prev[i]]
+        bx, by = pts[i]
+        cx, cy = pts[nxt[i]]
+        heap.append((abs((bx - ax) * (cy - ay) - (cx - ax) * (by - ay)) / 2.0, i))
+    heapq.heapify(heap)
+    heappop, heappush = heapq.heappop, heapq.heappush
+    capped = max_deviation > 0.0
+    count = n
+    while heap and count > budget:
+        cost, i = heappop(heap)
+        if not alive[i]:
+            continue
+        p, q = prev[i], nxt[i]
+        ax, ay = pts[p]
+        bx, by = pts[i]
+        cx, cy = pts[q]
+        cross = abs((bx - ax) * (cy - ay) - (cx - ax) * (by - ay))
+        if cross / 2.0 != cost:
+            continue
+        if capped:
+            base = math.hypot(cx - ax, cy - ay)
+            if (cross / base if base > 0 else 0.0) > max_deviation:
+                continue
+        alive[i] = False
+        count -= 1
+        nxt[p] = q
+        prev[q] = p
+        for j in (p, q):
+            if alive[j]:
+                ax, ay = pts[prev[j]]
+                bx, by = pts[j]
+                cx, cy = pts[nxt[j]]
+                heappush(heap, (abs((bx - ax) * (cy - ay)
+                                    - (cx - ax) * (by - ay)) / 2.0, j))
+    return [i for i in range(n) if alive[i]]
+
+
+
+_RING_COST_COORD_BOUND = 1e150
+
+
+def _ring_costs_well_ordered(pts: list) -> bool:
+
+
+
+    bound = _RING_COST_COORD_BOUND
+    try:
+        return all(-bound < v < bound for v in chain.from_iterable(pts))
+    except Exception:  # noqa: BLE001  # nosec B110
+        return False
+
+
+def _thin_ring_indices_requeue(pts: list, budget: int,
+                               max_deviation: float) -> list:
+
+
+
+    n = len(pts)
     prev = [(i - 1) % n for i in range(n)]
     nxt = [(i + 1) % n for i in range(n)]
     alive = [True] * n
@@ -535,6 +609,223 @@ _EVEN_STRADDLE = 0.5
 _FLOOR_MAX_CHORD_STEPS = 4.0
 
 
+
+
+
+
+_DP_ARRAY_MIN_SPAN = 64
+_DP_BATCH_MIN_SPANS = 16
+
+
+def _dp_float_arrays(seq: list, start: int, end: int) -> tuple | None:
+
+
+
+    try:
+        import numpy as np
+    except Exception:  # noqa: BLE001  # nosec B110
+        return None
+    window = seq[start:end + 1]
+    try:
+        if set(map(type, chain.from_iterable(window))) != {float}:
+            return None
+        flat = np.fromiter(chain.from_iterable(window), dtype=np.float64,
+                           count=2 * len(window))
+    except Exception:  # noqa: BLE001  # nosec B110
+        return None
+    return np, flat[0::2].copy(), flat[1::2].copy()
+
+
+def _dp_span_extremes(arrays: tuple, i: int, j: int, ax: float, ay: float,
+                      dx: float, dy: float, norm: float) -> tuple | None:
+
+
+
+
+
+
+
+
+    np, xs, ys = arrays
+    side = (xs[i + 1:j] - ax) * dy
+    side -= (ys[i + 1:j] - ay) * dx
+    side /= norm
+    dist = np.abs(side)
+    k = int(dist.argmax())
+    worst = float(dist[k])
+    if worst != worst:
+        return None
+    high = float(side.max())
+    low = float(side.min())
+    high = max(0.0, high)
+    low = min(0.0, low)
+    if worst > 0.0:
+        return worst, i + 1 + k, high, low
+    return 0.0, -1, high, low
+
+
+def _dp_walked_length(seq: list, i: int, j: int) -> float:
+
+
+
+    walked = 0.0
+    last_x, last_y = seq[i]
+    for k in range(i + 1, j + 1):
+        px, py = seq[k]
+        walked += math.hypot(px - last_x, py - last_y)
+        last_x, last_y = px, py
+    return walked
+
+
+def _dp_split_span(seq: list, i: int, j: int, tolerance: float,
+                   chord_share: float, grid_step: float, floor_steps: float,
+                   arrays: Any, start: int) -> int:
+
+
+
+
+
+    ax, ay = seq[i]
+    bx, by = seq[j]
+    dx, dy = bx - ax, by - ay
+    norm = math.hypot(dx, dy)
+    span = None
+    if arrays and norm > 0.0 and j - i - 1 >= _DP_ARRAY_MIN_SPAN:
+        span = _dp_span_extremes(arrays, i - start, j - start,
+                                 ax, ay, dx, dy, norm)
+    if span is not None:
+        worst, at, high, low = span
+        if at >= 0:
+            at += start
+    else:
+        worst, at = 0.0, -1
+        high = low = 0.0
+        if norm > 0.0:
+            for k in range(i + 1, j):
+                px, py = seq[k]
+                side = ((px - ax) * dy - (py - ay) * dx) / norm
+                d = abs(side)
+                if side > high:
+                    high = side
+                if side < low:
+                    low = side
+                if d > worst:
+                    worst, at = d, k
+        else:
+            for k in range(i + 1, j):
+                px, py = seq[k]
+                d = math.hypot(px - ax, py - ay)
+                if d > worst:
+                    worst, at = d, k
+    if norm > 0.0:
+        limit = chord_share * norm
+        small, large = min(high, -low), max(high, -low)
+
+
+
+
+
+
+
+        if (grid_step > 0.0
+                and norm <= floor_steps * grid_step
+                and large > 0.0
+                and small >= _EVEN_STRADDLE * large):
+            walked = _dp_walked_length(seq, i, j)
+            if abs(walked - (abs(dx) + abs(dy))) <= 1e-9 * max(1.0, walked):
+                limit = max(limit, grid_step)
+        limit = min(tolerance, limit)
+    else:
+        limit = 0.0
+    return at if worst > limit and at > 0 else -1
+
+
+def _dp_split_level(seq: list, level: list, start: int, arrays: tuple,
+                    tolerance: float, chord_share: float, grid_step: float,
+                    floor_steps: float, keep: list) -> list | None:
+
+
+
+
+
+
+
+
+
+    np, xs, ys = arrays
+    children: list = []
+    ij = np.array(level, dtype=np.int64)
+    lo_i = ij[:, 0] - start
+    hi_j = ij[:, 1] - start
+    ax = xs[lo_i]
+    ay = ys[lo_i]
+    dx = xs[hi_j] - ax
+    dy = ys[hi_j] - ay
+    norm = np.fromiter(map(math.hypot, dx.tolist(), dy.tolist()),
+                       dtype=np.float64, count=lo_i.size)
+    chorded = norm > 0.0
+    if not chorded.all():
+        for k in np.flatnonzero(~chorded).tolist():
+            i, j = level[k]
+            at = _dp_split_span(seq, i, j, tolerance, chord_share, grid_step,
+                                floor_steps, arrays, start)
+            if at > 0:
+                keep[at] = True
+                if at > i + 1:
+                    children.append((i, at))
+                if j > at + 1:
+                    children.append((at, j))
+        lo_i, hi_j, ax, ay, dx, dy, norm = (
+            v[chorded] for v in (lo_i, hi_j, ax, ay, dx, dy, norm))
+    if not lo_i.size:
+        return children
+    inner = hi_j - lo_i - 1
+    ends = np.cumsum(inner)
+    firsts = ends - inner
+    total = int(ends[-1])
+    idx = np.arange(total) + np.repeat(lo_i + 1 - firsts, inner)
+    side = (xs[idx] - np.repeat(ax, inner)) * np.repeat(dy, inner)
+    side -= (ys[idx] - np.repeat(ay, inner)) * np.repeat(dx, inner)
+    side /= np.repeat(norm, inner)
+    dist = np.abs(side)
+    if np.isnan(dist).any():
+        return None
+    worst = np.maximum.reduceat(dist, firsts)
+
+
+    hits = np.flatnonzero(dist == np.repeat(worst, inner))
+    at = idx[hits[np.searchsorted(hits, firsts)]] + start
+    high = np.maximum.reduceat(side, firsts)
+    high = np.where(high > 0.0, high, 0.0)
+    low = np.minimum.reduceat(side, firsts)
+    low = np.where(low < 0.0, low, 0.0)
+    limit = chord_share * norm
+    if grid_step > 0.0:
+        neg = -low
+        small = np.where(neg < high, neg, high)
+        large = np.where(neg > high, neg, high)
+        stairs = ((norm <= floor_steps * grid_step) & (large > 0.0)
+                  & (small >= _EVEN_STRADDLE * large))
+        for k in np.flatnonzero(stairs).tolist():
+            walked = _dp_walked_length(seq, int(lo_i[k]) + start,
+                                       int(hi_j[k]) + start)
+            ddx, ddy = float(dx[k]), float(dy[k])
+            if (abs(walked - (abs(ddx) + abs(ddy))) <= 1e-9 * max(1.0, walked)
+                    and grid_step > limit[k]):
+                limit[k] = grid_step
+    limit = np.where(limit < tolerance, limit, tolerance)
+    split = np.flatnonzero((worst > limit) & (worst > 0.0))
+    if split.size:
+        cut = at[split]
+        for k in cut.tolist():
+            keep[k] = True
+        left = np.concatenate([lo_i[split] + start, cut])
+        right = np.concatenate([cut, hi_j[split] + start])
+        room = right - left > 1
+        children.extend(zip(left[room].tolist(), right[room].tolist()))
+    return children
+
+
 def _dp_mark_keeps(seq: list, start: int, end: int, tolerance: float,
                    chord_share: float, grid_step: float, keep: list) -> None:
 
@@ -548,55 +839,35 @@ def _dp_mark_keeps(seq: list, start: int, end: int, tolerance: float,
 
 
     floor_steps = floor_max_chord_steps(_FLOOR_MAX_CHORD_STEPS)
-    stack = [(start, end)]
-    while stack:
-        i, j = stack.pop()
-        if j <= i + 1:
-            continue
-        ax, ay = seq[i]
-        bx, by = seq[j]
-        dx, dy = bx - ax, by - ay
-        norm = math.hypot(dx, dy)
-        worst, at = 0.0, -1
-        high = low = 0.0
-        walked = 0.0
-        last_x, last_y = ax, ay
-        for k in range(i + 1, j):
-            px, py = seq[k]
-            walked += math.hypot(px - last_x, py - last_y)
-            last_x, last_y = px, py
-            if norm > 0.0:
-                side = ((px - ax) * dy - (py - ay) * dx) / norm
-                d = abs(side)
-                high = max(high, side)
-                low = min(low, side)
-            else:
-                d = math.hypot(px - ax, py - ay)
-            if d > worst:
-                worst, at = d, k
-        walked += math.hypot(bx - last_x, by - last_y)
-        if norm > 0.0:
-            limit = chord_share * norm
-            small, large = min(high, -low), max(high, -low)
 
 
+    arrays: Any = (_dp_float_arrays(seq, start, end)
+                   if end - start - 1 >= _DP_ARRAY_MIN_SPAN else None)
 
+    batch = bool(arrays) and all(
+        type(v) is float
+        for v in (tolerance, chord_share, grid_step, floor_steps))
 
-
-
-            if (grid_step > 0.0
-                    and norm <= floor_steps * grid_step
-                    and abs(walked - (abs(dx) + abs(dy))) <= 1e-9 * max(1.0, walked)
-                    and large > 0.0
-                    and small >= _EVEN_STRADDLE * large):
-                limit = max(limit, grid_step)
-            limit = min(tolerance, limit)
-        else:
-            limit = 0.0
-        if worst > limit and at > 0:
-            keep[at] = True
-            stack.append((i, at))
-            stack.append((at, j))
+    level = [(start, end)] if end > start + 1 else []
+    while level:
+        if batch and len(level) >= _DP_BATCH_MIN_SPANS:
+            children = _dp_split_level(seq, level, start, arrays, tolerance,
+                                       chord_share, grid_step, floor_steps,
+                                       keep)
+            if children is not None:
+                level = children
+                continue
+        children = []
+        for i, j in level:
+            at = _dp_split_span(seq, i, j, tolerance, chord_share, grid_step,
+                                floor_steps, arrays, start)
+            if at > 0:
+                keep[at] = True
+                if at > i + 1:
+                    children.append((i, at))
+                if j > at + 1:
+                    children.append((at, j))
+        level = children
 
 
 def outline_grid_step(ring: list) -> float:
@@ -626,9 +897,10 @@ def _destaircase_ring(ring: list, tolerance: float, chord_share: float,
     seq = pts + [pts[0]]
 
 
-    far = max(range(1, n),
-              key=lambda k: math.hypot(seq[k][0] - seq[0][0],
-                                       seq[k][1] - seq[0][1]))
+
+    x0, y0 = seq[0]
+    reach = [math.hypot(x - x0, y - y0) for x, y in pts]
+    far = max(range(1, n), key=reach.__getitem__)
     keep = [False] * (n + 1)
     keep[0] = keep[far] = keep[n] = True
     _dp_mark_keeps(seq, 0, far, tolerance, chord_share, grid_step, keep)

@@ -157,11 +157,8 @@ class AutoAutosaveOffloadMixin:
         if thread is None:
             return
         try:
-            from ...workers.run_autosave_thread import (
-                RUN_AUTOSAVE_JOIN_TIMEOUT_MS,
-            )
 
-            if thread.join_run(RUN_AUTOSAVE_JOIN_TIMEOUT_MS):
+            if thread.join_run():
                 self._adopt_billed_autosave(thread)
                 return
 

@@ -33,7 +33,7 @@ from .pip_diagnostics import is_dll_init_error as _is_dll_init_error
 from .subprocess_utils import run_unthrottled  # nosec B404
 
 
-def _venv_is_functional(venv_dir: str = None) -> bool:
+def _venv_is_functional(venv_dir: str | None = None) -> bool:
 
 
 
@@ -60,11 +60,14 @@ def _venv_is_functional(venv_dir: str = None) -> bool:
              Qgis.MessageLevel.Warning)
         return False
     probe_cmd = [python_path, "-c", "import sys; sys.stdout.write(sys.prefix)"]
+    from .server_dials import dial_in_range
+    probe_timeout_s = dial_in_range(
+        "tuning.install.repair_probe_timeout_s", 30, 10, 120)
     try:
         try:
             result = run_unthrottled(
                 probe_cmd, text=True, encoding="utf-8",
-                errors="replace", timeout=30, env=_get_clean_env_for_venv(),
+                errors="replace", timeout=probe_timeout_s, env=_get_clean_env_for_venv(),
                 **_get_subprocess_kwargs(),
             )
         except subprocess.TimeoutExpired:
@@ -77,7 +80,7 @@ def _venv_is_functional(venv_dir: str = None) -> bool:
                  Qgis.MessageLevel.Info)
             result = run_unthrottled(
                 probe_cmd, text=True, encoding="utf-8",
-                errors="replace", timeout=30, env=_get_clean_env_for_venv(),
+                errors="replace", timeout=probe_timeout_s, env=_get_clean_env_for_venv(),
                 **_get_subprocess_kwargs(),
             )
         if result.returncode != 0:
@@ -102,7 +105,7 @@ def _venv_is_functional(venv_dir: str = None) -> bool:
         return False
 
 
-def _venv_base_python_ok(venv_dir: str = None) -> tuple[bool, str]:
+def _venv_base_python_ok(venv_dir: str | None = None) -> tuple[bool, str]:
 
 
 
@@ -216,7 +219,7 @@ def _sweep_staged_removals(site_packages: str) -> None:
         remove_tree_quietly(leftover)
 
 
-def purge_package_from_venv(package_name: str, venv_dir: str = None) -> bool:
+def purge_package_from_venv(package_name: str, venv_dir: str | None = None) -> bool:
 
 
 
@@ -454,7 +457,7 @@ def _repair_cancelled(result: _PipResult | None, cancel_check) -> bool:
 
 
 def verify_venv(
-    venv_dir: str = None,
+    venv_dir: str | None = None,
     progress_callback: Callable[[int, str], None] | None = None,
     include_local_model: bool = True,
     cancel_check: Callable[[], bool] | None = None,

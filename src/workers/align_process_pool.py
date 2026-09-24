@@ -148,6 +148,9 @@ class ProcessAlignPass:
         return self
 
     def _run(self) -> None:
+
+        from ..core.macos_activity import promote_current_thread
+        promote_current_thread()
         try:
             if not self._env or not self._run_on_children():
                 if not self._stop.is_set():
@@ -169,13 +172,18 @@ class ProcessAlignPass:
             return True
         return self._done.wait(STEP_WAIT_S)
 
+    def finished(self) -> bool:
+
+
+        return self._done.is_set()
+
     def result(self) -> Any:
 
         if not self._done.is_set() or not self._finished or self._error is not None:
             return None
         return self._assemble()
 
-    def stop_and_take(self, timeout_s: float = STOP_JOIN_TIMEOUT_S) -> Any:
+    def stop_and_take(self, timeout_s: float | None = None) -> Any:
 
 
         self.stop(timeout_s)
@@ -183,10 +191,15 @@ class ProcessAlignPass:
             return None
         return self._assemble()
 
-    def stop(self, timeout_s: float = STOP_JOIN_TIMEOUT_S) -> None:
+    def stop(self, timeout_s: float | None = None) -> None:
         self._stop.set()
         self._kill_all()
         if self._thread.is_alive() and threading.current_thread() is not self._thread:
+            if timeout_s is None:
+                from ..core.server_dials import dial_in_range
+                timeout_s = dial_in_range(
+                    "tuning.convert.align_stop_join_timeout_s",
+                    STOP_JOIN_TIMEOUT_S, 0.5, 15)
             self._thread.join(timeout_s)
 
     @property
@@ -276,7 +289,10 @@ class ProcessAlignPass:
                    for k in range(len(self._children))]
         for thread in threads:
             thread.start()
-        deadline = time.monotonic() + STAGE_TIMEOUT_S
+        from ..core.server_dials import dial_in_range
+        stage_timeout_s = dial_in_range(
+            "tuning.convert.align_stage_timeout_s", STAGE_TIMEOUT_S, 10, 300)
+        deadline = time.monotonic() + stage_timeout_s
         for thread in threads:
             thread.join(max(0.0, deadline - time.monotonic()))
         if any(t.is_alive() for t in threads) or any(a is None for a in answers):
@@ -415,7 +431,10 @@ def child_main() -> None:
         if kind == "init":
             config, fields, scale = payload
 
-            config_cache.save_config = lambda config: False
+
+
+
+            config_cache.save_config = lambda config: False  # type: ignore[assignment, misc]
             if config:
                 config_cache.set_config(config)
             params = fa.AlignmentParams(**fields)
@@ -431,6 +450,8 @@ def child_main() -> None:
                     geom.fromWkb(wkb)
                 rows.append((fid, geom, score))
                 index[i] = local
+            if params is None or scale is None:
+                raise RuntimeError("prepare arrived before init")
             sweep = fa.FootprintAlignSweep(rows, params, scale)
             summaries = []
             for i, local in index.items():
@@ -444,6 +465,8 @@ def child_main() -> None:
             _send(stdout, ("prepared", summaries))
         elif kind == "align":
             unthrottle_this_process()
+            if sweep is None:
+                raise RuntimeError("align arrived before prepare")
             out = []
             for i, consensus in payload:
                 local = index[i]

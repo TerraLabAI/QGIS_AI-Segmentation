@@ -434,7 +434,8 @@ class TemplateDemoLoader(QObject):
                     continue
 
         if hasattr(req, "setTransferTimeout"):
-            req.setTransferTimeout(15_000)
+            req.setTransferTimeout(dial_in_range(
+                "tuning.library.demo_transfer_timeout_ms", 15_000, 5_000, 60_000))
 
 
 

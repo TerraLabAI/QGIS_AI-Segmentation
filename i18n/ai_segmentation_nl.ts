@@ -6746,5 +6746,53 @@ Lager verwijdert eerst het kleinste detail, terwijl de hoeken behouden blijven.<
         <source>{plan} · {status}</source>
         <translation>{plan} · {status}</translation>
     </message>
+    <message>
+        <source>Layer</source>
+        <translation>Laag</translation>
+    </message>
+    <message>
+        <source>No polygon layer in this project</source>
+        <translation>Geen polygoonlaag in dit project</translation>
+    </message>
+    <message>
+        <source>Or use an existing zone</source>
+        <translation>Of gebruik een bestaande zone</translation>
+    </message>
+    <message>
+        <source>Saving... {pct}%</source>
+        <translation>Opslaan... {pct}%</translation>
+    </message>
+    <message>
+        <source>Signed in (from {}).</source>
+        <translation>Aangemeld (vanuit {}).</translation>
+    </message>
+    <message>
+        <source>Signed in as {} (from {}).</source>
+        <translation>Aangemeld als {} (vanuit {}).</translation>
+    </message>
+    <message>
+        <source>Take the zone from a layer or a selection</source>
+        <translation>Neem de zone van een laag of een selectie</translation>
+    </message>
+    <message>
+        <source>That zone cannot be moved onto this map. Draw it instead.</source>
+        <translation>Die zone kan niet op deze kaart worden verplaatst. Teken deze in plaats daarvan.</translation>
+    </message>
+    <message>
+        <source>That zone is empty. Pick another one.</source>
+        <translation>Die zone is leeg. Kies een andere.</translation>
+    </message>
+    <message>
+        <source>Use this zone</source>
+        <translation>Gebruik deze zone</translation>
+    </message>
+    <message>
+        <source>Zone of interest</source>
+        <translation>Interessegebied</translation>
+    </message>
+    <message>
+        <source>{name}, {n} selected</source>
+        <translation>{name}, {n} geselecteerd</translation>
+    </message>
 </context>
 </TS>

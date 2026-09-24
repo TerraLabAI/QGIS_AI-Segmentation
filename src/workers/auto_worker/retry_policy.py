@@ -26,6 +26,7 @@ __all__ = [
     "RATE_LIMIT_SETBACK_CODES",
     "_AIMD_MIN",
     "_AIMD_START",
+    "_AIMD_UPLOAD_GROW_S",
     "_BACKEND_UNAVAILABLE_DELAY_S",
     "_BACKEND_UNAVAILABLE_GIVEUP_STREAK",
     "_BACKEND_UNAVAILABLE_RETRIES",
@@ -173,6 +174,14 @@ _MIN_POLL_BACKOFF_S = 0.5
 
 
 _AIMD_START = 3
+
+
+
+
+
+
+
+_AIMD_UPLOAD_GROW_S = 2.0
 
 
 _AIMD_MIN = 1
@@ -507,11 +516,34 @@ class AutoRetryPolicyMixin:
 
         def _on_upload(sent: int, total: int, _idx: int = tile_idx) -> None:
             if total > 0 and sent >= total and _idx not in self._uploaded_at:
-                self._uploaded_at[_idx] = time.monotonic()
+                now = time.monotonic()
+                self._uploaded_at[_idx] = now
+                self._grow_window_on_fast_upload(_idx, now)
         try:
             reply.uploadProgress.connect(_on_upload)
         except (RuntimeError, AttributeError, TypeError):
             pass
+
+    def _grow_window_on_fast_upload(self, tile_idx: int, uploaded_at: float) -> None:
+
+
+
+
+
+
+
+
+
+
+
+
+        limit_s = getattr(self, "_aimd_upload_grow_s", 0.0)
+        if limit_s <= 0 or self._aimd.setbacks:
+            return
+        posted_at = self._submit_at.get(tile_idx)
+        if posted_at is None or uploaded_at - posted_at > limit_s:
+            return
+        self._aimd.on_clean_cycle()
 
     def _drain_polled_on_stop(
         self, in_flight: dict, completed: int, total: int

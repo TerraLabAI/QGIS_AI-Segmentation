@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import base64
 import hashlib
 import json
@@ -7,6 +9,7 @@ import queue
 import sys
 import threading
 from collections import OrderedDict
+from typing import Any
 
 
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
@@ -82,7 +85,7 @@ sys.stdout = sys.stderr
 
 
 
-_dll_directory_handles = []
+_dll_directory_handles: list[Any] = []
 if sys.platform == "win32":
     _site_packages = None
     for p in sys.path:
@@ -104,45 +107,58 @@ def _emit_error(msg: dict) -> None:
     print(json.dumps(msg), flush=True)
 
 
+
+
+
+
+_APP_CONTROL_MARKERS = (
+    "application control", "applocker", "blocked by your organization",
+    "blocked by group policy", "winerror 4551", "os error 4551",
+    "control de aplicaciones",
+    "strategie de controle d'application",
+    "stratégie de contrôle d'application",
+    "beleid voor toepassingsbeheer",
+)
+_APP_CONTROL_ERROR = {
+    "type": "error",
+    "message": (
+        "Your organization's security policy is blocking the "
+        "AI engine.\n\n"
+        "Ask your IT administrator to add a path-based allow rule "
+        "for the plugin's environment folder "
+        "(~/.qgis_ai_segmentation). One rule keeps working across "
+        "updates. Then restart QGIS."
+    ),
+}
+
+
+def _blocked_by_app_control(err_str: str) -> bool:
+    lower = err_str.lower()
+    return any(m in lower for m in _APP_CONTROL_MARKERS)
+
+
 try:
     import numpy as np  # noqa: E402
     import torch  # noqa: E402
 except ImportError as e:
     sys.stdout = _real_stdout
-    error_msg = {
-        "type": "error",
-        "message": f"Failed to import dependencies: {str(e)}. "
-                   "Please reinstall dependencies."
-    }
+
+
+    if _blocked_by_app_control(str(e)):
+        error_msg = _APP_CONTROL_ERROR
+    else:
+        error_msg = {
+            "type": "error",
+            "message": f"Failed to import dependencies: {str(e)}. "
+                       "Please reinstall dependencies."
+        }
     _emit_error(error_msg)
     sys.exit(1)
 except OSError as e:
     sys.stdout = _real_stdout
     err_str = str(e)
-    err_lower = err_str.lower()
-
-
-
-
-    if any(m in err_lower for m in (
-        "application control", "applocker", "blocked by your organization",
-        "blocked by group policy", "winerror 4551", "os error 4551",
-        "control de aplicaciones",
-        "strategie de controle d'application",
-        "stratégie de contrôle d'application",
-        "beleid voor toepassingsbeheer",
-    )):
-        error_msg = {
-            "type": "error",
-            "message": (
-                "Your organization's security policy is blocking the "
-                "AI engine.\n\n"
-                "Ask your IT administrator to add a path-based allow rule "
-                "for the plugin's environment folder "
-                "(~/.qgis_ai_segmentation). One rule keeps working across "
-                "updates. Then restart QGIS."
-            ),
-        }
+    if _blocked_by_app_control(err_str):
+        error_msg = _APP_CONTROL_ERROR
 
     elif "shm.dll" in err_str or "DLL" in err_str.upper():
         error_msg = {
@@ -238,6 +254,11 @@ def resolve_venv_torch_device():
         except Exception:
             pass  # nosec B110
 
+    configure_cpu_threads()
+    return torch.device("cpu")
+
+
+def configure_cpu_threads():
     num_cores = os.cpu_count() or 4
 
 
@@ -252,6 +273,37 @@ def resolve_venv_torch_device():
             torch.set_num_interop_threads(max(2, optimal_threads // 2))
         except RuntimeError:
             pass
+
+
+def is_mps_out_of_memory(exc) -> bool:
+    return "mps backend out of memory" in str(exc).lower()
+
+
+def move_predictor_to_cpu(predictor):
+
+
+
+
+
+
+
+    _encoded_crop_cache.clear()
+    try:
+        if _USE_SAM2:
+            predictor.reset_predictor()
+        else:
+            predictor.reset_image()
+    except Exception:  # noqa: BLE001
+        pass  # nosec B110
+    predictor.model.to("cpu")
+    try:
+        torch.mps.empty_cache()
+    except Exception:  # noqa: BLE001
+        pass  # nosec B110
+    configure_cpu_threads()
+    sys.stderr.write(
+        "[prediction_worker] Apple GPU out of memory: continuing on the CPU\n")
+    sys.stderr.flush()
     return torch.device("cpu")
 
 
@@ -263,7 +315,7 @@ def resolve_venv_torch_device():
 
 
 ENCODED_CROP_CACHE_MAX = 4
-_encoded_crop_cache = OrderedDict()
+_encoded_crop_cache: OrderedDict[str, Any] = OrderedDict()
 
 
 def crop_cache_key(image_bytes, shape):
@@ -459,7 +511,7 @@ MAX_LINE_LENGTH = 50 * 1024 * 1024
 
 
 STDIN_QUEUE_MAX = 4
-_stdin_lines = queue.Queue(maxsize=STDIN_QUEUE_MAX)
+_stdin_lines: queue.Queue[str] = queue.Queue(maxsize=STDIN_QUEUE_MAX)
 _stdin_reader_started = False
 _stdin_state = {"at_eof": False}
 
@@ -660,7 +712,13 @@ def main():
                     opt_out_of_windows_power_throttling()
 
                 if action == "set_image":
-                    answer = encode_or_reuse_crop(predictor, request)
+                    try:
+                        answer = encode_or_reuse_crop(predictor, request)
+                    except RuntimeError as e:
+                        if device.type != "mps" or not is_mps_out_of_memory(e):
+                            raise
+                        device = move_predictor_to_cpu(predictor)
+                        answer = encode_or_reuse_crop(predictor, request)
                     if answer is None:
                         send_response("image_missing", {})
                     else:

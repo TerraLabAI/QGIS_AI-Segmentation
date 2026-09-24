@@ -85,9 +85,6 @@ class AutoRunHeadlessMixin:
                 shape = QgsGeometry(geom)
                 zone_crs = active_layer.crs()
         rect = QgsRectangle(shape.boundingBox())
-
-
-        self._store_auto_zone(rect, crs=zone_crs)
         self._auto_zone_polygon = None
         if not shape.isEmpty() and shape.type() == PolygonGeometry:
 
@@ -97,6 +94,11 @@ class AutoRunHeadlessMixin:
             self._auto_zone_polygon = (
                 repaired if repaired is not None and not repaired.isEmpty()
                 else shape)
+
+
+
+
+        self._store_auto_zone(rect, crs=zone_crs)
         return rect
 
     def _arm_headless_cancel_poll(self, loop, should_cancel, state: dict):
@@ -214,6 +216,34 @@ class AutoRunHeadlessMixin:
         except (RuntimeError, AttributeError):
             pass
 
+    @staticmethod
+    def _headless_english_token(object_class: str) -> str:
+
+
+
+
+
+
+        try:
+            from ..dock.prompt_guard import (
+                server_lookup_wanted,
+                validate_prompt,
+                vet_server_token,
+            )
+
+            ok, reason, suggestion = validate_prompt(object_class)
+            if server_lookup_wanted(object_class, ok, reason, suggestion):
+                from ...api.prompt_translation import resolve_english_prompt
+
+                token = vet_server_token(resolve_english_prompt(object_class))
+                if token:
+                    return token
+            if ok and reason in ("translated", "plural", "alias") and suggestion:
+                return suggestion
+        except Exception:  # noqa: BLE001
+            pass  # nosec B110
+        return ""
+
     def _run_auto_detect_headless(
         self,
         zone_wkt: str,
@@ -226,7 +256,19 @@ class AutoRunHeadlessMixin:
         refine: dict | None = None,
         should_cancel: Callable[[], bool] | None = None,
         instance_colors: bool = False,
+        wait: bool = True,
     ) -> dict:
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -440,6 +482,15 @@ class AutoRunHeadlessMixin:
                     pass
 
 
+
+
+            translated_from = ""
+            if object_class:
+                english = self._headless_english_token(object_class)
+                if english and english.lower() != object_class.lower():
+                    translated_from, object_class = object_class, english
+
+
             try:
                 if self.dock_widget:
                     self.dock_widget.set_prompt_text(object_class)
@@ -517,6 +568,7 @@ class AutoRunHeadlessMixin:
 
 
             self._auto_run_plan = None
+            prompt_rewritten = None
             exemplar_size_m = None
             try:
                 exemplar_size_m = self._exemplar_size_for_plan()
@@ -538,6 +590,33 @@ class AutoRunHeadlessMixin:
                                 "exemplar_size_m": exemplar_size_m}
 
 
+
+
+                            rewritten = self._headless_prompt_rewrite(
+                                object_class, plan)
+                            if rewritten:
+                                prompt_rewritten = {
+                                    "from": object_class, "to": rewritten}
+                                typed = object_class
+                                object_class = rewritten
+
+
+
+
+
+                                replan = TerraLabClient().get_seg_run_plan(
+                                    rewritten, zone_area_m2, native_mupp,
+                                    auth=plan_auth,
+                                    exemplar_size_m=exemplar_size_m,
+                                    rewritten_from=typed)
+                                if isinstance(replan, dict) and not replan.get("error"):
+                                    plan = replan
+                                    self._auto_run_plan = {
+                                        "prompt": rewritten, "plan": plan,
+                                        "exemplar_size_m": exemplar_size_m,
+                                        "rewritten_from": typed}
+
+
                             if detail is None:
                                 try:
                                     self._auto_detail_user_locked = False
@@ -547,6 +626,10 @@ class AutoRunHeadlessMixin:
                                     pass
                 except Exception:  # noqa: BLE001
                     pass  # nosec B110
+            if translated_from:
+
+
+                prompt_rewritten = {"from": translated_from, "to": object_class}
 
 
 
@@ -595,6 +678,25 @@ class AutoRunHeadlessMixin:
 
 
 
+
+            if not wait:
+
+
+
+
+
+                shown_layer_id = ""
+                return {
+                    "started": True,
+                    "running": True,
+                    "object_class": object_class,
+                    **({"prompt_rewritten": prompt_rewritten}
+                       if prompt_rewritten else {}),
+                    "hint": ("The sweep is running in the AI Segmentation panel, which shows the "
+                             "tiles, the progress and the cost. Call auto_detect_status(wait_s=45) "
+                             "for the outcome: it answers as soon as the run ends. Nothing else is "
+                             "needed to keep it going."),
+                }
 
 
 
@@ -693,11 +795,14 @@ class AutoRunHeadlessMixin:
 
 
 
-                return self._color_saved_objects_apart({
+                done = {
                     "instances": result.get("instances", 0),
                     "tiles_processed": result.get("tiles_processed", 0),
                     "layer_name": result.get("layer_name"),
-                }, instance_colors)
+                }
+                if prompt_rewritten:
+                    done["prompt_rewritten"] = prompt_rewritten
+                return self._color_saved_objects_apart(done, instance_colors)
             if status == "error":
                 return {"_error": result.get("message", "Unknown error")}
             if status == "credits_exhausted":

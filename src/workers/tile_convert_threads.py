@@ -85,8 +85,13 @@ class TileConvertPool:
     def __init__(self, convert, workers: int = 0) -> None:
         self._convert = convert
         self._workers = int(workers) if workers > 0 else default_workers()
+        from ..core.macos_activity import promote_current_thread
+
+
+
         self._pool = ThreadPoolExecutor(
-            max_workers=self._workers, thread_name_prefix="tileconv")
+            max_workers=self._workers, thread_name_prefix="tileconv",
+            initializer=promote_current_thread)
         self._done: queue.Queue = queue.Queue()
         self._pending = 0
         self._closed = False

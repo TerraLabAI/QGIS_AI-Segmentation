@@ -46,7 +46,10 @@ AISEG_REGISTER_URL = "https://terra-lab.ai/ai-segmentation?utm_source=qgis&utm_m
 
 
 
-API_VERSION = 3
+
+
+
+API_VERSION = 4
 
 PUBLIC_METHODS = [
     "apply_refine",
@@ -68,6 +71,7 @@ PUBLIC_METHODS = [
     "review_clear_corrections",
     "review_filter",
     "review_merge_objects",
+    "review_objects",
     "review_remove_object",
     "review_status",
     "review_undo_last",
@@ -139,17 +143,23 @@ def not_found_error(
 
 
 
+    from .core.server_dials import dial_in_range
+
+    suggestion_n = dial_in_range("tuning.agent.suggestion_count", 3, 1, 8)
+    suggestion_cutoff = dial_in_range("tuning.agent.suggestion_cutoff", 0.5, 0.3, 0.9)
+    names_cap = dial_in_range("tuning.agent.available_names_cap", 8, 3, 30)
     folded = {name.casefold(): name for name in reversed(names)}
-    matched = difflib.get_close_matches(text.casefold(), list(folded), n=3, cutoff=0.5)
+    matched = difflib.get_close_matches(
+        text.casefold(), list(folded), n=suggestion_n, cutoff=suggestion_cutoff)
     suggestions = [folded[key] for key in matched]
     if suggestions:
         listed = ", ".join(f"'{name}'" for name in suggestions)
         return {"_error": f"{message} Did you mean: {listed}?",
                 "_suggestions": suggestions}
     if names:
-        listed = ", ".join(f"'{name}'" for name in names[:8])
-        if len(names) > 8:
-            listed += f" (+{len(names) - 8} more)"
+        listed = ", ".join(f"'{name}'" for name in names[:names_cap])
+        if len(names) > names_cap:
+            listed += f" (+{len(names) - names_cap} more)"
         return {"_error": f"{message} Available: {listed}."}
     return {"_error": f"{message} There is no {kind} here to choose from."}
 
@@ -392,7 +402,8 @@ class SegmentationMCPAPI(
                     "model_loaded": True,
                     "action_required": (
                         f"No raster layer selected. Available: {', '.join(available)}."
-                        " Pass layer_name to ai_segment_detect or select one in the panel."
+                        " Pass layer_name to detect(), detect_points() or"
+                        " detect_auto(), or select one in the panel."
                     ),
                     "available_raster_layers": available,
                 })

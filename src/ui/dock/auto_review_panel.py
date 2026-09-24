@@ -433,10 +433,12 @@ class DockAutoReviewPanelMixin:
 
 
 
-
         btn = getattr(self, "auto_export_btn", None)
         if btn is None:
             return
+
+        if not self.review_install_locked():
+            self._apply_review_install_lock(bool(saving))
         try:
             if saving:
                 self._auto_export_label_before_save = btn.text()
@@ -457,6 +459,17 @@ class DockAutoReviewPanelMixin:
 
             btn.repaint()
         except (RuntimeError, AttributeError):
+            pass
+
+    def set_auto_export_progress(self, percent: int) -> None:
+
+        btn = getattr(self, "auto_export_btn", None)
+        if btn is None or not getattr(self, "_auto_export_label_before_save", ""):
+            return
+        try:
+            btn.setText(tr("Saving... {pct}%").format(
+                pct=max(0, min(100, int(percent)))))
+        except (RuntimeError, AttributeError, TypeError, ValueError):
             pass
 
     def _on_auto_review_reveal_clicked(self) -> None:

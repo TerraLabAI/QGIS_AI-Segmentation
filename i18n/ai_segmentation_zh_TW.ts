@@ -6924,5 +6924,53 @@ Lower thins the smallest detail first while keeping the corners.</source>
         <source>{plan} · {status}</source>
         <translation>{plan} · {status}</translation>
     </message>
+    <message>
+        <source>Layer</source>
+        <translation>圖層</translation>
+    </message>
+    <message>
+        <source>No polygon layer in this project</source>
+        <translation>此專案中沒有多邊形圖層</translation>
+    </message>
+    <message>
+        <source>Or use an existing zone</source>
+        <translation>或使用既有區域</translation>
+    </message>
+    <message>
+        <source>Saving... {pct}%</source>
+        <translation>儲存中... {pct}%</translation>
+    </message>
+    <message>
+        <source>Signed in (from {}).</source>
+        <translation>已登入（來自 {}）。</translation>
+    </message>
+    <message>
+        <source>Signed in as {} (from {}).</source>
+        <translation>已以 {} 登入（來自 {}）。</translation>
+    </message>
+    <message>
+        <source>Take the zone from a layer or a selection</source>
+        <translation>從圖層或選取範圍取得區域</translation>
+    </message>
+    <message>
+        <source>That zone cannot be moved onto this map. Draw it instead.</source>
+        <translation>該區域無法移動到這張地圖上。請改為繪製。</translation>
+    </message>
+    <message>
+        <source>That zone is empty. Pick another one.</source>
+        <translation>該區域是空的。請選擇其他區域。</translation>
+    </message>
+    <message>
+        <source>Use this zone</source>
+        <translation>使用此區域</translation>
+    </message>
+    <message>
+        <source>Zone of interest</source>
+        <translation>感興趣區域</translation>
+    </message>
+    <message>
+        <source>{name}, {n} selected</source>
+        <translation>{name}，已選取 {n} 個</translation>
+    </message>
 </context>
 </TS>

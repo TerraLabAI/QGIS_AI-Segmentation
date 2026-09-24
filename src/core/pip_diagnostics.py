@@ -722,6 +722,10 @@ def is_antivirus_error(stderr: str) -> bool:
 
 
         "blocked by antivirus",
+
+
+
+        "antivirus may be blocking",
         "permission denied",
         "operation did not complete successfully because the file contains a virus",
         "blocked by your administrator",

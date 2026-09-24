@@ -67,6 +67,10 @@ class SteppedPassThread:
         return self
 
     def _run(self) -> None:
+
+
+        from .macos_activity import promote_current_thread
+        promote_current_thread()
         try:
             while not self._stop.is_set():
                 if self._pass.step(self._count):
@@ -88,6 +92,12 @@ class SteppedPassThread:
         step_wait_s = dial_in_range(
             "tuning.review.set_pass_step_wait_s", STEP_WAIT_S, 0.001, 0.1)
         return self._done.wait(step_wait_s)
+
+    def finished(self) -> bool:
+
+
+
+        return self._done.is_set()
 
     def result(self) -> Any:
 

@@ -675,7 +675,9 @@ class AutoShapeEditMixin:
 
 
 
-        if self._auto_review is None:
+
+
+        if self._auto_review is None or self._auto_review_export_busy():
             return
         if self._shape_edit_mode == KIND_SELECT:
 
@@ -892,9 +894,15 @@ class AutoShapeEditMixin:
         self._shape_edit_undo[self._shape_undo_token_for(entry)] = edit
         self._trim_shape_edit_undo()
 
-    def _trim_shape_edit_undo(self, keep: int = 30) -> None:
+    def _trim_shape_edit_undo(self, keep: int | None = None) -> None:
 
 
+        if keep is None:
+            try:
+                from ...core.server_dials import dial_in_range
+                keep = dial_in_range("tuning.review.undo_journal_keep", 30, 5, 200)
+            except Exception:  # noqa: BLE001
+                keep = 30
         while len(self._shape_edit_undo) > keep:
             oldest = next(iter(self._shape_edit_undo))
             self._shape_edit_undo.pop(oldest, None)
@@ -1143,8 +1151,14 @@ class AutoShapeEditMixin:
 
         tol = 0.0
         try:
+            from ...core.server_dials import dial_in_range
+            pick_tolerance_px = dial_in_range(
+                "tuning.review.shape_pick_tolerance_px", self._PICK_TOLERANCE_PX, 2, 20)
+        except Exception:  # noqa: BLE001
+            pick_tolerance_px = self._PICK_TOLERANCE_PX
+        try:
             mupp = self.iface.mapCanvas().mapSettings().mapUnitsPerPixel()
-            tol_canvas = mupp * self._PICK_TOLERANCE_PX
+            tol_canvas = mupp * pick_tolerance_px
             off = QgsPointXY(point.x() + tol_canvas, point.y())
             run_pts = self._points_in_run_crs([point, off])
             if len(run_pts) == 2:

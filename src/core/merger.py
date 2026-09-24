@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from qgis.core import (
     QgsFeature,
@@ -127,6 +128,11 @@ class IncrementalMerger:
         part_cover_frac: float = 0.60,
         part_min_children: int = 2,
     ):
+
+
+
+        self.init_kwargs = {
+            name: value for name, value in locals().items() if name != "self"}
         self._merge_ios = merge_ios
         self._dedup_ios = dedup_ios
         self._seam_min_dim = seam_min_dim
@@ -518,7 +524,7 @@ class IncrementalMerger:
 
 
 
-                pool = []
+                pool: list[Any] = []
                 for fid in matches:
                     pool.extend(self._absorbed.pop(fid, ()))
 

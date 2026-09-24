@@ -94,6 +94,11 @@ class SegmentPointAlgorithm(QgsProcessingAlgorithm):
         return main_thread_run_refusal()
 
     def shortHelpString(self):
+        from ..core.server_dials import dial_text
+
+        served = dial_text("tuning.agent", "point_help_text", 4000)
+        if served:
+            return served
         return (
             "Traces the outline of the one object under a point, and returns it as a polygon.\n\n"
             "You give it an imagery layer and a point on the object. The AI reads the picture "

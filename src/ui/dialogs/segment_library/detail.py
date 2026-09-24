@@ -813,7 +813,8 @@ class _ExportRunDialog(QDialog):
         conf_row.addWidget(conf_lbl)
         self.conf_spin = QDoubleSpinBox()
         self.conf_spin.setRange(0.05, 0.95)
-        self.conf_spin.setSingleStep(0.05)
+        self.conf_spin.setSingleStep(
+            dial_in_range("tuning.library.export_confidence_step", 0.05, 0.01, 0.25))
         self.conf_spin.setDecimals(2)
         self.conf_spin.blockSignals(True)
         self.conf_spin.setValue(default_confidence)

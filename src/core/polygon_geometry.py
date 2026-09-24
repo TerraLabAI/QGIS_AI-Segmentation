@@ -19,6 +19,39 @@ from .qt_compat import PolygonGeometry
 from .shape_policy_dials import close_max_area_growth, smooth_area_keep, smooth_diet_fraction
 
 
+
+_ORTHO_FALLBACK_ANGLE_DEG = 15.0
+
+
+_RIGHT_ANGLE_FALLBACK_TOL_PX = 1.5
+
+
+
+
+_FALLBACK_CACHE: list = []
+
+
+def _shape_fallback_dials() -> tuple[float, float]:
+
+
+    try:
+        from .server_dials import _server_config, dial_in_range
+
+        token = _server_config()
+        if _FALLBACK_CACHE and _FALLBACK_CACHE[0] is token:
+            return _FALLBACK_CACHE[1]
+        values = (
+            float(dial_in_range("tuning.review.ortho_fallback_angle_deg",
+                                _ORTHO_FALLBACK_ANGLE_DEG, 5.0, 30.0)),
+            float(dial_in_range("tuning.manual.right_angle_fallback_tol_px",
+                                _RIGHT_ANGLE_FALLBACK_TOL_PX, 0.5, 5.0)),
+        )
+        _FALLBACK_CACHE[:] = [token, values]
+        return values
+    except Exception:  # noqa: BLE001  # nosec B110
+        return _ORTHO_FALLBACK_ANGLE_DEG, _RIGHT_ANGLE_FALLBACK_TOL_PX
+
+
 def _overlap_metrics(g1: QgsGeometry, g2: QgsGeometry) -> tuple[float, float]:
 
 
@@ -582,9 +615,8 @@ def apply_geometry_refinement(
     if ortho and not regularized_ok and not regularize:
 
 
-
         try:
-            r = g.orthogonalize(1.0e-8, 1000, 15.0)
+            r = g.orthogonalize(1.0e-8, 1000, _shape_fallback_dials()[0])
             if r is not None and not r.isEmpty():
                 g = r
         except Exception:  # noqa: BLE001  # nosec B110
@@ -875,7 +907,8 @@ def shape_polygon_geometry(
 
 
 
-            reg_tol = regularize_tol if regularize_tol and regularize_tol > 0.0 else 1.5 * mupp
+            reg_tol = (regularize_tol if regularize_tol and regularize_tol > 0.0
+                       else _shape_fallback_dials()[1] * mupp)
             destair = destair_tol if destair_tol and destair_tol > 0.0 else reg_tol
             g = apply_right_angles(
                 g, destair_tol=max(0.0, destair - tolerance),

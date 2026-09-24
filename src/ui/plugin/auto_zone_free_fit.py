@@ -25,6 +25,16 @@ from .shared import free_zone_cap_km2
 FREE_FIT_MIN_KM2 = 0.05
 
 
+def _free_fit_min_km2() -> float:
+    try:
+        from ...core.server_dials import dial_in_range
+        return dial_in_range("tuning.credits.free_fit_min_km2", FREE_FIT_MIN_KM2, 0.01, 1.0)
+    except Exception:  # noqa: BLE001
+        return FREE_FIT_MIN_KM2
+
+
+
+
 
 FREE_FIT_MARGIN = 0.99
 
@@ -86,7 +96,7 @@ class AutoZoneFreeFitMixin:
                 self._zone_billable_shape(shape, crs), crs)
 
         requested = measure(geom)
-        if requested <= budget_km2 or budget_km2 < FREE_FIT_MIN_KM2:
+        if requested <= budget_km2 or budget_km2 < _free_fit_min_km2():
             return None
         from ...core.zone_fit import fit_zone_to_area
         fitted = fit_zone_to_area(
@@ -144,8 +154,11 @@ class AutoZoneFreeFitMixin:
         if fit is None or fit.geom is None:
             return fit
         from qgis.core import QgsRectangle
-        self._store_auto_zone(QgsRectangle(fit.geom.boundingBox()), crs=zone_crs)
+
+
+
         self._auto_zone_polygon = QgsGeometry(fit.geom)
+        self._store_auto_zone(QgsRectangle(fit.geom.boundingBox()), crs=zone_crs)
         band = QgsGeometry(fit.geom)
         try:
             canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()

@@ -77,6 +77,11 @@ class DockAutoCreditsMixin:
 
 
 
+        if not self.dock_content_built:
+            return
+
+
+
         km2 = getattr(self, "_auto_zone_km2", None)
         if km2 is not None and self._auto_zone_is_set:
             left = self._auto_km2_left()
@@ -140,6 +145,11 @@ class DockAutoCreditsMixin:
         self._auto_reset_display = format_quota_reset_date(self._auto_reset_date)
         if not is_subscriber:
             self._auto_free_left = credits
+
+
+
+        if not self.dock_content_built:
+            return
 
         self._sync_pro_pill()
         self._refresh_auto_credits_display()

@@ -78,6 +78,7 @@ from .auto_worker.convert_pool import (
     _convert_failure_reason,
     _resolve_convert_workers,
 )
+from .auto_worker.density_probe_run import AutoDensityProbeMixin
 from .auto_worker.gate_scan import (
     _GATE_RENDER_CACHE_MAX,
     _GATE_SCAN_RENDER_TRIES,
@@ -102,6 +103,7 @@ from .auto_worker.rescan_policy import (
 from .auto_worker.retry_policy import (
     _AIMD_MIN,
     _AIMD_START,
+    _AIMD_UPLOAD_GROW_S,
     _BACKEND_UNAVAILABLE_DELAY_S,
     _BACKEND_UNAVAILABLE_RETRIES,
     _BUSY_JITTER,
@@ -184,6 +186,7 @@ __all__ = [
     "_DEFAULT_MAX_WAIT_S",
     "_MIN_POLL_BACKOFF_S",
     "_AIMD_START",
+    "_AIMD_UPLOAD_GROW_S",
     "_AIMD_MIN",
     "_WINDOW_HINT_MAX",
     "_MAX_CONSECUTIVE_TILE_FATALS",
@@ -221,6 +224,7 @@ class AutoDetectionWorker(
     AutoConvertPoolMixin,
     AutoMaskGeometryMixin,
     AutoRescanPolicyMixin,
+    AutoDensityProbeMixin,
     QThread,
 ):
 
@@ -297,6 +301,10 @@ class AutoDetectionWorker(
 
     run_phase = pyqtSignal(str)
 
+
+
+    density_replan = pyqtSignal(object)
+
     def __init__(
         self,
         tiles: list[tuple[int, int, int, int]],
@@ -325,6 +333,7 @@ class AutoDetectionWorker(
         tile_renderer=None,
         source_is_online: bool = False,
         transform_context=None,
+        density_probe: dict | None = None,
         parent=None,
     ):
 
@@ -447,6 +456,11 @@ class AutoDetectionWorker(
 
 
         self._prefetch_holdoff_until = 0.0
+
+
+
+        self._render_ramp_pending = False
+        self._stream_pending = None
         bridge = getattr(tile_renderer, "__self__", None)
         if bridge is not None and hasattr(bridge, "cancel"):
             self._tile_renderer_cancel = bridge.cancel
@@ -462,6 +476,9 @@ class AutoDetectionWorker(
             bridge is not None and hasattr(bridge, "set_landed_hook")
             and hasattr(bridge, "collect_render_timed")) else None
         self._tiles = tiles
+
+
+        self._density_setup(density_probe)
         self._geo_transform = geo_transform
         self._crs_authid = crs_authid
 
@@ -470,7 +487,11 @@ class AutoDetectionWorker(
         self._transform_context = transform_context
 
 
-        self._quota_refusal: dict | None = None
+
+
+
+
+        self._quota_refusal: dict | None = None  # type: ignore[assignment]
 
 
         self._distance_area = None
@@ -601,7 +622,11 @@ class AutoDetectionWorker(
         self._stat_lock = threading.Lock()
 
 
-        self._convert_pool: TileConvertPool | None = None
+
+
+
+
+        self._convert_pool: TileConvertPool | None = None  # type: ignore[assignment]
 
 
         self._convert_prespawned: TileConvertProcessPool | None = None
@@ -635,7 +660,7 @@ class AutoDetectionWorker(
         self._run_started_at = 0.0
         self._paid_tiles_total = 0
         self._paid_tiles_done = 0
-        self._resplit_deadline = 0.0
+        self._resplit_deadline: float = 0.0
         self._resplit_dropped = 0
         self._max_tile_coverage = _dp.max_tile_coverage(_MAX_TILE_COVERAGE)
         self._hard_tile_coverage = _dp.hard_tile_coverage(_HARD_TILE_COVERAGE)
@@ -781,13 +806,20 @@ class AutoDetectionWorker(
 
 
 
-        self._window_hint: int | None = None
+
+
+
+        self._window_hint: int | None = None  # type: ignore[assignment]
         self._window_hint_logged = False
 
 
 
 
-        self.last_tile_balance: dict | None = None
+
+
+
+
+        self.last_tile_balance: dict | None = None  # type: ignore[assignment]
 
 
 
@@ -811,7 +843,10 @@ class AutoDetectionWorker(
 
 
 
-        self._stop_reason: str | None = None
+
+
+
+        self._stop_reason: str | None = None  # type: ignore[assignment]
 
 
 
@@ -878,6 +913,14 @@ class AutoDetectionWorker(
 
 
 
+        self.polygonized_gdal = 0
+        self.polygonized_tracer = 0
+        self.polygonized_fallback = 0
+        self.polygonized_fallback_fast = 0
+
+
+
+
         self.tiles_render_failed = 0
 
 
@@ -912,6 +955,10 @@ class AutoDetectionWorker(
         self._uploaded_at: dict[int, float] = {}
         self._upload_slow_s = float(_dial_in_range(
             "detection_policy.network.upload_slow_s", _UPLOAD_SLOW_S, 1.0, 120.0))
+
+        self._aimd_upload_grow_s = float(_dial_in_range(
+            "detection_policy.network.aimd_upload_grow_s", _AIMD_UPLOAD_GROW_S,
+            0.0, 30.0))
 
 
 
@@ -968,7 +1015,10 @@ class AutoDetectionWorker(
         self.observed_mask_gsd = 0.0
 
 
-        self._last_queue_emit: tuple[int, int, int] | None = None
+
+
+
+        self._last_queue_emit: tuple[int, int, int] | None = None  # type: ignore[assignment]
 
 
 
@@ -1008,7 +1058,9 @@ class AutoDetectionWorker(
 
 
 
-        if self._stop_reason is None:
+
+
+        if self._stop_reason is None or self._stop_reason == "replan":
             self._stop_reason = "user"
         self._stop_requested = True
         if self._tile_renderer_cancel is not None:

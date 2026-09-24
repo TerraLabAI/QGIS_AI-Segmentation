@@ -165,8 +165,14 @@ class AutoZoneGridMixin:
                 machine_max = self._max_useful_detail(layer, zone_in_layer)
                 low, high = self._detail_window_for_object(
                     layer, zone_in_layer, self._resolved_auto_object_class())
+
+
+
+                top_reason = (self._tile_plan_top_reason(layer, zone_in_layer)
+                              if self._tile_plan_active() else None)
                 self.dock_widget.set_auto_detail_range(
-                    low, high, object_bound=high < machine_max)
+                    low, high, object_bound=high < machine_max,
+                    top_reason=top_reason)
 
 
                 if getattr(self, "_auto_detail_seeded", None) is not None:
@@ -236,10 +242,23 @@ class AutoZoneGridMixin:
 
 
             try:
+                from ...core.tile_manager import TILE_SIZE
                 zone_in_layer = self._reproject_zone_to_run_crs(self._auto_zone, layer)
                 sized = self._grid_for_detail(
                     layer, zone_in_layer, self._get_auto_detail_level())
-                if sized is not None:
+                if sized is not None and self._tile_plan_active():
+
+
+
+
+                    ground_mupp = self._mupp_to_meters(layer, zone_in_layer, sized[2])
+                    kind = self._tile_plan_warning_now(
+                        layer, zone_in_layer, TILE_SIZE * ground_mupp)
+                    self.dock_widget.set_auto_detail_gsd_warning(
+                        bool(kind), can_improve=False, kind=kind,
+                        object_word=self._current_auto_object_class())
+                    self._push_detail_feedback(layer, zone_in_layer, ground_mupp)
+                elif sized is not None:
                     ground_mupp = self._mupp_to_meters(layer, zone_in_layer, sized[2])
 
 
@@ -301,6 +320,9 @@ class AutoZoneGridMixin:
 
         if credit_count > 0 and self._auto_zone is not None:
             self._show_zone_tile_grid(layer, grid)
+
+
+            self._schedule_early_imagery_probe()
 
     def _detail_max_clears_coarse(
         self, layer, zone_in_layer, ceiling_m: float
@@ -446,7 +468,10 @@ class AutoZoneGridMixin:
             if is_rect_zone:
                 try:
                     zr = self._reproject_zone_to_run_crs(self._auto_zone, layer)
-                    if zr is not None and (zr.xMaximum() < maxx or zr.yMinimum() > miny):
+                    spills = zr is not None and (
+                        zr.xMaximum() < maxx or zr.yMinimum() > miny
+                        or zr.xMinimum() > minx or zr.yMaximum() < maxy)
+                    if spills:
                         zone_rect = QgsGeometry.fromRect(zr)
                 except (RuntimeError, AttributeError, TypeError):
                     zone_rect = None

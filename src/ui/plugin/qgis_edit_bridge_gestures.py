@@ -660,7 +660,12 @@ class EditBridgeGesturesMixin:
         if base is None or base.isEmpty():
             return
         try:
-            pct = max(10, min(100, int(pct)))
+            from ...core.server_dials import dial_in_range
+            floor_pct = int(dial_in_range("tuning.agent.bridge_points_min_pct", 10, 5, 50))
+        except Exception:  # noqa: BLE001
+            floor_pct = 10
+        try:
+            pct = max(floor_pct, min(100, int(pct)))
         except (TypeError, ValueError):
             return
         geom = QgsGeometry(base) if pct >= 100 else self._bridge_thin_geometry(

@@ -128,7 +128,7 @@ def _pid_is_alive_windows(pid: int) -> bool | None:
     try:
         import ctypes
 
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
 
 
         kernel32.OpenProcess.restype = ctypes.c_void_p
@@ -144,7 +144,7 @@ def _pid_is_alive_windows(pid: int) -> bool | None:
             if not ok:
                 return None
             return code.value == _STILL_ACTIVE
-        err = ctypes.get_last_error()
+        err = ctypes.get_last_error()  # type: ignore[attr-defined]
         if err == 87:
             return False
         if err == 5:
@@ -182,7 +182,7 @@ def _process_start_stamp_windows(pid: int) -> str | None:
         import ctypes
         import ctypes.wintypes as wintypes
 
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
 
 
         kernel32.OpenProcess.restype = ctypes.c_void_p

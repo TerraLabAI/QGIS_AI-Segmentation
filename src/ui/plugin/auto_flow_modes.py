@@ -84,6 +84,7 @@ class AutoFlowModesMixin:
 
         self._auto_run_plan = None
         self._auto_attribute_filters = []
+        self._drop_detect_plan_wait()
         self._cancel_task("_auto_run_plan_task")
         self._cancel_task("_auto_token_task")
         self._auto_zone = None

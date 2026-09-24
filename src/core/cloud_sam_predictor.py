@@ -45,6 +45,7 @@ from .click_crop_encoding import (
     encode_crop_webp,
     note_crop_upload,
 )
+from .click_phase_clock import active_click_clock
 from .log_scrub import scrub_sensitive
 from .sam_predictor import SamWorkerError
 
@@ -89,6 +90,52 @@ EMPTY_RESULT_CODE = "EMPTY_RESULT"
 
 
 MAX_REFINE_POINTS = 64
+
+
+
+
+
+
+LOW_RES_NAMED = "named"
+
+
+
+
+_NAMED_SEED_MEMORY = 12
+
+
+def _named_seed_memory() -> int:
+    from .server_dials import dial_in_range
+
+    return dial_in_range("tuning.click.named_seed_memory", _NAMED_SEED_MEMORY, 1, 64)
+
+
+
+
+
+
+
+_PREVIEW_SEED_MEMORY = 8
+_preview_seeds: OrderedDict[tuple[str, str], np.ndarray] = OrderedDict()
+_preview_seeds_lock = threading.Lock()
+
+
+def _preview_seed_memory() -> int:
+    from .server_dials import dial_in_range
+
+    return dial_in_range("tuning.hover.preview_seed_memory", _PREVIEW_SEED_MEMORY, 1, 64)
+
+
+
+
+
+_STAND_IN_LOGIT = 6.0
+
+
+def _stand_in_logit() -> float:
+    from .server_dials import dial_in_range
+
+    return dial_in_range("tuning.click.stand_in_logit", _STAND_IN_LOGIT, 1.0, 20.0)
 
 
 
@@ -247,6 +294,60 @@ def unpack_float16_payload(payload: str, shape: tuple[int, ...]) -> np.ndarray:
     return np.ascontiguousarray(flat.reshape(shape), dtype=np.float32)
 
 
+def mask_stand_in_logits(masks: np.ndarray, side: int) -> np.ndarray:
+
+
+
+
+
+
+
+
+
+    stack = np.asarray(masks)
+    if stack.ndim == 2:
+        stack = stack[None]
+    if stack.ndim != 3 or not 0 < side <= _MAX_MASK_SIDE:
+        raise ValueError("Stand-in logits need (count, H, W) masks and a side")
+    height, width = int(stack.shape[1]), int(stack.shape[2])
+    rows = np.clip((np.arange(side) * height // side), 0, height - 1)
+    cols = np.clip((np.arange(side) * width // side), 0, width - 1)
+    sampled = stack[:, rows[:, None], cols[None, :]].astype(bool)
+    logit = _stand_in_logit()
+    return np.where(sampled, logit, -logit).astype(np.float32)
+
+
+def note_preview_seed(crop_token: str, seed_id: str, stand_in: np.ndarray) -> None:
+
+    if not crop_token or not seed_id or stand_in is None:
+        return
+    with _preview_seeds_lock:
+        _preview_seeds[(crop_token, seed_id)] = stand_in
+        _preview_seeds.move_to_end((crop_token, seed_id))
+        while len(_preview_seeds) > _preview_seed_memory():
+            _preview_seeds.popitem(last=False)
+
+
+def forget_preview_seeds() -> None:
+
+    with _preview_seeds_lock:
+        _preview_seeds.clear()
+
+
+def _preview_seed_named(crop_token: str | None,
+                        mask_input: np.ndarray) -> str | None:
+
+    if not crop_token:
+        return None
+    with _preview_seeds_lock:
+        held = [(key[1], value) for key, value in _preview_seeds.items()
+                if key[0] == crop_token]
+    for seed_id, stand_in in reversed(held):
+        if stand_in.shape == mask_input.shape and np.array_equal(mask_input, stand_in):
+            return seed_id
+    return None
+
+
 def _accepts_cancel_check(call) -> bool:
 
 
@@ -285,6 +386,27 @@ def _crop_identity(image_np: np.ndarray) -> tuple:
 
 
 _CROP_TOKEN_MEMORY = 8
+
+
+def _crop_token_memory() -> int:
+    from .server_dials import dial_in_range
+
+    return dial_in_range("tuning.click.crop_token_memory", _CROP_TOKEN_MEMORY, 1, 64)
+
+
+
+
+
+SERVICE_LOW_RES_SIDE = 288
+
+
+
+_service_low_res_side = SERVICE_LOW_RES_SIDE
+
+
+def _note_service_side(side: int) -> None:
+    global _service_low_res_side
+    _service_low_res_side = side
 
 
 class CloudSamPredictor:
@@ -343,13 +465,16 @@ class CloudSamPredictor:
         self._webp_refused = False
 
 
-        self._seed_id: str = ""
-        self._seed_logits: np.ndarray | None = None
+
+
+        self._named_seeds: OrderedDict[str, np.ndarray] = OrderedDict()
 
 
 
 
-        self.low_res_side: int | None = None
+
+
+        self.low_res_side: int | None = _service_low_res_side
 
 
         self.last_answer_was_remote = True
@@ -390,6 +515,7 @@ class CloudSamPredictor:
         self._crop_tokens.clear()
         self._crop_body = None
         self._forget_seed()
+        forget_preview_seeds()
 
     @staticmethod
     def _auth_print(auth) -> str:
@@ -428,6 +554,7 @@ class CloudSamPredictor:
         if self._auth_changed(auth):
             self._crop_tokens.clear()
             self._forget_seed()
+            forget_preview_seeds()
 
     def _held_crop_token(self) -> str | None:
 
@@ -460,7 +587,7 @@ class CloudSamPredictor:
             return
         self._crop_tokens[key] = token
         self._crop_tokens.move_to_end(key)
-        while len(self._crop_tokens) > _CROP_TOKEN_MEMORY:
+        while len(self._crop_tokens) > _crop_token_memory():
             self._crop_tokens.popitem(last=False)
 
     def _drop_crop_token(self) -> None:
@@ -477,8 +604,17 @@ class CloudSamPredictor:
     def _forget_seed(self) -> None:
 
 
-        self._seed_id = ""
-        self._seed_logits = None
+
+
+        self._named_seeds = OrderedDict()
+
+    def _remember_named_seed(self, seed_id: str, logits: np.ndarray) -> None:
+
+        held = self._named_seeds
+        held[seed_id] = logits
+        held.move_to_end(seed_id)
+        while len(held) > _named_seed_memory():
+            held.popitem(last=False)
 
     def cleanup(self) -> None:
         self.reset_image()
@@ -690,14 +826,23 @@ class CloudSamPredictor:
         retries_left = _click_retries_max()
         seed = mask_input
 
+
+
+
+        seed_resend_owed = True
+
         def resend_if_expired(answer: dict) -> dict:
 
 
 
-            nonlocal retries_left
-            while retries_left > 0 and answer.get("code") in (
-                    CROP_EXPIRED_CODE, SEED_EXPIRED_CODE):
-                retries_left -= 1
+            nonlocal retries_left, seed_resend_owed
+            while answer.get("code") in (CROP_EXPIRED_CODE, SEED_EXPIRED_CODE):
+                if retries_left > 0:
+                    retries_left -= 1
+                elif seed_resend_owed and answer.get("code") == SEED_EXPIRED_CODE:
+                    seed_resend_owed = False
+                else:
+                    break
                 crop_gone = answer.get("code") == CROP_EXPIRED_CODE
                 if crop_gone:
                     self._drop_crop_token()
@@ -786,10 +931,10 @@ class CloudSamPredictor:
 
         if low_res_masks.ndim == 3 and low_res_masks.shape[1] == low_res_masks.shape[2]:
             self.low_res_side = int(low_res_masks.shape[1])
+            _note_service_side(self.low_res_side)
         seed_id = answer.get("seed_id")
         if isinstance(seed_id, str) and seed_id:
-            self._seed_id = seed_id
-            self._seed_logits = low_res_masks
+            self._remember_named_seed(seed_id, low_res_masks)
         else:
             self._forget_seed()
 
@@ -848,6 +993,7 @@ class CloudSamPredictor:
             "mask_input": None,
             "mask_input_shape": None,
             "multimask_output": bool(multimask_output),
+            "low_res": LOW_RES_NAMED,
             **self._billing_fields(),
         }
         if send_crop and crop is not None:
@@ -856,31 +1002,34 @@ class CloudSamPredictor:
 
             body["crop_shape"] = list(crop.shape)
         if mask_input is not None:
-            index = self._named_seed_index(mask_input) if name_seed else None
-            if index is None:
+            named = self._named_seed_for(mask_input) if name_seed else None
+            if named is None:
                 body["mask_input"] = pack_float16_payload(mask_input)
                 body["mask_input_shape"] = list(mask_input.shape)
             else:
-                body["seed_id"] = self._seed_id
-                body["seed_index"] = index
+                body["seed_id"], body["seed_index"] = named
         return body
 
-    def _named_seed_index(self, mask_input: np.ndarray) -> int | None:
+    def _named_seed_for(self, mask_input: np.ndarray) -> tuple[str, int] | None:
 
 
 
 
 
 
-        held = self._seed_logits
-        if not self._seed_id or held is None or held.ndim != 3:
+
+
+        if mask_input.ndim != 3 or mask_input.shape[0] != 1:
             return None
-        if mask_input.shape[1:] != held.shape[1:]:
-            return None
-        for index in range(held.shape[0]):
-            if np.array_equal(mask_input[0], held[index]):
-                return index
-        return None
+        for seed_id, held in reversed(list(self._named_seeds.items())):
+            if held.ndim != 3 or mask_input.shape[1:] != held.shape[1:]:
+                continue
+            for index in range(held.shape[0]):
+                if np.array_equal(mask_input[0], held[index]):
+                    return seed_id, index
+        token = self._crop_tokens.get(self._crop_key) if self._crop_key else None
+        seed_id = _preview_seed_named(token, mask_input)
+        return None if seed_id is None else (seed_id, 0)
 
     def _refuse_late_answer(self, generation: int) -> None:
 
@@ -915,6 +1064,7 @@ class CloudSamPredictor:
             if self._auth_changed(auth):
                 self._crop_tokens.clear()
                 self._forget_seed()
+                forget_preview_seeds()
                 raise RefineSupersededError(
                     "the account changed while the click was being sent")
             if self._client_accepts_cancel(client):
@@ -934,10 +1084,14 @@ class CloudSamPredictor:
         if self._auth_print(self._resolve_auth()) != self._auth_print(auth):
             self._crop_tokens.clear()
             self._forget_seed()
+            forget_preview_seeds()
             self._generation += 1
             raise RefineSupersededError("the account changed while the click was being answered")
         if not isinstance(answer, dict):
             raise SamWorkerError("Refine answer was not readable")
+        clock = active_click_clock()
+        if clock is not None:
+            clock.note_server_ms(answer.get("total_ms"))
         return answer
 
     def _client_accepts_cancel(self, client) -> bool:
@@ -993,7 +1147,7 @@ class CloudSamPredictor:
             raise SamWorkerError("Refine answer carried unreadable scores") from err
         if scores.ndim != 1 or not np.isfinite(scores).all():
             raise SamWorkerError("Refine answer carried non-finite or non-vector scores")
-        low_res_masks = self._decode_low_res(answer)
+        low_res_masks = self._decode_low_res(answer, masks)
         if low_res_masks.shape[0] != masks.shape[0]:
             raise SamWorkerError("Refine answer's logits do not match its masks")
         if masks.shape[0] != scores.shape[0]:
@@ -1039,11 +1193,21 @@ class CloudSamPredictor:
         except ValueError as err:
             raise SamWorkerError("Refine answer's masks were unreadable") from err
 
-    def _decode_low_res(self, answer: dict) -> np.ndarray:
+    def _decode_low_res(self, answer: dict, masks: np.ndarray | None = None) -> np.ndarray:
+
+
+
+
+
+
+
+
         shape = answer.get("low_res_masks_shape")
         payload = answer.get("low_res_masks")
+        named = (payload is None and masks is not None
+                 and isinstance(answer.get("seed_id"), str) and answer.get("seed_id"))
         if (not isinstance(shape, (list, tuple)) or len(shape) != 3
-                or not isinstance(payload, str) or not payload):
+                or not (named or (isinstance(payload, str) and payload))):
             raise SamWorkerError("Refine answer carried no usable mask logits")
         if any(isinstance(v, bool) or not isinstance(v, int) for v in shape):
             raise SamWorkerError("Refine logit dimensions must be integers")
@@ -1052,6 +1216,11 @@ class CloudSamPredictor:
                 not 0 < v <= _MAX_MASK_SIDE for v in dims[1:]):
             raise SamWorkerError(
                 f"Refine answer asked for an unusable logit shape {shape}")
+        if named and masks is not None:
+            if dims[1] != dims[2]:
+                raise SamWorkerError(
+                    f"Refine answer named logits of an unusable shape {shape}")
+            return mask_stand_in_logits(masks, dims[1])
         try:
             return unpack_float16_payload(payload, dims)
         except Exception as err:  # noqa: BLE001

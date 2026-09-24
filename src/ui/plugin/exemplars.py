@@ -784,12 +784,15 @@ class ExemplarsMixin:
         except Exception:  # noqa: BLE001
             return []
         try:
-            rings = g.asPolygon()
-            if not rings:
+
+
+            if g.isMultipart():
                 mp = g.asMultiPolygon()
                 rings = mp[0] if mp else []
+            else:
+                rings = g.asPolygon()
             ring = rings[0] if rings else []
-        except (AttributeError, IndexError):
+        except (AttributeError, IndexError, TypeError):
             return []
         out = []
         for pt in ring:

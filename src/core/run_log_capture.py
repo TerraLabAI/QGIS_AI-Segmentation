@@ -128,7 +128,9 @@ class _RunLogCapture:
             letter = "?"
         from .server_dials import dial_in_range
         max_lines = dial_in_range("tuning.notify.run_log_max_lines", MAX_LINES, 20, 2000)
-        bounded = bounded_log_tail(str(message), MAX_BYTES)
+
+        max_bytes = dial_in_range("tuning.notify.run_log_max_bytes", MAX_BYTES, 4096, 65536)
+        bounded = bounded_log_tail(str(message), max_bytes)
         lines = [redact_line(part) for part in bounded.splitlines()]
         with self._lock:
             for part in lines or [""]:
@@ -136,7 +138,7 @@ class _RunLogCapture:
                 self._lines.append(line)
                 self._bytes += len(line.encode("utf-8", "ignore"))
                 while self._lines and (len(self._lines) > max_lines
-                                       or self._bytes > MAX_BYTES):
+                                       or self._bytes > max_bytes):
                     gone = self._lines.popleft()
                     self._bytes -= len(gone.encode("utf-8", "ignore"))
 

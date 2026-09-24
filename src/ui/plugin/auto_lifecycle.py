@@ -12,8 +12,6 @@ import os
 from qgis.core import (
     Qgis,
     QgsCoordinateReferenceSystem,
-    QgsFeature,
-    QgsField,
     QgsMessageLog,
     QgsProject,
     QgsRasterLayer,
@@ -23,8 +21,6 @@ from qgis.core import (
 from ...core.error_policy import REPORTABLE_ERROR_CLASSES
 from ...core.i18n import tr
 from .shared import (
-    _FIELD_TYPE_STRING,
-    _add_features_fast,
     _apply_fast_render,
     park_orphaned_worker,
 )
@@ -62,6 +58,9 @@ class AutoLifecycleMixin:
 
 
         try:
+
+
+            self._finish_auto_review_export_offload()
             review = self._auto_review
 
 
@@ -302,27 +301,10 @@ class AutoLifecycleMixin:
 
 
 
-
-
         QgsMessageLog.logMessage(
             f"Auto detection: {tiles} tiles, nothing found yet",
-            "AI Segmentation", level=Qgis.MessageLevel.Warning,
+            "AI Segmentation", level=Qgis.MessageLevel.Info,
         )
-        try:
-            from ...core.server_dials import dial_copy, dial_in_range
-            text = dial_copy("copy.auto.nothing_found_yet", tr(
-                "Nothing found in the first {n} tiles. Check the spelling of "
-                "your prompt, try a simpler word, or check the zone and the "
-                "imagery. The run continues and each tile still counts."))
-            self.iface.messageBar().pushMessage(
-                "AI Segmentation",
-                text.replace("{n}", str(tiles)),
-                level=Qgis.MessageLevel.Warning,
-                duration=dial_in_range(
-                    "tuning.auto.nothing_found_notice_s", 12, 4, 30),
-            )
-        except (RuntimeError, AttributeError):
-            pass  # nosec B110
 
     def _auto_account_refusal_line(self, msg: str) -> str:
 
@@ -854,6 +836,16 @@ class AutoLifecycleMixin:
             return
 
 
+
+        probe = getattr(self, "_auto_imagery_probe", None)
+        early = getattr(self, "_auto_imagery_early", None)
+        if ((probe is not None and (probe.get("signature") or ("",))[0] in ids)
+                or (early is not None
+                    and (early.get("signature") or ("",))[0] in ids)):
+            with contextlib.suppress(Exception):
+                self._abandon_imagery_probe()
+
+
         with contextlib.suppress(Exception):
             self._stop_hover_preview("layer gone")
 
@@ -955,20 +947,32 @@ class AutoLifecycleMixin:
 
 
 
-        from ...core import output_store
-        from ...core.basemap_label import online_basemap_credit
-        from ...core.layer_conventions import (
-            apply_output_conventions,
-            make_area_measurer,
-            make_class_categorized_renderer,
-            make_committed_renderer,
-            measure_field,
-            repair_polygon,
-            round_measure,
-            to_multipolygon,
-        )
-        from ...core.output_metadata import output_timestamp_iso
-        from ...core.polygon_exporter import count_overlapping_pairs
+
+
+
+        export = self._prepare_auto_export(
+            deduped_geoms, crs, source_layer_name, prompt_label,
+            scores=scores, confidence_applied=confidence_applied, det_ids=det_ids)
+        if export is None:
+            return None
+        from ...core.run_export_job import run_export_job
+
+        return self._adopt_auto_export(export, run_export_job(export["job"]))
+
+    def _prepare_auto_export(
+        self,
+        deduped_geoms: list,
+        crs: QgsCoordinateReferenceSystem,
+        source_layer_name: str,
+        prompt_label: str,
+        scores: list | None = None,
+        confidence_applied: float | None = None,
+        det_ids: list | None = None,
+    ) -> dict | None:
+
+
+
+        from ...core.run_export_job import prepare_run_export_job
 
 
 
@@ -986,75 +990,10 @@ class AutoLifecycleMixin:
 
 
         prompt_label = (prompt_label or "").strip() or EXAMPLE_MATCH_CLASS
-
-
-        temp_layer = QgsVectorLayer("MultiPolygon", "auto_export", "memory")
-        if not temp_layer.isValid():
-            self._auto_export_failure = "no_working_layer"
-            return None
-        temp_layer.setCrs(crs)
-
-        pr = temp_layer.dataProvider()
-
-
-
-
-        pr.addAttributes([
-            QgsField("det_id", _FIELD_TYPE_STRING),
-            QgsField("class", _FIELD_TYPE_STRING),
-            measure_field("confidence", decimals=3),
-            measure_field("area_m2"),
-            measure_field("perimeter_m"),
-        ])
-        temp_layer.updateFields()
-
-        object_class = (prompt_label or "").strip()
         if scores is not None and len(scores) != len(deduped_geoms):
             scores = None
         if det_ids is not None and len(det_ids) != len(deduped_geoms):
             det_ids = None
-        written_geoms = []
-
-
-
-        measurer = make_area_measurer(crs)
-        features_to_add = []
-        for index, geom in enumerate(deduped_geoms):
-            if geom is None or geom.isEmpty():
-                continue
-            geom = to_multipolygon(repair_polygon(geom) or geom)
-            if geom is None or geom.isEmpty():
-                continue
-            score = scores[index] if scores is not None else None
-            feat = QgsFeature(temp_layer.fields())
-            feat.setGeometry(geom)
-            area_m2 = float(measurer.measureArea(geom))
-            if area_m2 > 0:
-                self._auto_exported_area_m2 += area_m2
-            feat.setAttributes([
-                str(det_ids[index] if det_ids is not None else index),
-                object_class or None,
-                round(float(score), 3) if score is not None else None,
-                round_measure(area_m2),
-                round_measure(measurer.measurePerimeter(geom)),
-            ])
-            features_to_add.append(feat)
-            written_geoms.append(geom)
-
-        if not features_to_add:
-            self._auto_export_failure = "no_shapes"
-            return None
-
-        if not _add_features_fast(pr, features_to_add):
-
-
-
-            QgsMessageLog.logMessage(
-                "Export refused: the layer provider took no features",
-                "AI Segmentation", level=Qgis.MessageLevel.Warning)
-            self._auto_export_failure = "no_shapes"
-            return None
-        temp_layer.updateExtents()
 
 
 
@@ -1068,13 +1007,61 @@ class AutoLifecycleMixin:
 
         if source_layer is None and not run_ctx.get("restored"):
             source_layer = self._get_active_raster_layer()
+        try:
+            job = prepare_run_export_job(
+                deduped_geoms, crs, prompt_label, scores=scores,
+                det_ids=det_ids, source_layer=source_layer)
+        except Exception:  # noqa: BLE001
+            self._auto_export_failure = "file_refused"
+            return None
 
-        result = output_store.write_run_table(
-            temp_layer,
-            prompt=prompt_label,
-            source_layer=source_layer,
-            fallback_stem=prompt_label or "detection",
+        basemap_label = ""
+        try:
+            from ...core.basemap_label import online_basemap_credit
+            if source_layer is not None:
+                basemap_label = online_basemap_credit(source_layer)
+        except (RuntimeError, AttributeError):
+            basemap_label = ""
+        return {
+            "job": job,
+            "crs": crs,
+            "source_layer_name": source_layer_name,
+            "prompt_label": prompt_label,
+            "confidence_applied": confidence_applied,
+            "basemap_label": basemap_label,
+        }
+
+    def _adopt_auto_export(self, export: dict, result: dict | None) -> str | None:
+
+
+
+
+        from ...core import output_store
+        from ...core.layer_conventions import (
+            apply_output_conventions,
+            make_class_categorized_renderer,
+            make_committed_renderer,
         )
+        from ...core.output_metadata import output_timestamp_iso
+
+        result = result or {}
+        self._auto_exported_area_m2 = float(result.get("area_m2") or 0.0)
+        failure = result.get("failure") or ""
+        if failure == "no_shapes":
+            QgsMessageLog.logMessage(
+                "Export refused: the layer provider took no features",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+        if failure:
+            self._auto_export_failure = failure
+            return None
+        job = export["job"]
+        prompt_label = export["prompt_label"]
+        crs = export["crs"]
+        source_layer_name = export["source_layer_name"]
+        written_count = int(result.get("count") or 0)
+        overlapping_pairs = result.get("overlapping_pairs")
+        result = output_store.load_written_run_table(
+            result.get("written"), job["plan"]["friendly"])
         if result is None:
             self._auto_export_failure = "file_refused"
             return None
@@ -1101,6 +1088,7 @@ class AutoLifecycleMixin:
 
 
 
+        object_class = job.get("object_class") or ""
         class_renderer = (
             make_class_categorized_renderer(result_layer)
             if not object_class else None)
@@ -1116,18 +1104,12 @@ class AutoLifecycleMixin:
             plugin_version = self._read_plugin_version()
         except (RuntimeError, AttributeError):
             plugin_version = ""
-
-        basemap_label = ""
-        try:
-            if source_layer is not None:
-                basemap_label = online_basemap_credit(source_layer)
-        except (RuntimeError, AttributeError):
-            basemap_label = ""
         source_authid = ""
         try:
             source_authid = str(crs.authid() or "")
         except (RuntimeError, AttributeError):
             source_authid = ""
+        confidence_applied = export.get("confidence_applied")
         apply_output_conventions(
             result_layer, source_layer_name,
             prompt=prompt_label,
@@ -1136,9 +1118,9 @@ class AutoLifecycleMixin:
                         else self._auto_confidence),
             created_iso=output_timestamp_iso(),
             plugin_version=plugin_version,
-            basemap_label=basemap_label,
+            basemap_label=export.get("basemap_label") or "",
             source_crs_authid=source_authid,
-            overlapping_pairs=count_overlapping_pairs(written_geoms),
+            overlapping_pairs=overlapping_pairs,
         )
 
 
@@ -1178,7 +1160,7 @@ class AutoLifecycleMixin:
         self._auto_export_layer_id = result_layer.id()
 
 
-        self._auto_export_feature_count = len(features_to_add)
+        self._auto_export_feature_count = written_count
 
 
 
@@ -1187,14 +1169,13 @@ class AutoLifecycleMixin:
 
 
         from ...core.qt_compat import safe_single_shot
-        _hist_count = len(features_to_add)
         safe_single_shot(
             0, self.dock_widget or self.iface.mainWindow(),
             lambda: self._record_detection_history(
-                prompt_label, layer_name, _hist_count, crs, result_layer))
+                prompt_label, layer_name, written_count, crs, result_layer))
 
         QgsMessageLog.logMessage(
-            f"Auto detection: saved {len(features_to_add)} polygon(s) to {result.gpkg_path} "
+            f"Auto detection: saved {written_count} polygon(s) to {result.gpkg_path} "
             f"(table {result.table_name})",
             "AI Segmentation", level=Qgis.MessageLevel.Info,
         )
@@ -1320,7 +1301,12 @@ class AutoLifecycleMixin:
                 if lyr is not None and lyr.id() != result_layer.id()]
             padded = QgsRectangle(rect)
             padded.scale(1.1)
-            width = 256
+            try:
+                from ...core.server_dials import dial_in_range
+                width = int(dial_in_range(
+                    "tuning.library.history_thumb_width_px", 256, 96, 512))
+            except Exception:  # noqa: BLE001
+                width = 256
             height = int(round(width * padded.height() / padded.width()))
             height = max(64, min(height, 512))
             settings = QgsMapSettings()

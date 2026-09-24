@@ -14,6 +14,7 @@ from qgis.PyQt.QtWidgets import QFrame, QLabel, QToolButton, QWidget
 
 from ...core.i18n import tr
 from ...core.qt_compat import safe_single_shot
+from ...core.server_dials import dial_in_range
 from ..icons import icon_for
 from .font_scale import scale_px_length, scale_qss_font_px, widget_pixel_ratio
 from .guidance import HINT_EXEMPLAR_DRAW_BOX, HINT_EXEMPLAR_EXCLUDE_BOX
@@ -316,13 +317,14 @@ class DockExemplarsMixin:
             return
 
 
-        filled = min(positives, 2)
+        recommended = dial_in_range("tuning.exemplar.recommended_count", 2, 1, 5)
+        filled = min(positives, recommended)
         empty = "rgba(128, 128, 128, 0.45)"
         marks = []
 
         from .font_scale import scale_point_size
         dot_px = scale_point_size(FONT_BASE)
-        for i in range(2):
+        for i in range(recommended):
             color = BRAND_GREEN if i < filled else empty
             marks.append(
                 f'<span style="color: {color}; font-size: {dot_px}px;">&#9679;</span>')
@@ -338,7 +340,7 @@ class DockExemplarsMixin:
         try:
             if positives <= 0 or armed_showing:
                 line.setVisible(False)
-            elif positives == 1:
+            elif positives < recommended:
 
 
 
@@ -409,11 +411,16 @@ class DockExemplarsMixin:
 
 
 
-                card.mousePressEvent = (
-                    lambda _ev, im=thumbnail, n=index, lb=label: (
-                        safe_single_shot(
-                            0, self,
-                            lambda: self._show_exemplar_detail(im, n, lb))))
+
+
+
+
+
+                def _open_detail(_ev, im=thumbnail, n=index, lb=label):
+                    safe_single_shot(
+                        0, self, lambda: self._show_exemplar_detail(im, n, lb))
+
+                card.mousePressEvent = _open_detail
             except (RuntimeError, TypeError):
 
                 pass

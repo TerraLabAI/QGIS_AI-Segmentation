@@ -854,7 +854,10 @@ class DockBuildMixin:
         layout.addWidget(self.start_container)
 
 
-        self._setup_refine_panel(layout)
+
+
+        self._defer_dock_part(
+            lambda: self._build_deferred_refine_panel(layout, self.start_container))
 
 
 

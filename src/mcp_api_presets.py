@@ -46,6 +46,13 @@ _CLASS_LIST_HINT = (
 )
 
 
+def _class_list_hint() -> str:
+
+    from .core.server_dials import dial_text
+
+    return dial_text("tuning.agent.hints", "class_list_hint", 400) or _CLASS_LIST_HINT
+
+
 def _catalogue_with_source() -> tuple[list[dict], list[str], str]:
 
 
@@ -165,7 +172,7 @@ class SegmentationPresetsMixin:
             "count": len(rows[:cap]),
             "total": len(rows),
             "source": source,
-            "hint": _CLASS_LIST_HINT,
+            "hint": _class_list_hint(),
         }
 
     def describe_object_class(self, token: str) -> dict:
@@ -247,10 +254,13 @@ class SegmentationPresetsMixin:
         row["source"] = source
         hint = f"Pass '{row.get('token', '')}' as object_class to detect_auto()."
         if row.get("weak"):
-            hint += (
-                " This class names a kind of cover, not a countable object:"
+            from .core.server_dials import dial_text
+
+
+            hint += " " + (dial_text("tuning.agent.hints", "class_weak_suffix", 400) or (
+                "This class names a kind of cover, not a countable object:"
                 " expect soft, ragged outlines."
-            )
+            ))
         row["hint"] = hint
         return row
 

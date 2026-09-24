@@ -56,7 +56,7 @@ def _force_foreground_on_windows(main_window) -> bool:
 
 
 
-        user32 = ctypes.WinDLL("user32")
+        user32 = ctypes.WinDLL("user32")  # type: ignore[attr-defined]
 
 
         user32.GetForegroundWindow.restype = ctypes.c_void_p

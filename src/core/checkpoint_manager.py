@@ -6,7 +6,7 @@ import shutil
 import stat
 import sys
 import time
-from typing import Callable
+from typing import Any, BinaryIO, Callable
 
 from qgis.core import Qgis, QgsMessageLog
 from qgis.PyQt.QtCore import QUrl
@@ -493,7 +493,7 @@ class _DownloadFileHandle:
 
 
 
-    handle = None
+    handle: BinaryIO | None = None
 
 
 def _download_checkpoint(
@@ -604,7 +604,7 @@ def _download_checkpoint(
 
 
 
-        download_state = {
+        download_state: dict[str, Any] = {
             "bytes_received": 0,
             "bytes_total": 0,
             "error": None,
@@ -1015,7 +1015,11 @@ def _download_checkpoint(
             return True, "Checkpoint downloaded and verified"
 
         except Exception as e:
-            last_error = str(e)
+
+
+
+
+            last_error = str(e) or type(e).__name__
             QgsMessageLog.logMessage(
                 f"Checkpoint download attempt {attempt}/{max_retries} exception: {last_error}",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning)
@@ -1029,7 +1033,7 @@ def _download_checkpoint(
                 _wait_or_cancel(_retry_wait_s(attempt))
 
 
-    partial_mb = 0
+    partial_mb = 0.0
     if os.path.exists(temp_path):
         partial_mb = os.path.getsize(temp_path) / (1024 * 1024)
     firewall_hint = " " + tr(

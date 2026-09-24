@@ -219,9 +219,19 @@ def track_manual_cloud_consent(accepted: bool) -> None:
     track(ev.MANUAL_CLOUD_CONSENT, {"accepted": bool(accepted)})
 
 
+
+_CLICK_PHASE_KEYS = ("new_crop", "crop_wait_ms", "encode_ms", "total_ms",
+                     "wire_ms", "server_ms", "round_trips", "sent_kb")
+
+
 def track_manual_click_answered(engine: str, duration_ms: int | None = None,
                                 used_fallback: bool = False,
-                                is_correct: bool = False) -> None:
+                                is_correct: bool = False,
+                                phases: dict | None = None) -> None:
+
+
+
+
 
 
 
@@ -239,13 +249,17 @@ def track_manual_click_answered(engine: str, duration_ms: int | None = None,
     else:
         _sent_this_session.add("click_answered")
         sample_rate = 1
-    track(ev.MANUAL_CLICK_ANSWERED, {
+    props = {
         "engine": engine,
         "duration_ms": duration_ms,
         "used_fallback": bool(used_fallback),
         "is_correct": bool(is_correct),
         "sample_rate": sample_rate,
-    })
+    }
+    for key in _CLICK_PHASE_KEYS:
+        if phases and key in phases:
+            props[key] = phases[key]
+    track(ev.MANUAL_CLICK_ANSWERED, props)
 
 
 def track_manual_object_charged(outcome: str, objects_charged: int | None = None,

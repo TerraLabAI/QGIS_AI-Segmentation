@@ -440,6 +440,56 @@ def drawn_object_tile_frac(policy: dict | None = None) -> float:
     return val if 0 < val <= 1 else DRAWN_OBJECT_TILE_FRAC
 
 
+def exemplar_size_ladder(policy: dict | None = None) -> list[tuple[float, float]]:
+
+
+
+
+
+
+
+
+    raw = seed_policy(policy).get("exemplar_size_ladder")
+    if not isinstance(raw, list):
+        return []
+    rungs: list[tuple[float, float]] = []
+    for rung in raw:
+        if not isinstance(rung, dict):
+            continue
+        size = rung.get("size_m")
+        mupp = rung.get("target_mupp")
+        if (_is_finite_policy_value(size) and _is_finite_policy_value(mupp)
+                and size > 0 and mupp > 0):
+            rungs.append((float(size), float(mupp)))
+    return rungs
+
+
+def exemplar_ladder_mupp(size_m: float, policy: dict | None = None) -> float:
+
+
+
+    import math
+
+    if not (isinstance(size_m, (int, float)) and math.isfinite(size_m) and size_m > 0):
+        return 0.0
+    best = 0.0
+    best_dist = math.inf
+    for rung_size, rung_mupp in exemplar_size_ladder(policy):
+        dist = abs(math.log(rung_size) - math.log(size_m))
+        if dist < best_dist or (dist == best_dist and rung_mupp < best):
+            best, best_dist = rung_mupp, dist
+    return best
+
+
+def exemplar_band_enabled(policy: dict | None = None) -> bool:
+
+
+
+
+    block = seed_policy(policy).get("tile_plan")
+    return not (isinstance(block, dict) and block.get("exemplar_band") is False)
+
+
 def sweet_spot_max_mupp(policy: dict | None = None) -> float:
 
 

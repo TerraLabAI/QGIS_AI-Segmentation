@@ -17,8 +17,7 @@ from ...core.review_defaults import (
 )
 from ...core.server_dials import dial_in_range
 from ...core.shape_policy_dials import align_phase_budget_s
-from ...workers.live_stitch_thread import STITCH_JOIN_TIMEOUT_MS
-from .auto_results import _stitch_drain_budget_s, _stitch_wait_slice_ms
+from .auto_results import _stitch_drain_budget_s, _stitch_join_timeout_ms
 from .shared import auto_pump_budget
 
 
@@ -38,6 +37,13 @@ _AWAIT_REFINE_POLL_MS = 15
 
 class AutoFinalizeStepsMixin:
 
+
+    def _auto_offgui_poll_ms(self) -> int:
+
+
+
+        return int(dial_in_range(
+            "tuning.auto.await_refine_poll_ms", _AWAIT_REFINE_POLL_MS, 1, 200))
 
     def _announce_auto_finalize_phase(self, state: dict) -> None:
 
@@ -84,9 +90,13 @@ class AutoFinalizeStepsMixin:
 
 
 
+        cap = state.get("drop_log_max")
+        if cap is None:
+            cap = dial_in_range("tuning.auto.finalize_drop_log_max", 5, 1, 50)
+            state["drop_log_max"] = cap
         dropped = int(state.get("dropped_objects", 0) or 0) + 1
         state["dropped_objects"] = dropped
-        if dropped <= 5:
+        if dropped <= cap:
             try:
                 QgsMessageLog.logMessage(
                     f"Auto detection: dropped object {idx} in the {phase} "
@@ -325,7 +335,10 @@ class AutoFinalizeStepsMixin:
                     int(state.get("drain_total", 0) or 0), folded + queued)
                 self._show_finalize_drain_progress(folded, state["drain_total"])
             drain_until = state["drain_until"]
-            if not self._finish_auto_stitcher(timeout_ms=_stitch_wait_slice_ms()):
+
+
+
+            if not self._finish_auto_stitcher(timeout_ms=0):
                 hard_until = state.get("drain_hard_until")
                 if hard_until is None and now >= drain_until:
 
@@ -337,7 +350,7 @@ class AutoFinalizeStepsMixin:
                         "queued; finalizing what it folded", "AI Segmentation",
                         level=Qgis.MessageLevel.Warning)
                     self._abort_auto_stitch_queue()
-                    hard_until = now + STITCH_JOIN_TIMEOUT_MS / 1000.0
+                    hard_until = now + _stitch_join_timeout_ms() / 1000.0
                     state["drain_hard_until"] = hard_until
                 elif hard_until is not None and now >= hard_until:
 
@@ -355,11 +368,17 @@ class AutoFinalizeStepsMixin:
 
 
                 self._request_auto_live_repaint()
-                QTimer.singleShot(0, self._step_auto_finalize_refine)
+                QTimer.singleShot(self._auto_offgui_poll_ms(), self._step_auto_finalize_refine)
                 return
             total = int(state.get("drain_total", 0) or 0)
             self._show_finalize_drain_progress(total, total)
             self._finalize_drain_done(state)
+            return
+
+
+
+        if state.get("phase") in ("server", "server_apply"):
+            self._step_server_finalize(state, deadline)
             return
 
 
@@ -449,12 +468,17 @@ class AutoFinalizeStepsMixin:
                 align_until = _t.monotonic() + budget
                 state["align_until"] = align_until
             done = False
+
+
+
+            off_gui = callable(getattr(align, "finished", None))
             try:
+                if off_gui:
+                    done = bool(align.finished())
 
 
 
-
-                while not done and _t.monotonic() < deadline:
+                while not off_gui and not done and _t.monotonic() < deadline:
                     done = align.step(1)
             except Exception as exc:  # noqa: BLE001
                 self._log_finalize_drop(state, "align", "?", exc)
@@ -480,7 +504,9 @@ class AutoFinalizeStepsMixin:
                 self._seed_finalize_build_phase(state, rows, align)
                 return
             if not done:
-                QTimer.singleShot(0, self._step_auto_finalize_refine)
+                QTimer.singleShot(
+                    self._auto_offgui_poll_ms() if off_gui else 0,
+                    self._step_auto_finalize_refine)
                 return
             self._log_footprint_alignment(align)
             rows = finish_align_pass(
@@ -797,7 +823,7 @@ class AutoFinalizeStepsMixin:
 
         self._log_finalize_phases(state, len(visible))
         dropped = int(state.get("dropped_objects", 0) or 0)
-        if dropped > 5:
+        if dropped > state.get("drop_log_max", 5):
             QgsMessageLog.logMessage(
                 f"Auto detection: {dropped} object(s) dropped by the "
                 f"finalize guards this pass",
@@ -815,6 +841,10 @@ class AutoFinalizeStepsMixin:
         else:
             self._complete_auto_finalize(
                 visible, state["tiles_succeeded"], vis_scores, vis_ids)
+
+
+            from .auto_client_profile import stop_gui_gap_watch
+            stop_gui_gap_watch(self)
 
             try:
                 from ...core.run_log_capture import send_run_log

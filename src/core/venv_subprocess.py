@@ -83,20 +83,20 @@ def _run_with_cancel(
 
     try:
         os.makedirs(PLUGIN_CACHE_DIR, exist_ok=True)
-        tmp_kwargs = {"dir": PLUGIN_CACHE_DIR}
+        tmp_dir: str | None = PLUGIN_CACHE_DIR
     except OSError:
-        tmp_kwargs = {}
+        tmp_dir = None
     out_file = err_file = None
     out_path = err_path = None
     process = None
     try:
         out_file = tempfile.NamedTemporaryFile(
             mode="w", encoding="utf-8", suffix="_out.txt", prefix="run_",
-            delete=False, **tmp_kwargs)
+            delete=False, dir=tmp_dir)
         out_path = out_file.name
         err_file = tempfile.NamedTemporaryFile(
             mode="w", encoding="utf-8", suffix="_err.txt", prefix="run_",
-            delete=False, **tmp_kwargs)
+            delete=False, dir=tmp_dir)
         err_path = err_file.name
         process = subprocess.Popen(  # nosec B603
             cmd, stdout=out_file, stderr=err_file, text=True,

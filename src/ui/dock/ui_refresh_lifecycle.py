@@ -33,7 +33,9 @@ class DockLifecycleMixin:
                        "Reopen AI Segmentation to follow it."))
             except Exception:
                 pass  # nosec B110
-        elif bool(getattr(self, "_qgis_bridge_active_ui", False)):
+        elif self.dock_content_built and bool(getattr(self, "_qgis_bridge_active_ui", False)):
+
+
 
 
 
@@ -205,6 +207,19 @@ class DockLifecycleMixin:
 
 
 
+
+
+
+
+
+        if not self.dock_content_built:
+            try:
+                self._queue_dock_content_check()
+            except Exception:  # noqa: BLE001
+                self._log_dock_content_failure()
+            super().showEvent(event)
+            self._track_plugin_opened_once()
+            return
         super().showEvent(event)
 
 
@@ -217,6 +232,9 @@ class DockLifecycleMixin:
             except (RuntimeError, AttributeError):
 
                 pass
+        self._track_plugin_opened_once()
+
+    def _track_plugin_opened_once(self) -> None:
         if getattr(self, "_plugin_opened_emitted", False):
             return
         try:

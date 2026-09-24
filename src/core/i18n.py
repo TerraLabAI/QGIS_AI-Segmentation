@@ -24,7 +24,7 @@ from qgis.PyQt.QtCore import QSettings
 CONTEXT = "AISegmentation"
 
 
-_translations = {}
+_translations: dict[str, str] = {}
 
 
 _loaded = False

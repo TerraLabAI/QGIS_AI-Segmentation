@@ -6684,5 +6684,53 @@ Nilai lebih rendah menipiskan detail terkecil terlebih dahulu dengan tetap mempe
         <source>{plan} · {status}</source>
         <translation>{plan} · {status}</translation>
     </message>
+    <message>
+        <source>Layer</source>
+        <translation>Layer</translation>
+    </message>
+    <message>
+        <source>No polygon layer in this project</source>
+        <translation>Tidak ada layer poligon di proyek ini</translation>
+    </message>
+    <message>
+        <source>Or use an existing zone</source>
+        <translation>Atau gunakan zona yang sudah ada</translation>
+    </message>
+    <message>
+        <source>Saving... {pct}%</source>
+        <translation>Menyimpan... {pct}%</translation>
+    </message>
+    <message>
+        <source>Signed in (from {}).</source>
+        <translation>Masuk (dari {}).</translation>
+    </message>
+    <message>
+        <source>Signed in as {} (from {}).</source>
+        <translation>Masuk sebagai {} (dari {}).</translation>
+    </message>
+    <message>
+        <source>Take the zone from a layer or a selection</source>
+        <translation>Ambil zona dari layer atau dari seleksi</translation>
+    </message>
+    <message>
+        <source>That zone cannot be moved onto this map. Draw it instead.</source>
+        <translation>Zona itu tidak dapat dipindahkan ke peta ini. Gambarlah sebagai gantinya.</translation>
+    </message>
+    <message>
+        <source>That zone is empty. Pick another one.</source>
+        <translation>Zona itu kosong. Pilih zona lain.</translation>
+    </message>
+    <message>
+        <source>Use this zone</source>
+        <translation>Gunakan zona ini</translation>
+    </message>
+    <message>
+        <source>Zone of interest</source>
+        <translation>Zona yang diminati</translation>
+    </message>
+    <message>
+        <source>{name}, {n} selected</source>
+        <translation>{name}, {n} dipilih</translation>
+    </message>
 </context>
 </TS>

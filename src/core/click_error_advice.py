@@ -19,17 +19,21 @@
 from __future__ import annotations
 
 from .i18n import tr
-from .server_dials import dial_copy
+from .server_dials import ServerDialSet, dial_copy
 
 
 
 
 
-_LAYER_ANSWERED_NOTHING = frozenset({
-    "crop_error_online_blank_tiles",
-    "crop_error_online_tiles_refused",
-    "crop_error_outside_bounds",
-})
+
+_LAYER_ANSWERED_NOTHING = ServerDialSet(
+    "tuning.click.layer_answered_nothing_extra",
+    {
+        "crop_error_online_blank_tiles",
+        "crop_error_online_tiles_refused",
+        "crop_error_outside_bounds",
+    },
+)
 
 
 def _notice_line(code: str) -> str:

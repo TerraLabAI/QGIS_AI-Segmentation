@@ -161,8 +161,10 @@ def merge_scalar(key: str, fallback: float | None = None, policy: dict | None = 
 
 
 
-    ok = _is_finite_policy_value(val) and float(val) >= 0.0
-    resolved = float(val) if ok else float(fallback)
+    if _is_finite_policy_value(val) and float(val) >= 0.0:
+        resolved = float(val)
+    else:
+        resolved = float(fallback)
     return int(resolved) if key in _MERGE_INT_SCALARS else resolved
 
 

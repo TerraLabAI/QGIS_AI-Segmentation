@@ -15,6 +15,7 @@ from qgis.PyQt.QtCore import QByteArray, QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
 from ..core import transport_dials as _td
+from ..core.gil_safe_qobject import prime as _gil_safe
 from ..core.i18n import tr
 from .request_compression import answer_refused_the_body, note_gzip_request_refused, packed_request_body
 from .request_feedback import current_request_feedback as _current_feedback
@@ -43,10 +44,16 @@ from .terralab_client_retry import (
     _HANDOFF_STATUSES,
     _note_retry_after,
     _note_window_hint,
+    _response_etag,
     _retry_after_s,
     _retry_pause_s,
     _worth_asking_again,
 )
+
+
+
+
+_NOT_MODIFIED_STATUS = 304
 
 
 def _may_pack_body(method: str, path: str, body: bytes | None) -> bool:
@@ -142,7 +149,19 @@ class TerraLabTransportMixin:
         allow_list: bool = False,
         require_body: bool = False,
         wall_clock: bool = False,
+        extra_headers: dict | None = None,
+        retry_get_failures: bool = True,
     ) -> dict | list:
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -182,7 +201,7 @@ class TerraLabTransportMixin:
             payload, packed = packed_request_body(body)
         answer, http_status, _body_was_json = self._request_once(
             method, path, auth, payload, packed, timeout_ms, allow_list,
-            require_body, wall_clock)
+            require_body, wall_clock, extra_headers)
         if _request_cancelled():
             return _cancelled_answer()
         if packed and answer_refused_the_body(http_status):
@@ -191,8 +210,9 @@ class TerraLabTransportMixin:
             note_gzip_request_refused()
             answer, http_status, _ = self._request_once(
                 method, path, auth, body, False, timeout_ms, allow_list,
-                require_body, wall_clock)
-        if method == "GET" and _worth_asking_again(answer, http_status):
+                require_body, wall_clock, extra_headers)
+        if (method == "GET" and retry_get_failures
+                and _worth_asking_again(answer, http_status)):
 
 
             deadline = time.monotonic() + (self._pending_retry_after_s or _retry_pause_s())
@@ -203,9 +223,17 @@ class TerraLabTransportMixin:
                 time.sleep(min(left, 0.1))
             if _request_cancelled():
                 return _cancelled_answer()
-            answer, _, _ = self._request_once(
+            answer, http_status, _ = self._request_once(
                 method, path, auth, payload, packed, timeout_ms, allow_list,
-                require_body, wall_clock)
+                require_body, wall_clock, extra_headers)
+
+
+
+
+        if (isinstance(answer, dict) and "error" in answer
+                and http_status is not None and "http_status" not in answer):
+            answer = dict(answer)
+            answer["http_status"] = int(http_status)
         return answer
 
     def _request_once(
@@ -219,6 +247,7 @@ class TerraLabTransportMixin:
         allow_list: bool,
         require_body: bool,
         wall_clock: bool,
+        extra_headers: dict | None = None,
     ) -> tuple[dict | list, int | None, bool]:
 
 
@@ -251,10 +280,16 @@ class TerraLabTransportMixin:
         if auth:
             for key, value in auth.items():
                 req.setRawHeader(key.encode("utf-8"), value.encode("utf-8"))
+        if extra_headers:
+            for key, value in extra_headers.items():
+                req.setRawHeader(key.encode("utf-8"), value.encode("utf-8"))
 
-        blocker = QgsBlockingNetworkRequest()
+
+
+
+        blocker = _gil_safe(QgsBlockingNetworkRequest())
         guard = _WallClockGuard(blocker, timeout_ms) if wall_clock else None
-        feedback = _current_feedback()
+        feedback = _gil_safe(_current_feedback())
         try:
             if method == "GET":
                 err = blocker.get(
@@ -276,6 +311,10 @@ class TerraLabTransportMixin:
             http_status = _http_status_of(reply)
             if http_status is not None:
                 note_server_contact()
+            if http_status == _NOT_MODIFIED_STATUS:
+
+
+                return {"not_modified": True}, http_status, False
             if http_status in _HANDOFF_STATUSES and reply is not None:
                 self._pending_retry_after_s = _retry_after_s(reply)
             if reply is not None and http_status is not None and http_status >= 400:
@@ -300,6 +339,11 @@ class TerraLabTransportMixin:
         http_status = _http_status_of(reply)
         raw_body = bytes(reply.content()).decode("utf-8", "replace")
         note_server_contact()
+        if http_status == _NOT_MODIFIED_STATUS:
+
+
+
+            return {"not_modified": True}, http_status, False
         if http_status in _HANDOFF_STATUSES:
             self._pending_retry_after_s = _retry_after_s(reply)
 
@@ -336,6 +380,15 @@ class TerraLabTransportMixin:
                 return _unreadable_answer(), http_status, False
             return ({"error": "Invalid server response",
                      "code": "SERVER_ERROR"}, http_status, False)
+        if isinstance(parsed, dict) and http_status == 200:
+
+
+
+
+            etag = _response_etag(reply)
+            if etag:
+                parsed = dict(parsed)
+                parsed["etag"] = etag
         return parsed, http_status, True
 
     def _parse_reply(self, reply, require_body: bool = False) -> dict:

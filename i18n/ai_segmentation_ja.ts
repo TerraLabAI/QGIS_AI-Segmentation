@@ -6744,5 +6744,53 @@ Lower thins the smallest detail first while keeping the corners.</source>
         <source>{plan} · {status}</source>
         <translation>{plan} · {status}</translation>
     </message>
+    <message>
+        <source>Layer</source>
+        <translation>レイヤ</translation>
+    </message>
+    <message>
+        <source>No polygon layer in this project</source>
+        <translation>このプロジェクトにポリゴンレイヤがありません</translation>
+    </message>
+    <message>
+        <source>Or use an existing zone</source>
+        <translation>既存のゾーンを使用する</translation>
+    </message>
+    <message>
+        <source>Saving... {pct}%</source>
+        <translation>保存中... {pct}%</translation>
+    </message>
+    <message>
+        <source>Signed in (from {}).</source>
+        <translation>{} からサインイン済み。</translation>
+    </message>
+    <message>
+        <source>Signed in as {} (from {}).</source>
+        <translation>{} としてサインイン済み（{} から）。</translation>
+    </message>
+    <message>
+        <source>Take the zone from a layer or a selection</source>
+        <translation>レイヤまたは選択範囲からゾーンを取得</translation>
+    </message>
+    <message>
+        <source>That zone cannot be moved onto this map. Draw it instead.</source>
+        <translation>そのゾーンはこのマップ上に移動できません。代わりに描画してください。</translation>
+    </message>
+    <message>
+        <source>That zone is empty. Pick another one.</source>
+        <translation>そのゾーンは空です。別のゾーンを選択してください。</translation>
+    </message>
+    <message>
+        <source>Use this zone</source>
+        <translation>このゾーンを使用</translation>
+    </message>
+    <message>
+        <source>Zone of interest</source>
+        <translation>対象ゾーン</translation>
+    </message>
+    <message>
+        <source>{name}, {n} selected</source>
+        <translation>{name}、{n} 選択中</translation>
+    </message>
 </context>
 </TS>

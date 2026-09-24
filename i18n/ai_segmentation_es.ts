@@ -6983,5 +6983,53 @@ Un valor menor reduce primero los detalles más pequeños y conserva las esquina
         <source>{plan} · {status}</source>
         <translation>{plan} · {status}</translation>
     </message>
+    <message>
+        <source>Layer</source>
+        <translation>Capa</translation>
+    </message>
+    <message>
+        <source>No polygon layer in this project</source>
+        <translation>No hay capa de polígonos en este proyecto</translation>
+    </message>
+    <message>
+        <source>Or use an existing zone</source>
+        <translation>O usa una zona existente</translation>
+    </message>
+    <message>
+        <source>Saving... {pct}%</source>
+        <translation>Guardando... {pct}%</translation>
+    </message>
+    <message>
+        <source>Signed in (from {}).</source>
+        <translation>Sesión iniciada (desde {}).</translation>
+    </message>
+    <message>
+        <source>Signed in as {} (from {}).</source>
+        <translation>Sesión iniciada como {} (desde {}).</translation>
+    </message>
+    <message>
+        <source>Take the zone from a layer or a selection</source>
+        <translation>Tomar la zona de una capa o de una selección</translation>
+    </message>
+    <message>
+        <source>That zone cannot be moved onto this map. Draw it instead.</source>
+        <translation>Esa zona no se puede mover a este mapa. Dibújala en su lugar.</translation>
+    </message>
+    <message>
+        <source>That zone is empty. Pick another one.</source>
+        <translation>Esa zona está vacía. Elige otra.</translation>
+    </message>
+    <message>
+        <source>Use this zone</source>
+        <translation>Usar esta zona</translation>
+    </message>
+    <message>
+        <source>Zone of interest</source>
+        <translation>Zona de interés</translation>
+    </message>
+    <message>
+        <source>{name}, {n} selected</source>
+        <translation>{name}, {n} seleccionadas</translation>
+    </message>
 </context>
 </TS>

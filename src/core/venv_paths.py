@@ -65,7 +65,7 @@ def get_venv_dir() -> str:
     return VENV_DIR
 
 
-def get_venv_site_packages(venv_dir: str = None) -> str:
+def get_venv_site_packages(venv_dir: str | None = None) -> str:
     if venv_dir is None:
         venv_dir = VENV_DIR
 
@@ -133,7 +133,7 @@ def _add_windows_dll_directories(site_packages: str) -> None:
     for dll_dir in dll_dirs:
         if os.path.isdir(dll_dir):
             try:
-                os.add_dll_directory(dll_dir)
+                os.add_dll_directory(dll_dir)  # type: ignore[attr-defined]
             except OSError as exc:
                 _log(f"add_dll_directory({dll_dir}) failed: {exc}", Qgis.MessageLevel.Warning)
 
@@ -443,7 +443,7 @@ def _ensure_venv_packages_available_locked():
     return True
 
 
-def get_venv_python_path(venv_dir: str = None) -> str:
+def get_venv_python_path(venv_dir: str | None = None) -> str:
     if venv_dir is None:
         venv_dir = VENV_DIR
 
@@ -452,7 +452,7 @@ def get_venv_python_path(venv_dir: str = None) -> str:
     return os.path.join(venv_dir, "bin", "python3")
 
 
-def get_venv_pip_path(venv_dir: str = None) -> str:
+def get_venv_pip_path(venv_dir: str | None = None) -> str:
     if venv_dir is None:
         venv_dir = VENV_DIR
 
@@ -461,7 +461,7 @@ def get_venv_pip_path(venv_dir: str = None) -> str:
     return os.path.join(venv_dir, "bin", "pip")
 
 
-def venv_exists(venv_dir: str = None) -> bool:
+def venv_exists(venv_dir: str | None = None) -> bool:
     if venv_dir is None:
         venv_dir = VENV_DIR
 
@@ -616,7 +616,7 @@ def _win_path_api(func_name: str, path: str) -> str | None:
 
     try:
         import ctypes
-        api = getattr(ctypes.windll.kernel32, func_name)
+        api = getattr(ctypes.windll.kernel32, func_name)  # type: ignore[attr-defined]
         size = 512
         for _attempt in range(2):
             buf = ctypes.create_unicode_buffer(size)

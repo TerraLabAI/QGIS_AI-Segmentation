@@ -45,6 +45,12 @@ class FootprintNeighbourCache:
         while len(self._entries) > self._max_entries:
             self._entries.popitem(last=False)
 
+    def set_max_entries(self, max_entries: int) -> None:
+
+        self._max_entries = max(1, int(max_entries))
+        while len(self._entries) > self._max_entries:
+            self._entries.popitem(last=False)
+
     def clear(self) -> None:
         self._entries.clear()
 
@@ -53,6 +59,18 @@ class FootprintNeighbourCache:
 
 
 _CACHE = FootprintNeighbourCache()
+
+
+def sync_neighbour_cache_limit() -> None:
+
+
+    try:
+        from .server_dials import dial_in_range
+
+        _CACHE.set_max_entries(dial_in_range(
+            "tuning.review.footprint_neighbour_cache_max", _MAX_ENTRIES, 64, 4096))
+    except Exception:  # noqa: BLE001  # nosec B110
+        pass
 
 
 def _frame_key(frame: tuple[float, float]) -> tuple | None:

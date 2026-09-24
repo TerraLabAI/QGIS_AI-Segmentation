@@ -44,6 +44,7 @@ from qgis.core import QgsNetworkAccessManager
 from qgis.PyQt.QtCore import QByteArray, QEvent, QEventLoop, QObject, QTimer, QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
+from ..core.click_phase_clock import active_click_clock, click_clock_now
 from ..core.qt_compat import resolve_qt_enum
 from ..core.server_dials import dial_in_range
 
@@ -406,6 +407,7 @@ def post_and_keep_painting(
         raise ClickPostAbandoned() from None
     if reply is None:
         raise ClickPostAbandoned()
+    sent_at = click_clock_now()
 
 
 
@@ -486,6 +488,9 @@ def post_and_keep_painting(
 
             status = None
         _end(reply, guard, watch)
+        clock = active_click_clock()
+        if clock is not None:
+            clock.note_request(sent_at, click_clock_now(), len(body), len(raw))
         return raw, status, error
     finally:
         if held_input:

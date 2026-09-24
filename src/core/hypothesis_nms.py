@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import numpy as np
+from qgis.core import QgsGeometry
 
 from .polygon_exporter import suppress_redundant_hypotheses
 
@@ -47,9 +48,19 @@ def select_tile_hypotheses(
         cx = np.empty(n)
         cy = np.empty(n)
         dim = np.empty(n)
+
+
+
+
+
+        engines = []
         for i, (geom, _score) in enumerate(order):
             bb = geom.boundingBox()
-            c = geom.centroid().asPoint()
+            engine = QgsGeometry.createGeometryEngine(geom.constGet())
+            c = engine.centroid()
+            if c is None:
+                c = geom.centroid().asPoint()
+            engines.append(engine)
             xmin[i] = bb.xMinimum()
             xmax[i] = bb.xMaximum()
             ymin[i] = bb.yMinimum()
@@ -62,6 +73,21 @@ def select_tile_hypotheses(
         return suppress_redundant_hypotheses(
             items, ios_threshold, dup_ios_floor, dup_centroid_frac)
 
+    overlap_floor = min(ios_threshold, dup_ios_floor)
+
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        kept, _kept_index = _walk_candidates(
+            order, xmin, xmax, ymin, ymax, area, cx, cy, dim, engines,
+            ios_threshold, dup_ios_floor, dup_centroid_frac, overlap_floor, n)
+    return kept
+
+
+def _walk_candidates(order, xmin, xmax, ymin, ymax, area, cx, cy, dim, engines,
+                     ios_threshold, dup_ios_floor, dup_centroid_frac,
+                     overlap_floor, n):
+
+
 
     k_xmin = np.empty(n)
     k_xmax = np.empty(n)
@@ -70,7 +96,6 @@ def select_tile_hypotheses(
     k_area = np.empty(n)
     kept: list = []
     kept_index: list[int] = []
-    overlap_floor = min(ios_threshold, dup_ios_floor)
     m = 0
     for i, (geom, score) in enumerate(order):
         conflict = False
@@ -82,12 +107,11 @@ def select_tile_hypotheses(
             iw = np.minimum(xmax[i], k_xmax[:m]) - np.maximum(xmin[i], k_xmin[:m])
             ih = np.minimum(ymax[i], k_ymax[:m]) - np.maximum(ymin[i], k_ymin[:m])
             small = np.minimum(k_area[:m], area[i])
-            with np.errstate(divide="ignore", invalid="ignore"):
-                bbox_ios = (iw * ih) / small
+            bbox_ios = (iw * ih) / small
             passing = (iw > 0.0) & (ih > 0.0) & (small > 0.0) & (bbox_ios >= overlap_floor)
             for j in np.flatnonzero(passing).tolist():
                 kept_geom = kept[j][0]
-                inter = geom.intersection(kept_geom)
+                inter = engines[i].intersection(kept_geom.constGet())
                 ia = inter.area() if inter is not None and not inter.isEmpty() else 0.0
                 ios = ia / float(small[j])
                 if ios >= ios_threshold:
@@ -115,4 +139,4 @@ def select_tile_hypotheses(
             k_ymax[m] = ymax[i]
             k_area[m] = area[i]
             m += 1
-    return kept
+    return kept, kept_index

@@ -12,6 +12,13 @@ from __future__ import annotations
 from . import telemetry_events as ev
 from .telemetry import scrub_payload_value, track
 from .telemetry_run_profile import client_props, review_pass_props
+from .telemetry_session_events import _sent_this_session
+
+
+
+
+
+_REVIEW_ITEM_SAMPLE_RATE = 10
 
 
 def track_auto_start_clicked(layer_kind: str, has_credits_known: bool = False) -> None:
@@ -166,7 +173,8 @@ def track_auto_detect_started(run_id: str, tiles: int, zone_km2: float,
                               is_free_tier: bool,
                               merge_mode: str = "separate",
                               merge_mode_source: str = "prompt",
-                              detail_seeded: int | None = None) -> None:
+                              detail_seeded: int | None = None,
+                              tile_props: dict | None = None) -> None:
 
 
 
@@ -202,6 +210,12 @@ def track_auto_detect_started(run_id: str, tiles: int, zone_km2: float,
     }
     if detail_seeded is not None:
         props["detail_seeded"] = int(detail_seeded)
+
+
+    for key in ("tile_plan", "tile_ground_m", "tile_prior_m", "tile_reasons",
+                "tile_warning"):
+        if tile_props and key in tile_props:
+            props[key] = tile_props[key]
     track(ev.AUTO_DETECT_STARTED, props)
 
 
@@ -495,12 +509,26 @@ def track_review_correct_box(run_id: str, label: int, outcome: str,
 
 
 
+
+
+
+
+    import random
+
+    if "review_correct_box" in _sent_this_session:
+        if random.random() >= 1 / _REVIEW_ITEM_SAMPLE_RATE:  # nosec B311
+            return
+        sample_rate = _REVIEW_ITEM_SAMPLE_RATE
+    else:
+        _sent_this_session.add("review_correct_box")
+        sample_rate = 1
     track(ev.REVIEW_CORRECT_BOX, {
         "run_id": run_id,
         "label": int(label),
         "outcome": outcome,
         "objects": int(objects),
         "gesture": gesture,
+        "sample_rate": sample_rate,
     })
 
 
@@ -512,7 +540,20 @@ def track_review_correct_undo(run_id: str, kind: str) -> None:
 
 def track_review_step(run_id: str, step: int) -> None:
 
-    track(ev.REVIEW_STEP, {"run_id": run_id, "step": int(step)})
+
+
+
+
+    import random
+
+    if "review_step" in _sent_this_session:
+        if random.random() >= 1 / _REVIEW_ITEM_SAMPLE_RATE:  # nosec B311
+            return
+        sample_rate = _REVIEW_ITEM_SAMPLE_RATE
+    else:
+        _sent_this_session.add("review_step")
+        sample_rate = 1
+    track(ev.REVIEW_STEP, {"run_id": run_id, "step": int(step), "sample_rate": sample_rate})
 
 
 def track_qgis_edit_bridge(run_id: str, outcome: str,

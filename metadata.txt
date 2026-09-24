@@ -4,32 +4,42 @@ description=AI segmentation for QGIS: detect and extract building footprints, tr
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
 supportsQt6=True
-version=3.0.1
+version=3.1.0
 author=Yvann and Lilien from TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
 
 
 about=
-    Point-and-click AI segmentation tool that turns raster objects into vector polygons.
+    Draw a zone on your imagery, type what you want ("buildings", "trees", "solar panels") and get every match back as vector polygons. Or click one object and get its outline. It replaces tracing by hand.
 
-    • Fully automatic: AI model and dependencies install themselves
+    • Automatic: every building, tree or other object inside the zone you draw, in one run, with a live preview. It runs on TerraLab servers, so no graphics card is needed
 
-    • Two modes: Semi-Auto asks you where the segmentation runs. Pick "My computer" and nothing is sent. Pick "Cloud AI" and a small image crop around each click goes to our servers. Automatic is cloud-powered, and the imagery inside the zone you draw is sent to our detection service to be processed.
+    • Semi-Auto: click an object, add positive and negative points, get a clean outline. Pick "My computer" and it runs locally and offline, or "Cloud AI" and nothing needs downloading
 
-    • Works on any layer: local rasters (GeoTIFF, JPG, PNG) & online layers (WMS, XYZ tiles)
+    • Works on the imagery you already have: orthophotos, drone and satellite images as GeoTIFF, JPG or PNG, and online basemaps (WMS, XYZ tiles)
 
-    • Precise: positive and negative click points control boundaries
+    • Review before you keep: right angles for buildings, expand, contract, simplify, round corners, fill holes, then export to GeoPackage, Shapefile or GeoJSON
 
-    • Refinable: expand, contract, simplify, round corners, fill holes
+    • Installs itself: the model and its dependencies set up on first run, with no Python setup
 
-    • Fast: Real-time segmentation & optimized for your hardware
+    • Free tier with no card. Plans and limits: https://terra-lab.ai/pricing
 
-    • Universal: Windows, macOS, Linux
+    • Privacy: Semi-Auto on "My computer" sends nothing. "Cloud AI" sends a small image crop around each click to our servers. Automatic sends the imagery inside the zone you draw to our detection service
 
-    • Multilingual: English, French, Portuguese, Spanish, German, Italian, Dutch, Polish, Indonesian, Japanese, Chinese
+    • Windows, macOS and Linux, QGIS 3.22 to QGIS 4
+
+    • 12 languages: English, French, Portuguese, Spanish, German, Italian, Dutch, Polish, Indonesian, Japanese, Chinese (simplified and traditional)
 
 changelog=
+    3.1.0
+    - Automatic: draw an example without a word and the tile size follows the object you drew; the Precision slider now goes further in both directions
+    - Automatic: a single example is put to better use, and a word typed in another language is understood
+    - Faster Automatic runs: Detect starts at once, shapes are built up to 1.5x faster while QGIS stays responsive, and the review opens about a fifth sooner
+    - Semi-Auto: faster clicks, and a smooth outline that Simplify reshapes live
+    - Right angles squares buildings more cleanly, and your zone of interest can be shared with AI Agent and AI Edit
+    - Many reliability improvements, especially on Windows and QGIS 4
+
     3.0.1
     - Smaller download: the same plugin, without the developer notes in its source
 

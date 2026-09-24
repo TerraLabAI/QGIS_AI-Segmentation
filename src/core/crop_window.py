@@ -331,9 +331,11 @@ def crop_window_for_object(
         bounds[2] - bounds[0], bounds[3] - bounds[1], native_pixel_size,
         crop_size=crop_size, margin=margin,
         min_scale=min_scale, max_scale=max_scale)
-    held_fits = held_window is not None and round(float(held_window[2]), 6) == round(needed_scale, 6)
-    held_fits = held_fits and window_frames_bounds(held_window, bounds, native_pixel_size, crop_size=crop_size)
-    if held_fits:
+    if (
+        held_window is not None
+        and round(float(held_window[2]), 6) == round(needed_scale, 6)
+        and window_frames_bounds(held_window, bounds, native_pixel_size, crop_size=crop_size)
+    ):
         return (float(held_window[0]), float(held_window[1]), needed_scale)
     return neighborhood_crop_window(
         bounds, native_pixel_size, crop_size=crop_size, margin=margin,

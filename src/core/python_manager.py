@@ -556,7 +556,10 @@ def download_python_standalone(
 
 
 
-        max_retries = 3
+        from .server_dials import dial_in_range
+        max_retries = dial_in_range("tuning.install.python_download_max_retries", 3, 1, 10)
+        backoff_base_s = dial_in_range(
+            "tuning.install.python_download_backoff_base_s", 5, 1, 60)
         last_error = ""
 
         def on_bytes(received: int, total: int) -> None:
@@ -591,7 +594,6 @@ def download_python_standalone(
 
 
 
-                from .server_dials import dial_in_range
                 hard_timeout_ms = dial_in_range(
                     "tuning.install.python_download_hard_timeout_ms",
                     _DOWNLOAD_HARD_TIMEOUT_MS, 60_000, 4 * 60 * 60 * 1000)
@@ -621,7 +623,7 @@ def download_python_standalone(
 
 
                 if attempt < max_retries - 1:
-                    wait = 5 * (2 ** attempt)
+                    wait = backoff_base_s * (2 ** attempt)
                     _log(
                         f"Download failed (attempt {attempt + 1}/{max_retries}): {error_msg}. "
                         f"Retrying in {wait}s...",
@@ -672,7 +674,8 @@ def download_python_standalone(
                 last_error = "Download failed: received empty file (0 bytes)"
                 _log(last_error, Qgis.MessageLevel.Warning)
                 continue
-            min_expected = 10 * 1024 * 1024
+            min_archive_mb = dial_in_range("tuning.install.python_min_archive_mb", 10, 1, 100)
+            min_expected = min_archive_mb * 1024 * 1024
             if content_size < min_expected:
                 _log(
                     f"Download suspiciously small: {content_size} bytes (expected >10 MB)", Qgis.MessageLevel.Warning)
@@ -882,6 +885,8 @@ def verify_standalone_python() -> tuple[bool, str]:
                     raise
                 time.sleep(2)
 
+        if result is None:
+            return False, "Verification error: no result from the Python check"
         if result.returncode == 0:
             version_output = result.stdout.strip().split()[0]
             expected_version = get_python_full_version()

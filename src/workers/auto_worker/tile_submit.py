@@ -532,7 +532,9 @@ class AutoTileSubmitMixin:
 
 
                 self._note_busy(-1, -1, 0)
-                return ("retry", _BACKEND_UNAVAILABLE_DELAY_S, False, code)
+                delay = getattr(
+                    self, "_backend_unavailable_delay_s", _BACKEND_UNAVAILABLE_DELAY_S)
+                return ("retry", delay, False, code)
 
 
 

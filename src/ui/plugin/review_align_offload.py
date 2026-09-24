@@ -10,13 +10,14 @@
 
 
 
+
 from __future__ import annotations
 
 from ...core.shape_policy_dials import (
+    align_gui_max_objects,
     align_offload_budget_s,
     align_phase_budget_s,
     align_process_min_objects,
-    align_thread_min_objects,
 )
 
 
@@ -31,7 +32,10 @@ ALIGN_OFFLOAD_BUDGET_S = 150.0
 
 
 
-ALIGN_THREAD_MIN_OBJECTS = 1500
+
+
+
+ALIGN_GUI_MAX_OBJECTS = 0
 
 
 
@@ -50,8 +54,7 @@ def begin_align_pass(plugin, rows: list) -> tuple:
     runner = _begin_process_pass(plugin, rows)
     if runner is not None:
         return runner, align_offload_budget_s(ALIGN_OFFLOAD_BUDGET_S)
-    floor = max(1, int(align_thread_min_objects(ALIGN_THREAD_MIN_OBJECTS)))
-    if len(rows) < floor:
+    if len(rows) <= int(align_gui_max_objects(ALIGN_GUI_MAX_OBJECTS)):
         return plugin._auto_footprint_align_sweep(rows), align_phase_budget_s(
             ALIGN_PHASE_BUDGET_S)
     copies = _row_copies(rows)

@@ -259,9 +259,13 @@ class LibraryRunActionsMixin:
         if self._plugin is None or self._view_only:
             return
         from ...plugin.run_restore import snap_confidence
-        default_conf = snap_confidence(run.get("threshold"), 0.30)
-        if default_conf <= 0.15:
-            default_conf = 0.30
+        default_start = dial_in_range(
+            "tuning.library.export_default_confidence", 0.30, 0.05, 0.95)
+        conf_floor = dial_in_range(
+            "tuning.library.export_confidence_floor", 0.15, 0.0, 0.5)
+        default_conf = snap_confidence(run.get("threshold"), default_start)
+        if default_conf <= conf_floor:
+            default_conf = default_start
         dlg = _ExportRunDialog(run, default_conf, self._detail_dlg or self)
         if not dlg.exec() or not dlg.path():
             return

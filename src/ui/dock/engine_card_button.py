@@ -27,30 +27,41 @@ class EngineCardButton(QPushButton):
         return self.layout() is not None
 
     def heightForWidth(self, width: int) -> int:  # noqa: N802
-        lay = self.layout()
-        if lay is None:
-            return super().heightForWidth(width)
-        return max(self._card_min_height, lay.totalHeightForWidth(width))
+
+
+        try:
+            lay = self.layout()
+            if lay is None:
+                return super().heightForWidth(width)
+            return max(self._card_min_height, lay.totalHeightForWidth(width))
+        except (RuntimeError, AttributeError):
+            return -1
 
     def minimumSizeHint(self) -> QSize:  # noqa: N802
-        lay = self.layout()
-        if lay is None:
-            return super().minimumSizeHint()
-        return QSize(lay.totalMinimumSize().width(), self._card_min_height)
+        try:
+            lay = self.layout()
+            if lay is None:
+                return super().minimumSizeHint()
+            return QSize(lay.totalMinimumSize().width(), self._card_min_height)
+        except (RuntimeError, AttributeError):
+            return QSize(0, 0)
 
     def resizeEvent(self, event):  # noqa: N802
         super().resizeEvent(event)
         self._sync_min_height()
 
     def event(self, event):  # noqa: D401
-        handled = super().event(event)
+        try:
+            handled = super().event(event)
 
 
 
 
-        if event.type() == QEvent.Type.LayoutRequest:
-            self._sync_min_height()
-        return handled
+            if event.type() == QEvent.Type.LayoutRequest:
+                self._sync_min_height()
+            return bool(handled)
+        except (RuntimeError, AttributeError):
+            return False
 
     def _sync_min_height(self) -> None:
 

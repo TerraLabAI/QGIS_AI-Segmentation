@@ -129,10 +129,16 @@ class AutoConvertPoolMixin:
 
 
 
+
+
+        self._note_convert_boot(getattr(self, "_convert_pool", None))
         for ok, job, payload in items:
             self._settle_converted(ok, job, payload)
 
-    def _open_convert_pool(self, workers: int, while_booting=None):
+    def _open_convert_pool(self, workers: int):
+
+
+
 
 
 
@@ -181,9 +187,7 @@ class AutoConvertPoolMixin:
                 self._convert_completed, snapshot, workers=children)
         reason = "the children would not come up"
         try:
-            if pool.start(while_booting=while_booting):
-                self._convert_pool_is_processes = True
-                self._log_convert_pool("processes", "", pool.workers)
+            if pool.start_bridged(workers):
                 return pool
 
 
@@ -257,8 +261,45 @@ class AutoConvertPoolMixin:
         except Exception:  # noqa: BLE001
             pass  # nosec B110
 
-    def _report_convert_failures(self) -> None:
+    def _note_convert_boot(self, pool) -> None:
 
+
+
+
+
+
+
+
+
+        take = getattr(pool, "take_boot_outcome", None)
+        if take is None:
+            return
+        try:
+            outcome = take()
+        except Exception:  # noqa: BLE001
+            return
+        if outcome is None:
+            return
+        state, why, spent, here = outcome
+        if state == "ready":
+            self._convert_pool_is_processes = True
+            try:
+                from ...core import run_timeline
+                run_timeline.mark("convert_children_ready")
+            except Exception:  # noqa: BLE001  # nosec B110
+                pass
+            self._log_convert_pool(
+                "processes", "", pool.workers,
+                note=f"ready after {spent:.1f}s, {here} tile(s) converted "
+                     "on threads meanwhile")
+        elif state == "failed":
+            self._log_convert_pool(
+                "threads", "the children would not come up" + (f": {why}" if why else ""))
+        else:
+            self._log_convert_pool(
+                "threads", f"run ended before the children came up ({spent:.0f}s)")
+
+    def _report_convert_failures(self) -> None:
 
 
 
@@ -299,7 +340,9 @@ class AutoConvertPoolMixin:
         except Exception:  # noqa: BLE001
             pass  # nosec B110
 
-    def _log_convert_pool(self, kind: str, reason: str, workers: int = 0) -> None:
+    def _log_convert_pool(self, kind: str, reason: str, workers: int = 0,
+                          note: str = "") -> None:
+
 
 
 
@@ -330,7 +373,7 @@ class AutoConvertPoolMixin:
         try:
             from qgis.core import QgsMessageLog
 
-            tail = f" ({reason})" if reason else ""
+            tail = f" ({reason or note})" if reason or note else ""
             QgsMessageLog.logMessage(
                 f"Auto detection: converting on {kind}"
                 + (f", {workers} of them" if workers else "") + tail,
@@ -375,7 +418,13 @@ class AutoConvertPoolMixin:
                     continue
                 if unreadable and unreadable in blob:
                     continue
-                out[name] = value
+
+
+
+
+
+
+                out[name] = pickle.loads(blob)  # nosec B301
 
 
             if "_score_threshold" not in out or "_gsd" not in out:
@@ -417,6 +466,11 @@ class AutoConvertPoolMixin:
         try:
             while pool.pending and time.monotonic() < deadline:
                 items = pool.drain(timeout=0.25)
+
+
+
+
+                self._note_convert_boot(pool)
                 if emit:
                     self._settle_converted_batch(items)
                 if self._stop_requested and not stop_seen:
@@ -429,6 +483,8 @@ class AutoConvertPoolMixin:
 
 
             leftover = pool.close(wait=False)
+
+            self._note_convert_boot(pool)
         if emit:
             self._settle_converted_batch(leftover)
 
@@ -454,8 +510,6 @@ class AutoConvertPoolMixin:
             )
 
     def _retry_convert_in_process(self, job: dict):
-
-
 
 
 

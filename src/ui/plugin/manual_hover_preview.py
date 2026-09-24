@@ -150,6 +150,15 @@ _ROUTE_MEMO_MS = 3000.0
 _REPORTED_MAX = 20
 
 
+def _reported_max() -> int:
+    try:
+        from ...core.server_dials import dial_in_range
+        return int(dial_in_range("tuning.hover.reported_reasons_max", _REPORTED_MAX, 5, 50))
+    except Exception:  # noqa: BLE001
+        return _REPORTED_MAX
+
+
+
 _CODE_CHARS_MAX = 32
 
 
@@ -365,7 +374,7 @@ class HoverPreviewController:
             except Exception:  # noqa: BLE001  # nosec B110
                 pass
         if (reason and reason not in self._reported
-                and len(self._reported) < _REPORTED_MAX):
+                and len(self._reported) < _reported_max()):
             self._reported.add(reason)
 
 
@@ -1099,7 +1108,7 @@ class HoverPreviewController:
                 pass  # nosec B110
         if named == PREVIEW_BUSY_CODE or named in self._reported:
             return
-        if len(self._reported) >= _REPORTED_MAX:
+        if len(self._reported) >= _reported_max():
             return
         self._reported.add(named)
         log_preview_note(f"Hover preview: nothing drawn ({named})")
@@ -1296,12 +1305,18 @@ class ManualHoverPreviewMixin:
 
 
         controller = getattr(self, "_hover_preview", None)
+        self._hover_click_shape = None
         if controller is None:
             return None
         try:
-            return controller.take_shown_answer()
+            answer = controller.take_shown_answer()
         except Exception:  # noqa: BLE001
             return None
+        if answer is not None:
+
+
+            self._hover_click_shape = getattr(controller, "_hover_mask_memo", None)
+        return answer
 
     def _reshape_hover_preview(self) -> None:
 

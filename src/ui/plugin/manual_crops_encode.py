@@ -175,7 +175,7 @@ class ManualCropsEncodeMixin:
             try:
                 self.predictor.set_image(image_np)
             except Exception as e:
-                return self._handle_encode_error(str(e))
+                return self._handle_encode_error(str(e) or type(e).__name__)
             self._apply_encode_result_ok(crop_info)
             return True
         finally:
@@ -217,6 +217,32 @@ class ManualCropsEncodeMixin:
 
         if venv_needs_repair(allow_subprocess_probe=False):
             return self._recover_broken_venv(err_str)
+
+
+
+
+
+
+        if not getattr(self, "_missing_package_repair_attempted", False):
+            from ...core.venv_manager import (
+                package_missing_behind_error,
+                purge_package_from_venv,
+            )
+            missing = package_missing_behind_error(err_str)
+            if missing:
+                self._missing_package_repair_attempted = True
+                try:
+                    from ...core.telemetry_errors import track_plugin_error
+                    track_plugin_error(
+                        stage="segment",
+                        error_code="dependency_missing",
+                        message=err_str,
+                        module="manual_crops_encode",
+                    )
+                except Exception:  # noqa: BLE001
+                    pass  # nosec B110
+                purge_package_from_venv(missing)
+                return self._recover_broken_venv(err_str)
         if self._headless:
             self._headless_error = err_str
             return False
@@ -328,7 +354,7 @@ class ManualCropsEncodeMixin:
                 self._set_manual_encoding_note(False)
             self._encode_cursor_set = True
             self._discard_pending_manual_click()
-            self._handle_encode_error(str(e))
+            self._handle_encode_error(str(e) or type(e).__name__)
             return
         self._arm_encode_watchdog()
 
@@ -351,6 +377,10 @@ class ManualCropsEncodeMixin:
             return
 
         pending = self._pending_encode
+
+
+        self._replayed_crop_encode_s = getattr(
+            self._manual_encode_worker, "encode_s", None)
 
 
 
@@ -459,7 +489,13 @@ class ManualCropsEncodeMixin:
         self._ensure_manual_encode_state()
         if self.map_tool:
             self.map_tool.remove_last_marker()
-        self._pending_manual_click = {"polarity": polarity, "canvas_point": canvas_point}
+
+
+        clock = getattr(self, "_click_clock_in_hand", None)
+        if clock is not None:
+            clock.note_crop_wait()
+        self._pending_manual_click = {"polarity": polarity, "canvas_point": canvas_point,
+                                      "clock": clock}
 
     def _discard_pending_manual_click(self) -> None:
 
@@ -481,6 +517,7 @@ class ManualCropsEncodeMixin:
         self._pending_manual_click = None
         point = pending["canvas_point"]
         is_positive = pending["polarity"] == "positive"
+        self._replayed_click_clock = pending.get("clock")
         if self.map_tool:
             self.map_tool.add_marker(point, is_positive=is_positive)
         if is_positive:

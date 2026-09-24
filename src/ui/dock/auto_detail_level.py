@@ -286,7 +286,8 @@ class DockAutoDetailLevelMixin:
         self.auto_detail_row.setVisible(visible)
 
     def set_auto_detail_gsd_warning(
-        self, coarse: bool, can_improve: bool | None = None
+        self, coarse: bool, can_improve: bool | None = None,
+        kind: str = "", object_word: str = "",
     ) -> None:
 
 
@@ -304,6 +305,27 @@ class DockAutoDetailLevelMixin:
 
 
 
+
+
+
+
+
+        if kind in ("cap", "imagery"):
+            word = (object_word or "").strip()
+            obj = f'"{word[:24]}"' if word else tr("your object")
+            if kind == "cap":
+                text = _detail_hint_copy("warn_cap", tr(
+                    "Tiles are larger than usual: this zone reaches the run's"
+                    " tile limit. Draw a smaller zone for sharper detections."))
+            else:
+                text = _detail_hint_copy("warn_imagery", tr(
+                    "This imagery is too coarse for {obj}. A sharper layer"
+                    " finds more."), obj)
+            self.auto_detail_warning_label.setText(text)
+            self._auto_gsd_warning_on = True
+            self.auto_detail_warning.setVisible(True)
+            self.auto_detail_hint.setVisible(False)
+            return
         s = self.auto_detail_slider
 
 
@@ -339,8 +361,13 @@ class DockAutoDetailLevelMixin:
 
 
     def set_auto_detail_range(
-        self, lo: int, hi: int, object_bound: bool = False
+        self, lo: int, hi: int, object_bound: bool = False,
+        top_reason: str | None = None,
     ) -> None:
+
+
+
+
 
 
 
@@ -357,6 +384,7 @@ class DockAutoDetailLevelMixin:
         hi = max(1, min(MAX_DETAIL_LEVEL, int(hi)))
         lo = max(1, min(hi, int(lo)))
         self._auto_detail_object_bound = bool(object_bound)
+        self._auto_detail_top_reason = top_reason
         self._cancel_pending_auto_detail()
         slider = self.auto_detail_slider
         slider.blockSignals(True)
@@ -430,7 +458,12 @@ class DockAutoDetailLevelMixin:
 
 
         s = self.auto_detail_slider
-        capped = s.maximum() < MAX_DETAIL_LEVEL and s.value() >= s.maximum()
+        top_reason = getattr(self, "_auto_detail_top_reason", None)
+        at_top = s.value() >= s.maximum()
+
+
+        capped = (at_top and top_reason == "cap" if top_reason is not None
+                  else s.maximum() < MAX_DETAIL_LEVEL and at_top)
         feedback = getattr(self, "_auto_detail_feedback", None)
         _plain_hint = scale_qss_font_px(
             f"font-size: {FONT_HINT}px; color: {INK_2};"
@@ -440,12 +473,21 @@ class DockAutoDetailLevelMixin:
             word = feedback[1] if feedback else ""
             obj = f'"{word}"' if word else tr("your object")
             self._set_detail_hint_style(_plain_hint)
-            self.auto_detail_hint.setText(_detail_hint_copy(
-                "single", tr(
-                    "One precision level fits {obj} in a zone this size - draw"
-                    " a larger zone for a choice."), obj))
+            if top_reason == "cap":
+                self.auto_detail_hint.setText(_detail_hint_copy(
+                    "single_cap", tr(
+                        "One precision level fits this zone - draw a smaller"
+                        " zone for a choice.")))
+            elif top_reason is not None:
+                self.auto_detail_hint.setText(_detail_hint_copy(
+                    "single_plan", tr("One precision level suits {obj}."), obj))
+            else:
+                self.auto_detail_hint.setText(_detail_hint_copy(
+                    "single", tr(
+                        "One precision level fits {obj} in a zone this size -"
+                        " draw a larger zone for a choice."), obj))
             return
-        if capped and getattr(self, "_auto_detail_object_bound", False):
+        if at_top and getattr(self, "_auto_detail_object_bound", False):
 
 
 
@@ -491,10 +533,12 @@ class DockAutoDetailLevelMixin:
                     "helps",
                     tr("More precision keeps helping {obj} in this zone."), obj))
             elif state == "below":
-                self._set_detail_hint_style(_plain_hint)
-                self.auto_detail_hint.setText(_detail_hint_copy(
+
+
+                self._set_detail_hint_style(_msg_label_qss("warning"))
+                self.auto_detail_hint.setText(msg_rich("warning", _detail_hint_copy(
                     "below",
-                    tr("Small {obj} may be missed at this level."), obj))
+                    tr("Small {obj} may be missed at this level."), obj)))
             else:
 
 
@@ -507,7 +551,11 @@ class DockAutoDetailLevelMixin:
                     "recommended",
                     tr("Right level for {obj} in this zone."), obj)))
             return
-        if capped:
+        if capped and top_reason == "cap":
+            self._set_detail_hint_style(_plain_hint)
+            self.auto_detail_hint.setText(_detail_hint_copy("capped_limit", tr(
+                "Finest this zone allows - draw a smaller zone to go finer.")))
+        elif capped:
             self._set_detail_hint_style(_plain_hint)
             self.auto_detail_hint.setText(_detail_hint_copy("capped", tr(
                 "Max precision for this zone - draw a larger zone to go finer.")))

@@ -492,12 +492,13 @@ def toggle_indicator_qss(dock) -> str:
 
 
     import os
-    import tempfile
+
+    from .temp_icon_dirs import make_icon_dir
 
     try:
         icon_dir = getattr(dock, "_checkbox_icon_dir", None)
         if not icon_dir:
-            icon_dir = tempfile.mkdtemp(prefix="qgis_ai_seg_")
+            icon_dir = make_icon_dir("qgis_ai_seg_")
             dock._checkbox_icon_dir = icon_dir
         off_path = os.path.join(icon_dir, "toggle_off.svg").replace("\\", "/")
         on_path = os.path.join(icon_dir, "toggle_on.svg").replace("\\", "/")

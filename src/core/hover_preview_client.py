@@ -152,6 +152,12 @@ def build_preview_body(crop_token: str, col: float, row: float) -> dict:
 
 
 
+
+
+
+
+    from .cloud_sam_predictor import LOW_RES_NAMED
+
     return {
         "crop": None,
         "crop_shape": None,
@@ -163,6 +169,7 @@ def build_preview_body(crop_token: str, col: float, row: float) -> dict:
         "mask_input_shape": None,
         "multimask_output": True,
         "preview": True,
+        "low_res": LOW_RES_NAMED,
     }
 
 
@@ -242,12 +249,17 @@ def read_preview_answer(answer: dict, height: int, width: int):
         if not np.any(mask):
             return None
         score = float(scores[index])
-        return mask, score, _preview_logits_row(answer, index)
+        return mask, score, _preview_logits_row(answer, index, mask)
     except Exception:  # noqa: BLE001
         return None
 
 
-def _preview_logits_row(answer: dict, index: int):
+def _preview_logits_row(answer: dict, index: int, mask=None):
+
+
+
+
+
 
 
 
@@ -255,14 +267,30 @@ def _preview_logits_row(answer: dict, index: int):
 
 
     try:
-        from .cloud_sam_predictor import unpack_float16_payload
+        from .cloud_sam_predictor import (
+            mask_stand_in_logits,
+            note_preview_seed,
+            unpack_float16_payload,
+        )
 
         shape = answer.get("low_res_masks_shape")
         payload = answer.get("low_res_masks")
         if (not isinstance(shape, (list, tuple)) or len(shape) != 3
-                or not isinstance(payload, str) or not payload):
+                or any(isinstance(v, bool) or not isinstance(v, int) for v in shape)):
             return None
-        if any(isinstance(v, bool) or not isinstance(v, int) for v in shape):
+        if payload is None:
+            seed_id = answer.get("seed_id")
+            token = answer.get("crop_token")
+            pick = answer.get("low_res_pick", 0)
+            if (mask is None or not isinstance(seed_id, str) or not seed_id
+                    or not isinstance(token, str) or not token
+                    or isinstance(pick, bool) or pick != index
+                    or shape[0] != 1 or shape[1] != shape[2]):
+                return None
+            stand_in = mask_stand_in_logits(mask, int(shape[1]))
+            note_preview_seed(token, seed_id, stand_in)
+            return stand_in
+        if not isinstance(payload, str) or not payload:
             return None
         dims = tuple(shape)
         if dims[0] != len(answer.get("masks", [])) or not 0 <= index < dims[0]:

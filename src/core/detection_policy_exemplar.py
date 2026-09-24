@@ -63,6 +63,13 @@ def exemplar_stamp_max_px(fallback: int, policy: dict | None = None) -> int:
     return _exemplar_positive_int("stamp_max_px", fallback, policy)
 
 
+def exemplar_single_repeat(fallback: int, policy: dict | None = None) -> int:
+
+
+
+    return min(5, _exemplar_positive_int("single_repeat", fallback, policy))
+
+
 def exemplar_stamp_pad_px(fallback: int, policy: dict | None = None) -> int:
 
     return _exemplar_positive_int("stamp_pad_px", fallback, policy)

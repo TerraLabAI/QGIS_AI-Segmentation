@@ -17,7 +17,7 @@ from qgis.PyQt.QtWidgets import QWidget
 
 from ...core.activation_manager import book_a_call_url
 from ...core.i18n import tr
-from ...core.server_dials import dial_copy
+from ...core.server_dials import dial_copy, feature_enabled
 from ..account_settings_plan import account_balance_lines, resolve_plan_credits
 from ..dock.contact_copy import copy_cta_text
 from ..dock.font_scale import apply_font_scale_to_tree
@@ -63,7 +63,8 @@ class BillingPageMixin:
             cards.add_card(self._billing_plan_card(plan, account_balance_lines(usage, sub)))
             cards.add_card(self._billing_manage_card(plan.is_subscriber, plan.is_subscriber))
             col.addWidget(cards)
-            col.addWidget(self._billing_contact_group(plan.is_subscriber))
+            if feature_enabled("billing_contact_row"):
+                col.addWidget(self._billing_contact_group(plan.is_subscriber))
         else:
 
 

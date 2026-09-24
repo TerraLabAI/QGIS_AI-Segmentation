@@ -72,6 +72,24 @@ _PREFETCH_HOLDOFF_S = 4.0
 _RENDER_SLOW_S = 8.0
 
 
+def _repeat_single_positive(valid: list) -> list:
+
+
+
+
+
+    positives = [v for v in valid if v[0] is not None and v[1] == 1 and not v[4]]
+    if len(positives) != 1:
+        return valid
+    try:
+        from ...core.detection_policy import exemplar_single_repeat  # noqa: PLC0415
+        repeat = exemplar_single_repeat(1)
+    except Exception:  # noqa: BLE001
+        repeat = 1
+    crop, label, obj_box, _full, _region = positives[0]
+    return valid + [(crop, label, obj_box, None, False)] * (repeat - 1)
+
+
 class AutoTileRenderMixin:
 
 
@@ -126,6 +144,7 @@ class AutoTileRenderMixin:
             valid.append((crop, int(label), obj_box, full_box, region))
         if not valid:
             return
+        valid = _repeat_single_positive(valid)
 
 
 
@@ -183,6 +202,9 @@ class AutoTileRenderMixin:
                 local = region_exemplar_box(full_box, tx, ty, tw, th)
                 if local is not None:
                     region_boxes.append((stamp, local))
+                continue
+            if stamp[0] is not None and int(stamp[1]) == 1:
+                paste.append(stamp)
                 continue
             local = in_situ_exemplar_box(full_box, tx, ty, tw, th)
             if local is None:
@@ -300,8 +322,13 @@ class AutoTileRenderMixin:
         width = self._render_window.cap
 
 
+
+
+        limit = 1 if self._render_ramp_pending else width
+
+
         for tile_idx, spec in list(itertools.islice(pending, width)):
-            if len(self._prefetched) >= width:
+            if len(self._prefetched) >= limit:
                 return
             if tile_idx in self._prefetched:
                 continue
@@ -321,6 +348,15 @@ class AutoTileRenderMixin:
             ahead = self._encode_ahead_for_run()
             if ahead is not None and not (out_w and out_h):
                 ahead.expect(seq, tile_idx, tw, th, self._render_ready)
+
+    def _open_render_ramp(self) -> None:
+
+
+
+        self._render_ramp_pending = False
+        pending = self._stream_pending
+        if pending is not None:
+            self._request_render_prefetch(pending)
 
     def _tile_needs_no_render(self, tile_idx: int) -> bool:
 
@@ -406,6 +442,15 @@ class AutoTileRenderMixin:
 
         if self._encode_ahead is not None:
             return self._encode_ahead
+
+
+        enabled = getattr(self, "_encode_ahead_enabled", None)
+        if enabled is None:
+            from ...core.server_dials import feature_enabled
+            enabled = feature_enabled("encode_ahead")
+            self._encode_ahead_enabled = enabled
+        if not enabled:
+            return None
         if self._render_bridge is None or self._stamps or self._stop_requested:
             return None
         try:
@@ -592,6 +637,8 @@ class AutoTileRenderMixin:
                 tile_img = self._render_collect(prefetch_seq)
             else:
                 tile_img = self._tile_renderer(tx, ty, tw, th, out_w, out_h)
+            if self._render_ramp_pending:
+                self._open_render_ramp()
             got_pixels = tile_img is not None and not tile_img.isNull()
             if not got_pixels and self._stop_requested:
 

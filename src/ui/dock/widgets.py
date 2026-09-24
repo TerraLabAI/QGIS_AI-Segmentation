@@ -901,14 +901,15 @@ def checkbox_indicator_qss(dock) -> str:
 
 
     import os
-    import tempfile
+
+    from .temp_icon_dirs import make_icon_dir
 
     sz = 18
     native_only = "QCheckBox { background: transparent; }"
     try:
         icon_dir = getattr(dock, "_checkbox_icon_dir", None)
         if not icon_dir:
-            icon_dir = tempfile.mkdtemp(prefix="qgis_ai_seg_")
+            icon_dir = make_icon_dir("qgis_ai_seg_")
             dock._checkbox_icon_dir = icon_dir
         path_off = os.path.join(icon_dir, "cb_off.svg").replace("\\", "/")
         path_on = os.path.join(icon_dir, "cb_on.svg").replace("\\", "/")

@@ -17,7 +17,6 @@ import math
 
 
 
-
 AUTO_DEFAULT_CONFIDENCE = 0.30
 
 
@@ -108,6 +107,78 @@ AUTO_REVIEW_FILL_HOLES_DEFAULT = True
 
 
 AUTO_REVIEW_FILL_HOLES_MAX_M2_DEFAULT = 50.0
+
+
+
+
+
+
+
+
+
+
+def auto_review_simplify_default() -> float:
+
+    try:
+        from .server_dials import dial_in_range
+
+        return dial_in_range(
+            "tuning.review.simplify_default", AUTO_REVIEW_SIMPLIFY_DEFAULT, 0, 50)
+    except Exception:  # noqa: BLE001  # nosec B110
+        return AUTO_REVIEW_SIMPLIFY_DEFAULT
+
+
+def auto_review_clean_default() -> float:
+
+    try:
+        from .server_dials import dial_in_range
+
+        return dial_in_range(
+            "tuning.review.clean_default", AUTO_REVIEW_CLEAN_DEFAULT, 0, 20)
+    except Exception:  # noqa: BLE001  # nosec B110
+        return AUTO_REVIEW_CLEAN_DEFAULT
+
+
+def auto_review_smooth_default() -> bool:
+
+    try:
+        from .server_dials import dial_bool
+
+        return dial_bool("tuning.review.smooth_default", AUTO_REVIEW_SMOOTH_DEFAULT)
+    except Exception:  # noqa: BLE001  # nosec B110
+        return AUTO_REVIEW_SMOOTH_DEFAULT
+
+
+def auto_review_ortho_default() -> bool:
+
+    try:
+        from .server_dials import dial_bool
+
+        return dial_bool("tuning.review.ortho_default", AUTO_REVIEW_ORTHO_DEFAULT)
+    except Exception:  # noqa: BLE001  # nosec B110
+        return AUTO_REVIEW_ORTHO_DEFAULT
+
+
+def auto_review_expand_default() -> int:
+
+    try:
+        from .server_dials import dial_in_range
+
+        return dial_in_range(
+            "tuning.review.expand_default", AUTO_REVIEW_EXPAND_DEFAULT, -100, 100)
+    except Exception:  # noqa: BLE001  # nosec B110
+        return AUTO_REVIEW_EXPAND_DEFAULT
+
+
+def auto_review_fill_holes_default() -> bool:
+
+    try:
+        from .server_dials import dial_bool
+
+        return dial_bool(
+            "tuning.review.fill_holes_default", AUTO_REVIEW_FILL_HOLES_DEFAULT)
+    except Exception:  # noqa: BLE001  # nosec B110
+        return AUTO_REVIEW_FILL_HOLES_DEFAULT
 
 
 def _fill_holes_floor_m2() -> float:

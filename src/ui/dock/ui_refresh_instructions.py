@@ -42,7 +42,8 @@ def _click_sign_html(kind: str) -> str:
 
     import html
     import os
-    import tempfile
+
+    from .temp_icon_dirs import make_icon_dir
 
     if kind not in _SIGN_URLS:
         from ..canvas_palette import MARKER_NEGATIVE, MARKER_POSITIVE
@@ -51,7 +52,7 @@ def _click_sign_html(kind: str) -> str:
                 f' viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="{colour}"'
                 ' stroke="#ffffff" stroke-opacity="0.85" stroke-width="1.5"/></svg>')
         try:
-            folder = tempfile.mkdtemp(prefix="qgis_ai_seg_sign_")
+            folder = make_icon_dir("qgis_ai_seg_sign_")
             path = os.path.join(folder, f"sign_{kind}.svg")
             with open(path, "w", encoding="utf-8") as handle:
                 handle.write(body)

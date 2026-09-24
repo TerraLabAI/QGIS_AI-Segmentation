@@ -73,8 +73,12 @@ class ShapeFanout:
             self._workers = count
             try:
                 from concurrent.futures import ThreadPoolExecutor
+
+                from ..core.macos_activity import promote_current_thread
+
                 self._pool = ThreadPoolExecutor(
-                    max_workers=count, thread_name_prefix="tl-stitch-shape")
+                    max_workers=count, thread_name_prefix="tl-stitch-shape",
+                    initializer=promote_current_thread)
             except Exception:  # noqa: BLE001
                 logger.warning("ShapeFanout: no pool, shaping in place",
                                exc_info=True)

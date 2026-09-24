@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from .tile_manager import TILE_SIZE
 
 
@@ -198,7 +200,7 @@ def scan_response_masks(response: dict) -> list[tuple[str, float]]:
 
 
 def classify_block(
-    block: list[tuple[int, int, int]],
+    block: Sequence[tuple[int, int, int]],
     response: dict,
     group: int,
     min_score: float,

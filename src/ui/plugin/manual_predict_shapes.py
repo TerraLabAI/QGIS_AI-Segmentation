@@ -150,12 +150,19 @@ class ManualShapeMixin:
             return 0.0
         from ...core.review_defaults import REFINE_SIMPLIFY_MAX_NARROW_FRACTION
 
-        if REFINE_SIMPLIFY_MAX_NARROW_FRACTION <= 0:
+        fraction = REFINE_SIMPLIFY_MAX_NARROW_FRACTION
+        if self._manual_outline_smooth_px() > 0:
+
+
+
+            from ...core.semiauto_outline import SIMPLIFY_MAX_NARROW_FRACTION
+            fraction = SIMPLIFY_MAX_NARROW_FRACTION
+        if fraction <= 0:
             return tolerance
         narrow = narrow_dimension(self, geom)
         if narrow <= 0:
             return tolerance
-        return min(tolerance, REFINE_SIMPLIFY_MAX_NARROW_FRACTION * narrow)
+        return min(tolerance, fraction * narrow)
 
     def _manual_vertex_deviation_cap(self, base_cap_m: float, transform_info,
                                      served_flat_m: float = 0.0,
@@ -388,7 +395,13 @@ class ManualShapeMixin:
                 except Exception:  # noqa: BLE001  # nosec B110
                     pass
         tolerance = self._manual_simplify_tolerance(combined, transform_info)
-        if tolerance > 0:
+        if tolerance > 0 and self._manual_outline_smooth_px() > 0:
+
+
+
+            from ...core.semiauto_outline import simplify_outline
+            combined = simplify_outline(combined, tolerance)
+        elif tolerance > 0:
 
 
 

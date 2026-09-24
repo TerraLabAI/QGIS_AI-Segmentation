@@ -24,7 +24,7 @@ MAX_TILES = 20000
 
 
 
-MAX_TILES_PER_KM2 = 130
+MAX_TILES_PER_KM2 = 420
 
 
 MAX_TILES_FLOOR = 16
@@ -253,7 +253,6 @@ class TileManager:
         limit = min(self.max_tiles, HARD_GRID_LIMIT) if apply_cap else HARD_GRID_LIMIT
         if self.count_grid(image_width, image_height) > limit:
             return None
-
 
 
 

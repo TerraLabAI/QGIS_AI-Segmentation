@@ -60,6 +60,9 @@ BRIDGE_SHAPE = frozenset({
     "destructive_annotations",
 
     "workflow_shapes",
+
+
+    "concise_describe",
 })
 
 PRICING_URL = "https://terra-lab.ai/pricing?utm_source=qgis&utm_medium=agent&utm_campaign=bridge"
@@ -118,7 +121,8 @@ call things in and how to get a good result rather than merely a valid one.
 
 Building tools rather than calling by hand? terralab.describe() gives every
 method with its parameters, types, defaults, and whether it costs money or
-takes minutes. terralab.tools() gives the same thing already shaped as tool
+takes minutes; terralab.describe(detail="concise") is the same at about half
+the length. terralab.tools() gives the same thing already shaped as tool
 definitions, each with the exact line of Python to run.
 
 If you are calling this through a code-execution tool, two habits save you a
@@ -175,17 +179,19 @@ _SEGMENTATION_CARD = {
         ),
         "find_every_object_in_a_zone": (
             "import terralab; print(terralab.segmentation.detect_auto("
-            "zone_wkt='Polygon ((...))', object_class='building'))"
+            "zone_wkt='Polygon ((...))', object_class='building', wait=False))"
+            "  # returns at once with a run_id"
         ),
         "poll_a_running_zone_run": (
-            "import terralab; print(terralab.segmentation.auto_detect_status())"
+            "import terralab; print(terralab.segmentation.auto_detect_status("
+            "wait_s=45))  # returns as soon as the run ends, or after 45 s"
         ),
     },
     "costs": (
-        "A zone run is billed by area and can take a few minutes, during which "
-        "QGIS stays busy. Never retry a run that seems slow: the first one is "
-        "still going and a second one costs the user again. Poll "
-        "auto_detect_status() instead."
+        "A zone run is billed by area and can take many minutes. Start it with "
+        "wait=False and wait on it with auto_detect_status(wait_s=45), one "
+        "call per 45 s. Never retry a run that seems slow: the first one is "
+        "still going and a second one costs the user again."
     ),
     "plan": _PRO_LINE_TEMPLATE.format(url=PRICING_URL),
 }
@@ -315,7 +321,7 @@ def _new_module() -> types.ModuleType:
     module.capabilities = lambda: _capabilities(module)
     module.help = lambda: _help_text(module)
     module.guide = lambda slot=None: _guide_text(module, slot)
-    module.describe = lambda slot=None: _describe(module, slot)
+    module.describe = lambda slot=None, detail="full": _describe(module, slot, detail)
     module.tools = lambda slot=None: _tools(module, slot)
     return module
 
@@ -325,12 +331,18 @@ def _new_module() -> types.ModuleType:
 
 
 
-def _describe(module: types.ModuleType, slot: str | None = None) -> dict:
+def _describe(module: types.ModuleType, slot: str | None = None,
+              detail: str = "full") -> dict:
     schema = _schema_module()
     if schema is None:
         return {"_error": (
             "This build cannot describe itself. Read terralab.capabilities() "
             "for the method names, and call help(handle) for the rest.")}
+    levels = getattr(schema, "DESCRIBE_DETAIL_LEVELS", ("full",))
+    if detail not in levels:
+        return {"_error": (
+            f"detail must be one of {', '.join(repr(v) for v in levels)}, "
+            f"got {detail!r}.")}
     wanted = _slots_to_read(module, slot)
     if isinstance(wanted, dict):
         return wanted
@@ -340,7 +352,9 @@ def _describe(module: types.ModuleType, slot: str | None = None) -> dict:
         if handle is None:
             continue
         try:
-            out["products"][name] = schema.describe_api(handle)
+            out["products"][name] = (
+                schema.describe_api(handle, detail=detail) if detail != "full"
+                else schema.describe_api(handle))
         except Exception as err:  # noqa: BLE001
             out["products"][name] = {"available": False, "_error": str(err)}
     return out

@@ -22,6 +22,24 @@ RANDOM_MODE_LIGHTNESS = 0.55
 RANDOM_MODE_HUE_STEP = 360.0 / RANDOM_MODE_BUCKETS
 
 
+def _random_mode_style() -> tuple[int, float, float, float]:
+
+
+
+    try:
+        from ...core.server_dials import dial_in_range
+        buckets = int(dial_in_range(
+            "tuning.review.random_mode_buckets", RANDOM_MODE_BUCKETS, 8, 120))
+        saturation = dial_in_range(
+            "tuning.review.random_mode_saturation", RANDOM_MODE_SATURATION, 0.0, 1.0)
+        lightness = dial_in_range(
+            "tuning.review.random_mode_lightness", RANDOM_MODE_LIGHTNESS, 0.0, 1.0)
+    except Exception:  # noqa: BLE001
+        buckets, saturation, lightness = (
+            RANDOM_MODE_BUCKETS, RANDOM_MODE_SATURATION, RANDOM_MODE_LIGHTNESS)
+    return buckets, 360.0 / buckets, saturation, lightness
+
+
 def random_mode_fill_expression() -> str:
 
 
@@ -32,11 +50,12 @@ def random_mode_fill_expression() -> str:
 
 
 
+    buckets, hue_step, saturation, lightness = _random_mode_style()
     bucket = ('(to_int(abs(coalesce("det_id", $id))) * 67)'
-              f" % {RANDOM_MODE_BUCKETS}")
-    return (f"color_hsla(floor(({bucket}) * {RANDOM_MODE_HUE_STEP}),"
-            f" {round(RANDOM_MODE_SATURATION * 100)},"
-            f" {round(RANDOM_MODE_LIGHTNESS * 100)}, 205)")
+              f" % {buckets}")
+    return (f"color_hsla(floor(({bucket}) * {hue_step}),"
+            f" {round(saturation * 100)},"
+            f" {round(lightness * 100)}, 205)")
 
 
 class AutoReviewDisplayMixin:
@@ -75,7 +94,8 @@ class AutoReviewDisplayMixin:
         except (RuntimeError, AttributeError, ImportError):
             pass
 
-    def _random_hue_symbol(self, hue: int):
+    def _random_hue_symbol(self, hue: int, saturation: float = RANDOM_MODE_SATURATION,
+                           lightness: float = RANDOM_MODE_LIGHTNESS):
 
 
 
@@ -84,8 +104,7 @@ class AutoReviewDisplayMixin:
 
         from qgis.core import QgsFillSymbol
         from qgis.PyQt.QtGui import QColor
-        c = QColor.fromHslF(
-            (hue % 360) / 360.0, RANDOM_MODE_SATURATION, RANDOM_MODE_LIGHTNESS)
+        c = QColor.fromHslF((hue % 360) / 360.0, saturation, lightness)
         symbol = QgsFillSymbol.createSimple({
             "color": f"{c.red()},{c.green()},{c.blue()},205",
             "outline_color": "20,20,20,200",
@@ -148,15 +167,16 @@ class AutoReviewDisplayMixin:
 
 
         from qgis.core import QgsCategorizedSymbolRenderer, QgsRendererCategory
+        buckets, hue_step, saturation, lightness = _random_mode_style()
         cats = [
             QgsRendererCategory(
-                i, self._random_hue_symbol(int(i * RANDOM_MODE_HUE_STEP)), str(i))
-            for i in range(RANDOM_MODE_BUCKETS)
+                i, self._random_hue_symbol(int(i * hue_step), saturation, lightness), str(i))
+            for i in range(buckets)
         ]
         cats.append(QgsRendererCategory(
-            None, self._random_hue_symbol(0), "", True))
+            None, self._random_hue_symbol(0, saturation, lightness), "", True))
         layer.setRenderer(QgsCategorizedSymbolRenderer(
-            f'(to_int(abs("det_id")) * 67) % {RANDOM_MODE_BUCKETS}', cats))
+            f'(to_int(abs("det_id")) * 67) % {buckets}', cats))
 
     def _apply_random_renderer_editing(self, layer) -> None:
 

@@ -110,9 +110,15 @@ def clip_served_hint(text: str) -> str:
 
 
     text = (text or "").strip()
-    if len(text) <= SERVED_HINT_MAX_CHARS:
+    try:
+        from ...core.server_dials import dial_in_range
+        max_chars = int(dial_in_range(
+            "tuning.ui.served_hint_max_chars", SERVED_HINT_MAX_CHARS, 80, 500))
+    except Exception:  # noqa: BLE001
+        max_chars = SERVED_HINT_MAX_CHARS
+    if len(text) <= max_chars:
         return text
-    head = text[:SERVED_HINT_MAX_CHARS]
+    head = text[:max_chars]
     cut = head.rfind(" ")
     return (head[:cut] if cut > 0 else head).rstrip(" ,;:.") + "..."
 
@@ -380,8 +386,6 @@ _RECALL_FLOOR = 0.10
 
 
 
-
-
 _RECALL_FLOOR_EXEMPLAR_ONLY = 0.20
 
 
@@ -509,9 +513,39 @@ def _notify_provider_write(layer) -> None:
 
 
 
+
+
+
+
+
+
+
+    wait_for_snapping_index(layer)
     try:
         layer.dataChanged.emit()
     except (RuntimeError, AttributeError):
+        pass
+
+
+def wait_for_snapping_index(layer) -> None:
+
+
+
+
+
+
+
+
+    try:
+        from qgis.utils import iface
+
+        utils = iface.mapCanvas().snappingUtils() if iface is not None else None
+        if utils is None:
+            return
+        locator = utils.locatorForLayer(layer)
+        if locator is not None and locator.isIndexing():
+            locator.waitForIndexingFinished()
+    except Exception:  # noqa: BLE001  # nosec B110
         pass
 
 

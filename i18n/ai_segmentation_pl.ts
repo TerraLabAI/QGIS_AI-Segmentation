@@ -6747,5 +6747,53 @@ Niższa wartość najpierw upraszcza najdrobniejsze szczegóły, zachowując nar
         <source>{plan} · {status}</source>
         <translation>{plan} · {status}</translation>
     </message>
+    <message>
+        <source>Layer</source>
+        <translation>Warstwa</translation>
+    </message>
+    <message>
+        <source>No polygon layer in this project</source>
+        <translation>Brak warstwy poligonowej w tym projekcie</translation>
+    </message>
+    <message>
+        <source>Or use an existing zone</source>
+        <translation>Lub użyj istniejącej strefy</translation>
+    </message>
+    <message>
+        <source>Saving... {pct}%</source>
+        <translation>Zapisywanie... {pct}%</translation>
+    </message>
+    <message>
+        <source>Signed in (from {}).</source>
+        <translation>Zalogowano (z {}).</translation>
+    </message>
+    <message>
+        <source>Signed in as {} (from {}).</source>
+        <translation>Zalogowano jako {} (z {}).</translation>
+    </message>
+    <message>
+        <source>Take the zone from a layer or a selection</source>
+        <translation>Pobierz strefę z warstwy lub zaznaczenia</translation>
+    </message>
+    <message>
+        <source>That zone cannot be moved onto this map. Draw it instead.</source>
+        <translation>Tej strefy nie można przenieść na tę mapę. Narysuj ją zamiast tego.</translation>
+    </message>
+    <message>
+        <source>That zone is empty. Pick another one.</source>
+        <translation>Ta strefa jest pusta. Wybierz inną.</translation>
+    </message>
+    <message>
+        <source>Use this zone</source>
+        <translation>Użyj tej strefy</translation>
+    </message>
+    <message>
+        <source>Zone of interest</source>
+        <translation>Strefa zainteresowania</translation>
+    </message>
+    <message>
+        <source>{name}, {n} selected</source>
+        <translation>{name}, {n} zaznaczono</translation>
+    </message>
 </context>
 </TS>

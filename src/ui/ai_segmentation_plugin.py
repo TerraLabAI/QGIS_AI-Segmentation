@@ -35,8 +35,10 @@ from .ai_segmentation_dockwidget import AISegmentationDockWidget
 from .ai_segmentation_maptool import AISegmentationMapTool
 from .plugin.auto_autosave_offload import AutoAutosaveOffloadMixin
 from .plugin.auto_correct import AutoCorrectMixin
+from .plugin.auto_density_probe import AutoDensityProbeMixin
 from .plugin.auto_detail_window import AutoDetailWindowMixin
 from .plugin.auto_exemplar_grouping import AutoExemplarGroupingMixin
+from .plugin.auto_export_offload import AutoExportOffloadMixin
 from .plugin.auto_finalize_steps import AutoFinalizeStepsMixin
 from .plugin.auto_flow import AutoFlowMixin
 from .plugin.auto_grid_fill import AutoGridFillMixin
@@ -52,8 +54,10 @@ from .plugin.auto_review_open import AutoReviewOpenMixin
 from .plugin.auto_review_params import AutoReviewParamsMixin
 from .plugin.auto_run import AutoRunMixin
 from .plugin.auto_run_terminal import AutoRunTerminalMixin
+from .plugin.auto_server_finalize import AutoServerFinalizeMixin
 from .plugin.auto_shape_edit import AutoShapeEditMixin
 from .plugin.auto_shape_overrides import AutoShapeOverridesMixin
+from .plugin.auto_tile_plan import AutoTilePlanMixin
 from .plugin.auto_zone import AutoZoneMixin
 from .plugin.bridge_isolation import BridgeIsolationMixin
 from .plugin.correct_ai_route import CorrectAiRouteMixin
@@ -90,6 +94,8 @@ class AISegmentationPlugin(
     AutoCreditsWatchMixin,
     AutoDetailWindowMixin,
     AutoGridFillMixin,
+    AutoTilePlanMixin,
+    AutoDensityProbeMixin,
     AutoCorrectMixin,
     LocalAiWarmMixin,
     LocalAiInstallLockMixin,
@@ -107,8 +113,10 @@ class AISegmentationPlugin(
     AutoReviewDisplayMixin,
     HandoffSeedLayersMixin,
     AutoRunTerminalMixin,
+    AutoServerFinalizeMixin,
     AutoExemplarGroupingMixin,
     AutoAutosaveOffloadMixin,
+    AutoExportOffloadMixin,
     AutoObjectBuildMixin,
     AutoReviewParamsMixin,
     AutoReviewGeometryMixin,
@@ -518,6 +526,13 @@ class AISegmentationPlugin(
         self._auto_run_plan: dict | None = None
         self._auto_run_plan_task = None
 
+        self._auto_run_plan_task_prompt = ""
+
+
+        self._auto_plan_detect_wait: dict | None = None
+        self._auto_plan_detect_generation = 0
+        self._auto_plan_detect_resumed = False
+
 
 
 
@@ -601,6 +616,14 @@ class AISegmentationPlugin(
 
 
         self._auto_autosave_thread = None
+
+
+        self._auto_export_job = None
+
+
+
+        self._auto_imagery_probe = None
+        self._auto_imagery_resume = None
         self._auto_repaint_timer = None
 
 
@@ -678,6 +701,33 @@ class AISegmentationPlugin(
                 "running", "AI Segmentation", level=Qgis.MessageLevel.Info)
             return
         self._unload_deferred = False
+
+
+
+        if self.dock_widget is not None:
+            try:
+                self.dock_widget.stop_dock_content_build()
+            except (RuntimeError, AttributeError):
+                pass
+
+        try:
+            from ..core import sibling_sign_in
+            sibling_sign_in.cancel("ai-segmentation")
+        except Exception:  # noqa: BLE001
+            pass  # nosec B110
+
+
+
+        try:
+            self._finish_auto_review_export_offload()
+        except Exception:  # noqa: BLE001
+            pass  # nosec B110
+
+
+        try:
+            self._abandon_imagery_probe()
+        except Exception:  # noqa: BLE001
+            pass  # nosec B110
 
 
 
@@ -878,7 +928,6 @@ class AISegmentationPlugin(
 
             try:
                 _dock_signals = [
-                    (self.dock_widget.layer_combo.layerChanged, self._on_layer_combo_changed),
                     (self.dock_widget.manual_engine_changed, self._on_manual_engine_changed),
                     (self.dock_widget.install_requested, self._on_install_requested),
                     (self.dock_widget.cancel_install_requested, self._on_cancel_install),
@@ -905,12 +954,12 @@ class AISegmentationPlugin(
                     (self.dock_widget.history_reuse_prompt_requested,
                      self._on_history_reuse_prompt_requested),
                     (self.dock_widget.zone_draw_requested, self._on_zone_draw_requested),
+                    (self.dock_widget.auto_zone_source_picked,
+                     self._on_auto_zone_source_picked),
                     (self.dock_widget.auto_step_changed, self._on_auto_step_changed),
                     (self.dock_widget.auto_detail_changed, self._on_auto_detail_changed),
                     (self.dock_widget.auto_advanced_toggled, self._on_auto_advanced_toggled),
                     (self.dock_widget.auto_prompt_committed, self._reseed_auto_detail_for_object),
-                    (self.dock_widget.auto_layer_combo.layerChanged, self._on_auto_layer_combo_changed),
-                    (self.dock_widget.auto_cancel_btn.clicked, self._on_auto_cancel_clicked),
                     (self.dock_widget.auto_refine_changed, self._on_auto_refine_changed_debounced),
                     (self.dock_widget.auto_export_requested, self._on_auto_export_clicked),
                     (self.dock_widget.auto_retry_requested, self._on_auto_retry_guarded),
@@ -931,8 +980,6 @@ class AISegmentationPlugin(
                     (self.dock_widget.auto_zero_assist_clicked, self._on_auto_zero_assist_clicked),
                     (self.dock_widget.auto_escape_pressed, self._on_auto_escape_shortcut),
                     (self.dock_widget.auto_enter_pressed, self._on_auto_enter_pressed),
-                    (self.dock_widget.auto_correct_undo_shortcut.activated,
-                     self._on_auto_undo_pressed),
                     (self.dock_widget.auto_review_confidence_changed, self._on_auto_review_confidence_changed),
                     (self.dock_widget.auto_review_confidence_preview, self._on_auto_review_confidence_preview),
                     (self.dock_widget.auto_show_tiles_changed, self._on_auto_show_tiles_toggled),
@@ -969,6 +1016,17 @@ class AISegmentationPlugin(
                     (self.dock_widget.auto_shape_only_reset_requested,
                      self._on_shape_only_reset),
                 ]
+
+
+                if self.dock_widget.dock_content_built:
+                    _dock_signals += [
+                        (self.dock_widget.layer_combo.layerChanged, self._on_layer_combo_changed),
+                        (self.dock_widget.auto_layer_combo.layerChanged,
+                         self._on_auto_layer_combo_changed),
+                        (self.dock_widget.auto_cancel_btn.clicked, self._on_auto_cancel_clicked),
+                        (self.dock_widget.auto_correct_undo_shortcut.activated,
+                         self._on_auto_undo_pressed),
+                    ]
             except (TypeError, RuntimeError, AttributeError):
                 _dock_signals = []
             for sig, slot in _dock_signals:
@@ -1059,6 +1117,7 @@ class AISegmentationPlugin(
         self._cancel_task("_catalog_prefetch_task")
         self._cancel_task("_usage_fetch_task")
         self._cancel_task("_warmup_task")
+        self._auto_plan_detect_wait = None
         self._cancel_task("_auto_run_plan_task")
         self._cancel_task("_auto_token_task")
         self._cancel_manual_charge_tasks()
@@ -1213,6 +1272,15 @@ class AISegmentationPlugin(
 
 
 
+        parked_drop = getattr(self, "_pending_autosave_drop", None)
+        if parked_drop is not None:
+            try:
+                parked_drop()
+            except Exception:  # noqa: BLE001
+                pass  # nosec B110
+
+
+
 
 
         try:
@@ -1239,6 +1307,12 @@ class AISegmentationPlugin(
                 pass
             detach_widget_from_main_window(self.dock_widget)
             self.dock_widget = None
+
+        try:
+            from .dock.temp_icon_dirs import remove_icon_dirs
+            remove_icon_dirs()
+        except Exception:  # noqa: BLE001
+            pass  # nosec B110
 
 
 
@@ -1391,6 +1465,23 @@ class AISegmentationPlugin(
 
         self.dock_widget = AISegmentationDockWidget(self.iface.mainWindow())
 
+
+
+
+
+        def _wire_dock_children():
+            self.dock_widget.layer_combo.layerChanged.connect(self._on_layer_combo_changed)
+            self.dock_widget.auto_layer_combo.layerChanged.connect(
+                self._on_auto_layer_combo_changed)
+
+            self.dock_widget.auto_cancel_btn.clicked.connect(self._on_auto_cancel_clicked)
+
+
+
+
+            self.dock_widget.auto_correct_undo_shortcut.activated.connect(
+                self._on_auto_undo_pressed)
+
         self.dock_widget.manual_engine_changed.connect(
             self._on_manual_engine_changed)
         self.dock_widget.install_requested.connect(self._on_install_requested)
@@ -1412,7 +1503,6 @@ class AISegmentationPlugin(
         self.dock_widget.settings_clicked.connect(self._on_settings_clicked)
         self.dock_widget.pairing_requested.connect(self._on_pairing_requested)
         self.dock_widget.pairing_cancel_requested.connect(self._on_cancel_pairing)
-        self.dock_widget.layer_combo.layerChanged.connect(self._on_layer_combo_changed)
         self.dock_widget.mode_changed.connect(self._on_mode_changed)
         self.dock_widget.auto_detect_requested.connect(self._on_auto_detect_requested)
         self.dock_widget.auto_library_requested.connect(self._on_auto_library_clicked)
@@ -1421,14 +1511,13 @@ class AISegmentationPlugin(
         self.dock_widget.history_reuse_prompt_requested.connect(
             self._on_history_reuse_prompt_requested)
         self.dock_widget.zone_draw_requested.connect(self._on_zone_draw_requested)
+
+        self.dock_widget.auto_zone_source_picked.connect(
+            self._on_auto_zone_source_picked)
         self.dock_widget.auto_step_changed.connect(self._on_auto_step_changed)
         self.dock_widget.auto_detail_changed.connect(self._on_auto_detail_changed)
         self.dock_widget.auto_advanced_toggled.connect(self._on_auto_advanced_toggled)
         self.dock_widget.auto_prompt_committed.connect(self._reseed_auto_detail_for_object)
-        self.dock_widget.auto_layer_combo.layerChanged.connect(
-            self._on_auto_layer_combo_changed)
-
-        self.dock_widget.auto_cancel_btn.clicked.connect(self._on_auto_cancel_clicked)
 
         self.dock_widget.auto_refine_changed.connect(self._on_auto_refine_changed_debounced)
         self.dock_widget.auto_export_requested.connect(self._on_auto_export_clicked)
@@ -1456,12 +1545,6 @@ class AISegmentationPlugin(
         self.dock_widget.auto_zero_assist_clicked.connect(self._on_auto_zero_assist_clicked)
         self.dock_widget.auto_escape_pressed.connect(self._on_auto_escape_shortcut)
         self.dock_widget.auto_enter_pressed.connect(self._on_auto_enter_pressed)
-
-
-
-
-        self.dock_widget.auto_correct_undo_shortcut.activated.connect(
-            self._on_auto_undo_pressed)
         self.dock_widget.auto_review_confidence_changed.connect(
             self._on_auto_review_confidence_changed)
         self.dock_widget.auto_review_confidence_preview.connect(
@@ -1495,6 +1578,7 @@ class AISegmentationPlugin(
                 self.delete_bridge_target_polygon)
         except (AttributeError, RuntimeError):
             pass
+        self.dock_widget.when_dock_content_built(_wire_dock_children)
 
 
 

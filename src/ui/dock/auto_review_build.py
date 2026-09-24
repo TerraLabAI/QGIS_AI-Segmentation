@@ -37,6 +37,7 @@ from .auto_correct_build import _REVIEW_HEADING_QSS
 from .auto_flow_look import (
     _BTN_AUTO_QUIET,
     TaskDisc,
+    name_unlabelled_controls,
     repolish_widget,
     toggle_indicator_qss,
     token_qcolor,
@@ -167,7 +168,21 @@ def _export_btn_label(n: int) -> str:
 class DockAutoReviewBuildMixin:
 
 
-    def _setup_auto_review_panel(self, parent_layout):
+    def _build_deferred_review_panel(self, parent_layout, after_widget) -> None:
+
+
+
+
+
+
+
+        self._setup_auto_review_panel(
+            parent_layout, parent_layout.indexOf(after_widget) + 1)
+        name_unlabelled_controls(self.auto_review_panel)
+        self._setup_auto_review_view_block(self.main_layout)
+        self._finish_dock_part(self.auto_review_panel)
+
+    def _setup_auto_review_panel(self, parent_layout, index: int = -1):
 
 
 
@@ -376,7 +391,7 @@ class DockAutoReviewBuildMixin:
 
         self._auto_review_column_layout = _review_layout
 
-        parent_layout.addWidget(self.auto_review_panel)
+        parent_layout.insertWidget(index, self.auto_review_panel)
 
     def _setup_auto_review_view_block(self, parent_layout):
 

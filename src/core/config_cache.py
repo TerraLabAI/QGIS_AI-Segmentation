@@ -77,7 +77,30 @@ class _Snapshot(NamedTuple):
     source: str
 
 
+
+
+    etag: str | None = None
+
+
 _EMPTY = _Snapshot({}, None, SOURCE_NONE)
+
+
+
+_ETAG_MAX_CHARS = 300
+
+
+def _sanitize_etag(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if not value or len(value) > _ETAG_MAX_CHARS:
+        return None
+
+
+    if any(ord(ch) < 32 for ch in value):
+        return None
+    return value
+
 
 
 
@@ -120,7 +143,10 @@ def _move_config_into_place(tmp_path: str, path: str) -> None:
             time.sleep(_REPLACE_DELAY_S)
 
 
-def save_config(config: dict) -> bool:
+def save_config(config: dict, etag: str | None = None) -> bool:
+
+
+
 
 
 
@@ -134,10 +160,11 @@ def save_config(config: dict) -> bool:
     tmp_path = None
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        payload = json.dumps(
-            {"source": _FILE_SOURCE, "fetched_at": time.time(), "config": config},
-            allow_nan=False,
-        )
+        payload_obj = {"source": _FILE_SOURCE, "fetched_at": time.time(), "config": config}
+        clean_etag = _sanitize_etag(etag)
+        if clean_etag:
+            payload_obj["etag"] = clean_etag
+        payload = json.dumps(payload_obj, allow_nan=False)
         if len(payload.encode("utf-8")) > _MAX_BYTES:
             return False
         handle, tmp_path = tempfile.mkstemp(
@@ -227,7 +254,7 @@ def _without_code_execution_dials(config: dict) -> dict:
     return out
 
 
-def load_config() -> tuple[dict, float | None]:
+def load_config() -> tuple[dict, float | None, str | None]:
 
 
 
@@ -241,23 +268,23 @@ def load_config() -> tuple[dict, float | None]:
     path = config_cache_path()
     try:
         if not os.path.isfile(path) or os.path.getsize(path) > _MAX_BYTES:
-            return {}, None
+            return {}, None, None
         with open(path, "rb") as fh:
             payload = fh.read(_MAX_BYTES + 1)
         if len(payload) > _MAX_BYTES:
-            return {}, None
+            return {}, None, None
 
         def reject_constant(value):
             raise ValueError(f"Non-finite configuration number: {value}")
 
         data = json.loads(payload, parse_constant=reject_constant)
     except Exception:  # noqa: BLE001  # nosec B110
-        return {}, None
+        return {}, None, None
     if not isinstance(data, dict) or data.get("source") != _FILE_SOURCE:
-        return {}, None
+        return {}, None, None
     config = data.get("config")
     if not isinstance(config, dict) or not config:
-        return {}, None
+        return {}, None, None
     fetched_at = data.get("fetched_at")
     if isinstance(fetched_at, int) and fetched_at.bit_length() > 64:
         fetched_at = None
@@ -265,8 +292,9 @@ def load_config() -> tuple[dict, float | None]:
             or not math.isfinite(fetched_at) or fetched_at > time.time()):
         fetched_at = None
     elif time.time() - float(fetched_at) > _MAX_DISK_AGE_S:
-        return {}, None
-    return _without_code_execution_dials(_without_kill_switches(config)), fetched_at
+        return {}, None, None
+    etag = _sanitize_etag(data.get("etag"))
+    return _without_code_execution_dials(_without_kill_switches(config)), fetched_at, etag
 
 
 def clear_config() -> None:
@@ -365,7 +393,7 @@ def prime_from_disk() -> bool:
     if initial.source != SOURCE_NONE:
         return False
     try:
-        config, fetched_at = load_config()
+        config, fetched_at, etag = load_config()
         resolved = _resolve_with_override(config)
     except Exception:  # noqa: BLE001  # nosec B110
         return False
@@ -374,11 +402,18 @@ def prime_from_disk() -> bool:
     with _publish_lock:
         if _state is not initial:
             return False
-        _state = _Snapshot(resolved, fetched_at, SOURCE_DISK)
+        _state = _Snapshot(resolved, fetched_at, SOURCE_DISK, etag)
         return True
 
 
-def set_config(config: dict) -> None:
+def set_config(config: dict, etag: str | None = None) -> None:
+
+
+
+
+
+
+
 
 
 
@@ -399,8 +434,54 @@ def set_config(config: dict) -> None:
             resolved = _resolve_with_override(owned)
         except Exception:  # noqa: BLE001
             resolved = owned
-        _state = _Snapshot(resolved, time.time(), SOURCE_LIVE)
-        save_config(owned)
+        resolved_etag = _sanitize_etag(etag) if etag is not None else _state.etag
+        _state = _Snapshot(resolved, time.time(), SOURCE_LIVE, resolved_etag)
+        try:
+            save_config(owned, resolved_etag)
+        except TypeError:
+
+
+
+
+            save_config(owned)
+
+
+def config_etag() -> str | None:
+
+
+
+
+
+
+
+
+
+
+
+
+
+    state = _state
+    return state.etag if state.source == SOURCE_LIVE else None
+
+
+def remember_etag(etag: str | None) -> None:
+
+
+
+
+
+
+
+
+
+
+
+    global _state
+    clean = _sanitize_etag(etag)
+    if clean is None:
+        return
+    with _publish_lock:
+        _state = _state._replace(etag=clean)
 
 
 def get_config() -> dict:

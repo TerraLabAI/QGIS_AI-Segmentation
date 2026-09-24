@@ -23,6 +23,7 @@ from qgis.PyQt.QtWidgets import (
 from ...core.activation_manager import get_privacy_url, get_terms_url
 from ...core.i18n import tr
 from ...core.qt_compat import safe_single_shot
+from ...core.server_dials import dial_in_range, feature_enabled
 from ..dock.font_scale import scale_px_length, scale_qss_font_px
 from ..dock.styles import (
     _BTN_SETTINGS_RAIL_CTA,
@@ -378,7 +379,8 @@ class SettingsSidebarMixin:
                       scale_px_length(26))
             hint.raise_()
             hint.show()
-            self._saved_timer.start(_SAVED_HINT_MS)
+            self._saved_timer.start(
+                dial_in_range("tuning.ui.saved_hint_ms", _SAVED_HINT_MS, 800, 4000))
         except RuntimeError:
             pass  # nosec B110
 
@@ -393,7 +395,7 @@ class SettingsSidebarMixin:
     def _sync_upgrade_pill(self, free_account: bool) -> None:
         pill = getattr(self, "_upgrade_pill", None)
         if pill is not None:
-            pill.setVisible(bool(free_account))
+            pill.setVisible(bool(free_account) and feature_enabled("rail_pro_pill"))
 
 
 __all__ = ["SETTINGS_PRODUCT_URL", "SettingsSidebarMixin"]

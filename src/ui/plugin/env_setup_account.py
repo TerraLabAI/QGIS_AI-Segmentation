@@ -400,6 +400,8 @@ class EnvSetupAccountMixin:
 
         self._end_manual_credit_session()
 
+        self._refresh_config_for_account_change()
+
 
 
 

@@ -69,14 +69,18 @@ def agent_workflow_steps() -> list[dict]:
             "call": "detect_auto",
             "why": "Automatic route. Name a class and a zone, get every "
                    "instance. Pass confidence and refine here rather than "
-                   "adjusting anything afterwards.",
+                   "adjusting anything afterwards, and wait=False for any "
+                   "zone of size: it answers at once with a run_id. "
+                   "set_auto_zone quotes the surface first, for free.",
             "optional": True,
         },
         {
             "step": 7,
             "call": "auto_detect_status",
-            "why": "Poll a zone run instead of starting a second one. A run "
-                   "that looks stuck is usually still working.",
+            "why": "Wait for a zone run with wait_s=45: each call returns as "
+                   "soon as the run ends, or after 45 s. Never start a second "
+                   "run instead; a run that looks stuck is usually still "
+                   "working.",
             "optional": True,
         },
         {
@@ -84,7 +88,8 @@ def agent_workflow_steps() -> list[dict]:
             "call": "review_status",
             "why": "Only when a person left a finished run open in the panel. "
                    "A run started from this API saves itself and leaves no "
-                   "review to adjust.",
+                   "review to adjust. review_objects lists the objects with "
+                   "the indexes the corrections take.",
             "optional": True,
         },
     ]
@@ -141,8 +146,10 @@ def agent_method_notes() -> dict[str, dict]:
             "summary": "Sweeps a zone for every instance of a class. Minutes.",
         },
         "set_auto_zone": dict(
-            fast_free, needs_raster=True, summary="Set the zone for the panel."),
-        "auto_detect_status": dict(fast_free, summary="Poll a running zone run."),
+            fast_free, needs_raster=True,
+            summary="Set the zone and quote its km2, rough duration and allowance."),
+        "auto_detect_status": dict(
+            fast_free, summary="Poll a zone run, or wait up to 50 s for its end."),
         "cancel_auto": dict(
             fast_free, summary="Stop a run, keeping what it already produced."),
         "export_polygon": dict(
@@ -157,6 +164,9 @@ def agent_method_notes() -> dict[str, dict]:
         "apply_refine": dict(
             fast_free, summary="Reshape the objects of an open review."),
         "review_status": dict(fast_free, summary="What an open review holds."),
+        "review_objects": dict(
+            fast_free,
+            summary="List an open review's objects with their indexes, a page at a time."),
         "review_filter": dict(
             fast_free, summary="Re-filter an open review by confidence and size."),
         "set_display_mode": dict(fast_free, summary="Recolour an open review."),
@@ -190,8 +200,13 @@ ORDER OF CALLS
    it. Do not guess past it.
 2. load_model() only if the status says the model is not loaded.
 3. Then detect_points() for one object, or detect_auto() for a whole zone.
-4. Poll a zone run with auto_detect_status(). Never start a second run because
-   the first looks slow. The first is still going and the second costs again.
+   set_auto_zone() first quotes a zone's surface and the allowance left, free.
+4. Start any zone of size with detect_auto(..., wait=False). It answers at once
+   with a run_id. Then call auto_detect_status(run_id=..., wait_s=45) until
+   running and finishing are both False: each call returns the moment the run
+   ends, or after 45 s. A quarter-hour sweep is about twenty calls. Never start
+   a second run because the first looks slow. The first is still going and the
+   second costs again.
 
 INTERACTIVE: POINTS
 Put the first point near the middle of the object, not on its edge.
@@ -201,6 +216,8 @@ missed. Two or three points settle almost every shape. Ten do not fix what two
 could not.
 Each saved object counts against the account when the work runs in the cloud.
 Work done on the user's own computer costs nothing.
+Pass response_format="concise" to get the saved outline's box, area and vertex
+count instead of its full WKT, which runs to kilobytes per object.
 
 AUTOMATIC: THE WORD YOU PASS
 Do not guess the word. Call list_object_classes() first: it returns every
@@ -264,7 +281,8 @@ Simplify a hand-sized outline gently, a field boundary harder.
 CORRECTING WHAT CAME BACK
 When a person leaves a finished run open in the panel, this API can adjust it:
 change the confidence, recolour it, drop an object, join several into one, and
-undo any of that. A run started from this API saves itself immediately, so
+undo any of that. review_objects() lists the objects, a page at a time, with
+the index each correction takes, their score, size and place. A run started from this API saves itself immediately, so
 there is nothing left open to adjust. Decide before the run, not after.
 
 WHAT THIS API WILL NOT DO

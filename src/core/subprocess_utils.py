@@ -4,6 +4,7 @@ import functools
 import os
 import subprocess  # nosec B404
 import sys
+from typing import Any
 
 
 def _sits_inside(path: str, directory: str) -> bool:
@@ -195,7 +196,7 @@ def get_clean_env_for_venv() -> dict:
 
 def get_subprocess_kwargs() -> dict:
 
-    kwargs = {}
+    kwargs: dict[str, Any] = {}
     if sys.platform == "win32":
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
@@ -212,10 +213,13 @@ def _taskkill_tree(pid: int) -> bool:
     if not os.path.isfile(taskkill):
         return False
     try:
+        from .server_dials import dial_in_range
+        taskkill_timeout_s = dial_in_range(
+            "tuning.install.taskkill_timeout_s", 15, 5, 60)
         result = subprocess.run(  # nosec B603
             [taskkill, "/T", "/F", "/PID", str(int(pid))],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, timeout=15, check=False,
+            stderr=subprocess.DEVNULL, timeout=taskkill_timeout_s, check=False,
             **get_subprocess_kwargs(),
         )
     except (OSError, subprocess.SubprocessError, ValueError):
@@ -223,7 +227,10 @@ def _taskkill_tree(pid: int) -> bool:
     return result.returncode == 0
 
 
-def stop_process_tree(process, grace: float = 10.0, hard: float = 5.0) -> bool:
+def stop_process_tree(process, grace: float | None = None, hard: float | None = None) -> bool:
+
+
+
 
 
 
@@ -235,6 +242,12 @@ def stop_process_tree(process, grace: float = 10.0, hard: float = 5.0) -> bool:
 
     if process is None or process.poll() is not None:
         return True
+    if grace is None or hard is None:
+        from .server_dials import dial_in_range
+        if grace is None:
+            grace = dial_in_range("tuning.install.process_kill_grace_s", 10.0, 1, 60)
+        if hard is None:
+            hard = dial_in_range("tuning.install.process_kill_hard_s", 5.0, 1, 30)
     if sys.platform == "win32" and _taskkill_tree(process.pid):
         try:
             process.wait(timeout=hard)
@@ -287,7 +300,7 @@ def _unthrottle_handle(handle: int) -> bool:
 
 
 
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
         setter = kernel32.SetProcessInformation
         setter.restype = wintypes.BOOL
         setter.argtypes = [wintypes.HANDLE, ctypes.c_int,
@@ -329,7 +342,7 @@ def keep_descendants_off_power_throttling(proc) -> int:
 def _close_handle(handle: int) -> None:
     try:
         import ctypes
-        ctypes.WinDLL("kernel32").CloseHandle(ctypes.c_void_p(handle))
+        ctypes.WinDLL("kernel32").CloseHandle(ctypes.c_void_p(handle))  # type: ignore[attr-defined]
     except Exception:  # noqa: BLE001
         pass  # nosec B110
 

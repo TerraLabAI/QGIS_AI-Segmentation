@@ -55,7 +55,7 @@ def begin_keep_awake(reason: str = "AI Segmentation task"):
 
 
 
-            set_state = ctypes.windll.kernel32.SetThreadExecutionState
+            set_state = ctypes.windll.kernel32.SetThreadExecutionState  # type: ignore[attr-defined]
             previous = set_state(
                 _ES_CONTINUOUS | _ES_SYSTEM_REQUIRED | _ES_AWAYMODE_REQUIRED)
             if not previous:
@@ -73,7 +73,7 @@ def begin_keep_awake(reason: str = "AI Segmentation task"):
 
             read_fd, write_fd = os.pipe()
             try:
-                proc = subprocess.Popen(  # nosec B603
+                proc = subprocess.Popen(  # nosec B603 B607
                     [
                         "systemd-inhibit", "--what=sleep:idle", f"--why={reason}",
                         "--mode=block", "sh", "-c", "read _",
@@ -106,7 +106,7 @@ def end_keep_awake(token) -> None:
             import ctypes
 
             restore = payload if isinstance(payload, int) and payload else _ES_CONTINUOUS
-            ctypes.windll.kernel32.SetThreadExecutionState(restore)
+            ctypes.windll.kernel32.SetThreadExecutionState(restore)  # type: ignore[attr-defined]
         except Exception as exc:  # noqa: BLE001
             logger.debug("power_inhibit: reset SetThreadExecutionState failed: %s", exc)
         return

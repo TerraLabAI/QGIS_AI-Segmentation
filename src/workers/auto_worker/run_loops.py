@@ -13,8 +13,10 @@ from __future__ import annotations
 import time
 from collections import deque
 
+from ...core import run_timeline as _timeline
 from ...core import transport_dials as _td
 from ...core.error_policy import TRANSIENT_CODES
+from ...core.server_dials import feature_enabled as _feature_on
 from ..tile_convert_pool import DEFAULT_MAX_WORKERS as _CONVERT_DEFAULT_MAX
 from ..tile_convert_pool import SPARE_CORES as _CONVERT_SPARE_CORES
 from ..tile_convert_pool import default_workers
@@ -41,7 +43,9 @@ class AutoRunLoopsMixin:
 
         from qgis.PyQt.QtCore import QCoreApplication, QEventLoop
 
-        pending: deque = deque(enumerate(self._tiles))
+
+
+        pending: deque = self._density_pending_order()
 
 
 
@@ -111,6 +115,7 @@ class AutoRunLoopsMixin:
                     if picked is None:
                         return False
                     tile_idx, spec = picked
+                    _timeline.mark("fire_picked")
                     if tile_idx in self._gate_skip or tile_idx in self._prefilter_skip:
 
 
@@ -125,6 +130,7 @@ class AutoRunLoopsMixin:
                         self._emit_progress(completed, total)
                         continue
                     status, payload = self._encode_or_defer(tile_idx, spec)
+                    _timeline.mark("fire_encoded")
                     if status == "defer":
                         continue
                     if status == "empty":
@@ -146,7 +152,9 @@ class AutoRunLoopsMixin:
                 submission, tile_transform = self._build_submission(
                     tile_idx, tile_spec, png_bytes
                 )
+                _timeline.mark("fire_built")
                 reply = self._client.post_detection_async(submission, self._auth)
+                _timeline.mark("post")
                 in_flight[reply] = (
                     tile_idx, tile_spec, tile_transform, png_bytes,
                     time.monotonic() + self._stream_reply_budget_s,
@@ -174,35 +182,35 @@ class AutoRunLoopsMixin:
 
 
 
+        self._stream_pending = pending
+        self._render_ramp_pending = _feature_on("auto_render_head_first")
+
+
+
 
 
 
 
         self._request_render_prefetch(pending)
+        _timeline.mark("renders_requested")
+
+
+
+
+
+
         self._convert_pool = self._open_convert_pool(convert_workers)
+        _timeline.mark("pool_open")
 
 
 
 
 
-
-
-        primed = []
-
-        def prime() -> None:
-            charge("startup")
-            while (not self._stop_requested and len(in_flight) < self._aimd.cap
-                   and fire_next()):
-                pass
-            charge("fire")
-            primed.append(True)
-
-        self._convert_pool = self._open_convert_pool(
-            convert_workers, while_booting=prime)
-        if not primed:
-            prime()
-        else:
-            charge("startup")
+        charge("startup")
+        while (not self._stop_requested and len(in_flight) < self._aimd.cap
+               and fire_next()):
+            pass
+        charge("fire")
 
         while (
             in_flight or resubmit or pending or self._render_deferred or self._convert_pool.pending
@@ -260,6 +268,8 @@ class AutoRunLoopsMixin:
                 completed += expired
                 self._emit_progress(completed, total)
                 self._aimd.on_setback()
+
+                self._density_check(pending, resubmit, in_flight)
             if not done:
 
 
@@ -293,6 +303,7 @@ class AutoRunLoopsMixin:
             stop_payload = None
             for reply in done:
                 tile_idx, tile_spec, tile_transform, png_bytes, _ = in_flight.pop(reply)
+                _timeline.mark("reply")
                 response = self._read_reply(tile_idx, reply)
                 outcome = self._classify_submit_response(tile_idx, response, tile_transform)
                 kind = outcome[0]
@@ -384,6 +395,9 @@ class AutoRunLoopsMixin:
 
             self._free_read_replies(done)
             charge("read_replies")
+
+
+            self._density_check(pending, resubmit, in_flight)
 
 
 

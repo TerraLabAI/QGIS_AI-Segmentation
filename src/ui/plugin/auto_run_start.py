@@ -43,17 +43,35 @@ class AutoRunStartMixin:
 
         if getattr(self, "_auto_start_in_progress", False):
             return
+
+
+        if getattr(self, "_auto_imagery_probe", None) is not None:
+            return
+
+
+
+
+
+
+        if (getattr(self, "_auto_imagery_resume", None) is None
+                and getattr(self, "_auto_density_forced", None) is None):
+            import time as _time
+            self._auto_click_mono = _time.monotonic()
         self._auto_start_in_progress = True
         try:
             self._start_auto_detection_body()
         finally:
             self._auto_start_in_progress = False
+            self._density_after_start()
 
     def _start_auto_detection_body(self) -> None:
 
         import uuid as _uuid
 
+        from ...core import run_timeline
         from ...core.activation_manager import get_auth_header, is_plugin_activated
+
+        run_timeline.mark("start_body")
 
 
 
@@ -304,7 +322,16 @@ class AutoRunStartMixin:
 
 
 
-        mupp_floor, probe_msg = self._probe_imagery_behind_banner(layer, grid)
+        probe = self._probe_imagery_behind_banner(layer, grid)
+        if probe is None:
+
+
+            return
+        mupp_floor, probe_msg = probe
+
+
+
+        self._retire_early_imagery_probe()
         if probe_msg is None and mupp_floor > 0:
 
 
@@ -458,6 +485,7 @@ class AutoRunStartMixin:
 
         self._auto_render_ms = 0
         self._auto_detect_t0 = _time.monotonic()
+        run_timeline.mark("guards_passed")
 
 
         try:
@@ -683,13 +711,18 @@ class AutoRunStartMixin:
 
         QApplication.processEvents(
             QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
+        run_timeline.mark("ui_flipped")
 
         from ...core.polygon_exporter import IncrementalMerger
 
 
 
         self._reset_auto_live_pipeline()
-        self._auto_run_id = str(_uuid.uuid4())
+
+
+        forced = getattr(self, "_auto_density_forced", None)
+        forced_run_id = forced.get("run_id") if isinstance(forced, dict) else None
+        self._auto_run_id = forced_run_id or str(_uuid.uuid4())
 
         self._reset_credits_backoff()
 
@@ -840,6 +873,7 @@ class AutoRunStartMixin:
 
         self._remove_auto_selection_layer()
         self._auto_selection_layer = self._create_auto_selection_layer(layer)
+        run_timeline.mark("selection_layer")
 
 
 
@@ -925,6 +959,13 @@ class AutoRunStartMixin:
 
         client_meta = self._build_auto_client_meta()
 
+        density_probe = self._density_probe_plan(
+            layer,
+            self._reproject_zone_to_run_crs(self._auto_zone, layer)
+            if self._auto_zone is not None else None,
+            prompt, tiles, bool(has_exemplars))
+        run_timeline.mark("launch")
+
 
 
 
@@ -969,7 +1010,9 @@ class AutoRunStartMixin:
             gate_config=self._auto_gate_config(
                 prompt, bool(exemplar_stamps), len(tiles)),
             client_meta=client_meta,
+            density_probe=density_probe,
         )
+        restarted = isinstance(forced, dict)
 
 
 
@@ -998,28 +1041,40 @@ class AutoRunStartMixin:
 
         self._auto_warming_t0 = None
         self._auto_warming_ms = 0
+
+
         try:
-            from ...core import telemetry_run_events
-            credits_before, is_free_tier = self._auto_credit_snapshot()
-            telemetry_run_events.track_auto_detect_started(
-                run_id=self._auto_run_id,
-                tiles=len(tiles),
-                zone_km2=self._auto_zone_area_km2(),
+
+            tile_props = self._tile_plan_run_props(
+                layer, self._reproject_zone_to_run_crs(self._auto_zone, layer)
+                if self._auto_zone is not None else None,
+                getattr(self, "_auto_gsd_m", 0.0))
+            if not restarted:
+                from ...core import telemetry_run_events
+                credits_before, is_free_tier = self._auto_credit_snapshot()
+                telemetry_run_events.track_auto_detect_started(
+                    run_id=self._auto_run_id,
+                    tiles=len(tiles),
+                    zone_km2=self._auto_zone_area_km2(),
 
 
 
-                object_class=prompt or "Example match",
-                detail=self._get_auto_detail_level(),
-                detail_seeded=getattr(self, "_auto_detail_seeded", None),
-                exemplar_count=self._auto_exemplar_store.count(),
-                est_credits=len(tiles),
-                credits_before=credits_before,
-                is_free_tier=bool(is_free_tier),
-                merge_mode="separate" if self._auto_merge_separate else "map",
-                merge_mode_source=getattr(self, "_auto_merge_mode_source", "prompt"),
-            )
+                    object_class=prompt or "Example match",
+                    detail=self._get_auto_detail_level(),
+                    detail_seeded=getattr(self, "_auto_detail_seeded", None),
+                    exemplar_count=self._auto_exemplar_store.count(),
+                    est_credits=len(tiles),
+                    credits_before=credits_before,
+                    is_free_tier=bool(is_free_tier),
+                    merge_mode="separate" if self._auto_merge_separate else "map",
+                    merge_mode_source=getattr(self, "_auto_merge_mode_source", "prompt"),
+                    tile_props=tile_props,
+                )
         except Exception:
             pass  # nosec B110
+
+
+        self._density_clear_forced()
 
     @staticmethod
     def _layer_extent_in_run_crs(layer, crs_authid: str):

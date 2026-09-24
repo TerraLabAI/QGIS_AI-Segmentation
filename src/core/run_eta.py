@@ -213,8 +213,8 @@ class RunPace:
             window_s = _dial(section, "live_window_s", LIVE_WINDOW_SECONDS,
                              _LIVE_WINDOW_BAND)
         if min_tiles is None:
-            min_tiles = _dial(section, "live_min_tiles", LIVE_MIN_TILES,
-                              _LIVE_MIN_TILES_BAND)
+            min_tiles = int(_dial(section, "live_min_tiles", LIVE_MIN_TILES,
+                                  _LIVE_MIN_TILES_BAND))
         if min_seconds is None:
             min_seconds = _dial(section, "live_min_seconds", LIVE_MIN_SECONDS,
                                 _LIVE_MIN_SECONDS_BAND)

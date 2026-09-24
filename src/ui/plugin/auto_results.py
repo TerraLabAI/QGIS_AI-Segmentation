@@ -68,6 +68,15 @@ def _stitch_wait_slice_ms() -> int:
         "tuning.auto.stitch_wait_slice_ms", _STITCH_WAIT_SLICE_MS, 5, 250)
 
 
+def _stitch_join_timeout_ms() -> int:
+
+
+
+    from ...core.server_dials import dial_in_range
+    return dial_in_range(
+        "tuning.auto.stitch_join_timeout_ms", STITCH_JOIN_TIMEOUT_MS, 2000, 30000)
+
+
 def _diff_live_fid_map(old_map: dict, current: list):
 
 
@@ -364,6 +373,7 @@ class AutoResultsMixin:
         from qgis.PyQt.QtCore import Qt
         stitcher.batch_ready.connect(
             self._on_auto_stitch_batch, Qt.ConnectionType.QueuedConnection)
+        self._arm_server_finalize_record(stitcher)
         self._auto_stitcher = stitcher
         stitcher.start()
 
@@ -469,7 +479,7 @@ class AutoResultsMixin:
             pass
         try:
             stitcher.abort()
-            if not stitcher.join_run(STITCH_JOIN_TIMEOUT_MS):
+            if not stitcher.join_run(_stitch_join_timeout_ms()):
                 park_orphaned_worker(stitcher)
         except RuntimeError:
             pass
@@ -492,6 +502,7 @@ class AutoResultsMixin:
 
 
 
+        self._take_server_finalize_record(stitcher)
         self._auto_stitch_shapes = stitcher.shaped_geoms
         self._auto_stitch_shape_px = stitcher.shape_pixel_size
         self._auto_stitch_shape_mpu = stitcher.shape_metres_per_unit
@@ -513,7 +524,7 @@ class AutoResultsMixin:
         stitcher = self._auto_stitcher
         if stitcher is None or not tagged_detections:
             return
-        stitcher.submit(tagged_detections, self._auto_refine_pixel_size())
+        stitcher.submit(tagged_detections, self._auto_refine_pixel_size(), tile_idx)
 
     def _on_auto_stitch_batch(self) -> None:
 
@@ -586,7 +597,7 @@ class AutoResultsMixin:
                     "finalizing what it folded",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning)
                 self._abort_auto_stitch_queue()
-                hard_deadline = now + STITCH_JOIN_TIMEOUT_MS / 1000.0
+                hard_deadline = now + _stitch_join_timeout_ms() / 1000.0
             elif now >= hard_deadline:
 
 
@@ -823,6 +834,13 @@ class AutoResultsMixin:
 
         if self._auto_live_pacer_canvas is canvas:
             return
+        try:
+            from ...core.server_dials import feature_enabled
+            enabled = feature_enabled("live_repaint_pacer")
+        except Exception:  # noqa: BLE001
+            enabled = True
+        if not enabled:
+            return
         self._disconnect_live_repaint_pacer()
 
 
@@ -943,6 +961,13 @@ class AutoResultsMixin:
         if getattr(self, "_preview_jobs_paused", None) is not None:
             return
         try:
+            from ...core.server_dials import feature_enabled
+            enabled = feature_enabled("pause_preview_jobs")
+        except Exception:  # noqa: BLE001
+            enabled = True
+        if not enabled:
+            return
+        try:
             canvas = self.iface.mapCanvas()
             prev = bool(canvas.previewJobsEnabled())
             if prev:
@@ -1001,6 +1026,10 @@ class AutoResultsMixin:
 
 
         self._stop_auto_live_pump()
+
+
+        from .auto_client_profile import stop_gui_gap_watch
+        stop_gui_gap_watch(self)
 
         self._auto_finalize_gen += 1
         self._auto_finalize_state = None

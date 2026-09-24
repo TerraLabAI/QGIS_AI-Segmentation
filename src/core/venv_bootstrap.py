@@ -79,9 +79,12 @@ def _get_qgis_python() -> str | None:
         env = _get_clean_env_for_venv()
         env["PYTHONIOENCODING"] = "utf-8"
 
+        from .server_dials import dial_in_range
+        probe_timeout_s = dial_in_range(
+            "tuning.install.interpreter_probe_timeout_s", 15, 5, 60)
         result = run_unthrottled(
             [python_path, "-c", "import sys; print(sys.version)"],
-            text=True, encoding="utf-8", errors="replace", timeout=15,
+            text=True, encoding="utf-8", errors="replace", timeout=probe_timeout_s,
             env=env, **_get_subprocess_kwargs(),
         )
         if result.returncode == 0:
@@ -105,9 +108,12 @@ def _system_python_matches_target(python3_path: str) -> bool:
     from .python_manager import get_qgis_python_version
     try:
         env = _get_clean_env_for_venv()
+        from .server_dials import dial_in_range
+        probe_timeout_s = dial_in_range(
+            "tuning.install.interpreter_probe_timeout_s", 15, 5, 60)
         result = run_unthrottled(
             [python3_path, "-c", "import sys; print(sys.version_info.major, sys.version_info.minor)"],
-            text=True, encoding="utf-8", errors="replace", timeout=15,
+            text=True, encoding="utf-8", errors="replace", timeout=probe_timeout_s,
             env=env, **_get_subprocess_kwargs(),
         )
         if result.returncode != 0:
@@ -341,9 +347,9 @@ def _win_long_paths_state() -> str:
     try:
         import winreg
 
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,  # type: ignore[attr-defined]
                             r"SYSTEM\CurrentControlSet\Control\FileSystem") as key:
-            value, _kind = winreg.QueryValueEx(key, "LongPathsEnabled")
+            value, _kind = winreg.QueryValueEx(key, "LongPathsEnabled")  # type: ignore[attr-defined]
         return "on" if int(value) == 1 else "off"
     except (OSError, ValueError, ImportError):
         return "unknown"
@@ -446,7 +452,7 @@ def _check_gdal_available() -> tuple[bool, str]:
         return True, ""
 
     try:
-        result = subprocess.run(  # nosec B603
+        result = subprocess.run(  # nosec B603 B607
             ["gdal-config", "--version"],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5
         )

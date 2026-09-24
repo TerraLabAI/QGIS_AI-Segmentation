@@ -28,6 +28,10 @@ import tempfile
 import time
 import uuid
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from typing_extensions import TypeGuard
 
 from .cache_paths import PLUGIN_CACHE_DIR
 from .file_replace_retry import replace_file_with_retry
@@ -265,7 +269,7 @@ def new_thumb_filename() -> str:
     return f"thumb_{uuid.uuid4().hex[:16]}.png"
 
 
-def _history_thumbnail_name(name) -> bool:
+def _history_thumbnail_name(name) -> TypeGuard[str]:
 
     return (isinstance(name, str) and name.startswith("thumb_")
             and name.endswith(".png") and len(name) <= 255

@@ -20,29 +20,19 @@ from qgis.PyQt.QtWidgets import (
 
 from ...core.i18n import tr
 from ...core.review_defaults import (
-    AUTO_REVIEW_CLEAN_DEFAULT as _AUTO_REVIEW_CLEAN_DEFAULT,
-)
-from ...core.review_defaults import (
-    AUTO_REVIEW_EXPAND_DEFAULT as _AUTO_REVIEW_EXPAND_DEFAULT,
-)
-from ...core.review_defaults import (
-    AUTO_REVIEW_FILL_HOLES_DEFAULT as _AUTO_REVIEW_FILL_HOLES_DEFAULT,
-)
-from ...core.review_defaults import (
     AUTO_REVIEW_FILL_HOLES_MAX_M2_DEFAULT as _AUTO_REVIEW_FILL_MAX_M2_DEFAULT,
-)
-from ...core.review_defaults import (
-    AUTO_REVIEW_ORTHO_DEFAULT as _AUTO_REVIEW_ORTHO_DEFAULT,
 )
 from ...core.review_defaults import (
     AUTO_REVIEW_POINTS_PCT_DEFAULT as _AUTO_REVIEW_POINTS_PCT_DEFAULT,
 )
+from ...core.review_defaults import auto_review_clean_default as _auto_review_clean_default
+from ...core.review_defaults import auto_review_expand_default as _auto_review_expand_default
 from ...core.review_defaults import (
-    AUTO_REVIEW_SIMPLIFY_DEFAULT as _AUTO_REVIEW_SIMPLIFY_DEFAULT,
+    auto_review_fill_holes_default as _auto_review_fill_holes_default,
 )
-from ...core.review_defaults import (
-    AUTO_REVIEW_SMOOTH_DEFAULT as _AUTO_REVIEW_SMOOTH_DEFAULT,
-)
+from ...core.review_defaults import auto_review_ortho_default as _auto_review_ortho_default
+from ...core.review_defaults import auto_review_simplify_default as _auto_review_simplify_default
+from ...core.review_defaults import auto_review_smooth_default as _auto_review_smooth_default
 from ...core.shape_policy_dials import auto_review_points_pct_default
 from .auto_correct_build import _review_step_heading
 from .fold_row import FoldRow
@@ -153,7 +143,7 @@ def build_shapes_page(dock) -> QWidget:
     dock.auto_simplify_spin.setDecimals(1)
     dock.auto_simplify_spin.setSingleStep(0.5)
     dock.auto_simplify_spin.setRange(0.0, 1000.0)
-    dock.auto_simplify_spin.setValue(_AUTO_REVIEW_SIMPLIFY_DEFAULT)
+    dock.auto_simplify_spin.setValue(_auto_review_simplify_default())
     dock.auto_simplify_spin.setSuffix(" px")
     fit_spin_width(dock.auto_simplify_spin, 84, 96)
     dock.auto_simplify_spin.setToolTip(_simplify_lbl.toolTip())
@@ -174,7 +164,7 @@ def build_shapes_page(dock) -> QWidget:
     dock.auto_clean_spin.setDecimals(1)
     dock.auto_clean_spin.setSingleStep(0.5)
     dock.auto_clean_spin.setRange(0.0, 50.0)
-    dock.auto_clean_spin.setValue(_AUTO_REVIEW_CLEAN_DEFAULT)
+    dock.auto_clean_spin.setValue(_auto_review_clean_default())
     dock.auto_clean_spin.setSuffix(" px")
     fit_spin_width(dock.auto_clean_spin, 84, 96)
     dock.auto_clean_spin.setToolTip(_clean_lbl.toolTip())
@@ -188,7 +178,7 @@ def build_shapes_page(dock) -> QWidget:
         "Round corners for natural shapes like trees and bushes. "
         "Lower Points for smoother results."))
     dock.auto_round_corners_check = QCheckBox()
-    dock.auto_round_corners_check.setChecked(_AUTO_REVIEW_SMOOTH_DEFAULT)
+    dock.auto_round_corners_check.setChecked(_auto_review_smooth_default())
     dock.auto_round_corners_check.setToolTip(_round_lbl.toolTip())
     _round_row = _icon_setting_row(
         "round_corner", row_title_with_note(_round_lbl, tr("trees")),
@@ -204,7 +194,7 @@ def build_shapes_page(dock) -> QWidget:
         "buildings, pools and solar panels. A shape it would distort is "
         "left as it is."))
     dock.auto_ortho_check = QCheckBox()
-    dock.auto_ortho_check.setChecked(_AUTO_REVIEW_ORTHO_DEFAULT)
+    dock.auto_ortho_check.setChecked(_auto_review_ortho_default())
     dock.auto_ortho_check.setToolTip(_ortho_lbl.toolTip())
 
 
@@ -242,7 +232,7 @@ def build_shapes_page(dock) -> QWidget:
         "Positive = grow outward, negative = shrink inward"))
     dock.auto_expand_spin = QSpinBox()
     dock.auto_expand_spin.setRange(-1000, 1000)
-    dock.auto_expand_spin.setValue(_AUTO_REVIEW_EXPAND_DEFAULT)
+    dock.auto_expand_spin.setValue(_auto_review_expand_default())
     dock.auto_expand_spin.setSuffix(" px")
     fit_spin_width(dock.auto_expand_spin, 84, 96)
 
@@ -259,7 +249,7 @@ def build_shapes_page(dock) -> QWidget:
     _fill_lbl.setObjectName("autoFieldLabel")
     _fill_lbl.setToolTip(tr("Fill interior holes in the selection"))
     dock.auto_fill_holes_check = QCheckBox()
-    dock.auto_fill_holes_check.setChecked(_AUTO_REVIEW_FILL_HOLES_DEFAULT)
+    dock.auto_fill_holes_check.setChecked(_auto_review_fill_holes_default())
     dock.auto_fill_holes_check.setToolTip(_fill_lbl.toolTip())
     _fill_row = _icon_setting_row(
         "fill_holes", _fill_lbl, dock.auto_fill_holes_check)
@@ -292,7 +282,7 @@ def build_shapes_page(dock) -> QWidget:
     _fill_max_row.addStretch()
     _fill_max_row.addWidget(dock.auto_fill_max_spin)
     _fill_child.addLayout(_fill_max_row)
-    dock.auto_fill_max_row.setVisible(_AUTO_REVIEW_FILL_HOLES_DEFAULT)
+    dock.auto_fill_max_row.setVisible(dock.auto_fill_holes_check.isChecked())
 
 
 

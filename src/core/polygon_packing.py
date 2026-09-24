@@ -59,6 +59,9 @@ def pack_disjoint_crops(boxes: list, max_side: int | None = None) -> list:
 
     if max_side is None:
         max_side = pack_max_side()
+
+
+
     packs: list = []
     order = sorted(
         range(len(boxes)),
@@ -68,12 +71,20 @@ def pack_disjoint_crops(boxes: list, max_side: int | None = None) -> list:
         r0, r1, c0, c1 = boxes[i]
         for pack in packs:
             br0, br1, bc0, bc1 = pack["box"]
-            nr0, nr1 = min(br0, r0), max(br1, r1)
-            nc0, nc1 = min(bc0, c0), max(bc1, c1)
-            if (nr1 - nr0) > max_side or (nc1 - nc0) > max_side:
+            nr0 = br0 if br0 < r0 else r0  # noqa: FURB136
+            nr1 = br1 if br1 > r1 else r1  # noqa: FURB136
+            if (nr1 - nr0) > max_side:
                 continue
-            if any(not (r1 < mr0 or r0 > mr1 or c1 < mc0 or c0 > mc1)
-                   for mr0, mr1, mc0, mc1 in pack["members"]):
+            nc0 = bc0 if bc0 < c0 else c0  # noqa: FURB136
+            nc1 = bc1 if bc1 > c1 else c1  # noqa: FURB136
+            if (nc1 - nc0) > max_side:
+                continue
+            clash = False
+            for mr0, mr1, mc0, mc1 in pack["members"]:
+                if not (r1 < mr0 or r0 > mr1 or c1 < mc0 or c0 > mc1):
+                    clash = True
+                    break
+            if clash:
                 continue
             pack["indices"].append(i)
             pack["members"].append((r0, r1, c0, c1))

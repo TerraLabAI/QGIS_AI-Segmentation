@@ -39,15 +39,19 @@ class MaskCrop:
 
 
 
-    __slots__ = ("crop", "row0", "col0", "full_shape", "set_pixels")
+    __slots__ = ("crop", "row0", "col0", "full_shape", "set_pixels", "_ringed")
 
     def __init__(self, crop: np.ndarray, row0: int, col0: int,
-                 full_shape: tuple[int, int], set_pixels: int) -> None:
+                 full_shape: tuple[int, int], set_pixels: int,
+                 ringed: np.ndarray | None = None) -> None:
         self.crop = crop
         self.row0 = int(row0)
         self.col0 = int(col0)
         self.full_shape = (int(full_shape[0]), int(full_shape[1]))
         self.set_pixels = int(set_pixels)
+
+
+        self._ringed = ringed
 
     @property
     def row1(self) -> int:
@@ -66,6 +70,10 @@ class MaskCrop:
 
 
 
+
+
+        if self._ringed is not None:
+            return self._ringed
         h, w = self.crop.shape
         out = np.zeros((h + 2, w + 2), dtype=bool)
         out[1:-1, 1:-1] = self.crop
@@ -171,16 +179,18 @@ def decode_rle_to_crop(rle, height: int, width: int,
 
 
 
-        rows = (row_start - row0).astype(np.intp, copy=False)
-        opens = (starts % width - col0).astype(np.intp, copy=False)
-        closes = (last % width + 1 - col0).astype(np.intp, copy=False)
-        edges = np.zeros((nrows, ncols + 1), dtype=np.int8)
+
+
+
+        rows = (row_start - row0 + 1).astype(np.intp, copy=False)
+        opens = (starts % width - col0 + 1).astype(np.intp, copy=False)
+        closes = (last % width + 2 - col0).astype(np.intp, copy=False)
+        edges = np.zeros((nrows + 2, ncols + 2), dtype=np.int8)
         edges[rows, opens] += 1
         edges[rows, closes] -= 1
-        crop = np.cumsum(edges[:, :ncols], axis=1, dtype=np.int8).astype(
-            bool, copy=False)
-        return MaskCrop(crop, row0, col0, (int(height), width),
-                        int(counts.sum()))
+        ringed = np.cumsum(edges, axis=1, dtype=np.int8).astype(bool, copy=False)
+        return MaskCrop(ringed[1:-1, 1:-1], row0, col0, (int(height), width),
+                        int(counts.sum()), ringed)
     base = row0 * width
     span = nrows * width
     edges = np.zeros(span + 1, dtype=np.int8)

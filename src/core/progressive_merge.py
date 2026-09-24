@@ -45,7 +45,7 @@ def _window_half_size(kind: str, h: int, w: int, window_frac, window_min_px) -> 
     return max(int(window_min_px), int(window_frac * min(h, w)))
 
 
-def _row_spans(window: Any) -> tuple:
+def _row_spans(window: Any) -> tuple | None:
 
     import numpy as np
     h, w = window.shape

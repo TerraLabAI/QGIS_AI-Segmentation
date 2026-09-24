@@ -39,9 +39,17 @@ class ServerPrefetchMixin:
         from ...core.activation_manager import PRODUCT_ID
         from ...workers.generic_request_task import GenericRequestTask
         client = TerraLabClient()
+
+
+
+        try:
+            from ...core.activation_manager import get_auth_header
+            auth = get_auth_header() or None
+        except Exception:  # noqa: BLE001
+            auth = None
         self._config_prefetch_task = GenericRequestTask(
             tr("Loading AI Segmentation settings"),
-            lambda: self._refresh_server_config(client, PRODUCT_ID),
+            lambda: self._refresh_server_config(client, PRODUCT_ID, auth),
             hidden=True,
         )
         self._config_last_fetch_unix = time.time()
@@ -50,7 +58,7 @@ class ServerPrefetchMixin:
         QgsApplication.taskManager().addTask(self._config_prefetch_task)
 
     @staticmethod
-    def _refresh_server_config(client, product_id: str) -> dict:
+    def _refresh_server_config(client, product_id: str, auth: dict | None = None) -> dict:
 
 
 
@@ -64,7 +72,7 @@ class ServerPrefetchMixin:
             prime_from_disk()
         except Exception:  # noqa: BLE001  # nosec B110
             pass
-        config = client.get_config(product_id)
+        config = client.get_config(product_id, auth=auth)
         if isinstance(config, dict) and "error" not in config:
             from ...core.activation_manager import set_cached_config
             set_cached_config(config)
@@ -75,6 +83,29 @@ class ServerPrefetchMixin:
         self._config_prefetch_task = None
         self._reapply_server_switches()
         self._arm_config_refresh()
+        self._run_pending_account_config_refresh()
+
+    def _refresh_config_for_account_change(self) -> None:
+
+
+
+
+
+
+
+        try:
+            task = getattr(self, "_config_prefetch_task", None)
+            if task is not None and task.is_active():
+                self._config_refetch_for_account = True
+                return
+            self._config_refetch_for_account = False
+            self._prefetch_server_config()
+        except Exception:  # noqa: BLE001  # nosec B110
+            pass
+
+    def _run_pending_account_config_refresh(self) -> None:
+        if getattr(self, "_config_refetch_for_account", False):
+            self._refresh_config_for_account_change()
 
     def _on_config_prefetch_failed(self, message: str, code: str) -> None:
         self._config_prefetch_task = None
@@ -86,6 +117,7 @@ class ServerPrefetchMixin:
 
 
         self._arm_config_refresh()
+        self._run_pending_account_config_refresh()
 
     def _arm_config_refresh(self) -> None:
 
@@ -204,7 +236,9 @@ class ServerPrefetchMixin:
 
     def _reapply_server_switches(self) -> None:
 
-        if self.dock_widget is None:
+
+
+        if self.dock_widget is None or not self.dock_widget.dock_content_built:
             return
         try:
             self.dock_widget.apply_server_feature_switches()

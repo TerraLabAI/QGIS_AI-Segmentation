@@ -371,6 +371,12 @@ class ServerDialSet(frozenset):
 
 
 
+
+
+    _path: str
+    _normalize: Callable[[str], str] | None
+    _memo: tuple[Any, frozenset] | None
+
     def __new__(cls, path: str, base: Iterable[str], normalize=None):
         obj = super().__new__(cls, base)
         obj._path = path
