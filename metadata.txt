@@ -4,7 +4,7 @@ description=AI segmentation for QGIS: detect and extract building footprints, tr
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
 supportsQt6=True
-version=3.0.0
+version=3.0.1
 author=Yvann and Lilien from TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
@@ -30,6 +30,9 @@ about=
     • Multilingual: English, French, Portuguese, Spanish, German, Italian, Dutch, Polish, Indonesian, Japanese, Chinese
 
 changelog=
+    3.0.1
+    - Smaller download: the same plugin, without the developer notes in its source
+
     3.0.0
     - Automatic: draw a zone, describe what to find, and every matching object comes back in one run, with a live tile preview and a confidence display
     - A full interface redesign across Automatic, Semi-Auto, Review and Settings, matching AI Agent and AI Edit's look
