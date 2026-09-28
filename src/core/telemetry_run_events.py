@@ -213,7 +213,7 @@ def track_auto_detect_started(run_id: str, tiles: int, zone_km2: float,
 
 
     for key in ("tile_plan", "tile_ground_m", "tile_prior_m", "tile_reasons",
-                "tile_warning"):
+                "tile_warning", "grid_reach_levels"):
         if tile_props and key in tile_props:
             props[key] = tile_props[key]
     track(ev.AUTO_DETECT_STARTED, props)
@@ -405,12 +405,14 @@ def track_review_opened(run_id: str, instances_found: int, visible_at_start: int
 
 
 def track_review_confidence_final(run_id: str, final_pct: int, visible_count: int,
-                                  moves: int) -> None:
+                                  moves: int, reveal_clicks: int = 0) -> None:
+
     track(ev.REVIEW_CONFIDENCE_FINAL, {
         "run_id": run_id,
         "final_pct": final_pct,
         "visible_count": visible_count,
         "moves": moves,
+        "reveal_clicks": int(reveal_clicks),
     })
 
 
@@ -513,6 +515,7 @@ def track_review_correct_box(run_id: str, label: int, outcome: str,
 
 
 
+
     import random
 
     if "review_correct_box" in _sent_this_session:
@@ -572,3 +575,18 @@ def track_qgis_edit_bridge(run_id: str, outcome: str,
     if features is not None:
         props["features"] = int(features)
     track(ev.AUTO_EDIT_IN_QGIS, props)
+
+
+def track_auto_imagery_notice(kind: str, run_anyway: bool, prompt: str = "",
+                              source_m_per_px: float = 0.0) -> None:
+
+
+
+    props = {
+        "kind": kind,
+        "answer": "run_anyway" if run_anyway else "cancel",
+        "prompt": scrub_payload_value(prompt or ""),
+    }
+    if source_m_per_px and source_m_per_px > 0:
+        props["source_m_per_px"] = round(float(source_m_per_px), 2)
+    track(ev.AUTO_IMAGERY_NOTICE, props)

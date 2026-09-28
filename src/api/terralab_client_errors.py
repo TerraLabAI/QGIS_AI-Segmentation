@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-from qgis.core import QgsBlockingNetworkRequest
 from qgis.PyQt.QtNetwork import QNetworkReply
 
 from ..core.i18n import tr
@@ -109,11 +108,15 @@ def _unreadable_answer() -> dict:
     }
 
 
-def _classify_network_error(blocker: QgsBlockingNetworkRequest) -> tuple[str, str]:
-    reply = blocker.reply()
-    qt_error = reply.error() if reply else _UnknownNetwork
+def _classify_network_error(reply, detail: str = "") -> tuple[str, str]:
+
+    try:
+        qt_error = reply.error() if reply is not None else _UnknownNetwork
+        detail = detail or reply.errorString()
+    except (AttributeError, RuntimeError):
+        qt_error = _UnknownNetwork
     return _classify_qt_error(
-        qt_error, blocker.errorMessage(), _http_status_of(reply),
+        qt_error, detail, _http_status_of(reply),
         service_reachable=server_reached_recently(),
     )
 

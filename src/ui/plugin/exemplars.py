@@ -18,7 +18,6 @@ from qgis.core import (
 from qgis.gui import QgsRubberBand
 from qgis.PyQt.QtCore import Qt
 
-from ...core.exemplar_size import exemplar_at_max_detail, exemplar_too_small
 from ...core.i18n import tr
 from ...core.qt_compat import PolygonGeometry
 from ..canvas_palette import (
@@ -324,6 +323,7 @@ class ExemplarsMixin:
 
 
 
+        from ...core.exemplar_size import exemplar_too_small
         if not self.dock_widget or getattr(self, "_auto_exemplar_arming", False):
             return
         try:
@@ -381,6 +381,7 @@ class ExemplarsMixin:
 
 
         try:
+            from ...core.exemplar_size import exemplar_at_max_detail
             slider = self.dock_widget.auto_detail_slider
             return exemplar_at_max_detail(int(slider.value()), int(slider.maximum()))
         except (RuntimeError, AttributeError):

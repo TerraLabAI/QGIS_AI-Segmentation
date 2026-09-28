@@ -484,7 +484,6 @@ def mask_to_polygons(
 
 
 
-
             minx, maxx, miny, maxy = bbox[0], bbox[1], bbox[2], bbox[3]
 
 

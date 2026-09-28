@@ -45,6 +45,11 @@ class AutoDensityProbeMixin:
     def _density_clear_forced(self) -> None:
 
         self._auto_density_forced = None
+        dock = getattr(self, "dock_widget", None)
+        if dock is not None:
+
+
+            dock._auto_progress_carry = 0
 
     def _density_probe_plan(self, layer, zone_in_layer, prompt: str,
                             tiles: list, has_exemplars: bool) -> dict | None:
@@ -201,6 +206,11 @@ class AutoDensityProbeMixin:
         _density_log(
             f"density probe {decision.branch}: restarting the run at "
             f"{decision.side_m:.0f} m (was {from_m:.0f} m), same run id")
+        try:
+
+            self.dock_widget.carry_auto_progress()
+        except (RuntimeError, AttributeError):
+            pass
         from qgis.PyQt.QtCore import QTimer
         QTimer.singleShot(0, self._density_restart_run)
 

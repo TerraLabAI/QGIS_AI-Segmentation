@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-REGISTRY_VERSION = 58
+REGISTRY_VERSION = 61
 
 
 PLUGIN_FIRST_OPEN = "plugin_first_open"
@@ -41,6 +41,8 @@ AUTO_PROMPT_STEERED = "auto_prompt_steered"
 AUTO_PROMPT_REWRITTEN = "auto_prompt_rewritten"
 
 AUTO_PROMPT_HINT_SHOWN = "auto_prompt_hint_shown"
+
+AUTO_IMAGERY_NOTICE = "auto_imagery_notice"
 EXEMPLAR_ADDED = "exemplar_added"
 EXEMPLAR_REMOVED = "exemplar_removed"
 DETAIL_CHANGED = "detail_changed"
@@ -195,6 +197,7 @@ ALL_EVENTS = frozenset({
     AUTO_PROMPT_STEERED,
     AUTO_PROMPT_REWRITTEN,
     AUTO_PROMPT_HINT_SHOWN,
+    AUTO_IMAGERY_NOTICE,
     EXEMPLAR_ADDED,
     EXEMPLAR_REMOVED,
     DETAIL_CHANGED,
@@ -291,6 +294,7 @@ REQUIRED_PROPS: dict[str, tuple[str, ...]] = {
     AUTO_PROMPT_STEERED: (),
     AUTO_PROMPT_REWRITTEN: ("kind",),
     AUTO_PROMPT_HINT_SHOWN: ("kind",),
+    AUTO_IMAGERY_NOTICE: ("kind", "answer"),
     EXEMPLAR_ADDED: (),
     EXEMPLAR_REMOVED: (),
     DETAIL_CHANGED: (),

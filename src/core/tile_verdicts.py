@@ -260,15 +260,13 @@ def tile_is_degenerate(
 
         if img is None or img.isNull():
             return False
+        from .qimage_strips import qimage_array_in_strips
 
-        full = img.convertToFormat(QImage.Format.Format_ARGB32)
-        w, h = full.width(), full.height()
-        if w <= 0 or h <= 0:
+
+
+        arr = qimage_array_in_strips(img, QImage.Format.Format_ARGB32, 4)
+        if arr is None:
             return False
-        ptr = full.bits()
-        ptr.setsize(h * full.bytesPerLine())
-        arr = np.frombuffer(ptr, dtype=np.uint8).reshape(h, full.bytesPerLine() // 4, 4)
-        arr = arr[:, :w, :]
 
 
         if _degenerate_ruled_out(arr, nodata_frac, band_eps, nodata_rgb_eps,

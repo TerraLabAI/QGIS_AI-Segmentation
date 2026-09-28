@@ -27,6 +27,7 @@
 
 
 
+
 from __future__ import annotations
 
 from qgis.PyQt.QtCore import Qt
@@ -227,7 +228,7 @@ class DockManualEngineMixin:
         try:
             return bool(manual_cloud_route_offered())
         except Exception:  # noqa: BLE001
-            return False
+            return True
 
     def _manual_engine_local_ready(self) -> bool:
 
@@ -696,9 +697,11 @@ class DockManualEngineMixin:
 
 
         installing = self._manual_install_running()
+
+
+
         needs_install = bool(
-            manual_cloud_route_offered()
-            and not self._manual_cloud_route_picked()
+            not self._manual_cloud_route_picked()
             and not self._manual_engine_local_ready()
         )
         try:
@@ -807,6 +810,28 @@ class DockManualEngineMixin:
             pass  # nosec B110
         self._update_full_ui()
 
+    def redraw_manual_engine_after_config(self) -> None:
+
+
+
+
+
+
+
+        switch = getattr(self, "manual_engine_switch", None)
+        if switch is not None and not getattr(self, "_segmentation_active", False):
+            try:
+                switch.set_engine_cloud(bool(manual_cloud_route_enabled()
+                                             and manual_cloud_route_offered()))
+            except Exception:  # noqa: BLE001
+                pass  # nosec B110
+        for settle in ("_refresh_manual_engine_ui",
+                       "_refresh_manual_engine_card_enabled"):
+            try:
+                getattr(self, settle)()
+            except (RuntimeError, AttributeError):
+                pass  # nosec B110
+
     def _on_dock_hidden_reset_engine(self, visible: bool) -> None:
 
         if not visible:
@@ -860,7 +885,7 @@ class DockManualEngineMixin:
 
 
         try:
-            if self._mode != Mode.INTERACTIVE or not manual_cloud_route_offered():
+            if self._mode != Mode.INTERACTIVE:
                 return True
             cloud = self._manual_cloud_route_picked()
         except (RuntimeError, AttributeError):

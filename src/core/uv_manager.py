@@ -365,6 +365,51 @@ def _apply_resolved_proxy() -> Callable[[], None] | None:
         return None
 
 
+class _FeedbackEnd:
+
+
+    def __init__(self, feedback) -> None:
+        self._feedback = feedback
+
+    def abort(self) -> None:
+        self._feedback.cancel()
+
+
+def _get_once(net_req, timeout_ms: int, cancel_check) -> tuple[bool, object, str, str]:
+
+
+
+
+
+
+
+
+
+
+
+    if hasattr(net_req, "setTransferTimeout"):
+        from qgis.core import QgsFeedback, QgsNetworkAccessManager
+
+        net_req.setTransferTimeout(timeout_ms)
+        feedback = gil_safe(QgsFeedback())
+        with DownloadStallGuard(_FeedbackEnd(feedback), timeout_ms, cancel_check) as guard:
+            reply = QgsNetworkAccessManager.blockingGet(net_req, "", False, feedback)
+        try:
+            error = reply.error()
+            ok = getattr(error, "value", error) == 0 and bool(bytes(reply.content()))
+            message = "" if ok else (reply.errorString() or "empty response")
+        except (AttributeError, RuntimeError, TypeError):
+            ok, message = False, "unreadable reply"
+        return ok, reply, message, guard.aborted_reason
+
+    request = gil_safe(QgsBlockingNetworkRequest())
+    with DownloadStallGuard(request, timeout_ms, cancel_check) as guard:
+        err = request.get(net_req)
+    if err == QgsBlockingNetworkRequest.ErrorCode.NoError:
+        return True, request.reply(), "", guard.aborted_reason
+    return False, None, request.errorMessage(), guard.aborted_reason
+
+
 def download_uv(
     progress_callback: Callable[[int, str], None] | None = None,
     cancel_check: Callable[[], bool] | None = None
@@ -403,7 +448,8 @@ def download_uv(
     from .server_dials import dial_in_range
     max_retries = dial_in_range("tuning.install.uv_download_max_retries", 3, 1, 10)
     backoff_base_s = dial_in_range("tuning.install.uv_download_backoff_base_s", 5, 1, 60)
-    err = None
+    ok = False
+    reply = None
     error_msg = ""
     restore_proxy = _apply_resolved_proxy()
     try:
@@ -411,25 +457,16 @@ def download_uv(
             if cancel_check and cancel_check():
                 return False, "Download cancelled"
 
-
-
-            request = gil_safe(QgsBlockingNetworkRequest())
             net_req = QNetworkRequest(QUrl(url))
             timeout_ms = resolved_download_timeout_ms()
-            if hasattr(net_req, "setTransferTimeout"):
-                net_req.setTransferTimeout(timeout_ms)
-
-
-            with DownloadStallGuard(request, timeout_ms, cancel_check) as guard:
-                err = request.get(net_req)
-            if guard.aborted_reason == "cancelled":
+            ok, reply, error_msg, aborted = _get_once(net_req, timeout_ms, cancel_check)
+            if aborted == "cancelled":
                 return False, "Download cancelled"
 
-            if err == QgsBlockingNetworkRequest.ErrorCode.NoError:
+            if ok:
                 break
 
-            error_msg = request.errorMessage()
-            if guard.aborted_reason == "stalled":
+            if aborted == "stalled":
                 error_msg = "the download stalled, no data was received"
             if attempt < max_retries - 1:
                 wait = backoff_base_s * (2 ** attempt)
@@ -450,14 +487,13 @@ def download_uv(
         if restore_proxy:
             restore_proxy()
 
-    if err != QgsBlockingNetworkRequest.ErrorCode.NoError:
+    if not ok:
         _log(f"uv download failed: {error_msg}", Qgis.MessageLevel.Warning)
         return False, f"uv download failed: {error_msg}"
 
     if cancel_check and cancel_check():
         return False, "Download cancelled"
 
-    reply = request.reply()
     content = reply.content()
     content_bytes = content.data()
 

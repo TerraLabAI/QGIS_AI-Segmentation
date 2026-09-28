@@ -312,6 +312,10 @@ class AutoFlowGridMixin:
 
             online_mupp = self._online_native_mupp(layer)
             if online_mupp > 0:
+
+
+                online_mupp = self._grid_reach_native(
+                    layer, zone_in_layer, online_mupp)
                 native_mupp = online_mupp * max(to_run_x, to_run_y)
                 mupp = max(mupp, native_mupp / allowance)
             mupp = max(mupp, self._served_source_floor(

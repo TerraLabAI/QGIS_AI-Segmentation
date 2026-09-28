@@ -589,7 +589,7 @@ class AutoFinalizeStepsMixin:
 
 
 
-                    floor_pct = int(math.ceil(self._review_noise_floor() * 100))
+                    floor_pct = int(math.ceil(self._review_noise_floor() * 100 - 1e-6))
                     self.dock_widget.set_review_conf_floor(floor_pct)
                     hist = getattr(self.dock_widget, "auto_conf_histogram", None)
                     if hist is not None:

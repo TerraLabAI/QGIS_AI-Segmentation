@@ -63,15 +63,14 @@ def manual_cloud_route_offered() -> bool:
 
 
 
-
     if _dev_cloud_route_opt_in():
         return True
     try:
-        from .server_dials import dial_bool
+        from .server_dials import feature_switch
 
-        return dial_bool(f"features.{MANUAL_CLOUD_ROUTE_FEATURE}", False)
-    except Exception:  # nosec B110
-        return False
+        return feature_switch(f"features.{MANUAL_CLOUD_ROUTE_FEATURE}", True)
+    except Exception:  # noqa: BLE001  # nosec B110
+        return True
 
 
 

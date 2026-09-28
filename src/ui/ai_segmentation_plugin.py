@@ -42,6 +42,7 @@ from .plugin.auto_export_offload import AutoExportOffloadMixin
 from .plugin.auto_finalize_steps import AutoFinalizeStepsMixin
 from .plugin.auto_flow import AutoFlowMixin
 from .plugin.auto_grid_fill import AutoGridFillMixin
+from .plugin.auto_grid_reach import AutoGridReachMixin
 from .plugin.auto_imagery_guard import AutoImageryGuardMixin
 from .plugin.auto_lifecycle import AutoLifecycleMixin
 from .plugin.auto_object_build import AutoObjectBuildMixin
@@ -95,6 +96,7 @@ class AISegmentationPlugin(
     AutoDetailWindowMixin,
     AutoGridFillMixin,
     AutoTilePlanMixin,
+    AutoGridReachMixin,
     AutoDensityProbeMixin,
     AutoCorrectMixin,
     LocalAiWarmMixin,
@@ -810,6 +812,11 @@ class AISegmentationPlugin(
 
 
 
+        try:
+            from ..core.online_zoom_reach import forget_reach
+            forget_reach()
+        except Exception:  # noqa: BLE001
+            pass  # nosec B110
         try:
             from ..core.xyz_tile_fetch import forget_direct_tile_fetch_failures
             forget_direct_tile_fetch_failures()

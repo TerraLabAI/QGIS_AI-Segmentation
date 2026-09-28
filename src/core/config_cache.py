@@ -194,7 +194,6 @@ _FAIL_CLOSED_FEATURES = frozenset({
     "gzip_request_bodies",
     "hover_preview",
     "hover_preview_click_reuse",
-    "manual_cloud_route",
     "map_hypothesis_nms",
 })
 

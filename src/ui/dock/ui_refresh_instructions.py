@@ -137,8 +137,8 @@ class DockInstructionsMixin:
 
 
 
-
-        self.refine_group.setVisible(True)
+        self.refine_group.setVisible(
+            self._has_mask and self._refine_shape_toggles_allowed())
 
     def _update_export_button_style(self):
         count = self._saved_polygon_count

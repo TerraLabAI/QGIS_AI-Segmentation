@@ -350,6 +350,7 @@ def xyz_crop_request(layer, extent, out_px: int) -> XyzCropRequest | None:
     if (not all(math.isfinite(v) for v in bounds)
             or span <= 0 or bounds[3] <= bounds[1] or out_px <= 0):
         return None
+    zmax = _served_zmax(layer, bounds, zmax)
     zoom = tile_zoom_for_resolution(span / out_px, zmin, zmax, tile_px)
 
     tile_range, window = tile_grid_for_extent(bounds, zoom, tile_px)
@@ -365,6 +366,22 @@ def xyz_crop_request(layer, extent, out_px: int) -> XyzCropRequest | None:
         tile_px=tile_px, out_px=out_px, source_key=layer.source(),
         headers=headers, proxies=_qgis_proxy_settings(),
     )
+
+
+def _served_zmax(layer, bounds, zmax: int) -> int:
+
+
+
+    try:
+        from .online_zoom_reach import reach_known_near
+
+        centre = ((bounds[0] + bounds[2]) / 2.0, (bounds[1] + bounds[3]) / 2.0)
+        known, deeper = reach_known_near(layer.source(), centre)
+        if known and deeper is not None and deeper > zmax:
+            return int(deeper)
+    except Exception:  # noqa: BLE001  # nosec B110
+        pass
+    return zmax
 
 
 def tile_zoom_for_resolution(map_units_per_pixel: float, zmin: int,
@@ -1118,62 +1135,80 @@ def _paste_tiles(request: XyzCropRequest, payloads):
 
 
 
-    from qgis.PyQt.QtGui import QImage, QPainter
+
+
+
+
+    from qgis.PyQt.QtGui import QImage
+
+    from .qimage_strips import qimage_array_in_strips
 
     left, top, right, bottom = request.tile_range
     tile_px = request.tile_px
     columns = right - left + 1
     rows = bottom - top + 1
-    mosaic = QImage(columns * tile_px, rows * tile_px, QImage.Format.Format_RGB888)
-    if mosaic.isNull():
-        return None
-    mosaic.fill(0)
-    painter = QPainter(mosaic)
-    whole = True
-    try:
-        for index, payload in enumerate(payloads):
-            tile = QImage()
-            if not payload or not tile.loadFromData(payload):
-                whole = False
-                break
-            if tile.width() != tile_px or tile.height() != tile_px:
-                whole = False
-                break
-            column = index % columns
-            row = index // columns
-            painter.drawImage(column * tile_px, row * tile_px, tile)
-    finally:
-        painter.end()
-    return mosaic if whole else None
+    mosaic = np.zeros((rows * tile_px, columns * tile_px, 3), dtype=np.uint8)
+    for index, payload in enumerate(payloads):
+        tile = QImage()
+        if not payload or not tile.loadFromData(payload):
+            return None
+        if tile.width() != tile_px or tile.height() != tile_px:
+            return None
+        rgb = qimage_array_in_strips(tile, QImage.Format.Format_RGB888, 3)
+        if rgb is None:
+            return None
+        column = index % columns
+        row = index // columns
+        mosaic[row * tile_px:(row + 1) * tile_px,
+               column * tile_px:(column + 1) * tile_px] = rgb
+    return mosaic
 
 
-def _crop_and_resize(mosaic, request: XyzCropRequest) -> np.ndarray:
-
-    from qgis.PyQt.QtCore import Qt
+def _crop_and_resize(mosaic: np.ndarray, request: XyzCropRequest) -> np.ndarray:
 
     x, y, width, height = request.window
-    cut = mosaic.copy(int(round(x)), int(round(y)),
-                      max(1, int(round(width))), max(1, int(round(height))))
-    if cut.width() != request.out_px or cut.height() != request.out_px:
-        cut = cut.scaled(request.out_px, request.out_px,
-                         Qt.AspectRatioMode.IgnoreAspectRatio,
-                         Qt.TransformationMode.SmoothTransformation)
-    return _qimage_to_rgb_array(cut)
+    x0 = max(0, int(round(x)))
+    y0 = max(0, int(round(y)))
+    want_h = max(1, int(round(height)))
+    want_w = max(1, int(round(width)))
+    cut = mosaic[y0:y0 + want_h, x0:x0 + want_w]
+    if cut.shape[0] < want_h or cut.shape[1] < want_w:
 
 
-def _qimage_to_rgb_array(image) -> np.ndarray:
+        cut = np.pad(cut, ((0, want_h - cut.shape[0]), (0, want_w - cut.shape[1]),
+                           (0, 0)), mode="edge")
+    if cut.shape[0] != request.out_px or cut.shape[1] != request.out_px:
+        cut = _resize_rgb(cut, request.out_px, request.out_px)
+    return np.ascontiguousarray(cut)
 
-    from qgis.PyQt.QtGui import QImage
 
-    image = image.convertToFormat(QImage.Format.Format_RGB888)
-    width = image.width()
-    height = image.height()
-    buffer = image.constBits()
-    buffer.setsize(image.sizeInBytes())
-    flat = np.frombuffer(bytes(buffer), dtype=np.uint8)
+def _resize_rgb(rgb: np.ndarray, out_h: int, out_w: int) -> np.ndarray:
 
 
 
-    bytes_per_line = image.bytesPerLine()
-    return flat.reshape(height, bytes_per_line)[:, :width * 3].reshape(
-        height, width, 3).copy()
+    src = rgb.astype(np.float32)
+    taps, weights = _resize_taps(src.shape[0], out_h)
+    rows = sum(weights[:, k, None, None] * src[taps[:, k]]
+               for k in range(taps.shape[1]))
+    taps, weights = _resize_taps(rows.shape[1], out_w)
+    out = sum(weights[None, :, k, None] * rows[:, taps[:, k]]
+              for k in range(taps.shape[1]))
+    return np.clip(np.rint(out), 0, 255).astype(np.uint8)
+
+
+def _resize_taps(size_in: int, size_out: int):
+
+
+    scale = size_in / float(size_out)
+    support = max(1.0, scale)
+    centres = (np.arange(size_out, dtype=np.float64) + 0.5) * scale - 0.5
+    count = int(np.ceil(2.0 * support)) + 1
+    first = np.floor(centres - support).astype(np.int64) + 1
+    taps = first[:, None] + np.arange(count, dtype=np.int64)[None, :]
+    weights = np.clip(1.0 - np.abs(taps - centres[:, None]) / support, 0.0, None)
+
+    weights[(taps < 0) | (taps >= size_in)] = 0.0
+    taps = np.clip(taps, 0, size_in - 1)
+    sums = weights.sum(axis=1, keepdims=True)
+    sums[sums == 0] = 1.0
+    return taps, (weights / sums).astype(np.float32)

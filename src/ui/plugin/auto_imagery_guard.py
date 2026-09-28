@@ -200,13 +200,18 @@ class AutoImageryGuardMixin:
             steps = backoff_steps()
             return {"mupp": mupp, "extents": extents, "steps": steps,
                     "count": steps + 2, "min_side_px": LEVEL_SAMPLE_PX,
-                    "crs": self._probe_render_crs(grid)}
+                    "crs": self._probe_render_crs(grid),
+                    "signature": self._imagery_probe_signature(layer, grid)}
         except Exception:  # noqa: BLE001
             return None
 
     def _imagery_verdict_from_chains(self, chains: list, plan: dict) -> tuple[float, str | None]:
 
 
+
+
+        self._keep_imagery_content_verdict(
+            plan.get("signature"), [images[0] for images in chains if images])
         floor = 0.0
         for images in chains:
             level, refusal = self._imagery_chain_verdict(images, plan)

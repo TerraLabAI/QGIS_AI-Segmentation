@@ -200,6 +200,8 @@ class AutoShapeEditMixin:
 
             tool.point_right_clicked.connect(self._on_shape_point_right_clicked)
 
+            tool.rect_right_dragged.connect(self._on_shape_rect_right_dragged)
+
 
 
         try:
@@ -638,34 +640,53 @@ class AutoShapeEditMixin:
     def _remove_detection_index(self, idx) -> None:
 
 
+        if idx is None:
+            return
+        self._remove_detection_indices((idx,))
+
+    def _remove_detection_indices(self, indices, gesture: str = KIND_REMOVE) -> int:
 
 
 
-        if idx is None or self._auto_review is None:
-            return
-        if idx < 0 or idx >= len(self._auto_objects):
-            return
-        if idx in self._review_removed_fids():
-            return
-        self._auto_correction_removed.add(int(idx))
-        self._record_remove_entry(idx)
-        if self._correct_selected_idx == idx:
+
+
+        if self._auto_review is None:
+            return 0
+        removed = self._review_removed_fids()
+        n_objects = len(self._auto_objects)
+        batch: list[int] = []
+        for idx in indices:
+            if idx is None or idx < 0 or idx >= n_objects:
+                continue
+            idx = int(idx)
+            if idx in removed or idx in batch:
+                continue
+            batch.append(idx)
+        if not batch:
+            return 0
+        self._auto_correction_removed.update(batch)
+        self._record_remove_entry(batch)
+        if self._correct_selected_idx in batch:
 
 
 
 
             self._clear_correct_selection()
-        if getattr(self, "_shape_hover_idx", None) == idx:
+        if getattr(self, "_shape_hover_idx", None) in batch:
 
 
             self._set_shape_hover(None)
         self._after_shape_edit(changed=())
-        self._track_shape_edit(KIND_REMOVE, "removed", 1)
+        self._track_shape_edit(gesture, "removed", len(batch))
+        return len(batch)
 
-    def _record_remove_entry(self, idx: int) -> None:
+    def _record_remove_entry(self, indices) -> None:
 
 
-        self._push_correct_entry(JournalEntry(kind=KIND_REMOVE, fids=(int(idx),)))
+        if isinstance(indices, int):
+            indices = (indices,)
+        self._push_correct_entry(JournalEntry(
+            kind=KIND_REMOVE, fids=tuple(int(i) for i in indices)))
 
 
 
@@ -727,6 +748,69 @@ class AutoShapeEditMixin:
         if det_idx is None:
             return
         self._remove_detection_index(det_idx)
+
+    def _cancel_review_right_drag(self) -> bool:
+
+
+
+        tool = getattr(self, "_shape_maptool", None)
+        if tool is None:
+            return False
+        try:
+            return bool(tool.cancel_right_drag())
+        except (RuntimeError, AttributeError):
+            return False
+
+    def _on_shape_rect_right_dragged(self, area) -> None:
+
+
+
+        if self._auto_review is None or self._shape_edit_mode != KIND_SELECT:
+            return
+        if self._auto_review_export_busy():
+            return
+        if getattr(self, "_refine_handoff_active", False) or getattr(
+                self, "_qgis_bridge_active", False):
+            return
+        self._remove_detection_indices(self._objects_in_canvas_area(area), gesture="remove_box")
+
+    def _objects_in_canvas_area(self, area) -> list[int]:
+
+
+        try:
+            ring = area.asPolygon()[0]
+        except (IndexError, TypeError, AttributeError):
+            return []
+        if len(ring) < 4:
+            return []
+        corners = self._points_in_run_crs(ring)
+        if len(corners) != len(ring):
+            return []
+        frame = QgsGeometry.fromPolygonXY([corners])
+        if frame is None or frame.isEmpty():
+            return []
+        params = self._shape_review_params or self._widget_review_params()
+        removed = self._review_removed_fids()
+        out: list[int] = []
+        for det_idx in self._shape_hit_candidates(frame.boundingBox()):
+            if det_idx in removed or det_idx >= len(self._auto_objects):
+                continue
+            base_geom, score, area_m2 = self._auto_objects[det_idx]
+            geom = self._shape_hit_geoms.get(det_idx, base_geom)
+            if geom is None or geom.isEmpty():
+                continue
+
+            if (det_idx not in self._shape_hit_geoms
+                    and not self._object_is_manual(det_idx)
+                    and not self._passes_review_filters(score, area_m2, params)):
+                continue
+            try:
+                anchor = geom.pointOnSurface()
+                if anchor is not None and not anchor.isEmpty() and frame.contains(anchor):
+                    out.append(int(det_idx))
+            except (RuntimeError, TypeError, ValueError):
+                continue
+        return out
 
     def _on_shape_cursor_moved(self, point) -> None:
 

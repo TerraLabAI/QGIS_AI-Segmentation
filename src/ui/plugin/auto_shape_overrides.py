@@ -15,8 +15,6 @@
 
 from __future__ import annotations
 
-from ..dock.manual_recap import format_ground_area
-
 try:
     from ...core.i18n import tr
 except ImportError:
@@ -241,6 +239,7 @@ class AutoShapeOverridesMixin:
             return ""
 
 
+        from ..dock.manual_recap import format_ground_area
         area_txt = format_ground_area(area)
         points = self._selected_shape_vertex_count(det_idx)
         if points is None:

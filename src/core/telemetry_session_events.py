@@ -49,10 +49,16 @@ def track_plugin_opened() -> None:
     track(ev.PLUGIN_OPENED)
 
 
-def track_plugin_activated(duration_ms: int | None = None) -> None:
+def track_plugin_activated(duration_ms: int | None = None,
+                           activation_method: str | None = None) -> None:
 
 
-    track(ev.PLUGIN_ACTIVATED, {"duration_ms": duration_ms})
+
+
+    props: dict = {"duration_ms": duration_ms}
+    if activation_method in ("manual", "pairing", "sibling"):
+        props["activation_method"] = activation_method
+    track(ev.PLUGIN_ACTIVATED, props)
 
 
 def track_pairing_started() -> None:
@@ -227,7 +233,15 @@ _CLICK_PHASE_KEYS = ("new_crop", "crop_wait_ms", "encode_ms", "total_ms",
 def track_manual_click_answered(engine: str, duration_ms: int | None = None,
                                 used_fallback: bool = False,
                                 is_correct: bool = False,
-                                phases: dict | None = None) -> None:
+                                phases: dict | None = None,
+                                wider_crop: str | None = None,
+                                wider_crop_trigger: str | None = None) -> None:
+
+
+
+
+
+
 
 
 
@@ -259,6 +273,10 @@ def track_manual_click_answered(engine: str, duration_ms: int | None = None,
     for key in _CLICK_PHASE_KEYS:
         if phases and key in phases:
             props[key] = phases[key]
+    if wider_crop in ("wider", "fallback"):
+        props["wider_crop"] = wider_crop
+        if wider_crop_trigger in ("first", "later"):
+            props["wider_crop_trigger"] = wider_crop_trigger
     track(ev.MANUAL_CLICK_ANSWERED, props)
 
 

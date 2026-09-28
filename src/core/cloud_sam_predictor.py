@@ -75,6 +75,62 @@ INVALID_REQUEST_CODE = "INVALID_REQUEST"
 _CLICK_RETRIES_MAX = 2
 
 
+
+
+
+
+
+
+_FIRST_ANSWER_WAIT_MS = 6_000
+
+
+TIMEOUT_CODE = "TIMEOUT"
+
+
+def _server_answered_yet() -> bool:
+
+    try:
+        from ..api.terralab_client_primitives import server_answered_this_session
+
+        return server_answered_this_session()
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def first_answer_wait_ms() -> int | None:
+
+
+
+    if _server_answered_yet():
+        return None
+    from .server_dials import dial_in_range
+
+    return int(dial_in_range("tuning.click.first_answer_wait_ms",
+                             _FIRST_ANSWER_WAIT_MS, 2_000, 60_000))
+
+
+def unreached_error(err: Exception) -> bool:
+
+
+
+
+    code = str(getattr(err, "code", "") or "").strip().upper()
+    if code in ("NO_INTERNET", "DNS_ERROR", "CONNECTION_REFUSED",
+                "PROXY_ERROR", "SSL_ERROR"):
+        return True
+    return code == TIMEOUT_CODE and not _server_answered_yet()
+
+
+def _accepts_timeout(call) -> bool:
+
+    try:
+        import inspect
+
+        return "timeout_ms" in inspect.signature(call).parameters
+    except (TypeError, ValueError):
+        return False
+
+
 def _click_retries_max() -> int:
 
     from .server_dials import dial_in_range
@@ -482,6 +538,10 @@ class CloudSamPredictor:
 
 
         self._generation = 0
+
+
+
+        self._unreached_generation: int | None = None
         self._register_lock = threading.Lock()
         self._registering: set = set()
 
@@ -754,11 +814,13 @@ class CloudSamPredictor:
 
 
             sent_at = time.monotonic()
-            answer = self._resolve_client().submit_refine_register(
-                body, auth)
+            answer = self._submit_register(body, auth)
             upload_s = time.monotonic() - sent_at
             if generation != self._generation or self._auth_print(self._resolve_auth()) != auth_fingerprint:
                 return
+            if ((answer or {}).get("code") == TIMEOUT_CODE
+                    and not _server_answered_yet()):
+                self._unreached_generation = generation
             if (form == "webp" and generation == self._generation
                     and (answer or {}).get("code") == INVALID_REQUEST_CODE):
 
@@ -774,8 +836,7 @@ class CloudSamPredictor:
                 body = {"crop": payload, "crop_format": form,
                         "crop_shape": list(crop.shape), **self._billing_fields()}
                 sent_at = time.monotonic()
-                answer = self._resolve_client().submit_refine_register(
-                    body, auth)
+                answer = self._submit_register(body, auth)
                 upload_s = time.monotonic() - sent_at
             if generation != self._generation or self._auth_print(self._resolve_auth()) != auth_fingerprint:
 
@@ -796,6 +857,14 @@ class CloudSamPredictor:
 
             _log("Remote refine: crop not sent ahead, the click will carry it: "
                  f"{scrub_sensitive(str(err))}", Qgis.MessageLevel.Info)
+
+    def _submit_register(self, body: dict, auth: dict) -> dict:
+
+        call = self._resolve_client().submit_refine_register
+        wait_ms = first_answer_wait_ms()
+        if wait_ms is not None and _accepts_timeout(call):
+            return call(body, auth, timeout_ms=wait_ms)
+        return call(body, auth)
 
     def predict(
         self,
@@ -819,6 +888,15 @@ class CloudSamPredictor:
 
         started = time.monotonic()
         generation = self._generation
+        if self._unreached_generation == generation:
+
+
+
+            self._unreached_generation = None
+            if not _server_answered_yet():
+                raise RefineRefusedError(
+                    "Refine failed: TerraLab could not be reached",
+                    code=TIMEOUT_CODE)
 
 
 
@@ -1067,16 +1145,21 @@ class CloudSamPredictor:
                 forget_preview_seeds()
                 raise RefineSupersededError(
                     "the account changed while the click was being sent")
+            wait_ms = first_answer_wait_ms()
+            extra = ({"timeout_ms": wait_ms}
+                     if wait_ms is not None and _accepts_timeout(client.submit_refine)
+                     else {})
             if self._client_accepts_cancel(client):
                 answer = client.submit_refine(
                     body, auth,
-                    cancel_check=lambda: self._generation != generation)
+                    cancel_check=lambda: self._generation != generation,
+                    **extra)
             else:
 
 
 
 
-                answer = client.submit_refine(body, auth)
+                answer = client.submit_refine(body, auth, **extra)
         except RefineSupersededError:
             raise
         except Exception as err:  # noqa: BLE001

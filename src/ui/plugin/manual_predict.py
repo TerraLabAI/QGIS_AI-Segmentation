@@ -23,12 +23,14 @@ from .manual_predict_shapes import (
     FILL_HOLES_CAP_UNKNOWN,
     ManualShapeMixin,
 )
+from .manual_wider_crop import ManualWiderCropMixin
 
 
 class ManualPredictMixin(
     ManualClickMixin,
     ManualShapeMixin,
     ManualMaskMixin,
+    ManualWiderCropMixin,
 ):
     pass
 

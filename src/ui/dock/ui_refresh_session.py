@@ -28,6 +28,7 @@ class DockSessionStateMixin:
 
             self.hide_pro_after_success()
             self.clear_manual_export_success()
+            self.collapse_refine_more()
 
 
 

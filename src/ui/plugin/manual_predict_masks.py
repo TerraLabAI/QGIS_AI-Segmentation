@@ -388,7 +388,11 @@ class ManualMaskMixin:
 
 
 
-            if getattr(self, "_pending_manual_click", None) is not None:
+            if self._wider_crop_unqueue_last():
+                pass
+            elif getattr(self, "_pending_manual_click", None) is not None:
+
+                self._wider_crop_cancel()
                 self._discard_pending_manual_click()
             else:
 

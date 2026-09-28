@@ -333,6 +333,9 @@ class AutoTilePlanMixin:
         if not self._tile_plan_active():
             return {"tile_plan": False}
         props: dict = {"tile_plan": True}
+        levels = self._grid_reach_levels(layer, zone_in_layer)
+        if levels is not None:
+            props["grid_reach_levels"] = levels
         if gsd_m > 0:
             props["tile_ground_m"] = int(round(TILE_SIZE * gsd_m))
         resolved = None

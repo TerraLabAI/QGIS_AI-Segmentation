@@ -448,6 +448,7 @@ class AutoReviewMixin:
                 final_pct=int(round((self._auto_confidence or 0.0) * 100)),
                 visible_count=len(self._auto_review.get("geoms", [])),
                 moves=getattr(self, "_review_conf_moves", 0),
+                reveal_clicks=getattr(self.dock_widget, "_auto_review_reveal_clicks", 0),
             )
         except Exception:
             pass  # nosec B110
@@ -533,9 +534,68 @@ class AutoReviewMixin:
             bound = ("confidence" if visible or total <= 0
                      else self._review_zero_binding_gate())
             self.dock_widget.update_auto_review_count(
-                visible, total, pct, bound=bound)
+                visible, total, pct, bound=bound,
+                hidden_hint=self._review_confidence_hidden_hint(visible))
         except (RuntimeError, AttributeError):
             pass
+
+    def _review_confidence_hidden_hint(self, visible: int) -> tuple[int, int]:
+
+
+
+
+
+
+
+        if (getattr(self, "_auto_headless_run", False)
+                or getattr(self, "_auto_worker", None) is not None
+                or not self._auto_review):
+            return 0, 0
+        from ...core.server_dials import dial_in_range
+        max_shown = int(dial_in_range(
+            "tuning.review.hidden_hint_max_shown", 5, 0, 50))
+        min_share = float(dial_in_range(
+            "tuning.review.hidden_hint_min_share", 0.7, 0.3, 1.0))
+
+        if visible < 1 or visible > max_shown:
+            return 0, 0
+
+        if not self._run_scores_rank_objects():
+            return 0, 0
+        params = dict(self._widget_review_params())
+        conf = float(params.get("conf") or 0.0)
+        if conf <= 0.0:
+            return 0, 0
+
+
+        try:
+            spin = self.dock_widget.auto_review_confidence_spin
+            min_pct = int(spin.minimum())
+        except (RuntimeError, AttributeError):
+            return 0, 0
+        reach = min_pct / 100.0
+        params["conf"] = 0.0
+        removed = self._review_removed_fids()
+        hidden = 0
+        lowest = None
+        for det_idx, (base, score, area) in enumerate(self._auto_objects):
+            if det_idx in removed or base is None or base.isEmpty():
+                continue
+            if score >= conf or score < reach or self._object_is_manual(det_idx):
+                continue
+            if not self._passes_review_filters(score, area, params):
+                continue
+            hidden += 1
+            lowest = score if lowest is None else min(lowest, score)
+        if hidden < 3 or hidden < min_share * (hidden + visible):
+            return 0, 0
+        import math
+        pct = max(min_pct, int(math.floor(float(lowest) * 100 + 1e-9)))
+
+
+        while pct > min_pct and lowest < pct / 100.0:
+            pct -= 1
+        return hidden, pct
 
     def _review_zero_binding_gate(self) -> str:
 

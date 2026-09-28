@@ -39,7 +39,6 @@ from qgis.PyQt.QtCore import QDate, Qt
 from qgis.PyQt.QtGui import QColor
 
 from .i18n import tr
-from .output_group_order import keep_group_above_imagery
 
 
 
@@ -851,6 +850,7 @@ def add_committed_layer(layer, source_name: str | None = None) -> None:
 
 
 
+    from .output_group_order import keep_group_above_imagery
     keep_group_above_imagery(top)
 
 

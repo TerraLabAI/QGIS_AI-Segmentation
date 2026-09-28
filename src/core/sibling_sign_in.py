@@ -198,7 +198,7 @@ def _enum(owner, group: str, name: str):
 
 def _call(method: str, url: str, product: str, key: str, device_hash: str, body: dict | None = None):
 
-    from qgis.core import QgsBlockingNetworkRequest
+    from qgis.core import QgsNetworkAccessManager
     from qgis.PyQt.QtCore import QByteArray, QUrl
     from qgis.PyQt.QtNetwork import QNetworkRequest
 
@@ -212,16 +212,14 @@ def _call(method: str, url: str, product: str, key: str, device_hash: str, body:
         request.setTransferTimeout(TIMEOUT_MS)
     except AttributeError:
         pass  # nosec B110
-    from .gil_safe_qobject import prime
 
 
 
-    blocker = prime(QgsBlockingNetworkRequest())
+
     if method == "POST":
-        blocker.post(request, QByteArray(json.dumps(body or {}).encode("utf-8")))
+        reply = QgsNetworkAccessManager.blockingPost(request, QByteArray(json.dumps(body or {}).encode("utf-8")))
     else:
-        blocker.get(request, True)
-    reply = blocker.reply()
+        reply = QgsNetworkAccessManager.blockingGet(request, "", True)
     status = None
     payload = {}
     try:

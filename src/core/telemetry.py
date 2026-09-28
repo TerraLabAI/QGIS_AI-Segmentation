@@ -52,8 +52,8 @@ from datetime import datetime, timezone
 from qgis.core import (
     Qgis,
     QgsApplication,
-    QgsBlockingNetworkRequest,
     QgsFeedback,
+    QgsNetworkAccessManager,
     QgsTask,
 )
 from qgis.PyQt.QtCore import QByteArray, QSettings, QThread, QTimer, QUrl
@@ -472,16 +472,14 @@ class _TelemetryFlushTask(QgsTask):
                 req.setRawHeader(k.encode("utf-8"), v.encode("utf-8"))
 
 
-            blocker = _gil_safe(QgsBlockingNetworkRequest())
-            try:
-                err = blocker.post(req, QByteArray(payload), False, self._feedback)
-            except TypeError:
 
 
-                err = blocker.post(req, QByteArray(payload))
+
+            reply = QgsNetworkAccessManager.blockingPost(
+                req, QByteArray(payload), "", True, self._feedback)
 
 
-            if int(err) != 0:
+            if not self._transfer_ok(reply):
                 return False
 
 
@@ -490,7 +488,7 @@ class _TelemetryFlushTask(QgsTask):
 
 
 
-            status = self._http_status(blocker)
+            status = self._http_status(reply)
             if status is None or status < 400:
                 return True
             return not (status >= 500 or status == 429)
@@ -498,13 +496,21 @@ class _TelemetryFlushTask(QgsTask):
             return False  # nosec B110
 
     @staticmethod
-    def _http_status(blocker) -> int | None:
+    def _transfer_ok(reply) -> bool:
+
+        try:
+            error = reply.error()
+        except (AttributeError, RuntimeError):
+            return False
+        return getattr(error, "value", error) == 0
+
+    @staticmethod
+    def _http_status(reply) -> int | None:
 
 
         if HttpStatusCodeAttribute is None:
             return None
         try:
-            reply = blocker.reply()
             if reply is None:
                 return None
             attr = reply.attribute(HttpStatusCodeAttribute)

@@ -80,12 +80,6 @@ def refine_settle_ms() -> int:
         return REFINE_SETTLE_DEFAULT_MS
 
 
-
-
-
-_REFINE_MORE_EXPANDED_KEY = "AISegmentation/refine/more_expanded"
-
-
 def _refine_row_label(text: str, tooltip: str) -> QLabel:
 
 
@@ -417,8 +411,9 @@ class DockRefineMixin:
 
 
 
-        self.refine_more_btn = FoldRow(
-            tr("More settings"), settings_key=_REFINE_MORE_EXPANDED_KEY)
+
+
+        self.refine_more_btn = FoldRow(tr("More settings"))
         self.refine_more_btn.set_fold_fact(
             tr("Points, Simplify, Trim, Grow, Size"))
         refine_content_layout.addSpacing(2)
@@ -493,6 +488,15 @@ class DockRefineMixin:
         self._apply_refine_start_values()
         self._sync_refine_shape_toggles()
         parent_layout.insertWidget(index, self.refine_group)
+
+    def collapse_refine_more(self) -> None:
+
+
+        btn = getattr(self, "refine_more_btn", None)
+        if btn is None or not btn.is_fold_open():
+            return
+        btn.set_fold_open(False)
+        self._on_refine_more_toggled(False)
 
     def _on_refine_more_toggled(self, _open: bool) -> None:
 
@@ -705,6 +709,24 @@ class DockRefineMixin:
             return
         allowed = self._refine_shape_toggles_allowed()
         rows.setVisible(allowed)
+
+
+
+        if not allowed:
+            group = getattr(self, "refine_group", None)
+            if group is not None:
+                with suppress(RuntimeError):
+                    group.setVisible(False)
+
+        engine_flipped = (
+            getattr(self, "_refine_allowed_last", None) is not None
+            and self._refine_allowed_last != allowed)
+        self._refine_allowed_last = allowed
+        if engine_flipped and allowed:
+
+
+            with suppress(RuntimeError, AttributeError):
+                self._update_refine_panel_visibility()
         note = getattr(self, "refine_more_cloud_note", None)
         if note is not None:
             try:
@@ -753,7 +775,7 @@ class DockRefineMixin:
 
 
 
-        if changed and publish:
+        if (changed or engine_flipped) and publish:
             self.publish_refine_settings()
 
     def _sync_refine_right_angle_controls(self, _state=None) -> None:
@@ -862,11 +884,19 @@ class DockRefineMixin:
 
 
         shape_allowed = self._refine_shape_toggles_allowed()
-        right_angles = shape_allowed and self.right_angles_checkbox.isChecked()
+        if not shape_allowed:
+
+
+
+
+
+            self._emit_refine_default_values()
+            return
 
 
 
         self._remember_refine_settings()
+        right_angles = self.right_angles_checkbox.isChecked()
         self.size_filter_changed.emit(
             float(self.min_size_spinbox.value()),
             0.0,
@@ -893,6 +923,18 @@ class DockRefineMixin:
             self.fill_holes_checkbox.isChecked(),
             right_angles,
         )
+
+    def _emit_refine_default_values(self) -> None:
+
+        self.size_filter_changed.emit(float(REFINE_MIN_SIZE_M2_DEFAULT), 0.0)
+        self.fill_holes_size_changed.emit(float(REFINE_FILL_HOLES_MAX_M2_DEFAULT))
+        self.clean_edges_changed.emit(float(REFINE_CLEAN_DEFAULT))
+        self.outline_budget_changed.emit(
+            float(REFINE_SIMPLIFY_DEFAULT), int(REFINE_POINTS_PCT_DEFAULT))
+
+        self.refine_settings_changed.emit(
+            int(round(REFINE_SIMPLIFY_DEFAULT)), 0,
+            int(REFINE_EXPAND_DEFAULT), bool(REFINE_FILL_HOLES_DEFAULT), False)
 
     def reset_refine_sliders(self):
 
@@ -955,6 +997,11 @@ class DockRefineMixin:
 
 
         del min_area
+        if not self._refine_shape_toggles_allowed():
+
+
+
+            return
         for w in (self.points_spinbox, self.simplify_spinbox,
                   self.clean_edges_spinbox,
                   self.round_corners_checkbox,

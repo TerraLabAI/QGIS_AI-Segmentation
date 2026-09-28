@@ -175,6 +175,12 @@ class DockBuildMixin:
 
         self.apply_server_feature_switches()
 
+
+
+        from qgis.PyQt.QtCore import QTimer
+
+        QTimer.singleShot(0, self.check_updates_once_built)
+
     def _setup_low_credit_slot(self):
 
 

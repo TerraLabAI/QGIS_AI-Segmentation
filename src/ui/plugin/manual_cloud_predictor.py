@@ -78,6 +78,12 @@ class ManualCloudPredictorMixin:
         if not self._manual_cloud_route_ready():
             return False
         if self._manual_cloud_predictor_active():
+
+
+            try:
+                self.predictor.forget_unreached()
+            except (AttributeError, RuntimeError):
+                pass  # nosec B110
             return True
         try:
             from ...core.activation_manager import get_auth_header
@@ -210,12 +216,18 @@ class ManualCloudPredictorMixin:
                                          level=Qgis.MessageLevel.Info)
             on_cloud = (self._manual_cloud_predictor_active()
                         or self._cloud_correct_predictor_active())
+            wider_crop = getattr(self, "_wider_crop_outcome", None)
+            wider_trigger = getattr(self, "_wider_crop_trigger", None)
+            self._wider_crop_outcome = None
+            self._wider_crop_trigger = None
             telemetry_session_events.track_manual_click_answered(
                 engine="cloud" if on_cloud else "local",
                 duration_ms=int(predict_ms),
                 used_fallback=bool(getattr(self, "_manual_click_fell_back", False)),
                 is_correct=bool(getattr(self, "_refine_handoff_active", False)),
                 phases=phases,
+                wider_crop=wider_crop,
+                wider_crop_trigger=wider_trigger,
             )
             if on_cloud and not getattr(self, "_cloud_notice_marked", False):
 
@@ -251,8 +263,12 @@ class ManualCloudPredictorMixin:
 
             from ...core.qt_compat import resolve_qt_enum
 
-            text = tr("Answered on your computer this time. TerraLab could not "
-                      "be reached.")
+            if getattr(getattr(self, "predictor", None), "remote_unreached", False):
+                text = tr("TerraLab could not be reached. Your computer answers "
+                          "the clicks for this session.")
+            else:
+                text = tr("Answered on your computer this time. TerraLab could "
+                          "not be reached.")
             queued = resolve_qt_enum(Qt, "ConnectionType", "QueuedConnection")
             QMetaObject.invokeMethod(
                 self.dock_widget.instructions_label, "setText", queued,

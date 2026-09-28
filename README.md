@@ -1,13 +1,24 @@
+# AI Segmentation in QGIS [![QGIS](https://img.shields.io/badge/QGIS-3.22+-93b023?style=flat-square&logo=qgis&logoColor=white)](https://qgis.org) [![Windows](https://img.shields.io/badge/Windows-0078D6?style=flat-square&logo=windows&logoColor=white)]() [![macOS](https://img.shields.io/badge/macOS-000000?style=flat-square&logo=apple&logoColor=white)]() [![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat-square&logo=linux&logoColor=black)]() [![License: GPL v2](https://img.shields.io/badge/License-GPLv2-blue.svg?style=flat-square)](LICENSE)
 
-# AI Segmentation in QGIS [![QGIS](https://img.shields.io/badge/QGIS-3.22+-93b023?style=flat-square&logo=qgis&logoColor=white)](https://qgis.org) [![Windows](https://img.shields.io/badge/Windows-0078D6?style=flat-square&logo=windows&logoColor=white)]() [![macOS](https://img.shields.io/badge/macOS-000000?style=flat-square&logo=apple&logoColor=white)]() [![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat-square&logo=linux&logoColor=black)]()
+## Segment Anything in your geospatial rasters, inside QGIS
 
-## Segment anything in your geospatial rasters using AI
-### Follow this tutorial/documentation to use the plugin :
- https://terra-lab.ai/ai-segmentation
----
+Click one object and get its outline as a polygon. Or name what you want
+("buildings", "solar panels", "trees") and get every match across a drawn area
+as vector polygons, ready to edit and export. No GPU needed.
 
+<img src="https://github.com/user-attachments/assets/8528dc25-0dc7-4102-b242-5a223339db36" alt="AI Segmentation turning aerial imagery into building polygons in QGIS" width="700"/>
 
-<img src="https://github.com/user-attachments/assets/8528dc25-0dc7-4102-b242-5a223339db36" alt="Demo" width="700"/>
+## Install
+
+QGIS 3.22 or later, on Windows, macOS or Linux. In QGIS, open *Plugins >
+Manage and Install Plugins*, search "AI Segmentation", install. A free account
+unlocks the free tier, no card needed.
+
+- Tutorial, documentation and plans: https://terra-lab.ai/ai-segmentation
+- Plugin page on the QGIS repository: https://plugins.qgis.org/plugins/AI_Segmentation/
+- Bugs and requests: https://github.com/TerraLabAI/QGIS_AI-Segmentation/issues
+
+License: GPL-2.0-or-later. Made by [TerraLab](https://terra-lab.ai).
 
 ---
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
 import time
 
 from qgis.PyQt.QtCore import (
@@ -113,9 +114,81 @@ class TileRenderBridge(QObject):
 
 
 
+
+
+        self._reach_zoom = None
+        self._reach_settled = threading.Event()
+        self._start_reach_probe()
+
+
+
+
         from qgis.PyQt.QtCore import Qt as _Qt
         self._render_requested.connect(
             self._on_render_requested, _Qt.ConnectionType.QueuedConnection)
+
+    def _start_reach_probe(self) -> None:
+
+
+        request = None
+        try:
+            from ..core.online_zoom_reach import reach_request
+
+            zone, mupp = self._zone_in_web_mercator()
+            if zone is not None:
+                request = reach_request(self._layer, zone, mupp)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("TileRenderBridge: no zoom probe: %s", exc)
+        if request is None:
+            self._reach_settled.set()
+            return
+
+        def probe():
+            try:
+                from ..core.online_zoom_reach import probe_reach, remember_reach
+
+                self._reach_zoom = probe_reach(
+                    request, cancel_check=lambda: self._cancelled)
+
+
+                remember_reach(request.source_key, request.points[0],
+                               self._reach_zoom)
+            finally:
+                self._reach_settled.set()
+
+        threading.Thread(target=probe, name="ai-seg-zoom-reach",
+                         daemon=True).start()
+
+    def _zone_in_web_mercator(self):
+
+        from qgis.core import (
+            QgsCoordinateReferenceSystem,
+            QgsCoordinateTransform,
+            QgsProject,
+            QgsRectangle,
+        )
+
+        bbox = self._geo_transform.get("bbox")
+        shape = self._geo_transform.get("img_shape")
+        crs = self._run_crs() or self._layer.crs()
+        if not bbox or not shape or crs is None or not crs.isValid():
+            return None, 0.0
+        rect = QgsRectangle(*(float(v) for v in bbox))
+        mercator = QgsCoordinateReferenceSystem("EPSG:3857")
+        if crs.authid() != "EPSG:3857":
+            rect = QgsCoordinateTransform(
+                crs, mercator, QgsProject.instance()).transformBoundingBox(rect)
+        width_px = int(shape[1])
+        if width_px <= 0 or rect.width() <= 0:
+            return None, 0.0
+        return ((rect.xMinimum(), rect.yMinimum(), rect.xMaximum(),
+                 rect.yMaximum()), rect.width() / width_px)
+
+    def _await_reach(self) -> None:
+
+
+        if not self._reach_settled.is_set():
+            self._reach_settled.wait(35.0)
 
     def _run_crs(self):
 
@@ -239,6 +312,8 @@ class TileRenderBridge(QObject):
 
                 try:
                     self._render_clone = _local_raster_render_clone(self._layer)
+                    if self._render_clone is None:
+                        self._render_clone = self._reach_clone()
 
 
 
@@ -386,6 +461,36 @@ class TileRenderBridge(QObject):
         finally:
             self._mutex.unlock()
 
+    def basemap_reach_zoom(self):
+
+
+        if self._reach_settled.is_set() and self._render_clone is not None \
+                and self._reach_zoom is not None:
+            return self._reach_zoom
+        return None
+
+    def _reach_clone(self):
+
+
+
+        zoom = self._reach_zoom if self._reach_settled.is_set() else None
+        if zoom is None:
+            return None
+        from ..core.online_zoom_reach import reach_clone
+
+        clone = reach_clone(self._layer, zoom)
+        if clone is not None:
+            try:
+                from qgis.core import Qgis, QgsMessageLog
+
+                QgsMessageLog.logMessage(
+                    f"Auto detection: the basemap host serves zoom {zoom} "
+                    "here, past the layer's max zoom; tiles read that level",
+                    "AI Segmentation", level=Qgis.MessageLevel.Info)
+            except Exception:  # noqa: BLE001
+                pass  # nosec B110
+        return clone
+
     def release_render_clone(self) -> None:
 
 
@@ -424,6 +529,7 @@ class TileRenderBridge(QObject):
 
 
 
+        self._await_reach()
         self._mutex.lock()
         try:
             if self._cancelled:

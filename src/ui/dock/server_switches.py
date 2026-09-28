@@ -207,6 +207,9 @@ class DockServerSwitchesMixin:
                 library_btn.setVisible(feature_enabled("library"))
         except (RuntimeError, AttributeError):
             pass  # nosec B110
+        redraw = getattr(self, "redraw_manual_engine_after_config", None)
+        if redraw is not None:
+            redraw()
         self.refresh_update_recommendation()
 
 
@@ -237,8 +240,8 @@ def _note_update_applies_on_reload() -> None:
 
         iface.messageBar().pushMessage(
             "AI Segmentation",
-            tr("The update applies once QGIS reloads the plugin. Restart QGIS "
-               "if the panel misbehaves after it."),
+            tr("Upgrade AI Segmentation here. If it is not listed yet, try "
+               "again later."),
             level=Qgis.MessageLevel.Info,
             duration=dial_in_range(
                 "tuning.notify.update_note_seconds", _UPDATE_NOTE_SECONDS,

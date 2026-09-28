@@ -330,6 +330,9 @@ class AutoRunStartMixin:
         mupp_floor, probe_msg = probe
 
 
+        probe_grid = grid
+
+
 
         self._retire_early_imagery_probe()
         if probe_msg is None and mupp_floor > 0:
@@ -364,6 +367,11 @@ class AutoRunStartMixin:
                 "the zone; aborting before billing",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
             )
+            return
+
+
+
+        if not self._auto_imagery_notice_passes(layer, probe_grid, mupp_floor):
             return
 
 

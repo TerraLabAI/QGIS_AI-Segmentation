@@ -72,7 +72,7 @@ _UPDATE_ICON_PX = 36
 _UPDATE_POLICY_DEFAULT = "recommend"
 _UPDATE_POLICIES = ("require", "recommend")
 
-_DISMISSED_UPDATE_VERSIONS: set[str] = set()
+_DISMISSED_UPDATE_KEY = "AISegmentation/update_card/dismissed_version"
 
 
 
@@ -183,12 +183,28 @@ def _version_above(candidate: object, reference: object) -> bool:
     return left + (0,) * (width - len(left)) > right + (0,) * (width - len(right))
 
 
+def _bare_version(value: object) -> str:
+
+    from ...core.server_dials import parse_version
+
+    if parse_version(value) is None:
+        return ""
+    text = str(value).strip()
+    return text[1:] if text[:1] in ("v", "V") else text
+
+
 def _min_supported_version() -> str:
 
-    from ...core.server_dials import parse_version, read_value
+    from ...core.server_dials import read_value
 
-    value = read_value("min_supported_version")
-    return value.strip() if parse_version(value) is not None else ""
+    return _bare_version(read_value("min_supported_version"))
+
+
+def _version_at_least(candidate: object, reference: object) -> bool:
+
+    from ...core.server_dials import parse_version
+
+    return parse_version(candidate) is not None and not _version_above(reference, candidate)
 
 
 def _served_update_policy() -> str:
@@ -200,8 +216,40 @@ def _served_update_policy() -> str:
     return value if value in _UPDATE_POLICIES else _UPDATE_POLICY_DEFAULT
 
 
-def _dismissed_update_versions() -> set[str]:
-    return _DISMISSED_UPDATE_VERSIONS
+def _update_version_dismissed(version: str) -> bool:
+    from qgis.PyQt.QtCore import QSettings
+
+    stored = QSettings().value(_DISMISSED_UPDATE_KEY, "", type=str) or ""
+    return bool(version) and stored.strip() == str(version).strip()
+
+
+def _remember_update_dismissed(version: str) -> None:
+    from qgis.PyQt.QtCore import QSettings
+
+    QSettings().setValue(_DISMISSED_UPDATE_KEY, str(version))
+
+
+def _one_click_result_tracker(version: str):
+
+
+
+
+
+    from ...core import telemetry, telemetry_events
+
+
+
+    names = (telemetry.__name__, telemetry_events.__name__)
+
+    def _send(result: str, installed_version: str = "") -> None:
+        import importlib
+
+        tel, events = (importlib.import_module(name) for name in names)
+        tel.track(events.PLUGIN_UPDATE_PROMPT_CLICKED,
+                  {"offered_version": installed_version or version or "unknown",
+                   "action": "one_click", "result": result})
+        tel.flush()
+    return _send
 
 
 class DockAboutMixin:
@@ -280,8 +328,8 @@ class DockAboutMixin:
 
 
         self._update_body_label = QLabel(tr(
-            "Update to keep using AI Segmentation. It takes one click in the "
-            "QGIS Plugin Manager; the plugin reloads on its own."))
+            "Update to keep using AI Segmentation. Update now installs it and "
+            "the plugin reloads on its own."))
         self._update_body_label.setObjectName("updateBody")
         self._update_body_label.setWordWrap(True)
         self._update_body_label.setVisible(False)
@@ -293,7 +341,7 @@ class DockAboutMixin:
         self._update_now_btn.setFixedHeight(scale_px_length(BTN_PRIMARY_WIDE_PX))
         self._update_now_btn.setAutoDefault(False)
         self._update_now_btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
-        self._update_now_btn.clicked.connect(self._on_open_plugin_manager)
+        self._update_now_btn.clicked.connect(self._on_update_now_clicked)
         card.addWidget(self._update_now_btn)
 
         later_row = QHBoxLayout()
@@ -376,8 +424,8 @@ class DockAboutMixin:
         self._update_gate_note.setVisible(False)
         col.addWidget(self._update_gate_note)
         body = QLabel(tr(
-            "Update to keep using AI Segmentation. It takes one click in the "
-            "QGIS Plugin Manager; the plugin reloads on its own."), page.card)
+            "Update to keep using AI Segmentation. Update now installs it and "
+            "the plugin reloads on its own."), page.card)
         body.setObjectName("updateGateBody")
         body.setWordWrap(True)
         col.addWidget(body)
@@ -389,8 +437,9 @@ class DockAboutMixin:
         button.setStyleSheet(_BTN_GREEN_STEP)
         button.setFixedHeight(scale_px_length(BTN_PRIMARY_WIDE_PX))
         button.setAutoDefault(False)
-        button.clicked.connect(self._on_open_plugin_manager)
+        button.clicked.connect(self._on_update_now_clicked)
         col.addWidget(button)
+        self._update_gate_btn = button
         self._update_gate_hint = QLabel("", page.card)
         self._update_gate_hint.setObjectName("updateGateHint")
         self._update_gate_hint.setWordWrap(True)
@@ -451,18 +500,24 @@ class DockAboutMixin:
 
 
 
-
         try:
             served, too_old = self._update_offer_state()
-            if not served and not too_old:
+            recommended = self._served_update_recommended()
+            listed = self._upgradeable_version()
+            if served and not _version_at_least(listed, served):
+                if getattr(self, "_update_repo_checked", False):
+
+
+                    self._track_update_prompt_suppressed(served, "not_listed")
+                    served = ""
+                else:
+                    self._maybe_refresh_plugin_repository()
+            version = listed if _version_above(listed, served) else (served or listed)
+            if not version or not (served or too_old or recommended):
                 self._clear_update_banner()
                 return
-            version = self._upgradeable_version()
-            if not version:
-                self._maybe_refresh_plugin_repository()
-                return
-            required = too_old or _served_update_policy() == "require"
-            if required and too_old and _version_above(_min_supported_version(), version):
+            gate = bool(listed) and (too_old or _served_update_policy() == "require")
+            if gate and too_old and _version_above(_min_supported_version(), version):
 
 
 
@@ -474,11 +529,43 @@ class DockAboutMixin:
                     "AI Segmentation", level=Qgis.MessageLevel.Warning)
                 self._clear_update_banner()
                 return
-            self._show_update_banner(version, required=required)
+            from .server_switches import (
+                UPDATE_TRIGGER_PLUGIN_REGISTRY,
+                UPDATE_TRIGGER_SERVED_LATEST,
+                UPDATE_TRIGGER_SERVED_MIN,
+            )
+
+            if served:
+                trigger = UPDATE_TRIGGER_SERVED_LATEST
+            elif recommended:
+                trigger = UPDATE_TRIGGER_SERVED_MIN
+            else:
+                trigger = UPDATE_TRIGGER_PLUGIN_REGISTRY
+            self._show_update_banner(
+                version, required=gate or too_old or recommended, gate=gate,
+                trigger=trigger)
         finally:
 
 
             self.refresh_update_recommendation()
+
+    def check_updates_once_built(self) -> None:
+
+
+        try:
+            self.check_for_updates()
+        except RuntimeError:
+            pass  # nosec B110
+
+    def _served_update_recommended(self) -> bool:
+
+        try:
+            from ...core.activation_manager import is_update_recommended
+
+            installed = self._installed_version()
+            return bool(installed) and bool(is_update_recommended(installed))
+        except Exception:  # noqa: BLE001
+            return False
 
     def _update_offer_state(self) -> tuple[str, bool]:
 
@@ -488,7 +575,8 @@ class DockAboutMixin:
         too_old = _version_above(_min_supported_version(), installed)
         return self._served_newer_version(), too_old
 
-    def _show_update_banner(self, version: str, required: bool = False) -> None:
+    def _show_update_banner(self, version: str, required: bool = False,
+                            gate: bool = False, trigger: str = "") -> None:
 
 
 
@@ -497,7 +585,7 @@ class DockAboutMixin:
 
 
 
-        if not required and version in _dismissed_update_versions():
+        if not required and _update_version_dismissed(version):
             self._clear_update_banner()
             return
         self._repo_offered_version = version
@@ -509,7 +597,7 @@ class DockAboutMixin:
         installed = self._installed_version()
         hint = tr("You have {installed}.").format(installed=installed) if installed else ""
         self._update_badge.setVisible(required)
-        self._update_body_label.setVisible(required)
+        self._update_body_label.setVisible(gate)
         self._update_later_btn.setVisible(not required)
         self._update_hint_label.setText(hint)
         self._update_hint_label.setVisible(required and bool(installed))
@@ -520,13 +608,14 @@ class DockAboutMixin:
         self._update_gate_note.setVisible(bool(note))
         self._update_gate_hint.setText(hint)
         self._update_gate_hint.setVisible(bool(installed))
-        gated = self._sync_update_gate(required)
+        gated = self._sync_update_gate(gate)
         self._update_card_pending = not gated
         self._update_card_required = bool(required)
+        self._update_card_gate = bool(gate)
         self._sync_update_card_for_work()
         from .server_switches import UPDATE_TRIGGER_SERVED_LATEST
 
-        self._track_update_prompt_shown(version, UPDATE_TRIGGER_SERVED_LATEST)
+        self._track_update_prompt_shown(version, trigger or UPDATE_TRIGGER_SERVED_LATEST)
 
     def _sync_update_card_for_work(self) -> None:
 
@@ -538,13 +627,20 @@ class DockAboutMixin:
 
 
 
+
+
         try:
             pending = bool(getattr(self, "_update_card_pending", False))
-            required = bool(getattr(self, "_update_card_required", False))
-            shown = pending and (required or not self._update_gate_waits())
+            gate = bool(getattr(self, "_update_card_gate", False))
+            busy = self._update_gate_waits()
+            shown = pending and (gate or not busy)
             card = self.update_notification_widget
             if card.isHidden() == shown:
                 card.setVisible(shown)
+
+            button = self._update_now_btn
+            if button.isHidden() == (not busy):
+                button.setVisible(not busy)
         except (RuntimeError, AttributeError):
             pass  # nosec B110
 
@@ -588,7 +684,7 @@ class DockAboutMixin:
 
         if getattr(self, "_update_refresh_requested", False):
             return
-        served = self._served_newer_version() or _min_supported_version()
+        served = self._served_newer_version()
         if not served:
             return
         self._update_refresh_requested = True
@@ -602,15 +698,17 @@ class DockAboutMixin:
             if not enabled:
                 self._track_update_prompt_suppressed(served, "no_repository")
                 return
+            from ..plugin_self_update import request_repository_fetch
+
             repositories.checkingDone.connect(self._on_plugin_repository_checked)
             for key in enabled:
-                repositories.requestFetching(key, force_reload=True)
+                request_repository_fetch(repositories, key)
         except Exception:  # noqa: BLE001
             self._track_update_prompt_suppressed(served, "refresh_failed")
 
     def _on_plugin_repository_checked(self) -> None:
 
-        served = self._served_newer_version() or _min_supported_version()
+        served = self._served_newer_version()
         try:
             from pyplugin_installer.installer_data import plugins, repositories
 
@@ -624,11 +722,8 @@ class DockAboutMixin:
             if served:
                 self._track_update_prompt_suppressed(served, "refresh_failed")
             return
+        self._update_repo_checked = True
         try:
-            if not self._upgradeable_version():
-                if served:
-                    self._track_update_prompt_suppressed(served, "not_listed")
-                return
             self.check_for_updates()
         except RuntimeError:
             pass  # nosec B110
@@ -647,9 +742,9 @@ class DockAboutMixin:
             installed = self._installed_version()
             if not installed:
                 return ""
-            latest = get_latest_version()
+            latest = _bare_version(get_latest_version())
             if latest and is_update_available(installed):
-                return str(latest)
+                return latest
         except Exception:  # noqa: BLE001
             pass  # nosec B110
         return ""
@@ -688,17 +783,47 @@ class DockAboutMixin:
         version = getattr(self, "_repo_offered_version", "") or ""
         self._clear_update_banner()
         if version:
-            _dismissed_update_versions().add(version)
+            _remember_update_dismissed(version)
         self._track_update_prompt_clicked(version, "dismissed")
 
-    def _on_open_plugin_manager(self, _link=None):
+    def _on_update_now_clicked(self, _checked=False):
 
+
+
+
+
+        from ..plugin_self_update import start_plugin_self_update
         from .server_switches import open_plugin_manager_or_marketplace
 
-        landed = open_plugin_manager_or_marketplace()
-        self._track_update_prompt_clicked(
-            getattr(self, "_repo_offered_version", ""),
-            "plugin_manager" if landed else "marketplace_page")
+        version = getattr(self, "_repo_offered_version", "") or ""
+        self._set_update_buttons_busy(True)
+        start_plugin_self_update(
+            self._plugin_installer_key(), version,
+            fallback=open_plugin_manager_or_marketplace,
+            on_state=self._on_update_install_state,
+            on_result=_one_click_result_tracker(version),
+            is_busy=self._update_gate_waits)
+
+    def _on_update_install_state(self, state: str) -> None:
+
+        from ..plugin_self_update import UPDATE_STATE_FALLBACK
+
+        try:
+            self._set_update_buttons_busy(state != UPDATE_STATE_FALLBACK)
+        except RuntimeError:
+            pass  # nosec B110
+
+    def _set_update_buttons_busy(self, busy: bool) -> None:
+        text = tr("Updating…") if busy else tr("Update now")
+        for name in ("_update_now_btn", "_update_gate_btn"):
+            button = getattr(self, name, None)
+            if button is None:
+                continue
+            button.setText(text)
+            button.setEnabled(not busy)
+        later = getattr(self, "_update_later_btn", None)
+        if later is not None:
+            later.setEnabled(not busy)
 
     def _setup_about_section(self):
 

@@ -429,44 +429,6 @@ class ServerDialSet(frozenset):
         return item in self._served()
 
 
-class ServerDialMap(dict):
-
-
-
-
-
-
-
-
-    def __init__(self, path: str, defaults: dict):
-        super().__init__(defaults)
-        self._path = path
-
-    def __eq__(self, other):
-
-
-
-
-
-
-        if isinstance(other, ServerDialMap):
-            return self._path == other._path and dict.__eq__(self, other)
-        return NotImplemented
-
-    def __ne__(self, other):
-
-        result = self.__eq__(other)
-        return result if result is NotImplemented else not result
-
-    def __getitem__(self, key):
-        return dial(f"{self._path}.{key}", dict.__getitem__(self, key))
-
-    def get(self, key, default=None):
-        if key in self:
-            return self[key]
-        return default
-
-
 
 
 

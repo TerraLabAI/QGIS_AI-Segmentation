@@ -501,6 +501,13 @@ class DockAutoReviewBuildMixin:
         self._auto_review_count_label = QLabel("")
         self._auto_review_count_label.setWordWrap(True)
         self._auto_review_count_label.setObjectName("autoHint")
+
+
+
+        self._auto_review_count_label.setTextFormat(Qt.TextFormat.RichText)
+        self._auto_review_count_label.setOpenExternalLinks(False)
+        self._auto_review_count_label.linkActivated.connect(
+            self._on_auto_review_count_link)
         _conf_col.addWidget(self._auto_review_count_label)
 
 

@@ -25,6 +25,9 @@ class ManualWorkflowSaveMixin:
     def _on_save_polygon(self):
 
 
+
+        self._wider_crop_settle()
+
         has_active = self.current_mask is not None and self.current_transform_info is not None
         if not has_active and not self._frozen_sessions and self._unfrozen_display_polygon is None:
             return

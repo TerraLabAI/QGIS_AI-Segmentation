@@ -541,6 +541,8 @@ class DockAutoCorrectBuildMixin:
 
 
         self.auto_correct_delete_tip.set_flat(False)
+        self.auto_correct_delete_tip.setToolTip(
+            tr("Right-drag a rectangle to delete every polygon inside it."))
         self.auto_correct_delete_tip.setVisible(False)
         lay.addWidget(self.auto_correct_delete_tip)
 

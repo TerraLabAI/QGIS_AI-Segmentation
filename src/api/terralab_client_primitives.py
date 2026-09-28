@@ -134,22 +134,34 @@ class _WallClockGuard:
 
 
 
-    def __init__(self, blocker, timeout_ms: int) -> None:
+
+
+    _TICK_MS = 250
+
+    def __init__(self, own, timeout_ms: int, outer=None) -> None:
         from qgis.PyQt.QtCore import QTimer
 
-        self._blocker = blocker
+        self._own = own
+        self._outer = outer
+        self._deadline = time.monotonic() + (max(1_000, int(timeout_ms)) + _WALL_CLOCK_GUARD_MS) / 1000.0
         self._timer = QTimer()
-        self._timer.setSingleShot(True)
-        self._timer.setInterval(max(1_000, int(timeout_ms)) + _WALL_CLOCK_GUARD_MS)
-        self._timer.timeout.connect(self._end_it)
+        self._timer.setInterval(self._TICK_MS)
+        self._timer.timeout.connect(self._tick)
         try:
             self._timer.start()
         except (RuntimeError, TypeError):
             pass  # nosec B110
 
-    def _end_it(self) -> None:
+    def _tick(self) -> None:
         try:
-            self._blocker.abort()
+            outer_cancelled = self._outer is not None and self._outer.isCanceled()
+        except (AttributeError, RuntimeError):
+            outer_cancelled = False
+        if not outer_cancelled and time.monotonic() < self._deadline:
+            return
+        self.stop()
+        try:
+            self._own.cancel()
         except (AttributeError, RuntimeError) as err:
             _log_warning(f"Could not end a stalled request: {err}")
 
@@ -170,13 +182,27 @@ _SERVER_CONTACT_TTL_S = 180.0
 _last_server_contact_monotonic: float | None = None
 
 
+
+_server_answered_this_session = False
+
+
 def note_server_contact() -> None:
 
 
 
 
-    global _last_server_contact_monotonic
+    global _last_server_contact_monotonic, _server_answered_this_session
     _last_server_contact_monotonic = time.monotonic()
+    _server_answered_this_session = True
+
+
+def server_answered_this_session() -> bool:
+
+
+
+
+
+    return _server_answered_this_session
 
 
 def server_reached_recently() -> bool:

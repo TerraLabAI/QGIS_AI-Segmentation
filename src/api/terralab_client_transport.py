@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 
-from qgis.core import QgsBlockingNetworkRequest
+from qgis.core import QgsFeedback, QgsNetworkAccessManager
 from qgis.PyQt.QtCore import QByteArray, QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
@@ -79,6 +79,30 @@ def _request_cancelled() -> bool:
 
 def _cancelled_answer() -> dict:
     return {"error": tr("Cancelled"), "code": "CANCELLED"}
+
+
+def _transfer_failed(method: str, reply) -> tuple[bool, str]:
+
+
+
+
+
+
+    if reply is None:
+        return True, ""
+    try:
+        error = reply.error()
+    except (AttributeError, RuntimeError):
+        return True, ""
+    if getattr(error, "value", error) != getattr(_NoError, "value", _NoError):
+        return True, ""
+    if method == "GET":
+        try:
+            if not bytes(reply.content()):
+                return True, "empty response"
+        except (AttributeError, RuntimeError, TypeError):
+            return False, ""
+    return False, ""
 
 
 class TerraLabTransportMixin:
@@ -284,30 +308,35 @@ class TerraLabTransportMixin:
             for key, value in extra_headers.items():
                 req.setRawHeader(key.encode("utf-8"), value.encode("utf-8"))
 
+        if method not in ("GET", "POST"):
+            return ({"error": f"Unsupported method: {method}",
+                     "code": "CLIENT_ERROR"}, None, False)
 
 
 
-        blocker = _gil_safe(QgsBlockingNetworkRequest())
-        guard = _WallClockGuard(blocker, timeout_ms) if wall_clock else None
-        feedback = _gil_safe(_current_feedback())
+
+
+
+
+
+        outer = _gil_safe(_current_feedback())
+        own = _gil_safe(QgsFeedback()) if wall_clock else None
+        guard = _WallClockGuard(own, timeout_ms, outer) if own is not None else None
+        feedback = own if own is not None else outer
         try:
             if method == "GET":
-                err = blocker.get(
-                    req, forceRefresh=True, feedback=feedback)
-            elif method == "POST":
-                payload = QByteArray(body) if body else QByteArray()
-                err = blocker.post(req, payload, feedback=feedback)
+                reply = QgsNetworkAccessManager.blockingGet(req, "", True, feedback)
             else:
-                return ({"error": f"Unsupported method: {method}",
-                         "code": "CLIENT_ERROR"}, None, False)
+                payload = QByteArray(body) if body else QByteArray()
+                reply = QgsNetworkAccessManager.blockingPost(req, payload, "", True, feedback)
         finally:
             if guard is not None:
                 guard.stop()
 
         if _request_cancelled():
             return _cancelled_answer(), None, False
-        if err != QgsBlockingNetworkRequest.ErrorCode.NoError:
-            reply = blocker.reply()
+        failed, detail = _transfer_failed(method, reply)
+        if failed:
             http_status = _http_status_of(reply)
             if http_status is not None:
                 note_server_contact()
@@ -327,17 +356,23 @@ class TerraLabTransportMixin:
                     except Exception:  # noqa: BLE001
                         parsed = None
                     if parsed is not None:
-                        code, msg = _classify_network_error(blocker)
+                        code, msg = _classify_network_error(reply, detail)
                         return (_error_shaped(parsed, code, msg),
                                 http_status, True)
-            code, msg = _classify_network_error(blocker)
+            code, msg = _classify_network_error(reply, detail)
             return {"error": msg, "code": code}, http_status, False
 
-        reply = blocker.reply()
         if reply is None:
             return _unreadable_answer(), None, False
         http_status = _http_status_of(reply)
         raw_body = bytes(reply.content()).decode("utf-8", "replace")
+        if http_status is None and not raw_body:
+
+
+
+
+            return ({"error": tr("Request timed out. Check your connection or try again."),
+                     "code": "TIMEOUT"}, None, False)
         note_server_contact()
         if http_status == _NOT_MODIFIED_STATUS:
 

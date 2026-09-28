@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 
 from qgis.core import QgsTask
@@ -17,6 +18,55 @@ from ..core.i18n import tr
 from ..core.logging_utils import log
 from ..core.server_dials import dial_in_range
 from .adaptive_concurrency import OfflineFastFail
+
+
+class LivePairingCodes:
+
+
+
+
+
+
+
+
+
+
+
+
+    MAX_CODES = 5
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._expiry_by_code: dict[str, float] = {}
+
+    def add_code(self, code: str, ttl_s: float) -> None:
+        if not code:
+            return
+        with self._lock:
+            self._expiry_by_code.pop(code, None)
+            self._expiry_by_code[code] = time.monotonic() + ttl_s
+            while len(self._expiry_by_code) > self.MAX_CODES:
+                self._expiry_by_code.pop(next(iter(self._expiry_by_code)))
+
+    def discard_code(self, code: str) -> None:
+        with self._lock:
+            self._expiry_by_code.pop(code, None)
+
+    def clear_codes(self) -> None:
+        with self._lock:
+            self._expiry_by_code.clear()
+
+    def live_codes(self) -> list[str]:
+
+        now = time.monotonic()
+        with self._lock:
+            for code in [c for c, t in self._expiry_by_code.items() if t <= now]:
+                del self._expiry_by_code[code]
+            return list(self._expiry_by_code)
+
+    def last_expiry(self) -> float:
+        with self._lock:
+            return max(self._expiry_by_code.values(), default=0.0)
 
 
 class PairingPollTask(QgsTask):
@@ -68,18 +118,31 @@ class PairingPollTask(QgsTask):
 
     OFFLINE_STREAK = 4
 
+
+
+    OLDER_CODES_EVERY = 3
+
+
+    QUIET_INTERVAL_S = 6.0
+
     def __init__(
         self,
         client,
         code: str,
         interval_s: float = 3.0,
         total_timeout_s: float = CODE_TTL_S,
+        live_codes: LivePairingCodes | None = None,
+        quiet: bool = False,
     ):
         super().__init__(tr("Connecting AI Segmentation"), QgsTask.Flag.CanCancel)
         self._client = client
         self._code = code
         self._interval_s = interval_s
         self._total_timeout_s = total_timeout_s
+        self._live_codes = live_codes
+
+
+        self._quiet = quiet
         self._key: str | None = None
         self._failure: tuple[str, str] | None = None
         self._timed_out = False
@@ -101,7 +164,56 @@ class PairingPollTask(QgsTask):
         except Exception:
             return False
 
+    def _poll_older_codes(self) -> bool:
+
+
+
+
+
+        if self._live_codes is None:
+            return False
+        for code in self._live_codes.live_codes():
+            if code == self._code:
+                continue
+            if self.isCanceled():
+                return False
+            try:
+                result = self._client.poll_pairing(code)
+            except Exception:
+                result = None
+            if not isinstance(result, dict):
+                continue
+            status = result.get("status")
+            if status == "ready":
+                raw_key = result.get("activation_key")
+                key = raw_key.strip() if isinstance(raw_key, str) else ""
+                if ACTIVATION_KEY_RE.match(key):
+                    self._key = key
+                    log("Pairing poll: an earlier sign-in code was confirmed")
+                    return True
+                self._live_codes.discard_code(code)
+            elif status in ("cancelled", "no_plan"):
+                self._live_codes.discard_code(code)
+        return False
+
+    def _run_quiet(self) -> bool:
+        while not self.isCanceled():
+            if self._live_codes is None or not self._live_codes.live_codes():
+                return False
+            if self._poll_older_codes():
+                return True
+            interval_s = dial_in_range(
+                "tuning.pairing.quiet_interval_s", self.QUIET_INTERVAL_S, 2.0, 60.0)
+            self._sleep_cancellable(interval_s)
+        return False
+
+    def _retire_own_code(self) -> None:
+        if self._live_codes is not None:
+            self._live_codes.discard_code(self._code)
+
     def run(self) -> bool:
+        if self._quiet:
+            return self._run_quiet()
         started = time.monotonic()
         deadline = started + self._total_timeout_s
         browser_seen = False
@@ -109,7 +221,9 @@ class PairingPollTask(QgsTask):
         expiry_hinted = False
         last_logged_detail = ""
         offline_streak = 0
+        rounds = 0
         while not self.isCanceled() and time.monotonic() < deadline:
+            rounds += 1
             try:
                 result = self._client.poll_pairing(self._code)
             except Exception:
@@ -146,6 +260,7 @@ class PairingPollTask(QgsTask):
                     return True
 
 
+                self._retire_own_code()
                 self._failure = (
                     tr("Unexpected response from the server. Please try again."),
                     "BAD_KEY",
@@ -155,6 +270,7 @@ class PairingPollTask(QgsTask):
             if status == "no_plan":
 
 
+                self._retire_own_code()
                 self._failure = (
                     tr(
                         "This account has no active AI Segmentation plan. "
@@ -167,6 +283,7 @@ class PairingPollTask(QgsTask):
             if status == "cancelled":
 
 
+                self._retire_own_code()
                 self._failure = (
                     tr("Sign-in was cancelled in the browser. Click Sign in to "
                        "try again."),
@@ -207,6 +324,9 @@ class PairingPollTask(QgsTask):
 
                 expiry_hinted = True
                 self.pairing_stalled.emit(self.STALL_CODE_EXPIRED)
+
+            if rounds % self.OLDER_CODES_EVERY == 0 and self._poll_older_codes():
+                return True
 
             sleep_s = self._interval_s
             hint = result.get("retry_after") if isinstance(result, dict) else None

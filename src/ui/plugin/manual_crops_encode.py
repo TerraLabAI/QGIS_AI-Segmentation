@@ -494,13 +494,19 @@ class ManualCropsEncodeMixin:
         clock = getattr(self, "_click_clock_in_hand", None)
         if clock is not None:
             clock.note_crop_wait()
-        self._pending_manual_click = {"polarity": polarity, "canvas_point": canvas_point,
-                                      "clock": clock}
+        entry = {"polarity": polarity, "canvas_point": canvas_point, "clock": clock}
+
+        if self._wider_crop_queue_click(entry):
+            return
+        self._pending_manual_click = entry
 
     def _discard_pending_manual_click(self) -> None:
 
 
         self._ensure_manual_encode_state()
+
+        if self._pending_manual_click is not None and self._wider_crop_click_dropped():
+            return
         self._pending_manual_click = None
 
     def _replay_pending_manual_click(self) -> None:
@@ -520,10 +526,16 @@ class ManualCropsEncodeMixin:
         self._replayed_click_clock = pending.get("clock")
         if self.map_tool:
             self.map_tool.add_marker(point, is_positive=is_positive)
-        if is_positive:
-            self._on_positive_click(point)
-        else:
-            self._on_negative_click(point)
+        self._replaying_manual_click = True
+        try:
+            if is_positive:
+                self._on_positive_click(point)
+            else:
+                self._on_negative_click(point)
+        finally:
+            self._replaying_manual_click = False
+
+        self._wider_crop_drain_queue()
 
     def _release_online_fetch(self, restore_provider: bool = True) -> None:
 
@@ -586,6 +598,8 @@ class ManualCropsEncodeMixin:
         self._ensure_manual_encode_state()
         self._manual_encode_gen += 1
         self._pending_encode = None
+
+        self._wider_crop_reset()
         self._discard_pending_manual_click()
         self._release_online_fetch()
         self._release_crop_read()

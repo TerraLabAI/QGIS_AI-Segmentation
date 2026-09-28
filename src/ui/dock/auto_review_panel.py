@@ -379,6 +379,7 @@ class DockAutoReviewPanelMixin:
 
         from .guidance import HINT_REVIEW_CONFIDENCE, is_hint_dismissed
         from .styles import _msg_label_qss, msg_rich
+        self._auto_review_score_useful = bool(useful)
         try:
             for widget in (self.auto_review_confidence_header,
                            self.auto_conf_histogram,
@@ -417,12 +418,13 @@ class DockAutoReviewPanelMixin:
             pass
 
     def _format_auto_review_count(self, visible: int, total: int, pct: int,
-                                  bound: str = "confidence") -> str:
+                                  bound: str = "confidence",
+                                  hidden_hint: int = 0) -> str:
 
 
         from .review_count_line import format_review_count_line
 
-        return format_review_count_line(visible, total, pct, bound)
+        return format_review_count_line(visible, total, pct, bound, hidden_hint)
 
     def set_auto_export_saving(self, saving: bool) -> None:
 
@@ -494,8 +496,28 @@ class DockAutoReviewPanelMixin:
         except (RuntimeError, AttributeError):
             pass  # nosec B110
 
+    def _on_auto_review_count_link(self, href: str) -> None:
+
+
+
+        from .review_count_line import HIDDEN_HINT_HREF
+        if href != HIDDEN_HINT_HREF:
+            return
+        pct = getattr(self, "_auto_review_hidden_reveal_pct", None)
+        if pct is None:
+            return
+
+
+        self._auto_review_reveal_clicks = getattr(self, "_auto_review_reveal_clicks", 0) + 1
+        try:
+            spin = self.auto_review_confidence_spin
+            spin.setValue(max(spin.minimum(), min(spin.maximum(), int(pct))))
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110
+
     def update_auto_review_count(self, visible: int, total: int, pct: int,
-                                 bound: str = "confidence") -> None:
+                                 bound: str = "confidence",
+                                 hidden_hint: tuple = (0, 0)) -> None:
 
 
 
@@ -506,8 +528,16 @@ class DockAutoReviewPanelMixin:
 
         self._auto_review_visible_count = int(visible)
         try:
+            hint_n, reveal_pct = hidden_hint
+
+
+            if not getattr(self, "_auto_review_score_useful", True):
+                hint_n = 0
+            self._auto_review_hidden_hint_n = int(hint_n)
+            self._auto_review_hidden_reveal_pct = int(reveal_pct)
             self._auto_review_count_label.setText(
-                self._format_auto_review_count(visible, total, pct, bound))
+                self._format_auto_review_count(
+                    visible, total, pct, bound, hidden_hint=hint_n))
             self.auto_export_btn.setText(_export_btn_label(visible))
 
 

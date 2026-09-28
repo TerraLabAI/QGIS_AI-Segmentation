@@ -556,6 +556,17 @@ class AutoRunHeadlessMixin:
 
 
 
+            try:
+                reach_layer = self._get_active_raster_layer()
+                if reach_layer is not None and self._auto_zone is not None:
+                    self._grid_reach_zoom(
+                        reach_layer, self._reproject_zone_to_run_crs(
+                            self._auto_zone, reach_layer))
+            except Exception:  # noqa: BLE001
+                pass  # nosec B110
+
+
+
 
 
 
@@ -649,6 +660,7 @@ class AutoRunHeadlessMixin:
             self._auto_review_preset_overrides = (
                 dict(refine) if isinstance(refine, dict) and refine else None)
 
+            self._await_grid_reach(self._get_active_raster_layer())
 
 
             self._auto_headless_run = True

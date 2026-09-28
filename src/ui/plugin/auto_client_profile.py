@@ -165,6 +165,9 @@ def snapshot_worker_profile(plugin, worker) -> None:
             profile["gui_worst_gap_ms"] = int(
                 round(float(summary.get("worst_queue_s", 0.0)) * 1000))
             profile["gui_queue_s"] = float(summary.get("queue_s", 0.0))
+            reach = bridge.basemap_reach_zoom()
+            if reach is not None:
+                profile["basemap_reach_zoom"] = int(reach)
         except Exception:  # noqa: BLE001  # nosec B110
             pass
     plugin._auto_client_profile = profile

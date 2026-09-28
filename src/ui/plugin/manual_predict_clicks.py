@@ -9,11 +9,9 @@ from __future__ import annotations
 
 from qgis.core import Qgis, QgsMessageLog, QgsPointXY
 
-from ...core.click_phase_clock import ClickPhaseClock, activate_click_clock, click_clock_now
 from ...core.i18n import tr
 from ...core.telemetry_errors import slot_guard
 from ..error_report_dialog import show_error_report
-from .manual_measure_cache import rollback_click_quietly
 
 
 
@@ -24,6 +22,8 @@ QUIET_CLICK_REREAD = "reread"
 QUIET_CLICK_REFUSED = "refused"
 
 QUIET_CLICK_OFFLINE = "offline"
+
+
 
 
 
@@ -109,6 +109,13 @@ def _click_connectivity_code(err: Exception) -> str:
 
     offline_codes = _click_offline_codes()
     code = str(getattr(err, "code", "") or "").strip().upper()
+    if code == "TIMEOUT":
+        try:
+            from ...core.cloud_sam_predictor import unreached_error
+
+            return code if unreached_error(err) else ""
+        except Exception:  # noqa: BLE001
+            return ""
     if code:
         return code if code in offline_codes else ""
     text = str(err).upper()
@@ -134,6 +141,7 @@ class ManualClickMixin:
     def _start_click_clock(self) -> None:
 
 
+        from ...core.click_phase_clock import ClickPhaseClock
         carried = getattr(self, "_replayed_click_clock", None)
         self._replayed_click_clock = None
         if carried is not None:
@@ -315,6 +323,9 @@ class ManualClickMixin:
 
 
 
+        self._wider_crop_fresh_click()
+
+
 
         crop_status = self._check_crop_status(raster_pt)
 
@@ -372,7 +383,9 @@ class ManualClickMixin:
 
 
 
+            from .manual_measure_cache import rollback_click_quietly
             rollback_click_quietly(self, "positive", point)
+            self._wider_crop_replay_failed()
             raise
         finally:
             self._end_click_wait_started_here()
@@ -561,6 +574,7 @@ class ManualClickMixin:
         except Exception:
 
 
+            from .manual_measure_cache import rollback_click_quietly
             rollback_click_quietly(self, "negative", point)
             raise
         finally:
@@ -607,6 +621,8 @@ class ManualClickMixin:
 
 
         import numpy as np
+
+        from ...core.click_phase_clock import activate_click_clock, click_clock_now
 
 
 
@@ -744,6 +760,16 @@ class ManualClickMixin:
 
 
         prev_mask_for_merge = self.current_mask if mask_input is not None else None
+        if (getattr(self, "_wider_crop_state", None) is not None
+                and self.current_mask is not None and self.current_transform_info is not None):
+
+
+
+
+
+            on_grid = self._shape_on_wider_grid()
+            if on_grid is not None:
+                prev_mask_for_merge = on_grid
         if prev_mask_for_merge is None and mask_input is not None:
 
 
@@ -908,10 +934,20 @@ class ManualClickMixin:
                         message=error_str)
                 except Exception:
                     pass  # nosec B110
+
+
+
+                if self._manual_cloud_predictor_active():
+                    offline_line = tr(
+                        "TerraLab could not be reached. Check your internet "
+                        "connection, or stop and pick My computer to work "
+                        "offline.")
+                else:
+                    offline_line = tr(
+                        "Network error. Check your internet connection.")
                 try:
                     self.iface.messageBar().pushWarning(
-                        "AI Segmentation",
-                        tr("Network error. Check your internet connection."))
+                        "AI Segmentation", offline_line)
                 except (RuntimeError, AttributeError):
                     pass
                 self._end_click_quietly(QUIET_CLICK_OFFLINE)
@@ -1052,6 +1088,13 @@ class ManualClickMixin:
 
 
 
+        if use_multimask and self._wider_crop_before_first_answer(
+                self.current_mask, is_first_point):
+            self._end_click_quietly(QUIET_CLICK_REREAD)
+            return False
+
+
+
 
         raw_answer = self.current_mask
 
@@ -1073,7 +1116,10 @@ class ManualClickMixin:
 
         try:
             from ...core.detection_policy import progressive_merge_enabled
-            may_merge = prev_mask_for_merge is not None and progressive_merge_enabled()
+
+
+            may_merge = (prev_mask_for_merge is not None and progressive_merge_enabled()
+                         and not self._wider_crop_replay_in_hand())
             if may_merge and click_rc is not None:
                 from ...core.progressive_merge import progressive_merge_masks
 
@@ -1123,6 +1169,15 @@ class ManualClickMixin:
                     self.current_mask, click_rc[0], click_rc[1])
             except Exception:  # noqa: BLE001  # nosec B110
                 pass
+
+
+
+        if (not use_multimask
+                and getattr(self, "_last_click_polarity", "positive") == "positive"
+                and self._wider_crop_before_later_answer(
+                    self.current_mask, raw_answer, len(all_active))):
+            self._end_click_quietly(QUIET_CLICK_REREAD)
+            return False
 
 
 
@@ -1276,6 +1331,9 @@ class ManualClickMixin:
         if self._mask_state_history:
             self._restore_mask_state(self._mask_state_history.pop())
         quiet = self._take_quiet_click_end()
+        if quiet != QUIET_CLICK_REREAD:
+
+            self._wider_crop_replay_failed()
         if quiet == QUIET_CLICK_REREAD and canvas_point is not None:
 
 

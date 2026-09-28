@@ -181,6 +181,11 @@ class AutoZoneCanvasMixin:
 
 
 
+            if self._cancel_review_right_drag():
+                return True
+
+
+
             if getattr(self, "_shape_edit_mode", None) == KIND_MERGE:
                 self._on_shape_draw_cancelled()
                 return True

@@ -104,6 +104,9 @@ class ManualCropsGeometryMixin:
         in_y = bounds[1] <= point.y() <= bounds[3]
         if not (in_x and in_y):
             return "outside_bounds"
+        widened = self._wider_crop_status()
+        if widened is not None:
+            return widened
 
 
 

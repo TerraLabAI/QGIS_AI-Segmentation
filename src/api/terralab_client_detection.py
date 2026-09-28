@@ -71,7 +71,9 @@ class TerraLabDetectionMixin:
 
         return self._resolve_url(self._detection_refine_url())
 
-    def submit_refine(self, payload: dict, auth: dict, cancel_check=None) -> dict:
+    def submit_refine(self, payload: dict, auth: dict, cancel_check=None,
+                      timeout_ms: int | None = None) -> dict:
+
 
 
 
@@ -92,7 +94,7 @@ class TerraLabDetectionMixin:
 
 
 
-        kept = self._refine_while_drawing(body, auth, cancel_check)
+        kept = self._refine_while_drawing(body, auth, cancel_check, timeout_ms)
         if kept is not None:
             return kept
         if cancel_check is not None and cancel_check():
@@ -102,11 +104,12 @@ class TerraLabDetectionMixin:
             self._detection_refine_url(),
             auth=auth,
             body=body,
-            timeout_ms=self._submit_timeout(),
+            timeout_ms=timeout_ms or self._submit_timeout(),
         )
 
     def _refine_while_drawing(self, body: bytes, auth: dict,
-                              cancel_check=None) -> dict | None:
+                              cancel_check=None,
+                              timeout_ms: int | None = None) -> dict | None:
 
 
 
@@ -126,17 +129,18 @@ class TerraLabDetectionMixin:
 
         payload, packed = packed_request_body(body)
         answer, http_status, _body_was_json = self._refine_once_while_drawing(
-            payload, packed, auth, cancel_check)
+            payload, packed, auth, cancel_check, timeout_ms)
         if answer is not None and packed and answer_refused_the_body(http_status):
             _log_warning("A compressed request body was refused; sending "
                          "them plain for the rest of the session")
             note_gzip_request_refused()
             answer, _, _ = self._refine_once_while_drawing(
-                body, False, auth, cancel_check)
+                body, False, auth, cancel_check, timeout_ms)
         return answer
 
     def _refine_once_while_drawing(
         self, body: bytes, packed: bool, auth: dict, cancel_check=None,
+        timeout_ms: int | None = None,
     ) -> tuple[dict | None, int | None, bool]:
 
 
@@ -165,7 +169,7 @@ class TerraLabDetectionMixin:
             from .click_transport import post_and_keep_painting
 
             url = self._resolve_url(self._detection_refine_url())
-            timeout_ms = self._submit_timeout()
+            timeout_ms = timeout_ms or self._submit_timeout()
         except Exception:  # noqa: BLE001
             return None, None, False
         try:
@@ -249,7 +253,8 @@ class TerraLabDetectionMixin:
             pass
         return {"error": message, "code": "TIMEOUT"}
 
-    def submit_refine_register(self, payload: dict, auth: dict) -> dict:
+    def submit_refine_register(self, payload: dict, auth: dict,
+                               timeout_ms: int | None = None) -> dict:
 
 
 
@@ -267,7 +272,7 @@ class TerraLabDetectionMixin:
             self._detection_refine_url() + "/register",
             auth=auth,
             body=body,
-            timeout_ms=self._submit_timeout(),
+            timeout_ms=timeout_ms or self._submit_timeout(),
             wall_clock=True,
         )
 

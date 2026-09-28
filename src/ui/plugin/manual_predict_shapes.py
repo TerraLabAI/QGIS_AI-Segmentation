@@ -13,7 +13,6 @@ from ...core.prompt_manager import FrozenCropSession
 from ...core.review_defaults import (
     REFINE_SMOOTH_ITERATIONS,
 )
-from .manual_measure_cache import narrow_dimension, session_area_measurer
 
 
 
@@ -159,6 +158,7 @@ class ManualShapeMixin:
             fraction = SIMPLIFY_MAX_NARROW_FRACTION
         if fraction <= 0:
             return tolerance
+        from .manual_measure_cache import narrow_dimension
         narrow = narrow_dimension(self, geom)
         if narrow <= 0:
             return tolerance
@@ -236,6 +236,7 @@ class ManualShapeMixin:
         except Exception:  # noqa: BLE001
             return None
         try:
+            from .manual_measure_cache import session_area_measurer
             measurer = session_area_measurer(self, crs)
             if measurer is None:
                 return None
@@ -599,6 +600,7 @@ class ManualShapeMixin:
             from qgis.core import QgsRectangle
 
             from ...core.hole_size import hole_pixels
+            from .manual_measure_cache import session_area_measurer
             minx, maxx, miny, maxy = (float(v) for v in info["bbox"])
             rows, cols = int(info["img_shape"][0]), int(info["img_shape"][1])
             if rows <= 0 or cols <= 0:
@@ -655,6 +657,7 @@ class ManualShapeMixin:
         min_a = float(getattr(self, "_refine_min_size_m2", 0.0) or 0.0)
         if min_a <= 0 or geom is None or geom.isEmpty():
             return geom
+        from .manual_measure_cache import session_area_measurer
         measurer = session_area_measurer(self)
         parts = (geom.asGeometryCollection() if geom.isMultipart()
                  else [geom])

@@ -16,7 +16,6 @@ from qgis.core import (
 
 from ...core.i18n import tr
 from ...core.qt_compat import safe_disconnect
-from ...core.window_focus import bring_qgis_window_to_front
 from .env_setup_account import _drop_untagged_account_history
 
 
@@ -258,6 +257,7 @@ class EnvSetupActivationMixin:
         from ...workers.pairing_poll_task import PairingPollTask
 
         client = TerraLabClient()
+        self._pairing_live_codes().add_code(code, PairingPollTask.CODE_TTL_S)
         self._start_pairing_poll(client, code)
 
 
@@ -280,6 +280,60 @@ class EnvSetupActivationMixin:
         if not QDesktopServices.openUrl(QUrl(url)):
             self._show_pairing_address(url)
 
+    def _pairing_live_codes(self):
+
+        codes = getattr(self, "_live_pairing_codes", None)
+        if codes is None:
+            from ...workers.pairing_poll_task import LivePairingCodes
+            codes = self._live_pairing_codes = LivePairingCodes()
+        return codes
+
+    def _start_pairing_quiet_poll(self) -> None:
+
+
+
+
+
+
+        self._cancel_pairing_quiet_worker()
+        if not self._pairing_live_codes().live_codes():
+            return
+        from qgis.core import QgsApplication
+
+        from ...api.terralab_client import TerraLabClient
+        from ...workers.pairing_poll_task import PairingPollTask
+        worker = PairingPollTask(
+            TerraLabClient(), "", live_codes=self._pairing_live_codes(), quiet=True)
+        worker.pairing_succeeded.connect(self._on_pairing_quiet_succeeded)
+        self._pairing_quiet_worker = worker
+        QgsApplication.taskManager().addTask(worker)
+
+    def _on_pairing_quiet_succeeded(self, key: str) -> None:
+
+        worker = self._pairing_worker
+        if worker is not None:
+            for signal_name in ("pairing_succeeded", "pairing_failed",
+                                "pairing_timeout", "pairing_stalled"):
+                safe_disconnect(worker, signal_name)
+            try:
+                if worker.is_active():
+                    worker.cancel()
+            except RuntimeError:
+                pass  # nosec B110
+        self._on_pairing_succeeded(key)
+
+    def _cancel_pairing_quiet_worker(self) -> None:
+        worker = getattr(self, "_pairing_quiet_worker", None)
+        self._pairing_quiet_worker = None
+        if worker is None:
+            return
+        safe_disconnect(worker, "pairing_succeeded")
+        try:
+            if worker.is_active():
+                worker.cancel()
+        except RuntimeError:
+            pass  # nosec B110
+
     def _start_pairing_poll(self, client, code: str) -> None:
 
 
@@ -288,6 +342,8 @@ class EnvSetupActivationMixin:
 
 
 
+
+        self._cancel_pairing_quiet_worker()
         worker = self._pairing_worker
         if worker is not None and worker.is_active():
             if worker.pairing_code == code:
@@ -304,7 +360,8 @@ class EnvSetupActivationMixin:
         from qgis.core import QgsApplication
 
         from ...workers.pairing_poll_task import PairingPollTask
-        self._pairing_worker = PairingPollTask(client, code)
+        self._pairing_worker = PairingPollTask(
+            client, code, live_codes=self._pairing_live_codes())
         self._pairing_worker.pairing_succeeded.connect(self._on_pairing_succeeded)
         self._pairing_worker.pairing_failed.connect(self._on_pairing_failed)
         self._pairing_worker.pairing_timeout.connect(self._on_pairing_timeout)
@@ -459,7 +516,7 @@ class EnvSetupActivationMixin:
             pass
         try:
             from ...core.telemetry_session_events import track_plugin_activated
-            track_plugin_activated(duration_ms=None)
+            track_plugin_activated(duration_ms=None, activation_method="sibling")
         except Exception:  # nosec B110
             pass
         QgsMessageLog.logMessage(
@@ -467,18 +524,23 @@ class EnvSetupActivationMixin:
             level=Qgis.MessageLevel.Info)
 
     def _on_pairing_succeeded(self, key: str):
+
+        self._pairing_live_codes().clear_codes()
+        self._cancel_pairing_quiet_worker()
         self._adopt_signed_in_key(key)
 
         self._clear_pairing_address()
 
 
         try:
+            from ...core.window_focus import bring_qgis_window_to_front
             bring_qgis_window_to_front(self.iface.mainWindow(), self.dock_widget)
         except Exception:  # nosec B110
             pass
         try:
             from ...core.telemetry_session_events import track_plugin_activated
-            track_plugin_activated(duration_ms=self._pairing_elapsed_ms())
+            track_plugin_activated(
+                duration_ms=self._pairing_elapsed_ms(), activation_method="pairing")
         except Exception:  # nosec B110
             pass
         QgsMessageLog.logMessage(
@@ -499,6 +561,7 @@ class EnvSetupActivationMixin:
         QgsMessageLog.logMessage(
             f"Pairing failed ({code})", "AI Segmentation",
             level=Qgis.MessageLevel.Warning)
+        self._start_pairing_quiet_poll()
 
     def _on_pairing_stalled(self, reason: str = ""):
 
@@ -554,9 +617,11 @@ class EnvSetupActivationMixin:
             pass  # nosec B110
         QgsMessageLog.logMessage(
             "Pairing timed out", "AI Segmentation", level=Qgis.MessageLevel.Info)
+        self._start_pairing_quiet_poll()
 
     def _cancel_pairing_worker(self):
 
+        self._cancel_pairing_quiet_worker()
         if self._pairing_worker is not None and self._pairing_worker.is_active():
             try:
                 self._pairing_worker.cancel()
@@ -631,17 +696,26 @@ class EnvSetupActivationMixin:
             telemetry_session_events.track_pairing_cancelled(duration_ms=self._pairing_elapsed_ms())
         except Exception:
             pass  # nosec B110
-        if code:
+
+
+
+        live = self._pairing_live_codes()
+        codes = [c for c in live.live_codes() if c != code] + ([code] if code else [])
+        live.clear_codes()
+        if codes:
 
 
             from qgis.core import QgsApplication, QgsTask
 
             from ...api.terralab_client import TerraLabClient
             client = TerraLabClient()
+
+            def _retire_codes(task, retired=tuple(codes)):
+                for retired_code in retired:
+                    client.cancel_pairing(retired_code)
+
             self._pairing_cancel_task = QgsTask.fromFunction(
-                tr("Cancelling sign-in"),
-                lambda task, c=code: client.cancel_pairing(c),
-            )
+                tr("Cancelling sign-in"), _retire_codes)
             QgsApplication.taskManager().addTask(self._pairing_cancel_task)
         QgsMessageLog.logMessage(
             "Pairing cancelled", "AI Segmentation", level=Qgis.MessageLevel.Info)

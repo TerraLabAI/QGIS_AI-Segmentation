@@ -305,7 +305,24 @@ class ManualCropWindowMixin:
             native = self._online_native_mupp(self._current_layer)
         except (RuntimeError, AttributeError, TypeError, ValueError):
             return 0.0
-        return float(native) if native and native > 0 else 0.0
+        if not native or native <= 0:
+            return 0.0
+        return self._online_reach_native(float(native))
+
+    def _online_reach_native(self, native: float) -> float:
+
+
+
+        try:
+            from ...core.online_zoom_reach import reach_native_mupp
+
+            layer = self._current_layer
+            centre = self.iface.mapCanvas().center()
+            if self._canvas_to_raster_xform is not None:
+                centre = self._canvas_to_raster_xform.transform(centre)
+            return reach_native_mupp(layer, (centre.x(), centre.y()), native)
+        except Exception:  # noqa: BLE001
+            return native
 
     def _online_crop_step_ceiling(self) -> float:
 

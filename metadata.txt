@@ -4,7 +4,7 @@ description=AI segmentation for QGIS: detect and extract building footprints, tr
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
 supportsQt6=True
-version=3.1.0
+version=3.2.0
 author=Yvann and Lilien from TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
@@ -32,6 +32,14 @@ about=
     • 12 languages: English, French, Portuguese, Spanish, German, Italian, Dutch, Polish, Indonesian, Japanese, Chinese (simplified and traditional)
 
 changelog=
+    3.2.0
+    - Review: right-drag a rectangle to delete every detection inside it, and show the detections hidden only by confidence in one press
+    - Semi-Auto: Tab cycles through the other outlines of your click, and an object cut by the edge of the view is asked again on a wider area
+    - Sharper results on online basemaps: detection tiles and clicks use the finest zoom the basemap serves
+    - Update installs the new version straight from the plugin
+    - QGIS stays responsive while imagery is prepared, and the progress bar only moves forward
+    - Stability and reliability improvements
+
     3.1.0
     - Automatic: draw an example without a word and the tile size follows the object you drew; the Precision slider now goes further in both directions
     - Automatic: a single example is put to better use, and a word typed in another language is understood
@@ -225,7 +233,7 @@ homepage=https://terra-lab.ai/ai-segmentation
 
 hasProcessingProvider=yes
 
-tags=segmentation, instance segmentation, image segmentation, ai, artificial intelligence, machine learning, deep learning, neural network, computer vision, object detection, feature extraction, classification, building detection, raster, satellite, satellite imagery, satellite images, remote sensing, remote-sensing, aerial, orthophoto, ortofoto, drone, uav, sentinel, sentinel-2, landsat, geotiff, multispectral, buildings, vegetation, vectorization, vector, vetor, vector layer, polygon, polygons, digitizing, gpkg, geopackage, georeferencing, georreferenciamento, urban planning, agriculture, forestry, ia
+tags=segmentation, segment anything, instance segmentation, image segmentation, ai, artificial intelligence, machine learning, deep learning, neural network, computer vision, object detection, feature extraction, classification, building detection, raster, satellite, satellite imagery, satellite images, remote sensing, remote-sensing, aerial, orthophoto, ortofoto, drone, uav, sentinel, sentinel-2, landsat, geotiff, multispectral, buildings, vegetation, vectorization, vector, vetor, vector layer, polygon, polygons, digitizing, gpkg, geopackage, georeferencing, georreferenciamento, urban planning, agriculture, forestry, ia
 
 category=Raster
 icon=resources/icons/icon.png

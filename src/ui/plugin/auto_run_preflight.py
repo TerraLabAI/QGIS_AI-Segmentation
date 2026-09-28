@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import math
+
 from qgis.core import (
     Qgis,
     QgsMessageLog,
@@ -124,6 +126,7 @@ class AutoRunPreflightMixin:
 
 
 
+
     _DRAWN_MAP_BASEMAPS = ("OSM", "Carto")
 
     def _warn_drawn_map_basemap(self, layer) -> None:
@@ -154,6 +157,311 @@ class AutoRunPreflightMixin:
                    ).format(basemap=label))
         except (RuntimeError, AttributeError):
             pass
+
+    def _auto_imagery_notice_passes(self, layer, grid, mupp_floor: float = 0.0) -> bool:
+
+
+
+
+
+
+
+
+
+
+
+
+        if self._auto_headless_run or self.dock_widget is None:
+            return True
+        try:
+
+            override_key = (layer.id(), self._imagery_layer_source(layer))
+        except (RuntimeError, AttributeError):
+            return True
+        allowed = getattr(self, "_auto_imagery_notice_overrides", None)
+        if allowed is None:
+            allowed = set()
+            self._auto_imagery_notice_overrides = allowed
+        if override_key in allowed:
+            return True
+        copy = None
+        notice_kind = ""
+        gsd_m = 0.0
+        try:
+            kind = self._imagery_content_kind(layer, grid)
+            if kind is not None:
+                copy = self._imagery_content_copy(kind)
+                notice_kind = kind
+            else:
+                coarse = self._coarse_imagery_copy(layer, grid, mupp_floor)
+                if coarse is not None:
+                    copy, gsd_m = coarse[:2], coarse[2]
+                    notice_kind = "too_coarse"
+        except Exception as exc:  # noqa: BLE001
+            QgsMessageLog.logMessage(
+                f"Auto detection: imagery check skipped ({type(exc).__name__})",
+                "AI Segmentation", level=Qgis.MessageLevel.Info)
+            copy = None
+        if copy is None:
+            return True
+        title, body = copy
+        from ..dialogs.confirm_dialog import (
+            PRIMARY,
+            SECONDARY,
+            WARNING,
+            ChoiceButton,
+            ask_choice,
+        )
+
+
+
+        choice = ask_choice(
+            self.iface.mainWindow(), title, body,
+            [ChoiceButton("run", tr("Run anyway"), SECONDARY),
+             ChoiceButton("cancel", tr("Cancel"), PRIMARY)],
+            default="cancel", escape="cancel", tone=WARNING)
+        self._track_imagery_notice(notice_kind, choice == "run", gsd_m)
+        if choice != "run":
+            QgsMessageLog.logMessage(
+                "Auto detection: stopped at the imagery notice; nothing sent",
+                "AI Segmentation", level=Qgis.MessageLevel.Info)
+            return False
+        allowed.add(override_key)
+        return True
+
+    def _track_imagery_notice(self, kind: str, run_anyway: bool, gsd_m: float) -> None:
+
+        try:
+            from ...core.telemetry_run_events import track_auto_imagery_notice
+
+            track_auto_imagery_notice(
+                kind, run_anyway, prompt=self._resolved_auto_object_class() or "",
+                source_m_per_px=gsd_m)
+        except Exception:  # noqa: BLE001  # nosec B110
+            pass
+
+    @staticmethod
+    def _imagery_layer_source(layer) -> str:
+
+        try:
+            return str(layer.dataProvider().dataSourceUri() or "")
+        except (RuntimeError, AttributeError):
+            return ""
+
+    @staticmethod
+    def _imagery_content_copy(kind: str) -> tuple[str, str]:
+        from ...core.imagery_content import TERRAIN
+
+        if kind == TERRAIN:
+            return (tr("This looks like terrain shading, not a photo"),
+                    tr("Detection works on aerial or satellite images."))
+        return (tr("This looks like a drawn map, not a photo"),
+                tr("Detection works on aerial or satellite images."))
+
+    def _imagery_content_kind(self, layer, grid) -> str | None:
+
+
+
+
+
+
+
+
+        from ...core.imagery_content import TERRAIN
+
+        try:
+            if layer.renderer().type() == "hillshade":
+                return TERRAIN
+        except (RuntimeError, AttributeError):
+            pass
+        kept = getattr(self, "_auto_imagery_content", None) or {}
+        signature = self._imagery_probe_signature(layer, grid)
+        if signature in kept:
+            return kept[signature]
+        if self._needs_canvas_render(layer):
+            return None
+        import time
+
+        from ...core.cloud_detection import render_zone_to_image
+        from ...core.server_dials import dial_in_range
+        from ...core.shape_policy_dials import imagery_probe_px
+
+        side = imagery_probe_px(256)
+        render_crs = self._probe_render_crs(grid)
+
+
+
+        grow = self._content_sample_growth(layer, grid)
+
+
+        budget_ms = 1000.0 * dial_in_range(
+            "tuning.preflight.content_check_budget_s", 1.5, 0.2, 10.0)
+        started = time.monotonic()
+        images = []
+        for centre in self._probe_centres(layer, grid):
+            extent = self._imagery_probe_extent(grid, centre)
+            if extent is None:
+                continue
+            if grow > 1.0:
+                extent.scale(grow)
+            left_ms = int(budget_ms - 1000.0 * (time.monotonic() - started))
+            if left_ms <= 0:
+                return self._keep_imagery_content_verdict(signature, [])
+            img, _actual = render_zone_to_image(
+                layer, extent, side, side, timeout_ms=left_ms, render_crs=render_crs)
+            if img is None and 1000.0 * (time.monotonic() - started) >= budget_ms:
+                return self._keep_imagery_content_verdict(signature, [])
+            if img is not None:
+                images.append(img)
+        return self._keep_imagery_content_verdict(signature, images)
+
+    def _content_sample_growth(self, layer, grid) -> float:
+
+
+        try:
+            authid = (grid or {}).get("crs") or ""
+            if authid and authid != layer.crs().authid():
+                return 1.0
+            run_mupp = self._grid_mupp(grid)
+            native = max(float(layer.rasterUnitsPerPixelX()),
+                         float(layer.rasterUnitsPerPixelY()))
+            if run_mupp <= 0 or native <= run_mupp:
+                return 1.0
+            return native / run_mupp
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            return 1.0
+
+    def _keep_imagery_content_verdict(self, signature, images) -> str | None:
+
+
+
+
+
+
+        verdict = None
+        try:
+            from ...core.imagery_content import (
+                imagery_content_verdict,
+                qimage_to_rgb_array,
+            )
+
+            verdicts = [imagery_content_verdict(qimage_to_rgb_array(img))
+                        for img in images if img is not None]
+            for kind in set(verdicts) - {None}:
+                if 2 * verdicts.count(kind) > len(verdicts):
+                    verdict = kind
+        except Exception:  # noqa: BLE001
+            verdict = None
+        if signature is None:
+            return verdict
+        kept = getattr(self, "_auto_imagery_content", None)
+        if kept is None:
+            kept = {}
+            self._auto_imagery_content = kept
+
+
+        while len(kept) >= 8:
+            kept.pop(next(iter(kept)))
+        kept[signature] = verdict
+        return verdict
+
+    def _coarse_imagery_copy(self, layer, grid,
+                             mupp_floor: float) -> tuple[str, str, float] | None:
+
+
+
+
+
+
+
+
+
+
+
+
+        from qgis.core import QgsRectangle
+
+        from ...core.detection_policy import seed_policy
+        from ...core.prompt_taxonomy import normalize_prompt
+        from ...core.server_dials import dial_in_range
+
+        object_class = self._resolved_auto_object_class()
+        if not object_class:
+            return None
+        tiers = seed_policy().get("object_tiers")
+        if not isinstance(tiers, list):
+            return None
+        obj_m = self._largest_matching_object_m(normalize_prompt(object_class), tiers)
+        max_obj_m = dial_in_range("tuning.preflight.coarse_object_max_m", 30.0, 1.0, 500.0)
+        if obj_m <= 0 or obj_m > max_obj_m:
+            return None
+        if self._needs_canvas_render(layer):
+            if mupp_floor <= 0:
+                return None
+            minx, miny, maxx, maxy = grid["bbox"]
+            gsd = self._mupp_to_meters(layer, QgsRectangle(minx, miny, maxx, maxy), mupp_floor)
+        else:
+            gsd = self._native_ground_mupp(layer)
+        if gsd <= 0:
+            return None
+        min_px = dial_in_range("tuning.preflight.coarse_min_object_px", 3.0, 0.5, 20.0)
+        px = obj_m / gsd
+        if px >= min_px:
+            return None
+        word = (self._current_auto_object_class() or object_class).strip()
+
+
+        if px < 10:
+            px_text = f"{max(0.1, math.floor(px * 10) / 10):.1f}"
+        else:
+            px_text = str(int(px))
+        return (tr("At {gsd} m per pixel, one {object} is about {px} pixels wide").format(
+                    gsd=f"{gsd:.1f}", object=word, px=px_text),
+                tr("Detection needs sharper imagery to find it."), float(gsd))
+
+    @staticmethod
+    def _largest_matching_object_m(text: str, tiers: list) -> float:
+
+
+        from ...core.prompt_taxonomy import iter_keywords, keyword_matches
+
+        best = 0.0
+        for entry in tiers:
+            if not isinstance(entry, dict):
+                continue
+            if not any(keyword_matches(text, kw) for kw in iter_keywords(entry)):
+                continue
+            try:
+                size_m = float(entry.get("size_m"))
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(size_m) and size_m > best:
+                best = size_m
+        return best
+
+    @staticmethod
+    def _native_ground_mupp(layer) -> float:
+
+
+        try:
+            from qgis.core import QgsDistanceArea, QgsPointXY, QgsProject
+
+            from ...core.qt_compat import DistanceMeters
+
+            upp_x = float(layer.rasterUnitsPerPixelX())
+            upp_y = float(layer.rasterUnitsPerPixelY())
+            if upp_x <= 0 or upp_y <= 0:
+                return 0.0
+            centre = layer.extent().center()
+            da = QgsDistanceArea()
+            da.setSourceCrs(layer.crs(), QgsProject.instance().transformContext())
+            da.setEllipsoid("WGS84")
+            cx, cy = centre.x(), centre.y()
+            dist = max(da.measureLine(QgsPointXY(cx, cy), QgsPointXY(cx + upp_x, cy)),
+                       da.measureLine(QgsPointXY(cx, cy), QgsPointXY(cx, cy + upp_y)))
+            return float(da.convertLengthMeasurement(dist, DistanceMeters))
+        except Exception:  # noqa: BLE001
+            return 0.0
 
     def _warn_local_raster_quality(self, layer) -> None:
 
@@ -383,7 +691,8 @@ class AutoRunPreflightMixin:
                 outline = bytes(polygon.asWkb())
         except (RuntimeError, AttributeError):
             outline = b""
-        return (layer_id, bbox, (grid or {}).get("pixel_w"),
+        return (layer_id, self._imagery_layer_source(layer), bbox,
+                (grid or {}).get("pixel_w"),
                 (grid or {}).get("pixel_h"), (grid or {}).get("crs") or "",
                 outline)
 

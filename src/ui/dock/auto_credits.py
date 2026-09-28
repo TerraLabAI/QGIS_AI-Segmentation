@@ -152,6 +152,15 @@ class DockAutoCreditsMixin:
             return
 
         self._sync_pro_pill()
+        if is_subscriber:
+            self._retire_free_offers()
+
+
+        try:
+            self._refresh_auto_exemplar_explainer(
+                slot_taken=self._auto_exemplar_line_busy())
+        except (RuntimeError, AttributeError):
+            pass
         self._refresh_auto_credits_display()
 
 
@@ -162,6 +171,27 @@ class DockAutoCreditsMixin:
         if self._auto_est_credits is not None and self._auto_zone_is_set and _cost_label_free:
             self.set_auto_credit_estimate(self._auto_est_credits)
         self._update_full_ui()
+
+    def _retire_free_offers(self) -> None:
+
+
+
+
+
+
+
+
+
+        for retire in (
+            self.hide_auto_exemplar_upsell,
+            lambda: self.set_auto_exhausted_subscribe_visible(False),
+            lambda: self.set_free_zone_fit_offer(None, None),
+            lambda: self.set_auto_zone_rejected(None),
+        ):
+            try:
+                retire()
+            except (RuntimeError, AttributeError):
+                pass
 
     def _set_credit_cost_style(self, qss: str) -> None:
 
@@ -764,6 +794,16 @@ class DockAutoCreditsMixin:
         line.set_text(title, None, keep_working_cta())
         line.set_pro_offer("plugin_low_credit_note")
         line.setVisible(True)
+
+
+
+
+
+        try:
+            from ...core import telemetry_session_events
+            telemetry_session_events.track_pro_upsell_viewed(trigger="low_credit")
+        except Exception:  # noqa: BLE001
+            pass  # nosec B110
 
 
 

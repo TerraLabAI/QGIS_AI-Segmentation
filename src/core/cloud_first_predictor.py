@@ -62,6 +62,15 @@ def _answer_was_superseded(err: Exception) -> bool:
         return False
 
 
+def _was_unreached(err: Exception) -> bool:
+    try:
+        from .cloud_sam_predictor import unreached_error
+
+        return unreached_error(err)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 class CloudFirstPredictor:
 
 
@@ -94,6 +103,24 @@ class CloudFirstPredictor:
 
 
         self.last_answer_was_remote: bool | None = None
+
+
+
+
+
+        self.remote_unreached = False
+
+    def forget_unreached(self) -> None:
+
+        self.remote_unreached = False
+
+    def _local_predictor(self):
+        if self._local_source is None:
+            return None
+        try:
+            return self._local_source()
+        except Exception:  # noqa: BLE001
+            return None
 
 
 
@@ -187,6 +214,9 @@ class CloudFirstPredictor:
             self._generation += 1
         self._crop = image_np
         self._local_holding_crop = None
+        if self.remote_unreached:
+
+            return
         try:
             self._remote.set_image(image_np)
         except Exception as err:  # noqa: BLE001
@@ -197,6 +227,10 @@ class CloudFirstPredictor:
         if self._crop is None:
             raise RuntimeError("Image has not been set. Call set_image first.")
         generation = self._generation
+        if self.remote_unreached and self._local_predictor() is not None:
+            return self._predict_on_device(
+                RuntimeError("TerraLab could not be reached earlier in this session"),
+                *args, **kwargs)
         try:
             answer = self._remote.predict(*args, **kwargs)
         except Exception as err:  # noqa: BLE001
@@ -205,6 +239,8 @@ class CloudFirstPredictor:
 
 
                 raise
+            if self._local_predictor() is not None and _was_unreached(err):
+                self.remote_unreached = True
             return self._predict_on_device(err, *args, **kwargs)
         if generation != self._generation:
             from .cloud_sam_predictor import RefineSupersededError
@@ -282,12 +318,7 @@ class CloudFirstPredictor:
 
         generation = self._generation
         crop = self._crop
-        local = None
-        if self._local_source is not None:
-            try:
-                local = self._local_source()
-            except Exception:  # nosec B110
-                local = None
+        local = self._local_predictor()
         if local is None:
             raise remote_error
         _log("Click answered on this computer, the network could not: "

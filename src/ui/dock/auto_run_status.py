@@ -85,6 +85,11 @@ def _auto_progress_bar_qss(ratio: float | None) -> str:
 _PROGRESS_SCALE = 1000
 
 
+
+
+_PHASE_SHARE = {"grid": 0.6, "refine": 0.9}
+
+
 _PROGRESS_EASE_INTERVAL_MS = 33
 
 
@@ -260,6 +265,29 @@ class DockAutoRunStatusMixin:
             return
         current, total = getattr(self, "_auto_progress_pair", (0, 0))
         self.set_auto_tile_progress(current, total)
+
+    def _auto_phase_ceiling(self, phase: str, start: int) -> int:
+
+
+
+
+        share = _PHASE_SHARE.get(phase)
+        if share is None:
+            return _PROGRESS_SCALE
+        if phase == "grid":
+            share = dial_in_range("tuning.auto.progress_grid_share", share, 0.2, 1.0)
+        else:
+            share = dial_in_range("tuning.auto.progress_refine_share", share, 0.3, 1.0)
+        ceiling = int(round(share * _PROGRESS_SCALE))
+        if ceiling <= start:
+            ceiling = start + (_PROGRESS_SCALE - start) // 2
+        return min(_PROGRESS_SCALE, ceiling)
+
+    def carry_auto_progress(self) -> None:
+
+
+        self._auto_progress_carry = max(getattr(self, "_auto_progress_target", 0),
+                                        getattr(self, "_auto_progress_shown", 0))
 
     def note_auto_tiles_all_answered(self) -> None:
 
@@ -446,10 +474,11 @@ class DockAutoRunStatusMixin:
 
 
             self._auto_progress_phase = phase
-            self._stop_auto_progress_ease()
-            self._auto_progress_target = 0
-            self._auto_progress_shown = 0
-            self.auto_tile_progress.setValue(0)
+            start = max(getattr(self, "_auto_progress_target", 0),
+                        getattr(self, "_auto_progress_shown", 0))
+            self._auto_bar_span = (start, self._auto_phase_ceiling(phase, start))
+        span_lo, span_hi = (getattr(self, "_auto_bar_span", None)
+                            or (0, self._auto_phase_ceiling(phase, 0)))
         ratio = (done / of) if of and done > 0 else 0.0
         self._auto_progress_ratio = ratio
 
@@ -457,11 +486,12 @@ class DockAutoRunStatusMixin:
 
 
 
-        target = (_PROGRESS_SCALE if of and done >= of
-                  else int(round(min(1.0, max(0.0, ratio)) * _PROGRESS_SCALE)))
+        target = (span_hi if of and done >= of
+                  else int(round(span_lo + min(1.0, max(0.0, ratio))
+                                 * (span_hi - span_lo))))
         self._auto_progress_target = max(
             getattr(self, "_auto_progress_target", 0), target)
-        if done <= 0 and phase == "grid":
+        if done <= 0 and phase == "grid" and span_lo <= 0:
 
 
 

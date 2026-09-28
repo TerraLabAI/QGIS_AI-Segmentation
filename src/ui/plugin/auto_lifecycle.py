@@ -18,7 +18,6 @@ from qgis.core import (
     QgsVectorLayer,
 )
 
-from ...core.error_policy import REPORTABLE_ERROR_CLASSES
 from ...core.i18n import tr
 from .shared import (
     _apply_fast_render,
@@ -332,6 +331,7 @@ class AutoLifecycleMixin:
         return tr("Session expired. Sign in again to continue.")
 
     def _on_auto_error(self, msg: str) -> None:
+        from ...core.error_policy import REPORTABLE_ERROR_CLASSES
         QgsMessageLog.logMessage(
             f"Auto detection error: {msg}",
             "AI Segmentation", level=Qgis.MessageLevel.Warning,

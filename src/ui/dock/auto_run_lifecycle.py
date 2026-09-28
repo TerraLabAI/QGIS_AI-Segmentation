@@ -169,10 +169,14 @@ class DockAutoRunLifecycleMixin:
             self._auto_progress_ratio = 0.0
 
 
-            self._auto_progress_target = 0
-            self._auto_progress_shown = 0
+
+            carry = int(getattr(self, "_auto_progress_carry", 0) or 0)
+            self._auto_progress_carry = 0
+            self._auto_progress_target = carry
+            self._auto_progress_shown = carry
             self._auto_progress_dirty = False
             self._auto_progress_phase = "grid"
+            self._auto_bar_span = (carry, self._auto_phase_ceiling("grid", carry))
 
 
             self._auto_queue_position = 0

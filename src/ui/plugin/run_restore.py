@@ -977,7 +977,7 @@ def restore_run(plugin, run: dict, tiles: list, decoded: dict) -> bool:
 
         import math as _math
         dock.set_review_conf_floor(
-            int(_math.ceil(plugin._review_noise_floor() * 100)))
+            int(_math.ceil(plugin._review_noise_floor() * 100 - 1e-6)))
     except (RuntimeError, AttributeError):
         pass
 
@@ -1028,7 +1028,7 @@ def restore_run(plugin, run: dict, tiles: list, decoded: dict) -> bool:
         import math as _math
         dock.seed_review_confidence(int(round(conf * 100)))
         dock.set_review_conf_floor(
-            int(_math.ceil(plugin._review_noise_floor() * 100)))
+            int(_math.ceil(plugin._review_noise_floor() * 100 - 1e-6)))
     except (RuntimeError, AttributeError):
         pass
 

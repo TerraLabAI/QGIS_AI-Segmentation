@@ -202,6 +202,8 @@ class AutoReviewOpenMixin:
             self._apply_review_display_mode(self._auto_selection_layer)
         self._refresh_auto_review_preview()
         self._review_conf_moves = 0
+        if self.dock_widget is not None:
+            self.dock_widget._auto_review_reveal_clicks = 0
 
 
         try:
