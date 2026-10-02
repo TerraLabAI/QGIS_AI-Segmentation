@@ -78,8 +78,6 @@ from .venv_install_flow import (
 from .venv_network import (
     _get_effective_proxy_url,
     _get_pip_proxy_args,
-    _get_qgis_no_proxy_hosts,
-    _get_qgis_proxy_settings,
     _get_system_proxy_settings,
     _insecure_install_opt_in,
     env_without_ca_bundle_overrides,
@@ -330,8 +328,6 @@ __all__ = [
     "verify_venv",
     "_get_effective_proxy_url",
     "_get_pip_proxy_args",
-    "_get_qgis_no_proxy_hosts",
-    "_get_qgis_proxy_settings",
     "_get_system_proxy_settings",
     "_insecure_install_opt_in",
     "env_without_ca_bundle_overrides",

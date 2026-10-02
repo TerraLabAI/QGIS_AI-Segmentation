@@ -131,13 +131,13 @@ def _build_prompt_tables(policy: dict) -> dict:
             return int(v)
         return fallback
 
-    def _as_ratio(key: str, fallback: float) -> float:
+    def _as_ratio(key: str) -> float | None:
 
 
         v = policy.get(key)
         if isinstance(v, (int, float)) and not isinstance(v, bool) and 0.0 < float(v) <= 1.0:
             return float(v)
-        return fallback
+        return None
 
     def _as_steer(key: str) -> dict[str, str]:
 
@@ -184,9 +184,9 @@ def _build_prompt_tables(policy: dict) -> dict:
         "max_words": _as_int("max_words", _PROMPT_MAX_WORDS_FALLBACK),
         "max_chars": _as_int("max_chars", _PROMPT_MAX_CHARS_FALLBACK),
 
-        "typo_cutoff": _as_ratio("typo_cutoff", 0.8),
-        "typo_cutoff_foreign": _as_ratio("typo_cutoff_foreign", 0.84),
-        "suggest_cutoff": _as_ratio("suggest_cutoff", 0.72),
+        "typo_cutoff": _as_ratio("typo_cutoff"),
+        "typo_cutoff_foreign": _as_ratio("typo_cutoff_foreign"),
+        "suggest_cutoff": _as_ratio("suggest_cutoff"),
     }
 
 
@@ -283,6 +283,8 @@ def _prompt_suggestion(norm: str, words: list[str]) -> str | None:
             return tok
 
     cutoff = _prompt_tables()["suggest_cutoff"]
+    if cutoff is None:
+        return None
     best, best_ratio = None, 0.0
     for w in words:
         for m in difflib.get_close_matches(w, tokens, n=1, cutoff=cutoff):
@@ -493,11 +495,14 @@ def _typo_correction(words: list[str]) -> str | None:
         prefixed = [t for t in pool if t.startswith(candidate)]
         if len(prefixed) == 1:
             return prefixed[0]
-    close = difflib.get_close_matches(candidate, pool, n=1, cutoff=tables["typo_cutoff"])
-    if close:
-        return close[0]
-    close = difflib.get_close_matches(
+    if tables["typo_cutoff"] is not None:
+        close = difflib.get_close_matches(
+            candidate, pool, n=1, cutoff=tables["typo_cutoff"])
+        if close:
+            return close[0]
+    close = (difflib.get_close_matches(
         candidate, list(foreign), n=1, cutoff=tables["typo_cutoff_foreign"])
+        if tables["typo_cutoff_foreign"] is not None else [])
     if close:
         return foreign[close[0]]
     return None

@@ -197,7 +197,7 @@ class ManualHandoffSelectMixin:
         _debounce_timer(self, "_handoff_prewarm_timer", self.dock_widget,
                         debounce_ms, self._maybe_prewarm_selected_crop)
 
-    def _handoff_crop_spec_for(self, geom, anchor_pt) -> tuple:
+    def _handoff_crop_spec_for(self, geom, anchor_pt, reuse_held: bool = True) -> tuple:
 
 
 
@@ -209,7 +209,9 @@ class ManualHandoffSelectMixin:
         from ...core.crop_window import crop_window_for_object
         bb = geom.boundingBox()
         bounds = (bb.xMinimum(), bb.yMinimum(), bb.xMaximum(), bb.yMaximum())
-        held = getattr(self, "_encoded_crop_window", None)
+
+
+        held = getattr(self, "_encoded_crop_window", None) if reuse_held else None
         if self._is_online_layer:
 
 

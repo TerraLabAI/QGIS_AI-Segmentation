@@ -826,6 +826,13 @@ class SamPredictor:
             }
 
 
+            try:
+                from .multimask_pick import whole_crop_ratio
+                request["whole_crop_ratio"] = whole_crop_ratio()
+            except Exception:  # noqa: BLE001  # nosec B110
+                pass
+
+
             if mask_input is not None:
 
 

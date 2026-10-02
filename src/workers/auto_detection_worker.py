@@ -96,17 +96,19 @@ from .auto_worker.mask_geometry import (
     AutoMaskGeometryMixin,
 )
 from .auto_worker.rescan_policy import (
-    _RESPLIT_TIME_RATIO,
-    _SUBDIV_MAX_DEPTH,
     AutoRescanPolicyMixin,
 )
 from .auto_worker.retry_policy import (
+    _ABORT_REQUEUE_BASE_S,
     _AIMD_MIN,
     _AIMD_START,
     _AIMD_UPLOAD_GROW_S,
+    _ANSWER_QUIET_P90_FACTOR,
+    _ANSWER_QUIET_S,
     _BACKEND_UNAVAILABLE_DELAY_S,
     _BACKEND_UNAVAILABLE_RETRIES,
     _BUSY_JITTER,
+    _DEAD_LINK_QUIET_S,
     _DEFAULT_MAX_WAIT_S,
     _DEFAULT_POLL_INTERVAL_S,
     _HANDOFF_MIN_DELAY_S,
@@ -114,10 +116,15 @@ from .auto_worker.retry_policy import (
     _MAX_RATE_LIMIT_RETRIES,
     _MIDRUN_OFFLINE_STREAK,
     _MIN_POLL_BACKOFF_S,
+    _OUTAGE_MAX_S,
+    _OUTAGE_PROBE_S,
+    _OUTAGE_RESUME_FRACTION,
+    _OUTAGE_RESUME_MIN,
     _QUEUE_RETRY_BUDGET_S,
     _REFUSAL_WINDOW,
+    _SWEEP_ANSWER_P90_FACTOR,
     _UPLOAD_SLOW_S,
-    _WINDOW_HINT_MAX,
+    _UPLOAD_STALL_S,
     HANDOFF_CODE,
     HANDOFF_OVERLOAD_CODE,
     RATE_LIMIT_SETBACK_CODES,
@@ -173,8 +180,6 @@ __all__ = [
     "_BILLED_DRAIN_STOP_REASONS",
     "_MAX_MASKS_PER_TILE",
     "_MASK_CAP_TRIGGER_FRAC",
-    "_SUBDIV_MAX_DEPTH",
-    "_RESPLIT_TIME_RATIO",
     "_MAX_TILE_COVERAGE",
     "_HARD_TILE_COVERAGE",
     "_HARD_COVER_SHAPE_ESCAPE",
@@ -182,13 +187,13 @@ __all__ = [
     "_TILE_SPAN_FRACTION",
     "_MIN_KEEP_PX",
     "_UPLOAD_SLOW_S",
+    "_UPLOAD_STALL_S",
     "_DEFAULT_POLL_INTERVAL_S",
     "_DEFAULT_MAX_WAIT_S",
     "_MIN_POLL_BACKOFF_S",
     "_AIMD_START",
     "_AIMD_UPLOAD_GROW_S",
     "_AIMD_MIN",
-    "_WINDOW_HINT_MAX",
     "_MAX_CONSECUTIVE_TILE_FATALS",
     "_EMPTY_TILES_BEFORE_NOTICE",
     "_RENDER_RETRY_MAX",
@@ -478,6 +483,25 @@ class AutoDetectionWorker(
         self._tiles = tiles
 
 
+
+        self._plan_len = len(tiles)
+
+
+
+
+
+        self._answer_cache: dict[int, str] = {}
+        self._answer_cache_bytes = 0
+        self._answer_cache_dropped = False
+        self._answer_cache_max_bytes = int(_dial_in_range(
+            "detection_policy.resume.cache_max_mb", 0, 0, 4096)) * 1048576
+        self._replay_answers: dict[int, str] = {}
+        self._resuming = False
+        self.tiles_replayed_from_cache = 0
+        self.tiles_resent = 0
+        self.stopped_offline = False
+
+
         self._density_setup(density_probe)
         self._geo_transform = geo_transform
         self._crs_authid = crs_authid
@@ -566,6 +590,11 @@ class AutoDetectionWorker(
         self._client_meta = client_meta if isinstance(client_meta, dict) else None
         self._tile_clean_image: dict[int, str] = {}
 
+        self._tile_clean_jobs: dict = {}
+        self._clean_image_pool = None
+        self._clean_image_closed = False
+        self._clean_image_lock = threading.Lock()
+
 
 
 
@@ -601,7 +630,6 @@ class AutoDetectionWorker(
 
 
         self._gate_tile_bytes: dict[int, tuple] = {}
-        self._gate_stats: dict = {}
 
 
 
@@ -645,17 +673,17 @@ class AutoDetectionWorker(
 
 
 
+
         from ..core import detection_policy as _dp
-        from ..core.tile_manager import (
-            SUBDIVIDE_MIN_PARENT_PX,
-            SUBDIVIDE_OVERLAP_FRACTION,
-        )
+        from ..core.served_config import require_served_int, require_served_number
         self._prefilter = _dp.gate_prefilter_config()
         self._max_masks = _dp.max_masks_per_tile(_MAX_MASKS_PER_TILE)
         self._mask_cap_trigger = int(
             _dp.mask_cap_trigger_frac(_MASK_CAP_TRIGGER_FRAC) * self._max_masks)
-        self._subdiv_max_depth = _dp.subdiv_max_depth(_SUBDIV_MAX_DEPTH)
-        self._resplit_time_ratio = _dp.resplit_time_ratio(_RESPLIT_TIME_RATIO)
+        self._subdiv_max_depth = require_served_int(
+            "detection_policy.seed.saturation.subdiv_max_depth", 0, 8)
+        self._resplit_time_ratio = require_served_number(
+            "detection_policy.seed.saturation.resplit_time_ratio", 0.0, 100.0)
 
         self._run_started_at = 0.0
         self._paid_tiles_total = 0
@@ -666,18 +694,18 @@ class AutoDetectionWorker(
         self._hard_tile_coverage = _dp.hard_tile_coverage(_HARD_TILE_COVERAGE)
         self._hard_cover_shape_escape = _dp.hard_cover_shape_escape(
             _HARD_COVER_SHAPE_ESCAPE)
-        self._subdiv_overlap = _dp.subdivide_overlap_fraction(
-            SUBDIVIDE_OVERLAP_FRACTION)
-        self._subdiv_min_parent_px = _dp.subdivide_min_parent_px(
-            SUBDIVIDE_MIN_PARENT_PX)
+        self._subdiv_overlap = require_served_number(
+            "detection_policy.seed.saturation.subdivide_overlap_fraction", 0.0, 0.49)
+        self._subdiv_min_parent_px = require_served_int(
+            "detection_policy.seed.saturation.subdivide_min_parent_px", 1, 100_000)
         self._compact_min_fill = _dp.compact_min_fill(_COMPACT_MIN_FILL)
         self._tile_span_fraction = _dp.tile_span_fraction(_TILE_SPAN_FRACTION)
         self._min_keep_px = _dp.min_keep_px(_MIN_KEEP_PX)
 
 
 
-
-        self._min_keep_floor_m2 = _dp.min_keep_floor_m2(0.0)
+        self._min_keep_floor_m2 = require_served_number(
+            "detection_policy.seed.saturation.min_keep_floor_m2", 0.0, 1_000_000.0)
 
 
 
@@ -717,7 +745,7 @@ class AutoDetectionWorker(
             max(_PREFETCH_DEPTH, self._max_concurrent))
 
 
-        self._window_hint_max = _dp.window_hint_max(_WINDOW_HINT_MAX)
+        self._window_hint_max = _td.window_hint_ceiling()
 
 
 
@@ -953,6 +981,61 @@ class AutoDetectionWorker(
         self.phase_upload_s = 0.0
         self.uploads_slow = 0
         self._uploaded_at: dict[int, float] = {}
+
+
+        self._upload_progress_at: dict[int, float] = {}
+        self._upload_last_sent: dict[int, int] = {}
+        self._upload_stall_s = float(_dial_in_range(
+            "detection_policy.network.upload_stall_s", _UPLOAD_STALL_S, 0.0, 300.0))
+
+
+        self.uploads_requeued = 0
+        self.upload_stalls = 0
+
+
+
+        self._reply_byte_at: dict[int, float] = {}
+        self._answer_times: list[float] = []
+        self._dead_link_quiet_s = float(_dial_in_range(
+            "detection_policy.network.dead_link_quiet_s", _DEAD_LINK_QUIET_S,
+            0.0, 60.0))
+        self._answer_quiet_s = float(_dial_in_range(
+            "detection_policy.network.answer_quiet_s", _ANSWER_QUIET_S,
+            0.0, 600.0))
+        self.dead_link_sweeps = 0
+        self.answer_quiet_reposts = 0
+
+        self._outage_since: float | None = None
+        self._outage_cap_before = 0
+        self._outage_s_total = 0.0
+        self.outages = 0
+
+
+
+        self.outage_probe_cuts = 0
+        self._link_setup_max_s = 0.0
+        self._outage_probe_s = float(_dial_in_range(
+            "detection_policy.network.outage_probe_s", _OUTAGE_PROBE_S,
+            0.5, 60.0))
+        self._outage_max_s = float(_dial_in_range(
+            "detection_policy.network.outage_max_s", _OUTAGE_MAX_S,
+            10.0, 3600.0))
+        self._outage_resume_min = int(_dial_in_range(
+            "detection_policy.network.outage_resume_min", _OUTAGE_RESUME_MIN,
+            1, 64))
+        self._outage_resume_fraction = float(_dial_in_range(
+            "detection_policy.network.outage_resume_fraction",
+            _OUTAGE_RESUME_FRACTION, 0.05, 1.0))
+        self._answer_quiet_p90_factor = float(_dial_in_range(
+            "detection_policy.network.answer_quiet_p90_factor",
+            _ANSWER_QUIET_P90_FACTOR, 0.0, 20.0))
+        self._sweep_p90_factor = float(_dial_in_range(
+            "detection_policy.network.sweep_p90_factor", _SWEEP_ANSWER_P90_FACTOR,
+            0.0, 20.0))
+        self._abort_requeue_base_s = float(_dial_in_range(
+            "detection_policy.network.abort_requeue_base_s", _ABORT_REQUEUE_BASE_S,
+            0.1, 60.0))
+        self.uploaded_aborts_reposted = 0
         self._upload_slow_s = float(_dial_in_range(
             "detection_policy.network.upload_slow_s", _UPLOAD_SLOW_S, 1.0, 120.0))
 
@@ -984,6 +1067,7 @@ class AutoDetectionWorker(
 
         self.submit_network_retries = 0
         self.tiles_skipped_network = 0
+
 
 
 
@@ -1083,6 +1167,11 @@ class AutoDetectionWorker(
         activity = begin_keep_awake("AI Segmentation cloud detection")
 
 
+
+        from ..core import network_busy
+        busy_token = network_busy.begin("auto_run")
+
+
         self.last_tile_balance = None
         try:
             self._run_detection()
@@ -1118,6 +1207,7 @@ class AutoDetectionWorker(
                 except Exception:  # noqa: BLE001  # nosec B110
                     pass
         finally:
+            network_busy.end(busy_token)
             end_keep_awake(activity)
 
 
@@ -1191,6 +1281,7 @@ class AutoDetectionWorker(
             except Exception:  # noqa: BLE001
                 pass  # nosec B110
             self._close_encode_ahead()
+            self._close_clean_image_pool()
             self._drop_prespawned_children()
             client = getattr(self, "_client", None)
             if client is not None:

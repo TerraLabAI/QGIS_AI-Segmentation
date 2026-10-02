@@ -12,9 +12,6 @@ from ..core import transport_dials as _td
 from .terralab_client_primitives import (
     _log_warning,
 )
-from .terralab_client_retry import (
-    _WINDOW_HINT_MAX,
-)
 
 
 
@@ -52,9 +49,9 @@ def _predict_manager_count() -> int:
 
 
     try:
-        ceiling = _td.window_hint_ceiling(_WINDOW_HINT_MAX)
+        ceiling = _td.window_hint_ceiling()
     except Exception:  # noqa: BLE001
-        ceiling = _WINDOW_HINT_MAX
+        ceiling = _td.WINDOW_HINT_FALLBACK
     return max(1, -(-int(ceiling) // _CONNECTIONS_PER_MANAGER))
 
 

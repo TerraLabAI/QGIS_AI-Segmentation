@@ -46,7 +46,9 @@ def track_plugin_first_open() -> None:
 
 def track_plugin_opened() -> None:
 
-    track(ev.PLUGIN_OPENED)
+    from .telemetry_config_props import config_provenance_props
+
+    track(ev.PLUGIN_OPENED, config_provenance_props())
 
 
 def track_plugin_activated(duration_ms: int | None = None,
@@ -194,10 +196,13 @@ def track_manual_export_done(
 
 def track_manual_session_summary(saves: int, undos: int,
                                  duration_ms: int | None = None) -> None:
+    from .telemetry_config_props import config_provenance_props
+
     track(ev.MANUAL_SESSION_SUMMARY, {
         "saves": saves,
         "undos": undos,
         "duration_ms": duration_ms,
+        **config_provenance_props(),
     })
 
 

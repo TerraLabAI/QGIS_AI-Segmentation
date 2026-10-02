@@ -15,6 +15,7 @@ from typing import Any
 from qgis.core import Qgis, QgsFeature, QgsField, QgsMessageLog
 from qgis.PyQt.QtCore import QMetaObject, QObject, pyqtSlot
 
+from .gui_thread import on_gui_thread
 from .polygon_geometry import (
     count_overlapping_pairs,
 )
@@ -254,19 +255,18 @@ def _release_project_layers_at(path: str, table: str = "") -> int:
 
 
     from qgis.core import QgsApplication
-    from qgis.PyQt.QtCore import Qt, QThread
+    from qgis.PyQt.QtCore import Qt
 
     from .qt_compat import resolve_qt_enum
 
     try:
-        app = QgsApplication.instance()
-        if app is None or QThread.currentThread() == app.thread():
+        if on_gui_thread(unknown=True):
             return _release_project_layers_on_gui(path, table)
     except (RuntimeError, AttributeError):
         return 0
     call = _LayerReleaseCall(path, table)
     try:
-        call.moveToThread(app.thread())
+        call.moveToThread(QgsApplication.instance().thread())
         _pending_layer_releases.add(call)
         queued = resolve_qt_enum(Qt, "ConnectionType", "QueuedConnection")
 
@@ -290,22 +290,6 @@ def _release_project_layers_at(path: str, table: str = "") -> int:
     return call.count
 
 
-def _on_gui_thread() -> bool:
-
-
-
-
-
-    from qgis.core import QgsApplication
-    from qgis.PyQt.QtCore import QThread
-
-    try:
-        app = QgsApplication.instance()
-        return app is None or QThread.currentThread() == app.thread()
-    except (RuntimeError, AttributeError):
-        return True
-
-
 def _batch_area_measurer(crs, transform_context=None, ellipsoid: str = ""):
 
 
@@ -320,7 +304,7 @@ def _batch_area_measurer(crs, transform_context=None, ellipsoid: str = ""):
     from .layer_conventions import make_area_measurer
 
     if transform_context is None:
-        if not _on_gui_thread():
+        if not on_gui_thread(unknown=True):
             QgsMessageLog.logMessage(
                 "Export: no project measurement context on this thread, so "
                 "area_m2 and perimeter_m are written empty",
@@ -424,6 +408,7 @@ def export_geometries_to_file(
         measure_field,
         pick_output_crs,
         repair_polygon,
+        reprojected_valid_copy,
         round_measure,
         to_multipolygon,
     )
@@ -615,7 +600,7 @@ def export_geometries_to_file(
     write_context = transform_context
     write_ellipsoid = str(ellipsoid or "")
     if write_context is None:
-        if _on_gui_thread():
+        if on_gui_thread(unknown=True):
             write_context = QgsProject.instance().transformContext()
             if not write_ellipsoid:
                 write_ellipsoid = str(QgsProject.instance().ellipsoid() or "")
@@ -642,11 +627,19 @@ def export_geometries_to_file(
             crs, temp_layer.extent(), project_crs,
             transform_context=write_context,
             ellipsoid=write_ellipsoid)
+    write_layer = temp_layer
     if (crs is not None and crs.isValid() and target is not None and target.isValid() and target != crs):
-        options.ct = QgsCoordinateTransform(crs, target, write_context)
+        out_xform = QgsCoordinateTransform(crs, target, write_context)
+
+
+        reprojected = reprojected_valid_copy(temp_layer, out_xform)
+        if reprojected is not None:
+            write_layer = reprojected
+        else:
+            options.ct = out_xform
 
     error = QgsVectorFileWriter.writeAsVectorFormatV3(
-        temp_layer, output_path, write_context, options,
+        write_layer, output_path, write_context, options,
     )
     if error[0] != QgsVectorFileWriter.WriterError.NoError:
         QgsMessageLog.logMessage(

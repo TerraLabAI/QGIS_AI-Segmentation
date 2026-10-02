@@ -234,7 +234,7 @@ class ManualHandoffFoldMixin:
 
 
         coverage_floor = dial_in_range(
-            "tuning.manual.handoff_kept_coverage", 0.3, 0.05, 0.95)
+            "tuning.manual.handoff_kept_coverage", 0.5, 0.05, 0.95)
 
         index = QgsSpatialIndex()
         kept = []

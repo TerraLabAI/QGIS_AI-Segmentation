@@ -21,74 +21,53 @@ if TYPE_CHECKING:
 
 
 
-_REGULARIZE_FALLBACK_KEYWORDS: tuple[str, ...] = (
-    "building",
-    "rooftop",
-    "roof",
-    "house",
-    "solar",
-    "panel",
-    "pv",
-)
 
 
+_REGULARIZE_FALLBACK_KEYWORDS: tuple[str, ...] = ()
 
 
-_REGULARIZE_FALLBACK_TOLERANCE_M = 1.0
+_REGULARIZE_FALLBACK_TOLERANCE_M = 0.0
 
 
+_REGULARIZE_FALLBACK_OBJECT_FRACTION = 0.5
 
+_REGULARIZE_FALLBACK_DIAGONAL = False
 
-_REGULARIZE_FALLBACK_OBJECT_FRACTION = 0.25
-
-
-
-
-
-
-
-_REGULARIZE_FALLBACK_DIAGONAL_REDUCTION = 8.0
+_REGULARIZE_FALLBACK_DIAGONAL_REDUCTION = 0.0
 
 _REGULARIZE_DIAGONAL_REDUCTION_MAX = 22.5
 
+_REGULARIZE_FALLBACK_CIRCLES = False
+
+_REGULARIZE_FALLBACK_CIRCLE_THRESHOLD = 1.0
 
 
-_REGULARIZE_FALLBACK_CIRCLE_THRESHOLD = 0.94
+_REGULARIZE_FALLBACK_MIN_KEEP_IOU = 0.8
+
+_REGULARIZE_FALLBACK_RING_MIN_IOU = 0.5
 
 
 
-
-_DESTAIR_FALLBACK_MULT = 2.5
-
-
-
-
+_DESTAIR_FALLBACK_MULT = 2.0
 
 _REGULARIZE_FALLBACK_MULTI_DIRECTION = False
 
-_REGULARIZE_FALLBACK_MULTI_MAX_GROUPS = 3
+_REGULARIZE_FALLBACK_MULTI_MAX_GROUPS = 2
 
 _REGULARIZE_MULTI_MAX_GROUPS_MAX = 6
 
-_REGULARIZE_FALLBACK_MULTI_MIN_SEPARATION_DEG = 10.0
+_REGULARIZE_FALLBACK_MULTI_MIN_SEPARATION_DEG = 15.0
 
 _REGULARIZE_MULTI_MIN_SEPARATION_MAX = 45.0
 
+_REGULARIZE_FALLBACK_MULTI_PARALLEL_EPS_DEG = 2.0
+
+_REGULARIZE_FALLBACK_MULTI_MIN_GROUP_WEIGHT = 0.25
 
 
+_REGULARIZE_FALLBACK_TIDY_MIN_EDGE_MULT = 0.0
 
-
-_REGULARIZE_FALLBACK_MULTI_PARALLEL_EPS_DEG = 1.5
-
-_REGULARIZE_FALLBACK_MULTI_MIN_GROUP_WEIGHT = 0.20
-
-
-
-
-
-_REGULARIZE_FALLBACK_TIDY_MIN_EDGE_MULT = 2.0
-
-_REGULARIZE_FALLBACK_TIDY_CHAMFER_MULT = 3.0
+_REGULARIZE_FALLBACK_TIDY_CHAMFER_MULT = 0.0
 
 _REGULARIZE_TIDY_MULT_MAX = 10.0
 
@@ -168,6 +147,8 @@ def regularize_settings(policy: dict | None = None) -> dict:
     tolerance_m = _num("tolerance_m", _REGULARIZE_FALLBACK_TOLERANCE_M)
     if tolerance_m <= 0:
         tolerance_m = _REGULARIZE_FALLBACK_TOLERANCE_M
+    tolerance_mult = (_positive_number(reg.get("tolerance_mult"))
+                      or _DESTAIR_FALLBACK_MULT)
     fraction = _num("max_object_fraction", _REGULARIZE_FALLBACK_OBJECT_FRACTION)
     if not 0 < fraction <= 1:
         fraction = _REGULARIZE_FALLBACK_OBJECT_FRACTION
@@ -204,17 +185,17 @@ def regularize_settings(policy: dict | None = None) -> dict:
         "keywords": keywords,
         "tolerance_m": tolerance_m,
         "max_object_fraction": fraction,
-        "tolerance_mult": _num("tolerance_mult", _DESTAIR_FALLBACK_MULT),
-        "allow_diagonal": _flag("allow_diagonal", True),
+        "tolerance_mult": tolerance_mult,
+        "allow_diagonal": _flag("allow_diagonal", _REGULARIZE_FALLBACK_DIAGONAL),
         "diagonal_reduction": reduction,
-        "allow_circles": _flag("allow_circles", False),
+        "allow_circles": _flag("allow_circles", _REGULARIZE_FALLBACK_CIRCLES),
         "circle_threshold": circle,
-        "min_keep_iou": _num("min_keep_iou", 0.7),
+        "min_keep_iou": _num("min_keep_iou", _REGULARIZE_FALLBACK_MIN_KEEP_IOU),
 
 
 
 
-        "ring_min_iou": _num("ring_min_iou", 0.1),
+        "ring_min_iou": _num("ring_min_iou", _REGULARIZE_FALLBACK_RING_MIN_IOU),
         "multi_direction": _flag(
             "multi_direction", _REGULARIZE_FALLBACK_MULTI_DIRECTION),
         "multi_max_groups": max_groups,
@@ -264,9 +245,7 @@ def regularize_tolerance_m(
 
     tolerance = settings["tolerance_m"]
     if _positive_number(reg.get("tolerance_m")) is None:
-        legacy_mult = _positive_number(reg.get("tolerance_mult"))
-        if legacy_mult is not None and pixel_m > 0:
-            tolerance = legacy_mult * pixel_m
+        tolerance = settings["tolerance_mult"] * pixel_m
 
     size_m = _positive_number(object_size_m)
     if size_m is not None:
@@ -360,9 +339,11 @@ def regularize_envelope(policy: dict | None = None) -> RegularizePolicy:
         if not 0 < rect <= 1:
             rect = 0.0
 
+        neutral = RegularizePolicy()
         fill = _positive_number(env.get("rectangle_area_fill"))
-        fill = fill if fill is not None and 0 < fill <= 1 else 0.95
-        aspect = _positive_number(env.get("rectangle_min_aspect")) or 1.2
+        fill = fill if fill is not None and 0 < fill <= 1 else neutral.rectangle_area_fill
+        aspect = (_positive_number(env.get("rectangle_min_aspect"))
+                  or neutral.rectangle_min_aspect)
 
         return RegularizePolicy(
             envelope_enabled=_flag("envelope_enabled"),

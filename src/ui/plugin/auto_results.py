@@ -348,8 +348,7 @@ class AutoResultsMixin:
         hard_cov = 0.0
         if self._auto_is_exemplar_only:
             from ...core.detection_policy import hard_tile_coverage
-            from ...workers.auto_detection_worker import _HARD_TILE_COVERAGE
-            hard_cov = hard_tile_coverage(_HARD_TILE_COVERAGE)
+            hard_cov = hard_tile_coverage()
 
 
 

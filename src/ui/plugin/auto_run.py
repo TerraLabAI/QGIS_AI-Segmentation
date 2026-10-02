@@ -53,8 +53,6 @@ from .auto_run_start import (
     AutoRunStartMixin,
 )
 from .shared import (
-    _RECALL_FLOOR,
-    _RECALL_FLOOR_EXEMPLAR_ONLY,
     _provider_name_for_log,
     park_orphaned_worker,
 )
@@ -85,8 +83,6 @@ __all__ = [
     "cancel_watchdog_ms",
     "lost_terminal_grace_s",
     "slot_guard",
-    "_RECALL_FLOOR",
-    "_RECALL_FLOOR_EXEMPLAR_ONLY",
     "_provider_name_for_log",
     "park_orphaned_worker",
     "_CANCEL_WATCHDOG_MS",

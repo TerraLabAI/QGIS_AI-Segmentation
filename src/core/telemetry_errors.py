@@ -16,7 +16,9 @@ import re
 import threading
 
 from . import telemetry_events as ev
-from .telemetry import current_session_id, on_main_thread, scrub_payload_value, track
+from .gui_thread import on_gui_thread
+from .telemetry import current_session_id, scrub_payload_value, track
+from .telemetry_run_context import active_run_id
 
 
 
@@ -93,6 +95,9 @@ def track_plugin_error(
 
 
 
+
+
+
     if traceback_hash and _traceback_already_reported(traceback_hash):
         return
     props = {
@@ -104,6 +109,9 @@ def track_plugin_error(
         props["traceback_hash"] = traceback_hash
     if module:
         props["module"] = module
+    run_id = active_run_id()
+    if run_id:
+        props["run_id"] = run_id
     if include_log_tail:
         try:
             from .log_scrub import get_recent_logs
@@ -199,7 +207,7 @@ def report_exception(
         )
     except Exception:  # nosec B110
         pass
-    if user_message and on_main_thread():
+    if user_message and on_gui_thread():
         try:
             from ..ui.error_report_dialog import ErrorReportDialog
             dialog = ErrorReportDialog(user_message, user_message, parent)

@@ -23,12 +23,16 @@ from __future__ import annotations
 
 import json
 import math
+import threading
+import time
+from collections import deque
 
 from qgis.core import Qgis, QgsMessageLog, QgsNetworkAccessManager
-from qgis.PyQt.QtCore import QByteArray, QTimer, QUrl
-from qgis.PyQt.QtNetwork import QNetworkRequest
+from qgis.PyQt.QtCore import QByteArray, QTimer
 
-from .qt_compat import resolve_qt_enum
+from .network_busy import begin as _busy_begin
+from .network_busy import end as _busy_end
+from .qt_compat import reply_http_status
 from .server_dials import dial_bool, dial_in_range
 
 
@@ -61,21 +65,6 @@ _TIMEOUT_DEFAULT_MS = 8_000
 _TIMEOUT_FLOOR_MS = 1_000
 _TIMEOUT_CEILING_MS = 30_000
 
-_HTTP_STATUS = resolve_qt_enum(QNetworkRequest, "Attribute", "HttpStatusCodeAttribute")
-
-
-
-
-
-_REDIRECT_ATTR = getattr(getattr(QNetworkRequest, "Attribute", QNetworkRequest),
-                         "RedirectPolicyAttribute",
-                         getattr(QNetworkRequest, "RedirectPolicyAttribute", None))
-_RedirectPolicy = getattr(QNetworkRequest, "RedirectPolicy", QNetworkRequest)
-_SAME_ORIGIN_REDIRECT = getattr(_RedirectPolicy, "SameOriginRedirectPolicy",
-                                getattr(QNetworkRequest, "SameOriginRedirectPolicy", None))
-_NO_LESS_SAFE_REDIRECT = getattr(_RedirectPolicy, "NoLessSafeRedirectPolicy",
-                                 getattr(QNetworkRequest, "NoLessSafeRedirectPolicy", None))
-
 
 
 _live_calls: set = set()
@@ -100,8 +89,9 @@ def hover_preview_offered() -> bool:
 
     try:
         from .config_cache import config_source
+        from .served_config import served_config_ready
 
-        if config_source() != "live":
+        if config_source() != "live" or not served_config_ready():
             return False
         return dial_bool(f"features.{HOVER_PREVIEW_FEATURE}", False)
     except Exception:  # noqa: BLE001  # nosec B110
@@ -125,10 +115,73 @@ def hover_preview_reuse_offered() -> bool:
         return False
 
 
+
+
+
+
+
+
+
+_RECENT_TRIPS_MAX = 32
+_MIN_TRIPS_TO_JUDGE = 32
+_recent_trips_ms: deque = deque(maxlen=_RECENT_TRIPS_MAX)
+_trips_lock = threading.Lock()
+
+
+
+
+_SLOW_LINK_MS_DEFAULT = 0
+_SLOW_DEBOUNCE_DEFAULT_MS = 0
+
+
+def note_preview_round_trip(elapsed_ms: float) -> None:
+
+    try:
+        if math.isfinite(elapsed_ms) and elapsed_ms >= 0:
+            with _trips_lock:
+                _recent_trips_ms.append(float(elapsed_ms))
+    except Exception:  # noqa: BLE001  # nosec B110
+        pass
+
+
+def median_preview_round_trip_ms() -> float | None:
+
+    window = int(dial_in_range("tuning.hover.trips_window", _RECENT_TRIPS_MAX,
+                               1, _RECENT_TRIPS_MAX))
+    least = int(dial_in_range("tuning.hover.trips_min", _MIN_TRIPS_TO_JUDGE,
+                              1, _RECENT_TRIPS_MAX))
+    with _trips_lock:
+        trips = sorted(list(_recent_trips_ms)[-window:])
+    if len(trips) < least:
+        return None
+    mid = len(trips) // 2
+    return trips[mid] if len(trips) % 2 else (trips[mid - 1] + trips[mid]) / 2.0
+
+
+def forget_preview_round_trips() -> None:
+
+    with _trips_lock:
+        _recent_trips_ms.clear()
+
+
 def hover_preview_debounce_ms() -> int:
 
-    return dial_in_range("ui.hover_preview_debounce_ms", _DEBOUNCE_DEFAULT_MS,
+
+
+
+
+
+    base = dial_in_range("ui.hover_preview_debounce_ms", _DEBOUNCE_DEFAULT_MS,
                          _DEBOUNCE_FLOOR_MS, _DEBOUNCE_CEILING_MS)
+    slow_after = dial_in_range("tuning.hover.slow_link_ms",
+                               _SLOW_LINK_MS_DEFAULT, 200, 10_000)
+    if slow_after <= 0:
+        return base
+    median = median_preview_round_trip_ms()
+    if median is None or median <= slow_after:
+        return base
+    return max(base, dial_in_range("tuning.hover.slow_link_debounce_ms",
+                                   _SLOW_DEBOUNCE_DEFAULT_MS, 100, 5_000))
 
 
 def hover_preview_timeout_ms() -> int:
@@ -237,14 +290,11 @@ def read_preview_answer(answer: dict, height: int, width: int):
 
 
 
+            from .multimask_pick import pick_multimask_index
+
             total = int(height) * int(width)
             areas = [int(np.count_nonzero(m)) for m in decoded]
-            small_enough = [i for i in range(len(decoded))
-                            if 0 < areas[i] < 0.8 * total]
-            if small_enough:
-                index = max(small_enough, key=lambda i: float(scores[i]))
-            else:
-                index = min(range(len(decoded)), key=lambda i: areas[i])
+            index = pick_multimask_index(areas, scores, total)
         mask = decoded[index]
         if not np.any(mask):
             return None
@@ -317,12 +367,15 @@ class HoverPreviewCall:
         self._reply = None
         self._timer = None
         self._done = False
+        self._sent_at = 0.0
+        self._busy_token = None
 
     def send(self) -> bool:
 
         if self._done or self._reply is not None:
             return False
         try:
+            from ..api.json_request import build_json_request
             from ..api.terralab_client import TerraLabClient
 
             TerraLabClient._reject_cleartext_remote(self._url)
@@ -330,18 +383,9 @@ class HoverPreviewCall:
             if manager is None:
                 return False
             payload = json.dumps(self._body, allow_nan=False).encode("utf-8")
-            request = QNetworkRequest(QUrl(self._url))
-            request.setRawHeader(b"Content-Type", b"application/json")
-            if _REDIRECT_ATTR is not None:
-                policy = (_SAME_ORIGIN_REDIRECT if self._auth
-                          else _NO_LESS_SAFE_REDIRECT)
-                if policy is not None:
-                    request.setAttribute(_REDIRECT_ATTR, policy)
 
-            if hasattr(request, "setTransferTimeout"):
-                request.setTransferTimeout(hover_preview_timeout_ms())
-            for key, value in self._auth.items():
-                request.setRawHeader(key.encode("utf-8"), value.encode("utf-8"))
+
+            request = build_json_request(self._url, self._auth, hover_preview_timeout_ms())
             reply = manager.post(request, QByteArray(payload))
             if reply is None:
                 return False
@@ -350,10 +394,10 @@ class HoverPreviewCall:
 
 
 
+
         self._reply = reply
         try:
             reply.finished.connect(self._on_finished)
-            reply.destroyed.connect(self._on_destroyed)
             self._timer = QTimer()
             self._timer.setSingleShot(True)
             self._timer.timeout.connect(self._on_timeout)
@@ -361,6 +405,8 @@ class HoverPreviewCall:
         except Exception:  # noqa: BLE001
             self.abandon()
             return False
+        self._sent_at = time.monotonic()
+        self._busy_token = _busy_begin("hover")
         _live_calls.add(self)
         if reply.isFinished():
             QTimer.singleShot(0, self._on_finished)
@@ -370,6 +416,10 @@ class HoverPreviewCall:
 
         self._done = True
         self._on_answer = None
+
+
+        token, self._busy_token = self._busy_token, None
+        _busy_end(token)
         timer, self._timer = self._timer, None
         if timer is not None:
             try:
@@ -387,10 +437,6 @@ class HoverPreviewCall:
         except Exception:  # noqa: BLE001  # nosec B110
             pass
         try:
-            reply.destroyed.disconnect(self._on_destroyed)
-        except Exception:  # noqa: BLE001
-            pass  # nosec B110
-        try:
             if not reply.isFinished():
                 reply.abort()
         except Exception:  # noqa: BLE001  # nosec B110
@@ -404,12 +450,12 @@ class HoverPreviewCall:
         if not self._done:
             self._deliver({"error": "preview timed out", "code": "TIMEOUT"})
 
-    def _on_destroyed(self, *_args) -> None:
-        if not self._done:
-            self._deliver({"error": "preview ended", "code": "NO_ANSWER"})
-
     def _deliver(self, answer: dict) -> None:
         handler = self._on_answer
+        if self._sent_at and not self._done:
+
+
+            note_preview_round_trip((time.monotonic() - self._sent_at) * 1000.0)
         self.abandon()
         if handler is not None:
             try:
@@ -426,8 +472,7 @@ class HoverPreviewCall:
         try:
             if reply is not None:
                 raw = bytes(reply.readAll())
-                status = reply.attribute(_HTTP_STATUS)
-                status = int(status) if status is not None else None
+                status = reply_http_status(reply)
                 parsed = None
                 if raw:
                     try:

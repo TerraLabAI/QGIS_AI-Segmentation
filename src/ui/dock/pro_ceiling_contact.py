@@ -8,6 +8,7 @@
 
 
 
+
 from __future__ import annotations
 
 from ...core.i18n import tr
@@ -51,11 +52,6 @@ class DockProCeilingContactMixin:
             copy_to_clipboard(email)
             return
         copy_with_feedback(button, email)
-
-    def _on_pro_contact_low_credit(self) -> None:
-        line = getattr(self, "_auto_low_credit_line", None)
-        self._on_pro_contact_clicked(
-            "low_credit", getattr(line, "button", None))
 
     def _on_pro_contact_km2_block(self) -> None:
         self._on_pro_contact_clicked(

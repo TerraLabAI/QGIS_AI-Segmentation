@@ -23,13 +23,13 @@ from qgis.core import QgsGeometry
 
 
 
+from .detection_policy_regularize import _DESTAIR_FALLBACK_MULT as _DESTAIR_PIXEL_MULTIPLE
+
+
+
 
 _UNMEASURABLE_VERTEX_BUDGET: tuple[float, int, float, float, float | None] = (
     0.0, 0, 0.0, 0.0, None)
-
-
-
-_DESTAIR_PIXEL_MULTIPLE = 2.5
 
 
 def points_dial_fraction(params: dict) -> float:

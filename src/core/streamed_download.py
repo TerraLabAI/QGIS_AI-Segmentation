@@ -27,7 +27,11 @@ from contextlib import suppress
 from typing import Any, BinaryIO, Callable, NamedTuple
 
 
+
+
+
 def tr(text: str) -> str:
+
 
 
 
@@ -63,7 +67,8 @@ class StreamedDownload(NamedTuple):
     cancelled: bool
 
 
-def sleep_unless_cancelled(seconds: float, cancel_check) -> bool:
+def sleep_unless_cancelled(seconds: float, cancel_check, *, slice_s: float = 0.25, pump=None) -> bool:
+
 
 
 
@@ -78,7 +83,9 @@ def sleep_unless_cancelled(seconds: float, cancel_check) -> bool:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return False
-        time.sleep(min(0.25, remaining))
+        if pump is not None:
+            pump()
+        time.sleep(min(slice_s, remaining))
 
 
 def _part_path(dest_path: str) -> str:
@@ -117,9 +124,9 @@ def stream_url_to_file(
     from qgis.PyQt.QtNetwork import QNetworkRequest
 
     from .qt_compat import (
-        HttpStatusCodeAttribute,
         NoLessSafeRedirectPolicy,
         RedirectPolicyAttribute,
+        reply_http_status,
     )
 
     part_path = _part_path(dest_path)
@@ -170,11 +177,7 @@ def stream_url_to_file(
 
         if state["resume"] and not state["status_checked"]:
             state["status_checked"] = True
-            status_now = None
-            if HttpStatusCodeAttribute is not None:
-                with suppress(RuntimeError, AttributeError):
-                    status_now = reply.attribute(HttpStatusCodeAttribute)
-            if status_now == 200:
+            if reply_http_status(reply) == 200:
                 try:
                     handle.close()
                     handle = open(part_path, "wb")
@@ -267,10 +270,7 @@ def stream_url_to_file(
             timer.stop()
 
     drain()
-    status = None
-    if HttpStatusCodeAttribute is not None:
-        with suppress(RuntimeError, AttributeError):
-            status = reply.attribute(HttpStatusCodeAttribute)
+    status = reply_http_status(reply)
     if not state["error"] and not state["cancelled"]:
 
 

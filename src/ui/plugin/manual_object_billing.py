@@ -413,7 +413,7 @@ class ManualObjectBillingMixin:
                 det_id, geom=geom, crs_authid=crs_authid)
             task = GenericRequestTask(
                 tr("Saving object"),
-                lambda: client.charge_saved_object(
+                lambda: client.charge_saved_object_retrying(
                     auth, session_id, index,
                     area_m2=extras.get("area_m2"),
                     polygon_wkt=extras.get("polygon_wkt")),

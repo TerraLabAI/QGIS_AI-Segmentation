@@ -732,6 +732,8 @@ class AutoReviewGeometryMixin:
             self._adopt_reslice_shape_key(cache, shape_key)
         cached_geoms = cache["geoms"]
         deadline = (_t.monotonic() + refine_budget_s) if refine_budget_s > 0 else None
+        size_gate_on = bool(params.get("min_a", 0.0) > 0 or params.get("max_a", 0.0) > 0)
+        measurer = self._make_auto_area_measurer() if size_gate_on else None
         unshaped = 0
         unrepairable = 0
         out = []
@@ -747,6 +749,15 @@ class AutoReviewGeometryMixin:
                 unshaped += 1
             else:
                 g = self._review_refined_geom(det_idx, base, params, pixel_size)
+
+
+
+
+            if (g is not None and size_gate_on
+                    and not self._object_is_manual(det_idx)
+                    and not self._passes_size_filters(
+                        self._review_object_area(det_idx, g, measurer), params)):
+                continue
             if g is not None:
                 out.append(g)
                 out_scores.append(float(score))

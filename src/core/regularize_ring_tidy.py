@@ -32,25 +32,6 @@ except ImportError:  # pragma: no cover
 
 
 
-_PARALLEL_DEG = 20.0
-_PARALLEL_SIN = math.sin(math.radians(_PARALLEL_DEG))
-
-
-_DIAGONAL_WINDOW_DEG = 10.0
-
-
-_ROUNDED_MIN_CUTS = 3
-
-
-
-_CORNER_DOT_MAX = 0.2
-
-
-
-_SQUARE_DOT_MAX = 0.02
-
-
-
 _OFFSET_CHUNK = 128
 
 
@@ -58,36 +39,53 @@ class TidyDials(NamedTuple):
 
 
 
-    parallel_sin: float = _PARALLEL_SIN
-    diagonal_window_deg: float = _DIAGONAL_WINDOW_DEG
-    rounded_min_cuts: int = _ROUNDED_MIN_CUTS
-    corner_dot_max: float = _CORNER_DOT_MAX
-    square_dot_max: float = _SQUARE_DOT_MAX
 
 
-DEFAULT_TIDY_DIALS = TidyDials()
 
 
-def resolve_tidy_dials() -> TidyDials:
+
+
+
+
+
+
+    parallel_sin: float
+    diagonal_window_deg: float
+    rounded_min_cuts: int
+    corner_dot_max: float
+    square_dot_max: float
+
+
+def _served_dial(path: str, low: float, high: float, as_int: bool = False):
+    from .server_dials import read_value
+
+    value = read_value(path)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not math.isfinite(value) or not low <= value <= high:
+        return None
+    if as_int:
+        return int(value) if float(value) == int(value) else None
+    return float(value)
+
+
+def resolve_tidy_dials() -> TidyDials | None:
+
 
 
     try:
-        from .server_dials import dial_in_range
-
-        parallel_deg = dial_in_range("tuning.review.tidy_parallel_deg", _PARALLEL_DEG, 5.0, 40.0)
-        return TidyDials(
-            parallel_sin=math.sin(math.radians(parallel_deg)),
-            diagonal_window_deg=dial_in_range(
-                "tuning.review.tidy_diagonal_window_deg", _DIAGONAL_WINDOW_DEG, 2.0, 20.0),
-            rounded_min_cuts=dial_in_range(
-                "tuning.review.tidy_rounded_min_cuts", _ROUNDED_MIN_CUTS, 2, 8),
-            corner_dot_max=dial_in_range(
-                "tuning.review.tidy_corner_dot_max", _CORNER_DOT_MAX, 0.05, 0.5),
-            square_dot_max=dial_in_range(
-                "tuning.review.tidy_square_dot_max", _SQUARE_DOT_MAX, 0.005, 0.1),
+        parallel_deg = _served_dial("tuning.review.tidy_parallel_deg", 5.0, 40.0)
+        values = (
+            _served_dial("tuning.review.tidy_diagonal_window_deg", 2.0, 20.0),
+            _served_dial("tuning.review.tidy_rounded_min_cuts", 2, 8, as_int=True),
+            _served_dial("tuning.review.tidy_corner_dot_max", 0.05, 0.5),
+            _served_dial("tuning.review.tidy_square_dot_max", 0.005, 0.1),
         )
+        if parallel_deg is None or any(v is None for v in values):
+            return None
+        return TidyDials(math.sin(math.radians(parallel_deg)), *values)
     except Exception:  # noqa: BLE001  # nosec B110
-        return DEFAULT_TIDY_DIALS
+        return None
 
 
 def _ring_axis_deg(pts: list) -> float:
@@ -106,14 +104,14 @@ def _ring_axis_deg(pts: list) -> float:
     return math.degrees(math.atan2(sy, sx)) / 4.0
 
 
-def _is_diagonal(vec, axis_deg: float, window_deg: float = _DIAGONAL_WINDOW_DEG) -> bool:
+def _is_diagonal(vec, axis_deg: float, window_deg: float) -> bool:
     ang = math.degrees(math.atan2(vec[1], vec[0]))
     off = (ang - axis_deg - 45.0) % 90.0
     return min(off, 90.0 - off) <= window_deg
 
 
 def _is_corner_cut(pts: list, i: int, axis_deg: float,
-                   tidy: TidyDials = DEFAULT_TIDY_DIALS) -> bool:
+                   tidy: TidyDials) -> bool:
 
     n = len(pts)
     prev_vec = pts[i] - pts[(i - 1) % n]
@@ -128,7 +126,7 @@ def _is_corner_cut(pts: list, i: int, axis_deg: float,
 
 
 def _corner_cut_count(pts: list, axis_deg: float,
-                      tidy: TidyDials = DEFAULT_TIDY_DIALS) -> int:
+                      tidy: TidyDials) -> int:
     n = len(pts)
     return sum(
         1 for i in range(n)
@@ -187,7 +185,7 @@ def _collinear_flags(out: list) -> list:
     return ((n1 < 1e-9) | (n2 < 1e-9) | flat).tolist()
 
 
-def _square_to(p0, p1, direction, dot_max: float = _SQUARE_DOT_MAX) -> bool:
+def _square_to(p0, p1, direction, dot_max: float) -> bool:
 
     vec = p1 - p0
     length = math.hypot(*vec)
@@ -230,7 +228,7 @@ def _line_intersection(p0, d0, p1, d1):
 
 
 def _remove_edge(pts: list, i: int, reach: float,
-                 tidy: TidyDials = DEFAULT_TIDY_DIALS) -> list | None:
+                 tidy: TidyDials) -> list | None:
 
 
     n = len(pts)
@@ -294,8 +292,7 @@ def _remove_edge(pts: list, i: int, reach: float,
 
 
 def tidy_squared_ring(coords, min_edge: float, chamfer_max: float,
-                      max_shift: float = 0.0, reference=None,
-                      tidy: TidyDials = DEFAULT_TIDY_DIALS):
+                      max_shift: float, reference, tidy: TidyDials):
 
 
 

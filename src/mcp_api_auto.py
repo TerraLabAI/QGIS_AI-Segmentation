@@ -11,7 +11,13 @@ from typing import Callable
 
 from qgis.core import Qgis, QgsGeometry
 
-from .mcp_api_guard import gui_thread_only
+from .core.served_config import ServedConfigMissing
+from .mcp_api_guard import (
+    gui_thread_only,
+    refuse_without_served_config,
+    request_served_config,
+    settings_not_loaded_error,
+)
 
 
 
@@ -321,7 +327,11 @@ class SegmentationAutoMixin:
 
 
 
+        request_served_config(self._plugin)
         plugin = self._plugin
+        refused = refuse_without_served_config(plugin)
+        if refused is not None:
+            return refused
 
         from .core.detect_gate import can_detect
 
@@ -447,6 +457,8 @@ class SegmentationAutoMixin:
             result = self._with_dropped_options(
                 self._with_auto_hint(runner(**kwargs)), dropped)
             return self._with_agent_run_facts(result, id_before)
+        except ServedConfigMissing:
+            return settings_not_loaded_error()
         except Exception as e:
             import traceback
 
@@ -735,6 +747,12 @@ class SegmentationAutoMixin:
 
 
 
+        refused = refuse_without_served_config(plugin)
+        if refused is not None:
+            return refused
+
+
+
         active_layer = None
         try:
             active_layer = plugin._get_active_raster_layer()
@@ -1015,9 +1033,9 @@ class SegmentationAutoMixin:
         import time
 
         deadline = time.monotonic() + seconds
-        from .mcp_api_guard import _on_the_gui_thread
+        from .core.gui_thread import on_gui_thread
 
-        if not _on_the_gui_thread():
+        if not on_gui_thread():
             while time.monotonic() < deadline and self._agent_zone_run_in_flight():
                 time.sleep(_STATUS_WAIT_TICK_MS / 1000.0)
             return

@@ -196,8 +196,7 @@ class AutoObjectBuildMixin:
             return []
         try:
             from ...core.detection_policy import fp_rules
-            from ...core.review_presets import shape_class_for
-            return fp_rules(shape_class_for(prompt))
+            return fp_rules(self._auto_run_shape_class(prompt))
         except Exception:  # noqa: BLE001
             return []
 
@@ -231,8 +230,7 @@ class AutoObjectBuildMixin:
             if not prompt:
                 return None
             from ...core.detection_policy import auto_regularize_settings
-            from ...core.review_presets import shape_class_for
-            settings = auto_regularize_settings(shape_class_for(prompt))
+            settings = auto_regularize_settings(self._auto_run_shape_class(prompt))
             if settings is None:
                 return None
             from ...core.footprint_alignment import (

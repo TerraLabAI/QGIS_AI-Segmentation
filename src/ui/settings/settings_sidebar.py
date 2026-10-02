@@ -44,6 +44,14 @@ SETTINGS_PRODUCT_URL = (
     "?utm_source=qgis&utm_medium=plugin&utm_campaign=ai-segmentation"
     "&utm_content=settings_wordmark"
 )
+
+
+def _settings_product_url() -> str:
+    from ...core.server_dials import dial_url
+
+    return dial_url("tuning.links.product_page_settings", SETTINGS_PRODUCT_URL)
+
+
 _NAV_W = 186
 
 _NAV_MAX_W = 260
@@ -183,7 +191,7 @@ class SettingsSidebarMixin:
         host = _WordmarkTile(side)
         host.setCursor(Qt.CursorShape.PointingHandCursor)
         host.setToolTip(tr("Open the AI Segmentation page"))
-        host.clicked.connect(lambda: open_external_url(SETTINGS_PRODUCT_URL, parent=self))
+        host.clicked.connect(lambda: open_external_url(_settings_product_url(), parent=self))
         row = QHBoxLayout(host)
         row.setContentsMargins(14, 0, 12, 6)
         row.setSpacing(8)

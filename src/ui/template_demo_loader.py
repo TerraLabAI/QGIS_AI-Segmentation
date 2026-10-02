@@ -43,6 +43,7 @@ from ..core.logging_utils import log
 from ..core.qt_compat import (
     NoLessSafeRedirectPolicy,
     RedirectPolicyAttribute,
+    reply_http_status,
     safe_single_shot,
 )
 from ..core.server_dials import dial_in_range, read_value
@@ -207,15 +208,6 @@ def read_cached_pixmap(template_id: str, which: str, variant: str | None = None,
     except Exception as err:  # noqa: BLE001
         log_warning(f"Failed to read cached demo {path}: {err}")
         return None
-
-
-def _http_status(reply: QNetworkReply) -> int:
-
-    raw = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
-    try:
-        return int(raw) if raw is not None else 0
-    except (TypeError, ValueError):
-        return 0
 
 
 class _PendingFetch(NamedTuple):
@@ -466,7 +458,7 @@ class TemplateDemoLoader(QObject):
 
 
         path = _cache_path(pending.template_id, pending.which, pending.variant)
-        status = _http_status(reply)
+        status = reply_http_status(reply)
         if status == 304:
 
 
@@ -489,7 +481,8 @@ class TemplateDemoLoader(QObject):
 
         template_id, which = pending.template_id, pending.which
         err_code = reply.error()
-        http_int = _http_status(reply)
+
+        http_int = reply_http_status(reply) or 0
         if err_code != QNetworkReply.NetworkError.NoError or http_int >= 400:
             if self._retry_on_fallback(pending):
                 return

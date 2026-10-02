@@ -94,9 +94,9 @@ def reach_request(layer, zone_3857, run_mupp_3857: float) -> ReachRequest | None
 
     if not reach_enabled():
         return None
+    from .qgis_proxy_reader import qgis_urllib_proxies
     from .xyz_tile_fetch import (
         _parse_layer_source,
-        _qgis_proxy_settings,
         tile_zoom_for_resolution,
     )
 
@@ -134,7 +134,7 @@ def reach_request(layer, zone_3857, run_mupp_3857: float) -> ReachRequest | None
         template=template, layer_zmax=int(zmax),
         candidates=tuple(range(top, zmax, -1)), points=points,
         tile_px=int(tile_px), source_key=layer.source(), headers=headers,
-        proxies=_qgis_proxy_settings())
+        proxies=qgis_urllib_proxies())
 
 
 def probe_reach(request: ReachRequest, cancel_check=None) -> int | None:

@@ -223,7 +223,7 @@ _CATEGORIES: list[dict] = [
         "Agua y suelo",
         "Água e solo",
         [
-            _p("water", "water", "Water", "Eau", "Agua", "Água", weak=True),
+            _p("water", "water", "Water", "Eau", "Agua", "Água"),
         ],
     ),
     _cat(

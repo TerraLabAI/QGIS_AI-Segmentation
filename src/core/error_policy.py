@@ -30,13 +30,19 @@ from .server_dials import ServerDialSet, read_value
 
 
 
+LINK_FAILURE_SHIPPED = frozenset({
+    "NO_INTERNET", "DNS_ERROR", "PROXY_ERROR", "SSL_ERROR", "CONNECTION_REFUSED",
+})
+
+
+
+LINK_OR_TIMEOUT_CODES = LINK_FAILURE_SHIPPED | {"TIMEOUT"}
+
+
+
 TRANSIENT_CODES = ServerDialSet(
     "errors.transient_extra",
-    {
-        "NO_INTERNET", "TIMEOUT", "DNS_ERROR", "PROXY_ERROR",
-        "SSL_ERROR", "SERVER_ERROR", "CONNECTION_REFUSED",
-        "SERVICE_WARMING",
-    },
+    LINK_OR_TIMEOUT_CODES | {"SERVER_ERROR", "SERVICE_WARMING"},
     normalize=str.upper,
 )
 
@@ -49,8 +55,7 @@ TRANSIENT_CODES = ServerDialSet(
 
 LINK_FAILURE_CODES = ServerDialSet(
     "errors.link_failure_extra",
-    {"NO_INTERNET", "DNS_ERROR", "PROXY_ERROR", "SSL_ERROR",
-     "CONNECTION_REFUSED"},
+    LINK_FAILURE_SHIPPED,
     normalize=str.upper,
 )
 

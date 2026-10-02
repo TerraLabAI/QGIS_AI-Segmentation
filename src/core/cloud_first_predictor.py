@@ -122,6 +122,10 @@ class CloudFirstPredictor:
         except Exception:  # noqa: BLE001
             return None
 
+    def has_on_device_fallback(self) -> bool:
+
+        return self._local_predictor() is not None
+
 
 
     @property

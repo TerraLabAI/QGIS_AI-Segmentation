@@ -65,9 +65,6 @@ class _FoldLabel(QLabel):
         self._elide_fold_label()
         self.updateGeometry()
 
-    def full_text(self) -> str:
-        return self._fold_full
-
     def sizeHint(self):  # noqa: N802
         hint = super().sizeHint()
         try:

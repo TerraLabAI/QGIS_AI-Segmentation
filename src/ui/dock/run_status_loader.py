@@ -297,9 +297,6 @@ class RunStatusLine(QWidget):
 
         self.verb.setText((text or "").rstrip(". …"))
 
-    def set_figure(self, text: str) -> None:
-        self.figure.setText(text or "")
-
     def restart(self) -> None:
         self.clock.restart_clock()
         self.dots.start()

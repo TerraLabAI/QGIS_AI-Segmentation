@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+import math
+
 from qgis.core import (
     Qgis,
     QgsCoordinateReferenceSystem,
@@ -20,6 +22,7 @@ from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QColor
 
 from ...core.qt_compat import PolygonGeometry
+from ...core.served_config import quiet_without_served_config
 from ..canvas_palette import GRID_LINE
 from .shared import zone_too_large_message
 
@@ -107,6 +110,7 @@ class AutoZoneGridMixin:
         self._auto_grid_suppressed = False
         self._update_credit_estimate()
 
+    @quiet_without_served_config
     def _update_credit_estimate(self) -> None:
 
         if self._tile_manager is None:
@@ -285,7 +289,7 @@ class AutoZoneGridMixin:
                     ceiling_m = (object_tile_ceiling_m(object_class)
                                  if object_class else 0.0)
                     too_coarse = (tile_ground_m > ceiling_m if ceiling_m > 0
-                                  else ground_mupp >= gsd_warn_max_mupp(0.5))
+                                  else ground_mupp >= gsd_warn_max_mupp(math.inf))
                     self.dock_widget.set_auto_detail_gsd_warning(
                         too_coarse and not wide_view,
                         can_improve=self._detail_max_clears_coarse(
@@ -351,7 +355,7 @@ class AutoZoneGridMixin:
                 return False
             if ceiling_m > 0:
                 return TILE_SIZE * mupp <= ceiling_m
-            return mupp < gsd_warn_max_mupp(0.5)
+            return mupp < gsd_warn_max_mupp(math.inf)
         except (RuntimeError, AttributeError, ValueError, ZeroDivisionError):
             return False
 

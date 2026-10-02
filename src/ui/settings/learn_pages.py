@@ -19,6 +19,7 @@ from qgis.PyQt.QtWidgets import QBoxLayout, QFrame, QLabel, QSizePolicy, QVBoxLa
 from ...core.activation_manager import TUTORIAL_URL_FALLBACK, get_tutorial_url
 from ...core.i18n import tr
 from ...core.qt_compat import event_pos
+from ...core.server_dials import dial_url
 from ..dock.font_scale import scale_px_length, scale_qss_font_px
 from ..dock.styles import (
     ACCENT_BORDER_SOFT,
@@ -149,7 +150,8 @@ class LearnPagesMixin:
             "video", tr("Video tutorial"), "", youtube_thumbnail_url(video_url), row_host)
         video.clicked.connect(lambda: self._open_video_tutorial(video_url))
         guide = TutorialCard(
-            "guide", tr("Written guide"), "", GUIDE_THUMBNAIL_URL, row_host)
+            "guide", tr("Written guide"), "",
+            dial_url("tuning.links.guide_thumbnail_url", GUIDE_THUMBNAIL_URL), row_host)
         guide.clicked.connect(self._open_written_guide)
         row.addWidget(video, 1)
         row.addWidget(guide, 1)

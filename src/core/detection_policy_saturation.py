@@ -9,9 +9,11 @@ from __future__ import annotations
 
 from .detection_policy_core import (
     _is_finite_policy_value,
+    policy_scope,
     saturation_policy,
     seed_policy,
 )
+from .served_config import require_served_bool, require_served_int, require_served_number
 
 
 def resplit_charge_every(policy: dict | None = None) -> int:
@@ -34,48 +36,52 @@ def _sat_float(key: str, fallback: float, policy: dict | None) -> float:
     return fallback
 
 
-def mask_cap_trigger_frac(fallback: float, policy: dict | None = None) -> float:
+def mask_cap_trigger_frac(fallback: object = None, policy: dict | None = None) -> float:
 
 
 
-    return _sat_float("cap_trigger_frac", fallback, policy)
+    with policy_scope(policy):
+        return require_served_number("detection_policy.seed.saturation.cap_trigger_frac", 0.05, 1.0)
 
 
-def subdiv_max_depth(fallback: int, policy: dict | None = None) -> int:
-
-    val = _sat_float("subdiv_max_depth", float(fallback), policy)
-    return int(val) if val >= 0 else fallback
+def subdiv_max_depth(fallback: object = None, policy: dict | None = None) -> int:
 
 
-def resplit_time_ratio(fallback: float, policy: dict | None = None) -> float:
+    with policy_scope(policy):
+        return require_served_int("detection_policy.seed.saturation.subdiv_max_depth", 0, 8)
 
 
-
-    val = _sat_float("resplit_time_ratio", fallback, policy)
-    return val if val >= 0 else fallback
-
-
-def max_masks_per_tile(fallback: int, policy: dict | None = None) -> int:
+def resplit_time_ratio(fallback: object = None, policy: dict | None = None) -> float:
 
 
 
-    val = _sat_float("max_masks_per_tile", float(fallback), policy)
-    return int(val) if val > 0 else fallback
+    with policy_scope(policy):
+        return require_served_number("detection_policy.seed.saturation.resplit_time_ratio", 0.0, 100.0)
 
 
-def subdivide_overlap_fraction(fallback: float, policy: dict | None = None) -> float:
+def max_masks_per_tile(fallback: object = None, policy: dict | None = None) -> int:
 
 
 
-    val = _sat_float("subdivide_overlap_fraction", fallback, policy)
-    return val if 0 <= val < 0.5 else fallback
+    with policy_scope(policy):
+        return require_served_int("detection_policy.seed.saturation.max_masks_per_tile", 1, 1000)
 
 
-def subdivide_min_parent_px(fallback: int, policy: dict | None = None) -> int:
+def subdivide_overlap_fraction(fallback: object = None, policy: dict | None = None) -> float:
 
 
-    val = _sat_float("subdivide_min_parent_px", float(fallback), policy)
-    return int(val) if val > 0 else fallback
+
+    with policy_scope(policy):
+        return require_served_number(
+            "detection_policy.seed.saturation.subdivide_overlap_fraction", 0.0, 0.49)
+
+
+def subdivide_min_parent_px(fallback: object = None, policy: dict | None = None) -> int:
+
+
+    with policy_scope(policy):
+        return require_served_int(
+            "detection_policy.seed.saturation.subdivide_min_parent_px", 1, 100_000)
 
 
 def subdivide_cap_params(
@@ -100,16 +106,18 @@ def subdivide_cap_params(
     )
 
 
-def max_tile_coverage(fallback: float, policy: dict | None = None) -> float:
+def max_tile_coverage(fallback: object = None, policy: dict | None = None) -> float:
 
 
-    return _sat_float("max_tile_coverage", fallback, policy)
+    with policy_scope(policy):
+        return require_served_number("detection_policy.seed.saturation.max_tile_coverage", 0.0, 1.0)
 
 
-def hard_tile_coverage(fallback: float, policy: dict | None = None) -> float:
+def hard_tile_coverage(fallback: object = None, policy: dict | None = None) -> float:
 
 
-    return _sat_float("hard_tile_coverage", fallback, policy)
+    with policy_scope(policy):
+        return require_served_number("detection_policy.seed.saturation.hard_tile_coverage", 0.0, 1.0)
 
 
 def map_cover_score_floor(fallback: float, policy: dict | None = None) -> float:
@@ -129,32 +137,27 @@ def map_cover_score_floor(fallback: float, policy: dict | None = None) -> float:
     return val if 0.0 < val <= 1.0 else fallback
 
 
-def compact_min_fill(fallback: float, policy: dict | None = None) -> float:
+def compact_min_fill(fallback: object = None, policy: dict | None = None) -> float:
 
 
 
 
 
-    val = _sat_float("compact_min_fill", fallback, policy)
-    return val if 0.0 < val <= 1.0 else fallback
+    with policy_scope(policy):
+        return require_served_number("detection_policy.seed.saturation.compact_min_fill", 0.01, 1.0)
 
 
-def tile_span_fraction(fallback: float, policy: dict | None = None) -> float:
-
-
-
-
-
-
-    val = _sat_float("tile_span_fraction", fallback, policy)
-    return val if 0.0 < val <= 1.0 else fallback
-
-
-def hard_cover_shape_escape(fallback: bool, policy: dict | None = None) -> bool:
+def tile_span_fraction(fallback: object = None, policy: dict | None = None) -> float:
 
 
 
 
+
+    with policy_scope(policy):
+        return require_served_number("detection_policy.seed.saturation.tile_span_fraction", 0.01, 1.0)
+
+
+def hard_cover_shape_escape(fallback: object = None, policy: dict | None = None) -> bool:
 
 
 
@@ -166,24 +169,26 @@ def hard_cover_shape_escape(fallback: bool, policy: dict | None = None) -> bool:
 
 
 
-    val = saturation_policy(policy).get("hard_cover_shape_escape")
-    return val if isinstance(val, bool) else bool(fallback)
-
-
-def min_keep_px(fallback: float, policy: dict | None = None) -> float:
 
 
 
+    with policy_scope(policy):
+        return require_served_bool("detection_policy.seed.saturation.hard_cover_shape_escape")
 
-    val = _sat_float("min_keep_px", fallback, policy)
-    return val if val >= 0 else fallback
 
-
-def min_keep_floor_m2(fallback: float, policy: dict | None = None) -> float:
+def min_keep_px(fallback: object = None, policy: dict | None = None) -> float:
 
 
 
 
+    with policy_scope(policy):
+        return require_served_number("detection_policy.seed.saturation.min_keep_px", 0.0, 64.0)
 
-    val = _sat_float("min_keep_floor_m2", fallback, policy)
-    return val if val >= 0 else fallback
+
+def min_keep_floor_m2(fallback: object = None, policy: dict | None = None) -> float:
+
+
+
+    with policy_scope(policy):
+        return require_served_number(
+            "detection_policy.seed.saturation.min_keep_floor_m2", 0.0, 1_000_000.0)

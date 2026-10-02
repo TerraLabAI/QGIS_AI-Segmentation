@@ -506,6 +506,15 @@ def crop_webp_enabled() -> bool:
     return dial_bool("features.crop_webp", False)
 
 
+def crop_tiles_enabled() -> bool:
+
+
+
+
+
+    return dial_bool("features.crop_tiles", False)
+
+
 def gzip_request_bodies_enabled() -> bool:
 
 

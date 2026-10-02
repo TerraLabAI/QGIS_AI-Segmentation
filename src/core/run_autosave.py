@@ -256,7 +256,7 @@ def write_prepared_autosave(job: dict | None) -> dict | None:
                     _LOG_TAG, level=Qgis.MessageLevel.Warning)
                 return None
 
-        from .layer_conventions import to_multipolygon
+        from .layer_conventions import repair_polygon, to_multipolygon
         object_class = job.get("object_class")
         ground_metre_xform = job.get("xform")
         measurer = job["measurer"]
@@ -279,6 +279,11 @@ def write_prepared_autosave(job: dict | None) -> dict | None:
 
                     if not geometry_op_succeeded(multi.transform(ground_metre_xform)):
                         return None
+
+
+
+
+                multi = to_multipolygon(repair_polygon(multi) or multi) or multi
                 feat = QgsFeature(fields)
                 feat.setGeometry(multi)
 

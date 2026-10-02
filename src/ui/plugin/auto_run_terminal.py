@@ -10,7 +10,7 @@ from __future__ import annotations
 from qgis.core import Qgis, QgsMessageLog
 
 from ...core.i18n import tr
-from .shared import park_orphaned_worker
+from .shared import release_worker_ref
 
 
 class AutoRunTerminalMixin:
@@ -60,8 +60,7 @@ class AutoRunTerminalMixin:
 
 
 
-        if worker is not None and worker.isRunning():
-            park_orphaned_worker(worker)
+        release_worker_ref(worker)
         self._auto_worker = None
         self._drop_auto_tile_bridge()
         self._auto_tel_stop_reason = "completed"
@@ -253,6 +252,15 @@ class AutoRunTerminalMixin:
 
                 self._auto_headless_run = False
                 self._auto_review_preset_overrides = None
+
+
+
+                if getattr(self, "_auto_review", None) is None:
+                    try:
+                        from ...core.detection_policy_core import release_run_policy
+                        release_run_policy()
+                    except Exception:  # noqa: BLE001  # nosec B110
+                        pass
             return
 
 
@@ -290,6 +298,8 @@ class AutoRunTerminalMixin:
 
         self._drain_auto_tiles_now()
         self._reset_auto_live_pipeline()
+
+        self._late_plan_settle_now()
 
 
 
@@ -333,6 +343,10 @@ class AutoRunTerminalMixin:
         self._stop_auto_live_pump()
         self._auto_preview_build_gen += 1
         self._auto_preview_build_state = None
+
+
+        if self._late_plan_hold_finalize(state):
+            return
 
 
 
@@ -519,6 +533,14 @@ class AutoRunTerminalMixin:
 
 
 
+
+
+        if getattr(self, "_auto_review", None) is None:
+            try:
+                from ...core.detection_policy_core import release_run_policy
+                release_run_policy()
+            except Exception:  # noqa: BLE001  # nosec B110
+                pass
 
 
 

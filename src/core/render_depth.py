@@ -88,16 +88,6 @@ def level_agreement(fine_img, coarse_img, sample_px: int = 0) -> float:
         return 1.0
 
 
-def levels_disagree(fine_img, coarse_img) -> bool:
-
-
-
-
-
-
-    return level_agreement(fine_img, coarse_img) < agreement_min()
-
-
 def agreement_min(policy: dict | None = None) -> float:
 
 
@@ -154,21 +144,18 @@ def _grey_sample(img, side: int, np):
 
 
 
-    from qgis.PyQt.QtCore import QSize, Qt
-    from qgis.PyQt.QtGui import QImage
-
     if img is None or img.isNull():
         return None
-    small = img.scaled(
-        QSize(side, side),
-        Qt.AspectRatioMode.IgnoreAspectRatio,
-        Qt.TransformationMode.SmoothTransformation,
-    ).convertToFormat(QImage.Format.Format_RGB32)
+
+
+    from .qimage_strips import qimage_array_in_strips, smooth_scaled_in_python
+
+    small = smooth_scaled_in_python(img, side, side)
     if small.width() != side or small.height() != side:
         return None
-    ptr = small.bits()
-    ptr.setsize(side * side * 4)
-    arr = np.frombuffer(bytes(ptr), dtype=np.uint8).reshape(side, side, 4)
+    arr = qimage_array_in_strips(small, small.format(), 4)
+    if arr is None:
+        return None
 
     return (arr[:, :, 2] * 0.299 + arr[:, :, 1] * 0.587
             + arr[:, :, 0] * 0.114).astype(np.float32)

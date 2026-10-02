@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from qgis.PyQt.QtCore import QEvent, QSize, Qt
-from qgis.PyQt.QtWidgets import QGridLayout, QHBoxLayout, QLayout, QWidget
+from qgis.PyQt.QtWidgets import QGridLayout, QLayout, QWidget
 
 
 class WrappingButtonRow(QWidget):
@@ -173,14 +173,3 @@ class WrappingButtonRow(QWidget):
             return self._row_grid.totalHeightForWidth(width)
         except RuntimeError:
             return -1
-
-
-def labelled_field_pair(label: QWidget, field: QWidget) -> QWidget:
-
-    pair = QWidget()
-    row = QHBoxLayout(pair)
-    row.setContentsMargins(0, 0, 0, 0)
-    row.addWidget(label)
-    row.addStretch()
-    row.addWidget(field)
-    return pair

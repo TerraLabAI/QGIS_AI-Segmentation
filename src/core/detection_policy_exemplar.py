@@ -10,7 +10,9 @@ from __future__ import annotations
 from .detection_policy_core import (
     _is_finite_policy_value,
     exemplar_policy,
+    policy_scope,
 )
+from .served_config import require_served_number
 
 
 def exemplar_context_pad(policy: dict | None = None) -> float:
@@ -19,10 +21,8 @@ def exemplar_context_pad(policy: dict | None = None) -> float:
 
 
 
-    val = exemplar_policy(policy).get("context_pad")
-    if _is_finite_policy_value(val):
-        return float(val)
-    return 0.05
+    with policy_scope(policy):
+        return require_served_number("detection_policy.exemplar.context_pad", 0.0, 1.0)
 
 
 def exemplar_context_pad_px_cap(policy: dict | None = None) -> float:
@@ -30,10 +30,8 @@ def exemplar_context_pad_px_cap(policy: dict | None = None) -> float:
 
 
 
-    val = exemplar_policy(policy).get("context_pad_px")
-    if _is_finite_policy_value(val) and val > 0:
-        return float(val)
-    return 12.0
+    with policy_scope(policy):
+        return require_served_number("detection_policy.exemplar.context_pad_px", 0.001, 1000.0)
 
 
 def exemplar_min_paste_scale(policy: dict | None = None) -> float:
@@ -42,10 +40,8 @@ def exemplar_min_paste_scale(policy: dict | None = None) -> float:
 
 
 
-    val = exemplar_policy(policy).get("min_paste_scale")
-    if _is_finite_policy_value(val) and 0 < val <= 1:
-        return float(val)
-    return 0.85
+    with policy_scope(policy):
+        return require_served_number("detection_policy.exemplar.min_paste_scale", 0.001, 1.0)
 
 
 def _exemplar_positive_int(key: str, fallback: int, policy: dict | None) -> int:

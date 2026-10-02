@@ -92,12 +92,6 @@ class ReviewLadderStrip(QWidget):
         self._current = int(index)
         self._apply()
 
-    def is_compact(self) -> bool:
-
-
-
-        return self._compact
-
     def resizeEvent(self, event):  # noqa: N802
         super().resizeEvent(event)
         self._apply()

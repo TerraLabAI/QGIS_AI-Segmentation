@@ -17,6 +17,8 @@
 
 
 
+
+
 from __future__ import annotations
 
 import logging
@@ -45,7 +47,9 @@ class TileEncodeAhead:
             max_workers=1, thread_name_prefix="tileenc")
 
     def expect(self, seq: int, tile_idx: int, tw: int, th: int,
-               ready=None) -> None:
+               ready=None, encode=None) -> None:
+
+
 
 
 
@@ -54,7 +58,7 @@ class TileEncodeAhead:
         with self._lock:
             if self._pool is None:
                 return
-            self._expected[seq] = (tile_idx, tw, th)
+            self._expected[seq] = (tile_idx, tw, th, encode)
         if ready is not None and ready(seq):
             self.render_landed(seq)
 
@@ -64,19 +68,21 @@ class TileEncodeAhead:
             entry = self._expected.pop(seq, None)
             if entry is None or self._pool is None:
                 return
-            tile_idx, tw, th = entry
+            tile_idx, tw, th, encode = entry
             try:
                 self._jobs[tile_idx] = self._pool.submit(
-                    self._collect_and_encode, seq, tw, th)
+                    self._collect_and_encode, seq, tw, th, encode)
             except RuntimeError:
                 self._expected[seq] = entry
 
-    def _collect_and_encode(self, seq: int, tw: int, th: int) -> tuple:
+    def _collect_and_encode(self, seq: int, tw: int, th: int,
+                            encode=None) -> tuple:
         img, render_s = self._collect_timed(seq)
         encoded = None
         if img is not None and not img.isNull():
             try:
-                encoded = self._encode(img, 0, 0, tw, th)
+                encoded = (encode(img) if encode is not None
+                           else self._encode(img, 0, 0, tw, th))
             except Exception:  # noqa: BLE001
                 logger.debug("TileEncodeAhead: encode failed", exc_info=True)
         return img, render_s, encoded

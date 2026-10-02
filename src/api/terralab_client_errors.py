@@ -20,6 +20,7 @@ from .terralab_client_primitives import (
     _http_status_of,
     _log_warning,
     _OpCanceled,
+    _parse_json_body,
     _SslFailed,
     _Timeout,
     _UnknownNetwork,
@@ -106,6 +107,84 @@ def _unreadable_answer() -> dict:
         ),
         "code": "UNREADABLE_RESPONSE",
     }
+
+
+def _answer_from_status_and_body(
+    raw_body: str,
+    http_status: int | None,
+    *,
+    require_body: bool = False,
+    allow_list: bool = False,
+) -> tuple[dict | list, bool]:
+
+
+
+
+
+
+
+
+
+
+
+    if http_status is not None and http_status >= 400:
+
+
+        _log_warning(f"HTTP {http_status} error response")
+        try:
+            error_body = _parse_json_body(raw_body)
+        except Exception:  # noqa: BLE001
+            error_body = None
+        if error_body is None:
+            return ({"error": f"Server error (HTTP {http_status})",
+                     "code": "SERVER_ERROR"}, False)
+        return (_error_shaped(
+            error_body, "SERVER_ERROR",
+            f"Server error (HTTP {http_status})"), True)
+
+    if not raw_body:
+        if require_body:
+            _log_warning("Empty body on a route that must carry one")
+            return _unreadable_answer(), False
+        return {}, False
+    try:
+
+
+        parsed = _parse_json_body(raw_body, allow_list=allow_list)
+    except (ValueError, RecursionError):
+        parsed = None
+    if parsed is None:
+        _log_warning(f"Invalid JSON response ({len(raw_body)} bytes)")
+        if require_body:
+            return _unreadable_answer(), False
+        return {"error": "Invalid server response", "code": "SERVER_ERROR"}, False
+    return parsed, True
+
+
+def _answer_from_failed_transfer(
+    raw_body: str,
+    http_status: int | None,
+    classify,
+) -> tuple[dict, bool]:
+
+
+
+
+
+
+
+
+
+    if http_status is not None and http_status >= 400 and raw_body:
+        try:
+            parsed = _parse_json_body(raw_body)
+        except Exception:  # noqa: BLE001
+            parsed = None
+        if parsed is not None:
+            code, msg = classify()
+            return _error_shaped(parsed, code, msg), True
+    code, msg = classify()
+    return {"error": msg, "code": code}, False
 
 
 def _classify_network_error(reply, detail: str = "") -> tuple[str, str]:

@@ -246,6 +246,9 @@ class DockLifecycleMixin:
             track_plugin_first_open()
             track_plugin_opened()
 
+            from ...core.telemetry_run_context import report_lost_run
+            report_lost_run()
+
 
 
             self._plugin_opened_emitted = bool(is_telemetry_enabled())

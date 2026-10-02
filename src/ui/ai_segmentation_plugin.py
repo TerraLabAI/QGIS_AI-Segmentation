@@ -326,6 +326,7 @@ class AISegmentationPlugin(
 
         self._key_revalidate_pending = False
         self._config_prefetch_task = None
+        self._config_prime_task = None
 
 
 
@@ -690,6 +691,9 @@ class AISegmentationPlugin(
                 pass  # nosec B110
             raise
 
+
+        self._prime_config_from_disk_async()
+
     def unload(self):
 
 
@@ -877,6 +881,12 @@ class AISegmentationPlugin(
                 self._on_project_read_sweep_temp)
         except (TypeError, RuntimeError):
             pass
+        for signal_name, slot in (("readProject", self._on_project_read_zone),
+                                  ("writeProject", self._on_project_write_zone)):
+            try:
+                getattr(QgsProject.instance(), signal_name).disconnect(slot)
+            except (TypeError, RuntimeError):
+                pass
 
 
 
@@ -1121,6 +1131,7 @@ class AISegmentationPlugin(
             self._config_refresh_timer = None
         self._disarm_credits_watch()
         self._cancel_task("_config_prefetch_task")
+        self._cancel_task("_config_prime_task")
         self._cancel_task("_catalog_prefetch_task")
         self._cancel_task("_usage_fetch_task")
         self._cancel_task("_warmup_task")
@@ -1375,8 +1386,18 @@ class AISegmentationPlugin(
 
 
 
-
+        stopping_worker = self._auto_worker
         self._stop_auto_detection()
+        if stopping_worker is not None and self._auto_worker is None:
+
+
+
+
+
+            try:
+                stopping_worker.wait(5000)
+            except RuntimeError:
+                pass
         auto_worker = self._auto_worker
         if auto_worker is not None:
 

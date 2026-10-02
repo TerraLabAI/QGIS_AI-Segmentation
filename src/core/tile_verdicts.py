@@ -29,8 +29,11 @@ from .detection_masks import (  # noqa: E402
 
 
 
+
+
+
 _BLANK_TILE_SAMPLE_PX: int = 32
-_BLANK_TILE_DOMINANT_FRAC: float = 0.995
+_BLANK_TILE_DOMINANT_FRAC: float = 1.0
 
 
 
@@ -68,9 +71,9 @@ _PREFILTER_MIN_VALID_PX: float = 9.0
 
 
 
-_UNAVAILABLE_NEUTRAL_EPS: int = 6
-_UNAVAILABLE_NEUTRAL_FRAC: float = 0.98
-_UNAVAILABLE_DOMINANT_FRAC: float = 0.80
+_UNAVAILABLE_NEUTRAL_EPS: int = 0
+_UNAVAILABLE_NEUTRAL_FRAC: float = 1.0
+_UNAVAILABLE_DOMINANT_FRAC: float = 1.0
 
 
 
@@ -158,7 +161,7 @@ def _degenerate_ruled_out(
 
 
 def tile_is_degenerate_array(
-    arr: np.ndarray, nodata_frac: float = 1.0, band_eps: float = 2.0,
+    arr: np.ndarray, nodata_frac: float, band_eps: float,
     nodata_rgb_eps: int = _PREFILTER_NODATA_RGB_EPS,
     min_valid_px: float = _PREFILTER_MIN_VALID_PX,
 ) -> bool:
@@ -245,7 +248,7 @@ def tile_is_degenerate_array(
 
 
 def tile_is_degenerate(
-    img, nodata_frac: float = 1.0, band_eps: float = 2.0,
+    img, nodata_frac: float, band_eps: float,
     nodata_rgb_eps: int = _PREFILTER_NODATA_RGB_EPS,
     min_valid_px: float = _PREFILTER_MIN_VALID_PX,
 ) -> bool:
@@ -307,25 +310,17 @@ def tile_is_blank(img) -> bool:
 
 
     try:
-        from qgis.PyQt.QtCore import QSize, Qt
-        from qgis.PyQt.QtGui import QImage
-
         if img is None or img.isNull():
             return False
         sample_px, dominant_frac, quant = _blank_tile_dials()
-        small = img.scaled(
-            QSize(sample_px, sample_px),
-            Qt.AspectRatioMode.IgnoreAspectRatio,
-            Qt.TransformationMode.FastTransformation,
-        ).convertToFormat(QImage.Format.Format_RGB32)
-        w, h = small.width(), small.height()
-        if w <= 0 or h <= 0:
-            return False
-        ptr = small.bits()
-        ptr.setsize(h * w * 4)
-        arr = np.frombuffer(ptr, dtype=np.uint8).reshape(h, w, 4)
 
-        rgb = arr[:, :, [2, 1, 0]]
+
+
+        from .qimage_strips import nearest_rgb_sample_in_strips
+
+        rgb = nearest_rgb_sample_in_strips(img, sample_px, sample_px)
+        if rgb is None:
+            return False
         return tile_is_blank_array(rgb, dominant_frac, quant)
     except Exception as exc:  # noqa: BLE001
         logger.debug("tile_is_blank: check failed: %s", exc)
@@ -408,25 +403,17 @@ def tile_is_unavailable(img) -> bool:
 
 
     try:
-        from qgis.PyQt.QtCore import QSize, Qt
-        from qgis.PyQt.QtGui import QImage
-
         if img is None or img.isNull():
             return False
         sample_px, neutral_eps, neutral_frac, dominant_frac = _unavailable_tile_dials()
-        small = img.scaled(
-            QSize(sample_px, sample_px),
-            Qt.AspectRatioMode.IgnoreAspectRatio,
-            Qt.TransformationMode.FastTransformation,
-        ).convertToFormat(QImage.Format.Format_RGB32)
-        w, h = small.width(), small.height()
-        if w <= 0 or h <= 0:
-            return False
-        ptr = small.bits()
-        ptr.setsize(h * w * 4)
-        arr = np.frombuffer(ptr, dtype=np.uint8).reshape(h, w, 4)
 
-        rgb = arr[:, :, [2, 1, 0]]
+
+
+        from .qimage_strips import nearest_rgb_sample_in_strips
+
+        rgb = nearest_rgb_sample_in_strips(img, sample_px, sample_px)
+        if rgb is None:
+            return False
         return tile_is_unavailable_array(
             rgb, neutral_eps, neutral_frac, dominant_frac, _BLANK_TILE_QUANT)
     except Exception as exc:  # noqa: BLE001

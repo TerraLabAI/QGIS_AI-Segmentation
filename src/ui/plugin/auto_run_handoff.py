@@ -38,7 +38,6 @@ class AutoRunHandoffMixin:
                 return None
             if n_tiles < detection_policy.gate_min_tiles():
                 return None
-            from ...core.review_presets import shape_class_for
 
 
 
@@ -46,7 +45,7 @@ class AutoRunHandoffMixin:
 
             rule = detection_policy.gate_class_rule(
                 detection_policy.gate_class_for_prompt(
-                    prompt, shape_class_for(prompt)))
+                    prompt, self._auto_run_shape_class(prompt)))
             if not rule:
                 return None
             config = {
@@ -405,6 +404,9 @@ class AutoRunHandoffMixin:
         if self._auto_worker is worker:
             self._auto_worker = None
         self._auto_cancelled_slot = None
+
+
+        self._restore_auto_resume_offer()
         if self.dock_widget is not None:
             try:
                 self.dock_widget.set_auto_run_active(False)
@@ -448,31 +450,43 @@ class AutoRunHandoffMixin:
 
         self._last_auto_result = None
         self._auto_quota_stop_banner = None
-        self._auto_worker = self._build_auto_worker(
-            tile_renderer=tile_renderer,
-            tiles=tiles,
-            geo_transform=geo_transform,
-            crs_authid=crs_authid,
-            prompt=prompt,
-            auth=auth,
-            run_id=run_id,
-            max_concurrent=max_concurrent,
-            detection_threshold=detection_threshold,
-            progress_offset=progress_offset,
-            progress_total=progress_total,
-            exemplar_stamps=exemplar_stamps,
-            merge_scalars=merge_scalars,
-            subdivide_budget=subdivide_budget,
-            collect_raw=collect_raw,
-            return_semantic=return_semantic,
-            gate_config=gate_config,
+        from ...core.served_config import ServedConfigMissing
+        try:
+            built = self._build_auto_worker(
+                tile_renderer=tile_renderer,
+                tiles=tiles,
+                geo_transform=geo_transform,
+                crs_authid=crs_authid,
+                prompt=prompt,
+                auth=auth,
+                run_id=run_id,
+                max_concurrent=max_concurrent,
+                detection_threshold=detection_threshold,
+                progress_offset=progress_offset,
+                progress_total=progress_total,
+                exemplar_stamps=exemplar_stamps,
+                merge_scalars=merge_scalars,
+                subdivide_budget=subdivide_budget,
+                collect_raw=collect_raw,
+                return_semantic=return_semantic,
+                gate_config=gate_config,
 
 
 
-            mask_scale=getattr(self, "_auto_mask_scale", 1),
-            client_meta=client_meta,
-            density_probe=density_probe,
-        )
+                mask_scale=getattr(self, "_auto_mask_scale", 1),
+                client_meta=client_meta,
+                density_probe=density_probe,
+            )
+        except ServedConfigMissing as err:
+
+            self._auto_worker = None
+            QgsMessageLog.logMessage(
+                f"Auto detection: served setting missing ({err.key})",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            self._on_auto_error(tr("Connecting to load settings"))
+            return
+        self._auto_worker = built
+        self._apply_pending_resume(self._auto_worker)
         worker = self._auto_worker
 
 

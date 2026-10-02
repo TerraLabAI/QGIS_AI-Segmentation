@@ -10,8 +10,10 @@ from __future__ import annotations
 from .detection_policy_core import (
     _is_finite_policy_value,
     gate_policy,
+    policy_scope,
 )
 from .prompt_taxonomy import first_entry_match, normalize_prompt
+from .served_config import require_served_int, require_served_number
 
 
 def gate_enabled(policy: dict | None = None) -> bool:
@@ -26,10 +28,8 @@ def gate_group(policy: dict | None = None) -> int:
 
 
 
-    val = gate_policy(policy).get("group")
-    if _is_finite_policy_value(val) and 2 <= val <= 4:
-        return int(val)
-    return 2
+    with policy_scope(policy):
+        return require_served_int("detection_policy.gate.group", 2, 4)
 
 
 def gate_max_group(policy: dict | None = None) -> int:
@@ -38,29 +38,22 @@ def gate_max_group(policy: dict | None = None) -> int:
 
 
 
-
-    val = gate_policy(policy).get("max_group")
-    if _is_finite_policy_value(val) and 2 <= val <= 4:
-        return int(val)
-    return 2
+    with policy_scope(policy):
+        return require_served_int("detection_policy.gate.max_group", 2, 4)
 
 
 def gate_min_pixels(policy: dict | None = None) -> int:
 
 
-    val = gate_policy(policy).get("min_pixels")
-    if _is_finite_policy_value(val) and val >= 1:
-        return int(val)
-    return 8
+    with policy_scope(policy):
+        return require_served_int("detection_policy.gate.min_pixels", 1, 10000)
 
 
 def gate_min_tiles(policy: dict | None = None) -> int:
 
 
-    val = gate_policy(policy).get("min_tiles")
-    if _is_finite_policy_value(val) and val >= 4:
-        return int(val)
-    return 12
+    with policy_scope(policy):
+        return require_served_int("detection_policy.gate.min_tiles", 4, 100000)
 
 
 def gate_prefilter_policy(policy: dict | None = None) -> dict:
@@ -126,10 +119,8 @@ def gate_prefilter_band_eps(policy: dict | None = None) -> float:
 
 
 
-    val = gate_prefilter_policy(policy).get("band_eps")
-    if _is_finite_policy_value(val) and 0.0 <= val <= 16.0:
-        return float(val)
-    return 2.0
+    with policy_scope(policy):
+        return require_served_number("detection_policy.gate.prefilter.band_eps", 0.0, 16.0)
 
 
 def gate_prefilter_config(policy: dict | None = None) -> dict | None:

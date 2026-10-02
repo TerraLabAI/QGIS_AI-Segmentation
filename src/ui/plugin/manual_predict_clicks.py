@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from qgis.core import Qgis, QgsMessageLog, QgsPointXY
 
+from ...core.error_policy import LINK_FAILURE_SHIPPED
 from ...core.i18n import tr
 from ...core.telemetry_errors import slot_guard
 from ..error_report_dialog import show_error_report
@@ -32,20 +33,13 @@ QUIET_CLICK_OFFLINE = "offline"
 
 
 
-
-_CLICK_OFFLINE_CODES = frozenset({
-    "NO_INTERNET", "DNS_ERROR", "CONNECTION_REFUSED", "PROXY_ERROR",
-    "SSL_ERROR",
-})
-
-
 def _click_offline_codes() -> frozenset:
 
     try:
         from ...core.server_dials import dial_list
-        return dial_list("tuning.click.offline_codes_extra", _CLICK_OFFLINE_CODES, normalize=str.upper)
+        return dial_list("tuning.click.offline_codes_extra", LINK_FAILURE_SHIPPED, normalize=str.upper)
     except Exception:  # noqa: BLE001
-        return _CLICK_OFFLINE_CODES
+        return LINK_FAILURE_SHIPPED
 
 
 def _click_was_superseded(err: Exception) -> bool:
@@ -123,6 +117,24 @@ def _click_connectivity_code(err: Exception) -> str:
         if known in text:
             return known
     return ""
+
+
+def _click_hit_cold_start(err: Exception) -> bool:
+
+
+
+    try:
+        from ...core import cloud_warming_state
+        from ...core.cloud_sam_predictor import WARMING_CODE
+
+        code = str(getattr(err, "code", "") or "").strip().upper()
+        if code == WARMING_CODE:
+            return True
+        if not cloud_warming_state.recently_warming():
+            return False
+        return code == "TIMEOUT" or "TIMEOUT" in str(err).upper()
+    except Exception:  # noqa: BLE001
+        return False
 
 
 class ManualClickMixin:
@@ -300,6 +312,11 @@ class ManualClickMixin:
                 self._deselect_saved_polygons()
             return
 
+        if self._cloud_click_waits_for_config():
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
+            return
+
 
 
 
@@ -468,6 +485,11 @@ class ManualClickMixin:
                 else:
                     self._deselect_saved_polygons()
                 return
+
+        if self._cloud_click_waits_for_config():
+            if self.map_tool:
+                self.map_tool.remove_last_marker()
+            return
 
 
 
@@ -852,6 +874,8 @@ class ManualClickMixin:
                 if clock is not None:
                     clock.predict_started_at = click_clock_now()
                 activate_click_clock(clock)
+                from ...core import cloud_warming_state
+                cloud_warming_state.set_wait_listener(self._show_cloud_warming_wait)
                 try:
                     masks, scores, low_res_masks = self.predictor.predict(
                         point_coords=point_coords,
@@ -860,6 +884,8 @@ class ManualClickMixin:
                         multimask_output=use_multimask,
                     )
                 finally:
+                    cloud_warming_state.set_wait_listener(None)
+                    self._show_cloud_warming_wait(None)
                     activate_click_clock(None)
                     if clock is not None:
                         clock.answered_at = click_clock_now()
@@ -874,6 +900,22 @@ class ManualClickMixin:
                 self._end_click_quietly(QUIET_CLICK_SUPERSEDED)
                 return False
             error_str = str(e)
+            if _click_hit_cold_start(e) and not self._headless:
+
+
+
+                QgsMessageLog.logMessage(
+                    f"Click ended while the service was starting: {error_str}",
+                    "AI Segmentation", level=Qgis.MessageLevel.Warning)
+                try:
+                    self.iface.messageBar().pushWarning(
+                        "AI Segmentation",
+                        tr("The AI is still waking up. Click again in a few "
+                           "seconds."))
+                except (RuntimeError, AttributeError):
+                    pass
+                self._end_click_quietly(QUIET_CLICK_OFFLINE)
+                return False
             refusal = _click_refusal_answer(e)
             if refusal and not self._headless:
 
@@ -948,6 +990,30 @@ class ManualClickMixin:
                 try:
                     self.iface.messageBar().pushWarning(
                         "AI Segmentation", offline_line)
+                except (RuntimeError, AttributeError):
+                    pass
+                self._end_click_quietly(QUIET_CLICK_OFFLINE)
+                return False
+            if (str(getattr(e, "code", "") or "").strip().upper() == "TIMEOUT"
+                    and not self._headless):
+
+
+
+                QgsMessageLog.logMessage(
+                    f"Click timed out on a slow link: {error_str}",
+                    "AI Segmentation", level=Qgis.MessageLevel.Warning)
+                try:
+                    from ...core import telemetry_errors
+                    telemetry_errors.track_plugin_error(
+                        stage="segment", error_code="predict_no_connection",
+                        message=error_str)
+                except Exception:
+                    pass  # nosec B110
+                try:
+                    self.iface.messageBar().pushWarning(
+                        "AI Segmentation",
+                        tr("Your connection is slow or was lost. Click again "
+                           "in a moment."))
                 except (RuntimeError, AttributeError):
                     pass
                 self._end_click_quietly(QUIET_CLICK_OFFLINE)
@@ -1047,24 +1113,8 @@ class ManualClickMixin:
         if use_multimask:
             total_pixels = masks[0].shape[0] * masks[0].shape[1]
             mask_areas = [int(np.count_nonzero(m)) for m in masks]
-            try:
-                from ...core.server_dials import dial_in_range
-                whole_crop_ratio = dial_in_range(
-                    "tuning.click.multimask_whole_crop_ratio", 0.8, 0.5, 0.95)
-            except Exception:  # noqa: BLE001
-                whole_crop_ratio = 0.8
-
-
-
-
-            small_enough = [
-                i for i in range(len(scores))
-                if 0 < mask_areas[i] < whole_crop_ratio * total_pixels
-            ]
-            if small_enough:
-                best_idx = max(small_enough, key=lambda i: scores[i])
-            else:
-                best_idx = min(range(len(scores)), key=lambda i: mask_areas[i])
+            from ...core.multimask_pick import pick_multimask_index
+            best_idx = pick_multimask_index(mask_areas, scores, total_pixels)
 
             QgsMessageLog.logMessage(
                 f"Multimask: areas={mask_areas}, scores={[round(float(s), 3) for s in scores]}, picked={best_idx}",
@@ -1295,6 +1345,27 @@ class ManualClickMixin:
 
 
         return bool(getattr(self, "_last_click_stood_clear", False))
+
+    def _show_cloud_warming_wait(self, elapsed_s) -> None:
+
+
+        item = getattr(self, "_cloud_warming_item", None)
+        try:
+            bar = self.iface.messageBar()
+            if elapsed_s is None:
+                if item is not None:
+                    self._cloud_warming_item = None
+                    bar.popWidget(item)
+                return
+            text = tr("Waking up the AI...") + f" {int(elapsed_s)}s"
+            if item is None:
+                item = bar.createMessage("AI Segmentation", text)
+                bar.pushItem(item)
+                self._cloud_warming_item = item
+            else:
+                item.setText(text)
+        except (RuntimeError, AttributeError):
+            self._cloud_warming_item = None
 
     def _end_click_quietly(self, reason: str) -> None:
 

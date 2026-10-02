@@ -19,8 +19,6 @@ from qgis.core import (
 
 from ...core.i18n import tr
 from .shared import (
-    _RECALL_FLOOR,
-    _RECALL_FLOOR_EXEMPLAR_ONLY,
     _provider_name_for_log,
 )
 
@@ -58,18 +56,40 @@ class AutoRunStartMixin:
             import time as _time
             self._auto_click_mono = _time.monotonic()
         self._auto_start_in_progress = True
+        worker_before = getattr(self, "_auto_worker", None)
+        from ...core.served_config import ServedConfigMissing
         try:
             self._start_auto_detection_body()
+        except ServedConfigMissing as err:
+
+
+
+
+            QgsMessageLog.logMessage(
+                f"Auto detection: served setting missing ({err.key})",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            if getattr(self, "_auto_worker", None) is worker_before:
+                self._refuse_start_without_settings()
         finally:
             self._auto_start_in_progress = False
+
+            if (getattr(self, "_auto_worker", None) is worker_before
+                    and getattr(self, "_auto_review", None) is None):
+                from ...core.detection_policy_core import release_run_policy
+                release_run_policy()
+
+                self._late_plan_clear()
             self._density_after_start()
 
     def _start_auto_detection_body(self) -> None:
 
-        import uuid as _uuid
+
+
+
+
+
 
         from ...core import run_timeline
-        from ...core.activation_manager import get_auth_header, is_plugin_activated
 
         run_timeline.mark("start_body")
 
@@ -79,6 +99,125 @@ class AutoRunStartMixin:
 
 
 
+        visible_extent_for = self._start_step_panel_and_deps()
+        if visible_extent_for is None:
+            return
+        if not self._start_step_worker_not_busy():
+            return
+        if not self._start_step_served_settings():
+            return
+        self._start_step_release_ui_tools()
+        layer = self._start_step_pick_layer()
+        if layer is None:
+            return
+        auth = self._start_step_sign_in()
+        if not auth:
+            return
+        grid = self._start_step_pixel_grid(layer)
+        if grid is None:
+            return
+
+        pixel_w = grid["pixel_w"]
+        pixel_h = grid["pixel_h"]
+        geo_bbox = grid["bbox"]
+
+
+
+
+
+
+
+
+        has_exemplars = self._auto_exemplar_store.count() > 0
+        if not self._start_step_zone_on_raster(layer, grid, geo_bbox):
+            return
+        imagery = self._start_step_imagery_check(layer, grid, pixel_w, pixel_h, geo_bbox)
+        if imagery is None:
+            return
+        grid, pixel_w, pixel_h, geo_bbox = imagery
+        tiles = self._start_step_tile_plan(layer, grid, pixel_w, pixel_h, geo_bbox)
+        if tiles is None:
+            return
+        if not self._start_step_month_surface():
+            return
+        crs_authid, geo_bbox, geo_transform = self._start_step_run_geometry(
+            layer, grid, geo_bbox, pixel_w, pixel_h, tiles, visible_extent_for, run_timeline)
+        prompt = self._start_step_read_prompt()
+        exemplar_payload = self._start_step_example_boxes(
+            layer, geo_bbox, pixel_w, pixel_h, has_exemplars)
+        if not self._start_step_query_guards(prompt, has_exemplars):
+            return
+        exemplar_stamps, examples_ok = self._start_step_prepare_examples(
+            layer, geo_bbox, pixel_w, pixel_h, prompt, has_exemplars, exemplar_payload)
+        if not examples_ok:
+            return
+        if not self._auto_resume_plan_ok(tiles, prompt, layer):
+            return
+        self._start_step_flip_ui_to_run(run_timeline)
+        forced = self._start_step_open_run(prompt, has_exemplars)
+        self._start_step_confidence_and_counters(prompt, has_exemplars)
+        self._start_step_clip_polygon(layer, crs_authid)
+        self._start_step_live_layer(layer, run_timeline)
+        self._start_step_mask_scale(prompt)
+        self._start_step_run_context(
+            layer, prompt, tiles, geo_transform, crs_authid, exemplar_payload)
+        detection_threshold, return_semantic, client_meta, density_probe = (
+            self._start_step_launch_dials(layer, prompt, tiles, has_exemplars))
+        run_timeline.mark("launch")
+
+        from ...core import detection_policy
+
+
+
+
+
+        self._launch_auto_worker(
+            tile_renderer=self._auto_tile_bridge.render_tile,
+            tiles=tiles,
+            geo_transform=geo_transform,
+            crs_authid=crs_authid,
+            prompt=prompt,
+            auth=auth,
+            run_id=self._auto_run_id,
+
+
+
+
+
+            max_concurrent=detection_policy.max_concurrent(),
+
+
+
+
+
+
+            detection_threshold=detection_threshold,
+            exemplar_stamps=exemplar_stamps,
+
+
+            merge_scalars=self._auto_merge_scalars,
+            subdivide_budget=self._auto_subdivide_budget(
+                len(tiles), bool(exemplar_stamps)),
+
+
+
+
+            collect_raw=self._auto_collect_raw,
+
+
+            return_semantic=return_semantic,
+
+
+            gate_config=self._auto_gate_config(
+                prompt, bool(exemplar_stamps), len(tiles)),
+            client_meta=client_meta,
+            density_probe=density_probe,
+        )
+        self._start_step_announce_started(layer, tiles, prompt, forced)
+
+    def _start_step_panel_and_deps(self) -> object:
+
+
         if not self.dock_widget:
 
 
@@ -86,7 +225,7 @@ class AutoRunStartMixin:
             self._headless_error = tr(
                 "The AI Segmentation panel is closed, so there is nothing to "
                 "detect from. Open it and try again.")
-            return
+            return None
 
 
 
@@ -124,7 +263,173 @@ class AutoRunStartMixin:
 
             if not self._auto_headless_run:
                 self._offer_automatic_setup(deps_msg)
+            return None
+        return visible_extent_for
+
+    def _start_step_served_settings(self) -> bool:
+
+
+
+
+
+
+        try:
+            prompt = self.dock_widget.auto_prompt_input.text().strip()
+        except (RuntimeError, AttributeError):
+            prompt = ""
+        from ...core.detection_policy_core import capture_run_policy, release_run_policy
+        from ...core.run_decisions import neutral_run_decisions, parse_run_decisions
+        from ...core.served_config import served_config_ready
+
+        self._late_plan_clear()
+        plan = self._active_run_plan(prompt)
+
+
+        self._auto_run_decisions = parse_run_decisions(plan)
+        if served_config_ready():
+            capture_run_policy(plan)
+            if self._served_policy_preflight():
+                if self._auto_run_decisions is None:
+                    self._auto_run_decisions = neutral_run_decisions()
+                    if plan is None:
+                        self._late_plan_begin(prompt)
+                    else:
+                        QgsMessageLog.logMessage(
+                            "Auto detection: run plan carries no decisions; "
+                            "neutral choices", "AI Segmentation",
+                            level=Qgis.MessageLevel.Warning)
+                return True
+            release_run_policy()
+        self._refuse_start_without_settings(prompt)
+        return False
+
+    def _refuse_start_without_settings(self, prompt: str | None = None) -> None:
+
+
+
+        if prompt is None:
+            try:
+                prompt = self.dock_widget.auto_prompt_input.text().strip()
+            except (RuntimeError, AttributeError):
+                prompt = ""
+        self._tel_detect_blocked("settings_not_loaded")
+        self._headless_error = tr("Connecting to load settings")
+        self._headless_error_code = "settings_not_loaded"
+        self._request_served_settings(prompt)
+        if not getattr(self, "_auto_headless_run", False):
+            self._show_served_settings_missing()
+
+    @staticmethod
+    def _served_policy_preflight() -> bool:
+
+
+
+        from ...core import boundary_snap
+        from ...core import detection_policy as dp
+        from ...core.served_config import ServedConfigMissing
+
+        try:
+            dp.merge_scalars()
+            dp.map_likeness_min_share()
+            for reader in (
+                    dp.max_masks_per_tile, dp.mask_cap_trigger_frac,
+                    dp.max_tile_coverage, dp.hard_tile_coverage,
+                    dp.hard_cover_shape_escape, dp.compact_min_fill,
+                    dp.tile_span_fraction, dp.min_keep_px,
+                    dp.subdiv_max_depth, dp.resplit_time_ratio,
+                    dp.subdivide_overlap_fraction, dp.subdivide_min_parent_px,
+                    dp.min_keep_floor_m2):
+                reader()
+            for reader in (
+                    dp.zone_seed_mupp, dp.object_min_px,
+                    dp.detail_coarse_travel_ratio, dp.detail_fine_travel_ratio,
+                    dp.drawn_object_tile_frac, dp.split_risk_tile_frac,
+                    dp.tile_fit_object_frac,
+                    dp.tile_plan_half_steps, dp.tile_plan_step_ratio,
+                    dp.exemplar_context_pad, dp.exemplar_context_pad_px_cap,
+                    dp.exemplar_min_paste_scale,
+                    dp.semantic_rescue_coverage_floor,
+                    dp.gate_prefilter_band_eps,
+                    dp.recall_floor, dp.recall_floor_exemplar_only,
+                    boundary_snap.boundary_snap_tolerance_m,
+                    boundary_snap.boundary_snap_max_area_change,
+                    boundary_snap.boundary_snap_min_keep_share,
+                    boundary_snap.boundary_snap_max_objects):
+                reader()
+            if dp.gate_enabled():
+                dp.gate_group()
+                dp.gate_max_group()
+                dp.gate_min_pixels()
+                dp.gate_min_tiles()
+            dp.density_probe_config()
+        except ServedConfigMissing as err:
+            QgsMessageLog.logMessage(
+                f"Auto detection: served setting missing ({err.key})",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            return False
+        return True
+
+    def _request_served_settings(self, prompt: str) -> None:
+
+
+        from ...core.served_config import served_config_ready
+
+        if not served_config_ready():
+            try:
+                self._refresh_config_for_account_change()
+            except Exception:  # noqa: BLE001  # nosec B110
+                pass
+        token = self._resolve_object_token(prompt) if prompt else ""
+
+
+        if self._run_plan_fetch_in_flight(token):
             return
+        try:
+            if prompt or self._exemplar_size_for_plan() is not None:
+                self._fetch_auto_run_plan(token)
+        except Exception:  # noqa: BLE001  # nosec B110
+            pass
+
+    def _show_served_settings_missing(self) -> None:
+
+
+        try:
+            from qgis.PyQt.QtWidgets import QPushButton
+
+            bar = self.iface.messageBar()
+            old = getattr(self, "_served_settings_message", None)
+            if old is not None:
+                try:
+                    bar.popWidget(old)
+                except (RuntimeError, TypeError):
+                    pass
+            item = bar.createMessage(tr("Connecting to load settings"))
+            button = QPushButton(tr("Retry"))
+            button.setAutoDefault(False)
+            button.clicked.connect(self._on_served_settings_retry)
+            item.layout().addWidget(button)
+            self._served_settings_message = item
+            bar.pushWidget(item, Qgis.MessageLevel.Info, 10)
+        except (RuntimeError, AttributeError):
+            self._served_settings_message = None
+
+    def _on_served_settings_retry(self) -> None:
+
+
+        old = getattr(self, "_served_settings_message", None)
+        self._served_settings_message = None
+        if old is not None:
+            try:
+                self.iface.messageBar().popWidget(old)
+            except (RuntimeError, TypeError, AttributeError):
+                pass
+        try:
+            prompt = self.dock_widget.auto_prompt_input.text().strip()
+        except (RuntimeError, AttributeError):
+            prompt = ""
+        self._request_served_settings(prompt)
+
+    def _start_step_worker_not_busy(self) -> bool:
 
 
 
@@ -150,10 +455,18 @@ class AutoRunStartMixin:
                         "Finishing the previous run, please wait a moment..."))
                 except (RuntimeError, AttributeError):
                     pass
-            return
+            return False
+        return True
+
+    def _start_step_release_ui_tools(self) -> None:
 
 
-        self._discard_auto_review(exit_path="new_run")
+
+
+
+
+        if not getattr(self, "_auto_resume_armed", False):
+            self._discard_auto_review(exit_path="new_run", keep_run_policy=True)
 
 
 
@@ -166,6 +479,8 @@ class AutoRunStartMixin:
 
         self._restore_maptool_after_zone()
 
+    def _start_step_pick_layer(self) -> object:
+
         layer = self._get_active_raster_layer()
         if layer is None:
             self._tel_detect_blocked("no_layer")
@@ -175,7 +490,7 @@ class AutoRunStartMixin:
                 "Auto detection: no raster layer selected",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
             )
-            return
+            return None
 
 
 
@@ -196,13 +511,18 @@ class AutoRunStartMixin:
                 "Auto detection: raster shape guard blocked the run",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
             )
-            return
+            return None
 
 
 
         if not self._auto_headless_run:
             self._warn_local_raster_quality(layer)
             self._warn_drawn_map_basemap(layer)
+        return layer
+
+    def _start_step_sign_in(self) -> object:
+
+        from ...core.activation_manager import get_auth_header, is_plugin_activated
 
 
         if not is_plugin_activated():
@@ -212,7 +532,7 @@ class AutoRunStartMixin:
                 "Auto detection: plugin not activated",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
             )
-            return
+            return None
 
 
         from ...core.activation_manager import is_automatic_mode_enabled
@@ -222,7 +542,7 @@ class AutoRunStartMixin:
                 "Automatic detection is temporarily unavailable. Please try again later.")
             self._headless_error = kill_msg
             self._push_auto_warning(kill_msg)
-            return
+            return None
 
         auth = get_auth_header()
         if not auth:
@@ -232,7 +552,10 @@ class AutoRunStartMixin:
                 "Auto detection: no auth token available",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
             )
-            return
+            return None
+        return auth
+
+    def _start_step_pixel_grid(self, layer) -> object:
 
         if self._tile_manager is None:
             self._setup_auto_mode()
@@ -270,20 +593,10 @@ class AutoRunStartMixin:
                     "Auto detection: could not compute pixel grid for layer",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning,
                 )
-            return
+            return None
+        return grid
 
-        pixel_w = grid["pixel_w"]
-        pixel_h = grid["pixel_h"]
-        geo_bbox = grid["bbox"]
-
-
-
-
-
-
-
-
-        has_exemplars = self._auto_exemplar_store.count() > 0
+    def _start_step_zone_on_raster(self, layer, grid, geo_bbox) -> bool:
 
 
 
@@ -300,7 +613,11 @@ class AutoRunStartMixin:
             layer_extent = self._layer_extent_in_run_crs(layer, grid["crs"])
             if layer_extent is not None and not zone_rect.intersects(layer_extent):
                 self._abort_zone_outside_layer()
-                return
+                return False
+        return True
+
+    def _start_step_imagery_check(self, layer, grid, pixel_w, pixel_h, geo_bbox) -> object:
+
 
 
 
@@ -326,7 +643,7 @@ class AutoRunStartMixin:
         if probe is None:
 
 
-            return
+            return None
         mupp_floor, probe_msg = probe
 
 
@@ -367,12 +684,15 @@ class AutoRunStartMixin:
                 "the zone; aborting before billing",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
             )
-            return
+            return None
 
 
 
         if not self._auto_imagery_notice_passes(layer, probe_grid, mupp_floor):
-            return
+            return None
+        return grid, pixel_w, pixel_h, geo_bbox
+
+    def _start_step_tile_plan(self, layer, grid, pixel_w, pixel_h, geo_bbox) -> object:
 
 
 
@@ -392,7 +712,7 @@ class AutoRunStartMixin:
 
 
                 self._abort_zone_outside_layer()
-                return
+                return None
             elif len(tiles) != before:
                 QgsMessageLog.logMessage(
                     f"Auto detection: zone cull kept {len(tiles)} of {before} tiles",
@@ -406,7 +726,10 @@ class AutoRunStartMixin:
                 f"Auto detection: zone too large (exceeds {cap} tiles)",
                 "AI Segmentation", level=Qgis.MessageLevel.Warning,
             )
-            return
+            return None
+        return tiles
+
+    def _start_step_month_surface(self) -> bool:
 
 
 
@@ -436,7 +759,13 @@ class AutoRunStartMixin:
                     f"{left_km2:.2f} km2 left this month; aborting before billing",
                     "AI Segmentation", level=Qgis.MessageLevel.Warning,
                 )
-                return
+                return False
+        return True
+
+    def _start_step_run_geometry(
+            self, layer, grid, geo_bbox, pixel_w, pixel_h, tiles, visible_extent_for,
+            run_timeline) -> tuple:
+
 
 
 
@@ -511,6 +840,9 @@ class AutoRunStartMixin:
             f"(provider={_provider_name_for_log(layer)})",
             "AI Segmentation", level=Qgis.MessageLevel.Info,
         )
+        return crs_authid, geo_bbox, geo_transform
+
+    def _start_step_read_prompt(self) -> str:
 
 
         try:
@@ -527,11 +859,15 @@ class AutoRunStartMixin:
 
 
         if prompt:
-            self._auto_merge_separate = self._default_merge_separate(prompt)
+            self._auto_merge_separate = bool(
+                (getattr(self, "_auto_run_decisions", None) or {}).get("merge_separate", True))
             self._auto_merge_mode_source = "prompt"
         else:
             self._auto_merge_separate = False
             self._auto_merge_mode_source = "signal"
+        return prompt
+
+    def _start_step_example_boxes(self, layer, geo_bbox, pixel_w, pixel_h, has_exemplars) -> object:
 
 
 
@@ -539,10 +875,12 @@ class AutoRunStartMixin:
 
 
 
-        exemplar_payload = (
+        return (
             self._compute_exemplar_pixel_boxes(layer, geo_bbox, pixel_w, pixel_h)
             if has_exemplars else None
         )
+
+    def _start_step_query_guards(self, prompt, has_exemplars) -> bool:
 
 
 
@@ -571,7 +909,7 @@ class AutoRunStartMixin:
             )
             self._auto_gsd = 0.0
             self._auto_run_id = None
-            return
+            return False
 
 
 
@@ -598,7 +936,13 @@ class AutoRunStartMixin:
             )
             self._auto_gsd = 0.0
             self._auto_run_id = None
-            return
+            return False
+        return True
+
+    def _start_step_prepare_examples(
+            self, layer, geo_bbox, pixel_w, pixel_h, prompt, has_exemplars,
+            exemplar_payload) -> tuple:
+
 
 
 
@@ -624,7 +968,7 @@ class AutoRunStartMixin:
                 self._push_auto_warning(msg)
                 self._auto_gsd = 0.0
                 self._auto_run_id = None
-                return
+                return None, False
 
 
 
@@ -681,7 +1025,10 @@ class AutoRunStartMixin:
                 )
                 self._auto_gsd = 0.0
                 self._auto_run_id = None
-                return
+                return None, False
+        return exemplar_stamps, True
+
+    def _start_step_flip_ui_to_run(self, run_timeline) -> None:
 
 
 
@@ -721,6 +1068,11 @@ class AutoRunStartMixin:
             QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
         run_timeline.mark("ui_flipped")
 
+    def _start_step_open_run(self, prompt, has_exemplars) -> object:
+
+
+        import uuid as _uuid
+
         from ...core.polygon_exporter import IncrementalMerger
 
 
@@ -755,12 +1107,8 @@ class AutoRunStartMixin:
 
 
 
-
-
-
-
-        self._auto_restore_partitions = detection_policy.restore_partitions_for(
-            prompt, exemplar_only=bool(has_exemplars) and not prompt)
+        self._auto_restore_partitions = bool(
+            (getattr(self, "_auto_run_decisions", None) or {}).get("restore_partitions", False))
         self._auto_merger = IncrementalMerger(
             seam_min_dim=self._auto_seam_min_dim(),
             select_duplicates=self._auto_merge_separate,
@@ -774,6 +1122,10 @@ class AutoRunStartMixin:
             **detection_policy.merge_scalar_kwargs(
                 IncrementalMerger, self._auto_merge_scalars),
         )
+        return forced
+
+    def _start_step_confidence_and_counters(self, prompt, has_exemplars) -> None:
+
 
 
 
@@ -787,6 +1139,13 @@ class AutoRunStartMixin:
 
 
         from ...core.review_defaults import AUTO_DEFAULT_CONFIDENCE
+
+        self._auto_start_confidence_default = None
+        try:
+            self._auto_start_confidence_default = self._confidence_default_for(
+                prompt, bool(has_exemplars) and not prompt)
+        except (RuntimeError, AttributeError, TypeError, ValueError):
+            self._auto_start_confidence_default = None
         try:
             spin_conf = (self.dock_widget.get_auto_confidence()
                          if self.dock_widget is not None else None)
@@ -820,6 +1179,10 @@ class AutoRunStartMixin:
         self._auto_is_exemplar_only = bool(has_exemplars) and not prompt
         self._auto_collect_raw = self._auto_is_exemplar_only
         self._auto_retain_raw = self._auto_collect_raw
+
+
+        if self._late_plan_pending():
+            self._auto_retain_raw = True
         self._auto_raw_fragments = [] if self._auto_retain_raw else None
         self._auto_raw_n_total = 0
         self._auto_raw_cov_sum = 0.0
@@ -836,6 +1199,9 @@ class AutoRunStartMixin:
 
         self._auto_correction_removed = set()
         self._auto_manual_object_ids = set()
+
+    def _start_step_clip_polygon(self, layer, crs_authid) -> None:
+
 
 
         self._auto_crs_authid = crs_authid
@@ -872,6 +1238,8 @@ class AutoRunStartMixin:
 
         self._auto_clip_engine = self._prepare_clip_engine(self._auto_clip_polygon)
 
+    def _start_step_live_layer(self, layer, run_timeline) -> None:
+
 
 
 
@@ -883,14 +1251,21 @@ class AutoRunStartMixin:
         self._auto_selection_layer = self._create_auto_selection_layer(layer)
         run_timeline.mark("selection_layer")
 
+    def _start_step_mask_scale(self, prompt) -> None:
+
+        from ...core.run_decisions import coarse_mask_scale
 
 
 
 
 
 
-        self._auto_mask_scale = detection_policy.mask_scale_for_run(
-            prompt, getattr(self, "_auto_gsd_m", 0.0))
+        threshold = (getattr(self, "_auto_run_decisions", None) or {}).get(
+            "coarse_mask_max_mupp", 0.0)
+        self._auto_mask_scale = coarse_mask_scale(
+            threshold, getattr(self, "_auto_gsd_m", 0.0))
+
+    def _start_step_run_context(self, layer, prompt, tiles, geo_transform, crs_authid, exemplar_payload) -> None:
 
 
 
@@ -932,13 +1307,17 @@ class AutoRunStartMixin:
         from ...workers.auto_detection_worker import TileRenderBridge
         self._auto_tile_bridge = TileRenderBridge(layer, geo_transform)
 
+    def _start_step_launch_dials(self, layer, prompt, tiles, has_exemplars) -> tuple:
+
+
+        from ...core import detection_policy
 
 
 
 
-        recall_text = detection_policy.recall_floor(_RECALL_FLOOR)
-        recall_exemplar = detection_policy.recall_floor_exemplar_only(
-            _RECALL_FLOOR_EXEMPLAR_ONLY)
+
+        recall_text = detection_policy.recall_floor()
+        recall_exemplar = detection_policy.recall_floor_exemplar_only()
         plan = self._active_run_plan(prompt)
         if plan is not None:
             pv = plan.get("recall_floor")
@@ -972,54 +1351,10 @@ class AutoRunStartMixin:
             self._reproject_zone_to_run_crs(self._auto_zone, layer)
             if self._auto_zone is not None else None,
             prompt, tiles, bool(has_exemplars))
-        run_timeline.mark("launch")
+        return detection_threshold, return_semantic, client_meta, density_probe
 
+    def _start_step_announce_started(self, layer, tiles, prompt, forced) -> None:
 
-
-
-
-        self._launch_auto_worker(
-            tile_renderer=self._auto_tile_bridge.render_tile,
-            tiles=tiles,
-            geo_transform=geo_transform,
-            crs_authid=crs_authid,
-            prompt=prompt,
-            auth=auth,
-            run_id=self._auto_run_id,
-
-
-
-
-
-            max_concurrent=detection_policy.max_concurrent(),
-
-
-
-
-
-
-            detection_threshold=detection_threshold,
-            exemplar_stamps=exemplar_stamps,
-
-
-            merge_scalars=self._auto_merge_scalars,
-            subdivide_budget=self._auto_subdivide_budget(
-                len(tiles), bool(exemplar_stamps)),
-
-
-
-
-            collect_raw=self._auto_collect_raw,
-
-
-            return_semantic=return_semantic,
-
-
-            gate_config=self._auto_gate_config(
-                prompt, bool(exemplar_stamps), len(tiles)),
-            client_meta=client_meta,
-            density_probe=density_probe,
-        )
         restarted = isinstance(forced, dict)
 
 

@@ -47,6 +47,19 @@ class DockAutoFlowStepsMixin:
             return
 
 
+        from ...core.served_config import served_config_ready
+        if not served_config_ready():
+            try:
+                from ...mcp_api import _find_plugin
+                plugin = _find_plugin()
+                if plugin is not None:
+                    plugin._request_served_settings("")
+                    plugin._show_served_settings_missing()
+            except Exception:  # noqa: BLE001  # nosec B110
+                pass
+            return
+
+
 
 
 
@@ -55,7 +68,8 @@ class DockAutoFlowStepsMixin:
 
         self.clear_auto_export_success()
         try:
-            from ...core import telemetry_run_events
+            from ...core import telemetry_run_context, telemetry_run_events
+            telemetry_run_context.begin_run_attempt()
             telemetry_run_events.track_auto_start_clicked(
                 layer_kind=self._auto_layer_kind(layer),
                 has_credits_known=self._auto_credits is not None,
@@ -88,6 +102,12 @@ class DockAutoFlowStepsMixin:
 
 
 
+
+        try:
+            from ...core import telemetry_run_context
+            telemetry_run_context.end_run_attempt()
+        except Exception:
+            pass  # nosec B110
         self._auto_started = False
 
 

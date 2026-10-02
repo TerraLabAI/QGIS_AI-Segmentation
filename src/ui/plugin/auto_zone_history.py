@@ -62,7 +62,10 @@ class AutoZoneHistoryMixin:
         geom = self._zone_geom_from_wkt(entry.get("zone_wkt"), authid)
         if geom is None:
             geom = self._zone_geom_from_extent(entry.get("extent"), authid)
-        self._enter_auto_flow_for_history(prompt)
+        if not self._enter_auto_flow_for_history(prompt):
+
+
+            return
         if geom is None:
 
 
@@ -133,13 +136,14 @@ class AutoZoneHistoryMixin:
         self._enter_auto_flow_for_history((prompt or "").strip())
         self._track_history_rerun("new_zone")
 
-    def _enter_auto_flow_for_history(self, prompt: str) -> None:
+    def _enter_auto_flow_for_history(self, prompt: str) -> bool:
+
 
 
 
         dock = self.dock_widget
         if dock is None:
-            return
+            return False
         from ..ai_segmentation_dockwidget import Mode
         if dock._mode != Mode.AUTOMATIC:
             try:
@@ -167,6 +171,10 @@ class AutoZoneHistoryMixin:
                 dock.set_prompt_text(prompt)
             except (RuntimeError, AttributeError):
                 pass
+        try:
+            return bool(dock._auto_started)
+        except (RuntimeError, AttributeError):
+            return False
 
     def _zone_geom_from_wkt(self, wkt, authid: str) -> QgsGeometry | None:
 

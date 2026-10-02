@@ -94,73 +94,6 @@ def _class_settings_for(cls: str, policy: dict | None) -> dict:
     return served if isinstance(served, dict) else _default_settings()
 
 
-def shape_class_for(prompt: str, policy: dict | None = None) -> str:
-
-
-
-
-
-
-
-
-
-    text = _normalize(prompt)
-    if not text:
-        return "default"
-    review = review_policy(policy)
-    class_keywords = review.get("class_keywords")
-    if not isinstance(class_keywords, dict):
-        return "default"
-    candidates = [
-        (kw, cls)
-        for cls, kws in class_keywords.items()
-        for kw in (kws or [])
-        if isinstance(kw, str)
-    ]
-    candidates.sort(key=lambda item: len(item[0]), reverse=True)
-    for kw, cls in candidates:
-        if _matches(text, kw):
-            return cls
-    category_to_class = review.get("category_to_class")
-    if isinstance(category_to_class, dict):
-        try:
-            for cat in live_catalog_categories():
-                for preset in cat.get("presets") or []:
-                    if str(preset.get("prompt", "")).lower() == text:
-                        return category_to_class.get(cat.get("key"), "default")
-        except Exception:  # noqa: BLE001  # nosec B110
-            pass
-    return "default"
-
-
-
-
-
-_live_catalog_memo: dict[str, tuple[str, list[dict]]] = {}
-
-
-def live_catalog_categories() -> list[dict]:
-
-
-
-    from .presets.segmentation_presets import catalog_revision, fallback_categories
-
-    stamp = catalog_revision()
-    if not stamp:
-        return fallback_categories()
-    held = _live_catalog_memo.get("held")
-    if held is not None and held[0] == stamp:
-        return held[1]
-    try:
-        from .presets.segmentation_presets_client import cached_or_offline_catalog
-
-        cats, _tops = cached_or_offline_catalog()
-    except Exception:  # noqa: BLE001
-        cats = fallback_categories()
-    _live_catalog_memo["held"] = (stamp, cats)
-    return cats
-
-
 def min_size_m2_for(
     prompt: str, mask_gsd_m: float, policy: dict | None = None
 ) -> float:
@@ -197,7 +130,9 @@ def review_preset_for(
 
 
 
-    cls = shape_class_for(prompt, policy)
+
+
+    cls = "default"
     settings = _class_settings_for(cls, policy)
     return {
         "simplify_px": float(settings.get(
@@ -217,6 +152,13 @@ def review_preset_for(
         "vertex_spacing_m": _vertex_spacing_for(settings, policy),
         "shape_class": cls,
     }
+
+
+def neutral_review_preset(prompt: str, mask_gsd_m: float) -> dict:
+
+
+
+    return review_preset_for(prompt, mask_gsd_m, policy={})
 
 
 def _vertex_spacing_for(settings: dict, policy: dict | None) -> float:
@@ -298,45 +240,3 @@ def _ortho_default_for(prompt: str, cls: str, settings: dict, policy) -> bool:
     if regularize_enabled_for(prompt, policy):
         return True
     return AUTO_REVIEW_ORTHO_DEFAULT
-
-
-def review_start_confidence_default(
-    prompt: str, is_exemplar_only: bool, policy: dict | None = None
-) -> float:
-
-
-
-
-
-
-
-
-
-
-    if is_exemplar_only:
-        from .detection_policy import confidence_default_exemplar_only
-
-        return confidence_default_exemplar_only(policy)
-    cls_conf = class_confidence_for(prompt, policy)
-    if cls_conf is not None:
-        return cls_conf
-    from .detection_policy import confidence_default
-
-    return confidence_default(policy)
-
-
-def class_confidence_for(prompt: str, policy: dict | None = None) -> float | None:
-
-
-
-
-
-    cls = shape_class_for(prompt, policy)
-    if cls == "default":
-        return None
-    val = _class_settings_for(cls, policy).get("confidence")
-    if isinstance(val, (int, float)) and not isinstance(val, bool):
-        conf = float(val)
-        if 0.0 <= conf <= 1.0:
-            return conf
-    return None

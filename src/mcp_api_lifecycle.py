@@ -14,6 +14,9 @@ from __future__ import annotations
 import contextlib
 import time
 
+from .core.gui_thread import on_gui_thread
+from .mcp_api_guard import request_served_config
+
 
 
 _LOAD_TIMEOUT_MAX_S = 600.0
@@ -23,23 +26,6 @@ _LOAD_TIMEOUT_DEFAULT_S = 180.0
 
 
 _POLL_STEP_S = 0.05
-
-
-def _caller_is_on_the_gui_thread() -> bool:
-
-
-
-
-    try:
-        from qgis.core import QgsApplication
-        from qgis.PyQt.QtCore import QThread
-
-        app = QgsApplication.instance()
-        if app is None:
-            return False
-        return QThread.currentThread() is app.thread()
-    except Exception:  # noqa: BLE001
-        return False
 
 
 def _pump_events_briefly() -> None:
@@ -243,6 +229,7 @@ class SegmentationLifecycleMixin:
 
 
 
+        request_served_config(self._plugin)
         plugin = self._plugin
 
         if getattr(plugin, "predictor", None) is not None:
@@ -319,7 +306,7 @@ class SegmentationLifecycleMixin:
 
         plugin = self._plugin
         deadline = time.monotonic() + max(0.0, float(wait_s))
-        on_gui_thread = _caller_is_on_the_gui_thread()
+        pump_events = on_gui_thread()
         while time.monotonic() < deadline:
             if getattr(plugin, "predictor", None) is not None:
                 return
@@ -335,7 +322,7 @@ class SegmentationLifecycleMixin:
                         return
                 except RuntimeError:
                     return
-            if on_gui_thread:
+            if pump_events:
                 _pump_events_briefly()
             else:
                 time.sleep(_POLL_STEP_S)

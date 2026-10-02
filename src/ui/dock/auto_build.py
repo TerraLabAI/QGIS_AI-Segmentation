@@ -174,6 +174,12 @@ class DockAutoBuildMixin:
 
     def _setup_automatic_page(self):
 
+
+
+
+
+
+
         self.auto_page = QWidget()
         self.auto_page.setObjectName("autoPage")
 
@@ -182,6 +188,41 @@ class DockAutoBuildMixin:
         auto_layout = QVBoxLayout(self.auto_page)
         auto_layout.setContentsMargins(0, 8, 0, 0)
         auto_layout.setSpacing(8)
+
+        self._build_auto_upsell_card(auto_layout)
+
+
+
+
+
+        self._setup_auto_run_block(auto_layout)
+
+        controls_layout = self._build_auto_controls_section()
+        self._build_auto_layer_header(controls_layout)
+        _s1_layout, _s2_layout, _s3_layout = self._build_auto_step_pages(controls_layout)
+        self._build_auto_start_step(_s1_layout)
+        self._build_auto_zone_step(_s2_layout)
+        self._build_auto_prompt_step(_s3_layout)
+
+
+        _s1_layout.addStretch()
+        _s2_layout.addStretch(1)
+        _s3_layout.addStretch()
+
+
+
+
+        auto_layout.addWidget(self.auto_controls_section, 1)
+
+
+        auto_layout.addStretch()
+
+
+        name_unlabelled_controls(self.auto_page)
+        self.auto_page.setVisible(False)
+        self.main_layout.addWidget(self.auto_page, 1)
+
+    def _build_auto_upsell_card(self, auto_layout) -> None:
 
         from qgis.PyQt.QtWidgets import QSizePolicy as _QSizePolicy
 
@@ -286,11 +327,7 @@ class DockAutoBuildMixin:
             _QSizePolicy.Policy.Preferred, _QSizePolicy.Policy.Maximum)
         auto_layout.addWidget(self.auto_upsell_card)
 
-
-
-
-
-        self._setup_auto_run_block(auto_layout)
+    def _build_auto_controls_section(self) -> QVBoxLayout:
 
 
 
@@ -306,6 +343,9 @@ class DockAutoBuildMixin:
         controls_layout = QVBoxLayout(self.auto_controls_section)
         controls_layout.setContentsMargins(0, 0, 0, 0)
         controls_layout.setSpacing(8)
+        return controls_layout
+
+    def _build_auto_layer_header(self, controls_layout) -> None:
 
 
 
@@ -352,6 +392,8 @@ class DockAutoBuildMixin:
         self._auto_hero_twin = VisibilityTwin(self.auto_no_rasters_widget)
         controls_layout.addWidget(self._auto_hero_twin)
 
+    def _build_auto_step_pages(self, controls_layout) -> tuple:
+
 
 
 
@@ -380,6 +422,9 @@ class DockAutoBuildMixin:
 
         _s2_layout = _make_page()
         _s3_layout = _make_page()
+        return _s1_layout, _s2_layout, _s3_layout
+
+    def _build_auto_start_step(self, _s1_layout) -> None:
 
 
         self.auto_start_btn = QPushButton(tr("Start Automatic AI Segmentation"))
@@ -454,6 +499,8 @@ class DockAutoBuildMixin:
             self._on_open_guide_footer, "autoTutorialRow")
         _s1_layout.addWidget(self.auto_tutorial_link)
 
+    def _build_auto_zone_step(self, _s2_layout) -> None:
+
 
 
 
@@ -520,6 +567,8 @@ class DockAutoBuildMixin:
         self._auto_zone_keys.setObjectName("autoMicro")
         _s2_layout.addWidget(self._auto_zone_keys)
 
+    def _build_auto_prompt_step(self, _s3_layout) -> None:
+
 
 
 
@@ -535,6 +584,46 @@ class DockAutoBuildMixin:
 
         self.auto_run_summary_card = AutoRunSummaryCard()
         _s3_layout.addWidget(self.auto_run_summary_card)
+
+        self._build_auto_prompt_card(_s3_layout)
+
+
+
+
+
+
+
+
+
+
+        self.auto_input_joiner = NeverShownWidget()
+        _s3_layout.addWidget(self.auto_input_joiner)
+
+        self._build_auto_example_card(_s3_layout)
+        self._build_auto_detail_row(_s3_layout)
+        self._build_auto_settings_box(_s3_layout)
+        self._build_auto_detect_row(_s3_layout)
+        self._build_auto_progress_card(_s3_layout)
+        self._build_auto_status_banner(_s3_layout)
+        self._build_auto_zero_assist(_s3_layout)
+        self._build_auto_exhausted_offer(_s3_layout)
+
+
+
+
+
+
+
+        self._defer_dock_part(
+            lambda: self._build_deferred_review_panel(_s3_layout, self.auto_exhausted_subscribe))
+
+
+
+
+
+        _s3_layout.addStretch(1)
+
+    def _build_auto_prompt_card(self, _s3_layout) -> None:
 
 
 
@@ -655,17 +744,7 @@ class DockAutoBuildMixin:
 
         _s3_layout.addWidget(self.auto_prompt_card)
 
-
-
-
-
-
-
-
-
-
-        self.auto_input_joiner = NeverShownWidget()
-        _s3_layout.addWidget(self.auto_input_joiner)
+    def _build_auto_example_card(self, _s3_layout) -> None:
 
 
 
@@ -886,6 +965,17 @@ class DockAutoBuildMixin:
         self.auto_exemplar_panel.setVisible(False)
         _s3_layout.addWidget(self.auto_exemplar_panel)
 
+    def _build_auto_detail_row(self, _s3_layout) -> None:
+
+        _detail_outer, _adv_layout = self._build_auto_detail_fold()
+        self._build_auto_detail_body(_detail_outer, _adv_layout)
+
+
+
+        _s3_layout.addWidget(self.auto_detail_row)
+
+    def _build_auto_detail_fold(self) -> tuple:
+
 
 
 
@@ -1001,6 +1091,9 @@ class DockAutoBuildMixin:
         _detail_outer.addWidget(self._auto_advanced_fold)
         _detail_outer.addWidget(self.auto_credit_cost_label)
         self._refresh_auto_advanced_header()
+        return _detail_outer, _adv_layout
+
+    def _build_auto_detail_body(self, _detail_outer, _adv_layout) -> None:
 
 
 
@@ -1161,9 +1254,7 @@ class DockAutoBuildMixin:
 
         self._apply_auto_detail_gate(False)
 
-
-
-        _s3_layout.addWidget(self.auto_detail_row)
+    def _build_auto_settings_box(self, _s3_layout) -> None:
 
 
 
@@ -1217,6 +1308,8 @@ class DockAutoBuildMixin:
 
 
         self.auto_settings_box.setVisible(False)
+
+    def _build_auto_detect_row(self, _s3_layout) -> None:
 
 
 
@@ -1289,6 +1382,8 @@ class DockAutoBuildMixin:
         self.auto_detect_row.setLayout(_detect_col)
         _s3_layout.addWidget(self.auto_detect_row)
 
+    def _build_auto_progress_card(self, _s3_layout) -> None:
+
 
 
 
@@ -1357,6 +1452,8 @@ class DockAutoBuildMixin:
         self.auto_progress_card.setVisible(False)
         _s3_layout.addWidget(self.auto_progress_card)
 
+    def _build_auto_status_banner(self, _s3_layout) -> None:
+
 
 
 
@@ -1371,6 +1468,8 @@ class DockAutoBuildMixin:
             self._on_auto_status_link_activated)
         self.auto_status_banner.setVisible(False)
         _s3_layout.addWidget(self.auto_status_banner)
+
+    def _build_auto_zero_assist(self, _s3_layout) -> None:
 
 
 
@@ -1411,6 +1510,8 @@ class DockAutoBuildMixin:
         self.auto_zero_assist_row.setVisible(False)
         _s3_layout.addWidget(self.auto_zero_assist_row)
 
+    def _build_auto_exhausted_offer(self, _s3_layout) -> None:
+
 
 
 
@@ -1436,39 +1537,6 @@ class DockAutoBuildMixin:
         self.auto_exhausted_subscribe.set_pro_offer("plugin_exhausted_offer")
         self.auto_exhausted_subscribe.setVisible(False)
         _s3_layout.addWidget(self.auto_exhausted_subscribe)
-
-
-
-
-
-
-
-        self._defer_dock_part(
-            lambda: self._build_deferred_review_panel(_s3_layout, self.auto_exhausted_subscribe))
-
-
-
-
-
-        _s3_layout.addStretch(1)
-
-
-        _s1_layout.addStretch()
-        _s2_layout.addStretch(1)
-        _s3_layout.addStretch()
-
-
-
-
-        auto_layout.addWidget(self.auto_controls_section, 1)
-
-
-        auto_layout.addStretch()
-
-
-        name_unlabelled_controls(self.auto_page)
-        self.auto_page.setVisible(False)
-        self.main_layout.addWidget(self.auto_page, 1)
 
     def _on_auto_upsell_manual_clicked(self) -> None:
 

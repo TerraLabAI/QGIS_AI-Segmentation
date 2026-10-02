@@ -11,6 +11,14 @@ from __future__ import annotations
 
 from . import telemetry_events as ev
 from .telemetry import scrub_payload_value, track
+from .telemetry_run_context import (
+    note_review_opened,
+    note_run_ended,
+    note_run_started,
+    review_elapsed_props,
+    run_attempt_props,
+    run_failure_stage,
+)
 from .telemetry_run_profile import client_props, review_pass_props
 from .telemetry_session_events import _sent_this_session
 
@@ -22,9 +30,12 @@ _REVIEW_ITEM_SAMPLE_RATE = 10
 
 
 def track_auto_start_clicked(layer_kind: str, has_credits_known: bool = False) -> None:
+
+
     track(ev.AUTO_START_CLICKED, {
         "layer_kind": layer_kind,
         "has_credits_known": bool(has_credits_known),
+        **run_attempt_props(),
     })
 
 
@@ -33,6 +44,7 @@ def track_zone_drawn(vertices: int, area_km2: float, zone_kind: str = "polygon")
         "vertices": vertices,
         "area_km2": round(area_km2, 1),
         "zone_kind": zone_kind,
+        **run_attempt_props(),
     })
 
 
@@ -86,7 +98,8 @@ def track_auto_prompt_committed(prompt: str, from_library: bool = False) -> None
 
     track(ev.AUTO_PROMPT_COMMITTED,
           {"prompt": scrub_payload_value(prompt),
-           "from_library": bool(from_library)})
+           "from_library": bool(from_library),
+           **run_attempt_props()})
 
 
 def track_auto_prompt_steered(prompt: str, suggestion: str = "") -> None:
@@ -208,8 +221,15 @@ def track_auto_detect_started(run_id: str, tiles: int, zone_km2: float,
         "merge_mode": merge_mode,
         "merge_mode_source": merge_mode_source,
     }
+    from .telemetry_config_props import config_provenance_props
+
+    props.update(config_provenance_props())
     if detail_seeded is not None:
         props["detail_seeded"] = int(detail_seeded)
+
+
+    note_run_started(run_id, tiles)
+    props.update(run_attempt_props(run_id))
 
 
     for key in ("tile_plan", "tile_ground_m", "tile_prior_m", "tile_reasons",
@@ -269,6 +289,8 @@ def track_auto_detect_completed(run_id: str, duration_ms: int, tiles_done: int,
         "tile_ground_m": int(tile_ground_m),
     }
     props.update(client_props(client_profile))
+    props.update(run_attempt_props(run_id))
+    note_run_ended(run_id)
     track(ev.AUTO_DETECT_COMPLETED, props)
 
 
@@ -301,17 +323,28 @@ def track_auto_gate_scan(run_id: str, tiles: int, group: int, scans: int,
 def track_auto_detect_failed(run_id: str, error_class: str, tiles_done: int,
                              duration_ms: int | None = None,
                              warming_ms: int = 0,
-                             client_profile: dict | None = None) -> None:
+                             client_profile: dict | None = None,
+                             error_code: str = "",
+                             stage: str = "") -> None:
+
+
+
+
+
 
 
     props = {
         "run_id": run_id,
         "error_class": error_class,
+        "error_code": error_code or f"auto_detect_{(error_class or 'unknown').lower()}",
+        "stage": stage or run_failure_stage(),
         "tiles_done": tiles_done,
         "duration_ms": duration_ms,
         "warming_ms": warming_ms,
     }
     props.update(client_props(client_profile))
+    props.update(run_attempt_props(run_id))
+    note_run_ended(run_id)
     track(ev.AUTO_DETECT_FAILED, props)
 
 
@@ -342,6 +375,8 @@ def track_auto_detect_cancelled(run_id: str, tiles_done: int, tiles_total: int,
         "submit_retries": int(submit_retries),
     }
     props.update(client_props(client_profile))
+    props.update(run_attempt_props(run_id))
+    note_run_ended(run_id)
     track(ev.AUTO_DETECT_CANCELLED, props)
 
 
@@ -395,6 +430,7 @@ def track_zero_assist_clicked(kind: str, from_prompt: str,
 
 def track_review_opened(run_id: str, instances_found: int, visible_at_start: int,
                         start_confidence: int, auto_lowered: bool) -> None:
+    note_review_opened(run_id)
     track(ev.REVIEW_OPENED, {
         "run_id": run_id,
         "instances_found": instances_found,
@@ -454,6 +490,8 @@ def track_auto_export_done(run_id: str, exported_count: int, visible_pct_of_foun
 
 
 
+
+
     props = {
         "run_id": run_id,
         "exported_count": exported_count,
@@ -464,6 +502,7 @@ def track_auto_export_done(run_id: str, exported_count: int, visible_pct_of_foun
         "autosave": bool(autosave),
     }
     props.update(review_pass_props(pass_profile))
+    props.update(review_elapsed_props(run_id))
     track(ev.AUTO_EXPORT_DONE, props)
 
 
@@ -482,6 +521,7 @@ def track_review_abandoned(run_id: str, instances_at_exit: int, refined: bool,
         "exit_path": exit_path,
     }
     props.update(review_pass_props(pass_profile))
+    props.update(review_elapsed_props(run_id))
     track(ev.REVIEW_ABANDONED, props)
 
 
@@ -493,10 +533,15 @@ def track_auto_retry_clicked(run_id: str, discarded_count: int, confirmed: bool)
     })
 
 
-def track_auto_exit_clicked(from_step: int, autosaved_count: int) -> None:
-    track(ev.AUTO_EXIT_CLICKED, {
-        "from_step": from_step,
-        "autosaved_count": autosaved_count,
+def track_auto_resume(offered: bool, run_id: str, tiles_missing: int,
+                      cache_kept: bool) -> None:
+
+
+
+    track(ev.AUTO_RESUME_OFFERED if offered else ev.AUTO_RESUME_CLICKED, {
+        "run_id": run_id,
+        "tiles_missing": int(tiles_missing),
+        "cache_kept": bool(cache_kept),
     })
 
 

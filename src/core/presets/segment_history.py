@@ -15,12 +15,16 @@
 
 from __future__ import annotations
 
-import json
 import time
 from itertools import islice
 
 from qgis.PyQt.QtCore import QSettings
 
+from .bounded_setting_json import (
+    read_bounded_json_setting,
+    remove_bounded_json_setting,
+    write_bounded_json_setting,
+)
 from .run_history_cache import account_fingerprint
 
 
@@ -56,13 +60,7 @@ def _recent_bucket_name() -> str:
 
 def _read_buckets() -> dict:
 
-    raw = QSettings().value(_RECENT_KEY, "")
-    if not raw or not isinstance(raw, str) or len(raw.encode("utf-8")) > _MAX_RECENT_BYTES:
-        return {}
-    try:
-        data = json.loads(raw)
-    except (ValueError, TypeError):
-        return {}
+    data = read_bounded_json_setting(_RECENT_KEY, _MAX_RECENT_BYTES)
     if not isinstance(data, dict):
         return {}
     return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, list)}
@@ -70,15 +68,7 @@ def _read_buckets() -> dict:
 
 def _write_buckets(buckets: dict) -> bool:
 
-    settings = QSettings()
-    existing = settings.value(_RECENT_KEY, "")
-    if isinstance(existing, str) and len(existing.encode("utf-8")) > _MAX_RECENT_BYTES:
-        return False
-    payload = json.dumps(buckets, ensure_ascii=False)
-    if len(payload.encode("utf-8")) > _MAX_RECENT_BYTES:
-        return False
-    settings.setValue(_RECENT_KEY, payload)
-    return True
+    return write_bounded_json_setting(_RECENT_KEY, buckets, _MAX_RECENT_BYTES)
 
 
 def get_recent() -> list[dict]:
@@ -139,9 +129,7 @@ def clear_recent_objects_for_account() -> None:
     if buckets:
         _write_buckets(buckets)
     else:
-        existing = QSettings().value(_RECENT_KEY, "")
-        if not (isinstance(existing, str) and len(existing.encode("utf-8")) > _MAX_RECENT_BYTES):
-            QSettings().remove(_RECENT_KEY)
+        remove_bounded_json_setting(_RECENT_KEY, _MAX_RECENT_BYTES)
 
 
 def clear_unscoped_recent_objects() -> None:

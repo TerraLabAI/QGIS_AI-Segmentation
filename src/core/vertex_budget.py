@@ -60,11 +60,6 @@ def _ring_metrics(pts: list, prev: list, nxt: list, i: int) -> tuple[float, floa
     return cross / 2.0, (cross / base if base > 0 else 0.0)
 
 
-def thin_ring(pts: list, budget: int, max_deviation: float = 0.0) -> list:
-
-    return [pts[i] for i in thin_ring_indices(pts, budget, max_deviation)]
-
-
 def thin_ring_indices(pts: list, budget: int,
                       max_deviation: float = 0.0) -> list:
 

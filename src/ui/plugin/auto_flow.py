@@ -32,6 +32,9 @@ from .auto_flow_run_plan import (
 from .auto_flow_wiring import (
     AutoFlowWiringMixin,
 )
+from .auto_late_run_plan import (
+    AutoLateRunPlanMixin,
+)
 from .shared import (
     _WEBMERC_MUPP_Z0,
     _debounce_timer,
@@ -47,6 +50,7 @@ class AutoFlowMixin(
     AutoFlowGridMixin,
     AutoFlowDetailMixin,
     AutoFlowRunPlanMixin,
+    AutoLateRunPlanMixin,
 ):
     pass
 
@@ -67,4 +71,5 @@ __all__ = [
     "AutoFlowGridMixin",
     "AutoFlowDetailMixin",
     "AutoFlowRunPlanMixin",
+    "AutoLateRunPlanMixin",
 ]

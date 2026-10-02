@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from ...core.served_config import quiet_without_served_config
+
 
 class AutoFlowDetailMixin:
 
@@ -266,6 +268,7 @@ class AutoFlowDetailMixin:
         self.dock_widget.set_auto_detail_value(detail)
         self._auto_detail_seeded = self._get_auto_detail_level()
 
+    @quiet_without_served_config
     def _apply_default_detail(self, zone_rect) -> None:
 
 
@@ -332,6 +335,7 @@ class AutoFlowDetailMixin:
 
         self._refresh_rerun_guard()
 
+    @quiet_without_served_config
     def _reseed_auto_detail_from_blob(self, object_class: str = "") -> None:
 
 
@@ -388,6 +392,7 @@ class AutoFlowDetailMixin:
         except (RuntimeError, AttributeError):
             pass
 
+    @quiet_without_served_config
     def _reseed_auto_detail_from_plan(self, prompt: str, plan: dict) -> None:
 
 

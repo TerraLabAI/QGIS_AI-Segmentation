@@ -6,15 +6,13 @@
 
 from __future__ import annotations
 
+from ..core.error_policy import LINK_OR_TIMEOUT_CODES
 from ..core.i18n import tr
 from ..core.qt_compat import safe_disconnect
 from ..core.server_dials import dial_in_range
 from ..workers.generic_request_task import GenericRequestTask
 from .account_settings_plan import (
     _as_int,
-)
-from .account_settings_session import (
-    _ACCOUNT_OFFLINE_CODES,
 )
 
 
@@ -235,7 +233,7 @@ class AccountDeletionMixin:
             return tr(
                 "Your subscription is not active, so the service refused the "
                 "request. Open your account on terra-lab.ai, then try again.")
-        if key in _ACCOUNT_OFFLINE_CODES:
+        if key in LINK_OR_TIMEOUT_CODES:
             return tr(
                 "The request did not reach the service. Check your connection, "
                 "then try again.")

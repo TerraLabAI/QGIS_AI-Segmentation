@@ -380,6 +380,20 @@ class LocalAiWarmMixin:
         if not self._bind_correct_crop_context():
             return
         from ...core.crop_window import crop_window_key, neighborhood_crop_window
+        if getattr(self, "_is_online_layer", False):
+
+
+            anchor = geom.pointOnSurface()
+            pt = anchor.asPoint() if anchor is not None and not anchor.isEmpty() else None
+            cx, cy, scale = self._handoff_crop_spec_for(
+                geom, QgsPointXY(pt.x(), pt.y()) if pt is not None else None,
+                reuse_held=False)
+            if crop_window_key(cx, cy, scale) in (
+                    getattr(self, "_encoded_crop_window", None),
+                    getattr(self, "_inflight_crop_window", None)):
+                return
+            self._begin_speculative_crop(QgsPointXY(cx, cy), scale)
+            return
         bb = geom.boundingBox()
 
 
@@ -393,8 +407,10 @@ class LocalAiWarmMixin:
                 getattr(self, "_encoded_crop_window", None),
                 getattr(self, "_inflight_crop_window", None)):
             return
-        self._extract_and_encode_crop(
-            QgsPointXY(cx, cy), mupp_override=scale, show_busy=False, quiet=True)
+
+
+
+        self._begin_speculative_crop(QgsPointXY(cx, cy), scale)
 
 
 
@@ -472,13 +488,46 @@ class LocalAiWarmMixin:
             return False
         return online_layer_twin(self._current_layer) is not None
 
+    def _remote_crop_predictors(self) -> list:
+
+        held = getattr(self, "predictor", None)
+        return [p for p in (held, getattr(held, "_remote", None)) if p is not None]
+
+    def _begin_speculative_crop(self, center_point, scale) -> None:
+
+
+
+
+
+
+        for predictor in self._remote_crop_predictors():
+            arm = getattr(predictor, "set_speculative_probe", None)
+            if arm is not None:
+                arm(lambda: bool(getattr(self, "_speculative_manual_crop", False)))
+        self._speculative_manual_crop = True
+        started = False
+        try:
+            started = bool(self._extract_and_encode_crop(
+                center_point, mupp_override=scale, show_busy=False, quiet=True))
+        finally:
+            self._speculative_manual_crop = started
+
+    def _abort_speculative_upload(self) -> None:
+
+        for predictor in self._remote_crop_predictors():
+            abort = getattr(predictor, "abort_speculative_register", None)
+            if abort is not None:
+                try:
+                    abort()
+                except Exception:  # noqa: BLE001  # nosec B110
+                    pass
+
     def _begin_speculative_manual_crop(self, center_point, scale) -> None:
 
 
 
 
-        self._speculative_manual_crop = bool(self._extract_and_encode_crop(
-            center_point, mupp_override=scale, show_busy=False, quiet=True))
+        self._begin_speculative_crop(center_point, scale)
 
     def _abandon_speculative_manual_crop(self, click_raster_pt=None) -> bool:
 
@@ -516,6 +565,9 @@ class LocalAiWarmMixin:
             return False
         self._speculative_manual_crop = False
         self._invalidate_manual_encode()
+
+
+        self._abort_speculative_upload()
 
 
 
@@ -713,6 +765,25 @@ class LocalAiWarmMixin:
         return inflight is not None and inflight == crop_window_key(
             center.x(), center.y(), scale or 1.0)
 
+    @staticmethod
+    def _correct_online_warm_ok(layer) -> bool:
+
+
+
+
+        try:
+            from ...core.online_layer_twin import online_layer_twin, online_prewarm_enabled
+
+
+
+            if (layer.dataProvider().name() or "").lower() != "wms":
+                return False
+            if "type=xyz" not in (layer.source() or "").lower():
+                return False
+            return bool(online_prewarm_enabled()) and online_layer_twin(layer) is not None
+        except Exception:  # noqa: BLE001  # nosec B110
+            return False
+
     def _bind_correct_crop_context(self) -> bool:
 
 
@@ -731,7 +802,8 @@ class LocalAiWarmMixin:
         try:
             if not self._is_layer_valid(layer):
                 return False
-            if self._needs_canvas_render(layer):
+            online = bool(self._needs_canvas_render(layer))
+            if online and not self._correct_online_warm_ok(layer):
                 return False
             source = layer.source()
         except (RuntimeError, AttributeError):
@@ -749,8 +821,9 @@ class LocalAiWarmMixin:
         self._current_layer = layer
         self._current_layer_name = layer.name().replace(" ", "_")
         self._current_raster_path = source
-        self._is_online_layer = False
-        self._is_non_georeferenced_mode = not self._is_layer_georeferenced(layer)
+        self._is_online_layer = online
+        self._is_non_georeferenced_mode = (
+            False if online else not self._is_layer_georeferenced(layer))
         if held:
 
 

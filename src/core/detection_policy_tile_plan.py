@@ -8,11 +8,8 @@
 
 from __future__ import annotations
 
-from .detection_policy_core import _is_finite_policy_value, seed_policy
-
-
-
-
+from .detection_policy_core import policy_scope, seed_policy
+from .served_config import require_served_int, require_served_number
 
 
 def _tile_plan_block(policy: dict | None) -> dict:
@@ -29,31 +26,24 @@ def tile_plan_enabled(policy: dict | None = None) -> bool:
 
 def tile_plan_half_steps(policy: dict | None = None) -> int:
 
-    val = _tile_plan_block(policy).get("slider_half_steps")
-    if _is_finite_policy_value(val) and 1 <= val <= 12:
-        return int(val)
-    from .tile_plan import TILE_STEP_HALF_COUNT
-    return TILE_STEP_HALF_COUNT
+
+    with policy_scope(policy):
+        return require_served_int("detection_policy.seed.tile_plan.slider_half_steps", 1, 12)
 
 
 def tile_plan_step_ratio(policy: dict | None = None) -> float:
 
 
-    val = _tile_plan_block(policy).get("slider_step_ratio")
-    if _is_finite_policy_value(val) and 1.05 <= val <= 2.0:
-        return float(val)
-    from .tile_plan import TILE_STEP_RATIO
-    return TILE_STEP_RATIO
+    with policy_scope(policy):
+        return require_served_number("detection_policy.seed.tile_plan.slider_step_ratio", 1.05, 2.0)
 
 
 def tile_fit_object_frac(policy: dict | None = None) -> float:
 
 
-    val = seed_policy(policy).get("max_object_tile_frac")
-    if _is_finite_policy_value(val) and 0 < val <= 1:
-        return float(val)
-    from .tile_plan import TILE_FIT_OBJECT_FRAC
-    return TILE_FIT_OBJECT_FRAC
+
+    with policy_scope(policy):
+        return require_served_number("detection_policy.seed.max_object_tile_frac", 0.01, 1.0)
 
 
 def density_probe_config(policy: dict | None = None):

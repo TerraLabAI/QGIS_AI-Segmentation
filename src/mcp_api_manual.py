@@ -19,7 +19,7 @@ from qgis.core import (
     QgsRasterLayer,
 )
 
-from .mcp_api_guard import gui_thread_only
+from .mcp_api_guard import gui_thread_only, request_served_config
 
 
 
@@ -114,6 +114,7 @@ class SegmentationManualMixin:
 
 
 
+        request_served_config(self._plugin)
 
 
         try:
@@ -198,6 +199,7 @@ class SegmentationManualMixin:
 
 
 
+        request_served_config(self._plugin)
         pos, err = self._points_as_pairs(positive, "positive")
         if err:
             return err
@@ -622,12 +624,9 @@ class SegmentationManualMixin:
 
         total_pixels = masks[0].shape[0] * masks[0].shape[1]
         areas = [int(m.sum()) for m in masks]
-        small_enough = [i for i in range(len(scores))
-                        if 0 < areas[i] < 0.8 * total_pixels]
-        if small_enough:
-            best = max(small_enough, key=lambda i: scores[i])
-        else:
-            best = min(range(len(scores)), key=lambda i: areas[i])
+        from .core.multimask_pick import pick_multimask_index
+
+        best = pick_multimask_index(areas, scores, total_pixels)
 
         width_m = self._ground_width_in_metres(raster_layer, maxx - minx)
         return {

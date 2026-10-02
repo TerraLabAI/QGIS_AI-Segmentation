@@ -74,6 +74,12 @@ class EnvSetupStartupMixin:
 
 
 
+
+        self._activation_kicked_with_startup_check = True
+        self._refresh_activation_async()
+
+
+
         from qgis.PyQt.QtCore import QTimer
 
         from ...core.server_dials import dial_in_range
@@ -94,7 +100,11 @@ class EnvSetupStartupMixin:
 
 
 
-            self._refresh_activation_async()
+
+            if getattr(self, "_activation_kicked_with_startup_check", False):
+                self._activation_kicked_with_startup_check = False
+            else:
+                self._refresh_activation_async()
 
     def _apply_startup_check(self, venv_ready: bool, message: str, checkpoint_ok: bool):
 

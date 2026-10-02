@@ -413,37 +413,6 @@ class DockManualEngineMixin:
         except Exception:  # noqa: BLE001
             return False
 
-    def _manual_pro_ceiling_objects_low(self) -> bool:
-
-
-
-
-
-
-
-        try:
-            from ...core.pro_ceiling import (
-                pro_ceiling_enabled,
-                pro_ceiling_low_fraction,
-            )
-
-            if not getattr(self, "_auto_is_subscriber", False):
-                return False
-            if not pro_ceiling_enabled():
-                return False
-            env = getattr(self, "_quota_envelopes", None)
-            if env is None or not env.has_objects_gauge():
-                return False
-            left = env.objects_remaining
-            if left is None:
-                left = max(0, int(env.objects_cap) - int(env.objects_used))
-            cap = int(env.objects_cap)
-            if cap <= 0:
-                return False
-            return 0 < int(left) <= cap * pro_ceiling_low_fraction()
-        except Exception:  # noqa: BLE001
-            return False
-
     def _paint_manual_engine_card(self) -> None:
 
 

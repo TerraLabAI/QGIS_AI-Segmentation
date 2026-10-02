@@ -18,7 +18,8 @@ from __future__ import annotations
 
 
 
-PACK_MAX_SIDE = 320
+
+PACK_MAX_SIDE = 0
 
 
 

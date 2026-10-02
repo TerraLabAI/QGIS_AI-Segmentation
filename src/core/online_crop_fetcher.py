@@ -20,6 +20,7 @@ from .i18n import tr
 from .raster_crop_reader import (
     _normalize_to_uint8,
 )
+from .streamed_download import sleep_unless_cancelled
 from .tile_read_completeness import online_read_is_complete
 
 
@@ -249,16 +250,14 @@ def _render_layer_to_image(layer, extent, width, height,
             return None, None, "Renderer fallback produced no image"
 
 
-        img = img.convertToFormat(QImage.Format.Format_RGB32)
-        out_h = img.height()
-        out_w = img.width()
-        ptr = img.bits()
-        ptr.setsize(out_h * out_w * 4)
-        arr = np.frombuffer(ptr, dtype=np.uint8).reshape(
-            out_h, out_w, 4)
 
 
-        image_np = np.ascontiguousarray(arr[:, :, 2::-1])
+
+        from .qimage_strips import qimage_array_in_strips
+
+        image_np = qimage_array_in_strips(img, QImage.Format.Format_RGB888, 3)
+        if image_np is None:
+            return None, None, "Renderer fallback produced no image"
         return image_np, actual_extent, None
 
     except Exception as e:
@@ -575,6 +574,8 @@ class OnlineCropFetcher:
         self._direct_request = None
         self._direct_image = None
 
+        self.direct_tile_payload = None
+
         provider = layer.dataProvider()
         self._provider = provider
         if provider is None:
@@ -889,6 +890,7 @@ class OnlineCropFetcher:
 
 
         from .xyz_tile_fetch import (
+            keep_crop_tiles,
             note_direct_tile_fetch_failed,
             note_direct_tile_fetch_succeeded,
         )
@@ -897,14 +899,25 @@ class OnlineCropFetcher:
 
 
         self._direct_request = None
+        retried = getattr(request, "retry_outcome", None) or {}
+        retry_note = (
+            f", {retried['missing_retried']} lost tile(s) asked again"
+            f" ({'recovered' if retried.get('missing_recovered') else 'still lost'})"
+            if retried.get("missing_retried")
+            else ", lost tile retry skipped: no time left"
+            if retried.get("missing_retry_skipped") else "")
         if image is not None:
             note_direct_tile_fetch_succeeded(request.source_key)
             QgsMessageLog.logMessage(
                 f"Fetched {request.tile_count()} tiles at zoom "
-                f"{request.zoom} in {elapsed_ms} ms",
+                f"{request.zoom} in {elapsed_ms} ms{retry_note}",
                 "AI Segmentation", level=Qgis.MessageLevel.Info
             )
             self._direct_image = image
+
+
+            self.direct_tile_payload = getattr(request, "tile_payload", None) or None
+            keep_crop_tiles(request)
             return ("stabilized", 0.0)
         if error_code not in ("crop_error_online_blank_tiles",
                               "crop_error_online_cancelled"):
@@ -914,7 +927,7 @@ class OnlineCropFetcher:
             note_direct_tile_fetch_failed(request.source_key)
         QgsMessageLog.logMessage(
             f"Direct tile fetch brought nothing after {elapsed_ms} ms "
-            f"({error_code}), reading the layer instead",
+            f"({error_code}{retry_note}), reading the layer instead",
             "AI Segmentation", level=Qgis.MessageLevel.Warning
         )
         self.begin()
@@ -1133,15 +1146,7 @@ def _blocking_wait(seconds, cancel_check=None):
 
     from qgis.core import QgsApplication
 
-    deadline = time.monotonic() + seconds
-    while True:
-        if cancel_check is not None and cancel_check():
-            return False
-        remaining = deadline - time.monotonic()
-        if remaining <= 0.0:
-            return True
-        QgsApplication.processEvents()
-        time.sleep(min(0.05, remaining))
+    return not sleep_unless_cancelled(seconds, cancel_check, slice_s=0.05, pump=QgsApplication.processEvents)
 
 
 def extract_crop_from_online_layer(layer, center_x, center_y, canvas_mupp,

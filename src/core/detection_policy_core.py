@@ -9,6 +9,8 @@
 from __future__ import annotations
 
 import math
+import threading
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -23,12 +25,17 @@ def _is_finite_policy_value(value: object) -> TypeGuard[int | float]:
         return False
 
 
-def get_detection_policy() -> dict:
 
 
 
 
 
+_run_policy_lock = threading.Lock()
+_run_policy: dict | None = None
+_scope = threading.local()
+
+
+def _cached_config_policy() -> dict:
     try:
         from .activation_manager import get_server_config
 
@@ -39,6 +46,68 @@ def get_detection_policy() -> dict:
         return {}
     policy = config.get("detection_policy")
     return policy if isinstance(policy, dict) else {}
+
+
+def capture_run_policy(plan: object = None) -> dict:
+
+
+
+
+
+    run_policy = plan.get("run_policy") if isinstance(plan, dict) else None
+    policy = run_policy if isinstance(run_policy, dict) and run_policy else _cached_config_policy()
+    pin_run_policy(policy)
+    return policy
+
+
+def pin_run_policy(policy: object) -> None:
+
+
+    global _run_policy
+    with _run_policy_lock:
+        _run_policy = policy if isinstance(policy, dict) and policy else None
+
+
+def release_run_policy() -> None:
+
+    pin_run_policy(None)
+
+
+def pinned_run_policy() -> dict | None:
+
+    with _run_policy_lock:
+        return _run_policy
+
+
+@contextmanager
+def policy_scope(policy: dict | None):
+
+
+    if policy is None:
+        yield
+        return
+    previous = getattr(_scope, "policy", None)
+    _scope.policy = policy if isinstance(policy, dict) else {}
+    try:
+        yield
+    finally:
+        _scope.policy = previous
+
+
+def get_detection_policy() -> dict:
+
+
+
+
+
+
+    scoped = getattr(_scope, "policy", None)
+    if isinstance(scoped, dict):
+        return scoped
+    pinned = pinned_run_policy()
+    if pinned is not None:
+        return pinned
+    return _cached_config_policy()
 
 
 def policy_rev(policy: dict | None = None) -> int | None:

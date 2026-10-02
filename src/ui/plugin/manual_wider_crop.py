@@ -49,7 +49,7 @@ class ManualWiderCropMixin:
 
         from ...core.server_dials import dial_in_range
 
-        return dial_in_range("tuning.click.wider_crop_on_edge", 1, 0, 1) >= 1
+        return dial_in_range("tuning.click.wider_crop_on_edge", 0, 0, 1) >= 1
 
     def _first_answer_meets_crop_edge(self, mask) -> bool:
 
@@ -105,7 +105,7 @@ class ManualWiderCropMixin:
             return None
         minx, miny, maxx, maxy = info["bounds"]
         centre = QgsPointXY((minx + maxx) / 2.0, (miny + maxy) / 2.0)
-        factor = dial_in_range("tuning.click.wider_crop_factor", 2.0, 1.25, 4.0)
+        factor = dial_in_range("tuning.click.wider_crop_factor", 1.0, 1.25, 4.0)
         try:
             if self._is_online_layer:
                 held = self._current_crop_actual_mupp
@@ -325,7 +325,7 @@ class ManualWiderCropMixin:
             state["bounds"] = tuple(self._current_crop_info["bounds"])
             from ...core.server_dials import dial_in_range
 
-            flood = dial_in_range("tuning.click.wider_crop_max_share", 0.6, 0.3, 0.95)
+            flood = dial_in_range("tuning.click.wider_crop_max_share", 0.0, 0.3, 0.95)
             share = float(mask.mean()) if mask is not None and mask.size else 0.0
             if share <= flood:
                 self._wider_crop_outcome = "wider"
@@ -480,7 +480,7 @@ class ManualWiderCropMixin:
                 state["bounds"] = tuple(self._current_crop_info["bounds"])
                 from ...core.server_dials import dial_in_range
 
-                flood = dial_in_range("tuning.click.wider_crop_max_share", 0.6, 0.3, 0.95)
+                flood = dial_in_range("tuning.click.wider_crop_max_share", 0.0, 0.3, 0.95)
                 share = (float(raw_answer.mean())
                          if raw_answer is not None and raw_answer.size else 0.0)
                 if share <= flood:

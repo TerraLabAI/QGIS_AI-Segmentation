@@ -34,7 +34,6 @@ from .terralab_client_nam_pool import (
     _qobject_alive,
 )
 from .terralab_client_primitives import (
-    _HTTP_STATUS_ATTR,
     _NE,
     _NO_LESS_SAFE_REDIRECT,
     _REDIRECT_ATTR,
@@ -77,7 +76,6 @@ from .terralab_client_retry import (
     _RETRY_AFTER_MAX_S,
     _RETRY_PAUSE_MAX_S,
     _RETRY_PAUSE_MIN_S,
-    _WINDOW_HINT_MAX,
     _WINDOW_HINT_MIN,
     _WORTH_ASKING_AGAIN_CODES,
     _note_retry_after,
@@ -104,7 +102,6 @@ __all__ = [
     "_ConnRefused",
     "_ContentDenied",
     "_HANDOFF_STATUSES",
-    "_HTTP_STATUS_ATTR",
     "_HostNotFound",
     "_NE",
     "_NO_LESS_SAFE_REDIRECT",
@@ -133,7 +130,6 @@ __all__ = [
     "_Timeout",
     "_UnknownNetwork",
     "_WALL_CLOCK_GUARD_MS",
-    "_WINDOW_HINT_MAX",
     "_WINDOW_HINT_MIN",
     "_WORTH_ASKING_AGAIN_CODES",
     "_WallClockGuard",

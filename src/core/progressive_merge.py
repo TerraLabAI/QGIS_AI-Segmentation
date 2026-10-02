@@ -22,7 +22,7 @@ from typing import Any
 from .server_dials import dial_in_range
 
 
-_WINDOW_FRAC = 0.15
+_WINDOW_FRAC = 0.2
 _WINDOW_MIN_PX = 40
 
 

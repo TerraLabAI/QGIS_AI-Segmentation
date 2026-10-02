@@ -15,12 +15,12 @@ from collections import deque
 
 from ...core import run_timeline as _timeline
 from ...core import transport_dials as _td
-from ...core.error_policy import TRANSIENT_CODES
+from ...core.error_policy import OFFLINE_STOP_CODE, TRANSIENT_CODES
 from ...core.server_dials import feature_enabled as _feature_on
 from ..tile_convert_pool import DEFAULT_MAX_WORKERS as _CONVERT_DEFAULT_MAX
 from ..tile_convert_pool import SPARE_CORES as _CONVERT_SPARE_CORES
 from ..tile_convert_pool import default_workers
-from .retry_policy import RATE_LIMIT_SETBACK_CODES
+from .retry_policy import RATE_LIMIT_SETBACK_CODES, _CachedReply
 from .run_lifecycle import _BILLED_DRAIN_STOP_REASONS
 from .tile_submit import _as_float
 
@@ -103,7 +103,10 @@ class AutoRunLoopsMixin:
                 if ready_i is not None:
                     tile_idx, tile_spec, png_bytes, _ = resubmit[ready_i]
                     del resubmit[ready_i]
-                elif pending:
+                elif pending and not (resubmit and self._outage_active()):
+
+
+
 
 
 
@@ -116,6 +119,16 @@ class AutoRunLoopsMixin:
                         return False
                     tile_idx, spec = picked
                     _timeline.mark("fire_picked")
+                    if tile_idx in self._replay_answers:
+
+
+
+                        in_flight[_CachedReply(self._replay_answers[tile_idx])] = (
+                            tile_idx, spec, self._make_tile_transform(*spec),
+                            b"", time.monotonic() + self._stream_reply_budget_s)
+                        self._submit_at[tile_idx] = time.monotonic()
+                        self.tiles_replayed_from_cache += 1
+                        return True
                     if tile_idx in self._gate_skip or tile_idx in self._prefilter_skip:
 
 
@@ -154,6 +167,8 @@ class AutoRunLoopsMixin:
                 )
                 _timeline.mark("fire_built")
                 reply = self._client.post_detection_async(submission, self._auth)
+                if self._resuming:
+                    self.tiles_resent += 1
                 _timeline.mark("post")
                 in_flight[reply] = (
                     tile_idx, tile_spec, tile_transform, png_bytes,
@@ -207,7 +222,7 @@ class AutoRunLoopsMixin:
 
 
         charge("startup")
-        while (not self._stop_requested and len(in_flight) < self._aimd.cap
+        while (not self._stop_requested and self._window_has_room(in_flight)
                and fire_next()):
             pass
         charge("fire")
@@ -216,6 +231,13 @@ class AutoRunLoopsMixin:
             in_flight or resubmit or pending or self._render_deferred or self._convert_pool.pending
         ) and not self._stop_requested:
             self.inflight_now = len(in_flight)
+
+
+            if self._outage_expired():
+                self.stopped_offline = True
+                terminal_stop = ("fatal", OFFLINE_STOP_CODE)
+                self._mark_stop(terminal_stop)
+                break
             if not in_flight:
                 if not (pending or resubmit or self._render_deferred):
 
@@ -241,7 +263,7 @@ class AutoRunLoopsMixin:
 
 
 
-                while (not self._stop_requested and len(in_flight) < self._aimd.cap and fire_next()):
+                while (not self._stop_requested and self._window_has_room(in_flight) and fire_next()):
                     pass
                 charge("fire")
                 self._settle_converted_batch(self._convert_pool.drain())
@@ -250,16 +272,36 @@ class AutoRunLoopsMixin:
             charge("loop_other")
 
 
-            QCoreApplication.processEvents(_wait, 250)
+
+            replaying = bool(self._replay_answers) and any(
+                isinstance(r, _CachedReply) for r in in_flight)
+            QCoreApplication.processEvents(_wait, 0 if replaying else 250)
             charge("net_wait")
             if self._stop_requested:
                 break
 
             done = [r for r in in_flight if self._reply_is_finished(r)]
 
+            def victim_requeue(idx, entry, _code):
+                if self._outage_active():
+                    self._requeue_probe(idx, entry[1], entry[3], resubmit)
+                    return True
+                return self._requeue_link_victim(
+                    idx, entry, resubmit, submit_attempts)
+
+            def expired_requeue(idx, entry, code):
+
+                if self._outage_active():
+                    self._requeue_probe(idx, entry[1], entry[3], resubmit)
+                    return True
+                return self._requeue_unuploaded(
+                    idx, entry, code, resubmit, busy_since, submit_attempts)
 
 
-            expired = self._expire_stalled_replies(in_flight)
+
+            expired = self._expire_stalled_replies(
+                in_flight,
+                expired_requeue)
             if expired:
 
 
@@ -267,9 +309,30 @@ class AutoRunLoopsMixin:
 
                 completed += expired
                 self._emit_progress(completed, total)
-                self._aimd.on_setback()
+                if not self._outage_active():
+                    self._aimd.on_setback()
 
                 self._density_check(pending, resubmit, in_flight)
+
+
+
+            quiet_settled, quiet_aborted = self._guard_silent_drops(
+                in_flight, victim_requeue)
+            if quiet_aborted:
+                completed += quiet_settled
+                if quiet_settled:
+                    self._emit_progress(completed, total)
+                if not self._outage_active():
+                    self._enter_outage()
+                    self._aimd.on_setback()
+
+
+                    if self._outage_active():
+                        swept = self._sweep_dead_link(in_flight, victim_requeue)
+                        if swept:
+                            completed += swept
+                            self._emit_progress(completed, total)
+                done = [r for r in done if r in in_flight]
             if not done:
 
 
@@ -283,9 +346,9 @@ class AutoRunLoopsMixin:
 
 
 
-                if not self._stop_requested and len(in_flight) < self._aimd.cap:
+                if not self._stop_requested and self._window_has_room(in_flight):
                     while (not self._stop_requested
-                           and len(in_flight) < self._aimd.cap and fire_next()):
+                           and self._window_has_room(in_flight) and fire_next()):
                         pass
                     charge("fire")
                     self._request_render_prefetch(pending)
@@ -300,6 +363,7 @@ class AutoRunLoopsMixin:
 
             cycle_refusals = 0
             cycle_answered = 0
+            link_dropped = False
             stop_payload = None
             for reply in done:
                 tile_idx, tile_spec, tile_transform, png_bytes, _ = in_flight.pop(reply)
@@ -322,9 +386,11 @@ class AutoRunLoopsMixin:
                         left = uploaded_at if uploaded_at is not None else submitted_at
                         self.phase_upload_s += left - submitted_at
                         self.phase_predict_s += time.monotonic() - left
+                        self._answer_times.append(time.monotonic() - left)
                         if left - submitted_at > self._upload_slow_s:
                             self.uploads_slow += 1
                             cycle_setback = True
+                    self._cache_answer(tile_idx, resp)
 
 
 
@@ -339,6 +405,9 @@ class AutoRunLoopsMixin:
                     cycle_answered += 1
 
 
+                    self._leave_outage()
+
+
                     fatal_streak = 0
                     self._fastfail.reset()
                     completed += 1
@@ -346,11 +415,20 @@ class AutoRunLoopsMixin:
                 elif kind == "retry":
 
 
+                    if self._outage_active() and not outcome[2]:
+
+
+                        self._requeue_probe(tile_idx, tile_spec, png_bytes, resubmit)
+                        self._reply_byte_at.pop(tile_idx, None)
+                        continue
                     if len(outcome) > 3 and outcome[3] in RATE_LIMIT_SETBACK_CODES:
                         cycle_refusals += 1
                     give_up, delay, setback = self._retry_decision(
                         tile_idx, outcome, busy_since, submit_attempts)
                     cycle_setback = cycle_setback or setback
+                    link_dropped = (link_dropped
+                                    or self._reply_link_dropped(reply, outcome))
+                    self._reply_byte_at.pop(tile_idx, None)
                     if give_up:
                         self._skip_network_tile(tile_idx)
                         completed += 1
@@ -397,6 +475,19 @@ class AutoRunLoopsMixin:
             charge("read_replies")
 
 
+
+
+
+
+            if (link_dropped or self._outage_active()) and not self._stop_requested:
+                if link_dropped and not self._outage_active():
+                    self._enter_outage()
+                swept = self._sweep_dead_link(in_flight, victim_requeue)
+                if swept:
+                    completed += swept
+                    self._emit_progress(completed, total)
+
+
             self._density_check(pending, resubmit, in_flight)
 
 
@@ -430,7 +521,7 @@ class AutoRunLoopsMixin:
 
 
 
-            while not self._stop_requested and len(in_flight) < self._aimd.cap and fire_next():
+            while not self._stop_requested and self._window_has_room(in_flight) and fire_next():
                 pass
             charge("fire")
 
@@ -636,6 +727,7 @@ class AutoRunLoopsMixin:
 
                         _, response, tile_transform = outcome
                         _, _, tile_w, tile_h = tile_spec
+                        self._cache_answer(tile_idx, response)
                         if self._emit_completed(
                             response, tile_idx, tile_w, tile_h, tile_transform
                         ):

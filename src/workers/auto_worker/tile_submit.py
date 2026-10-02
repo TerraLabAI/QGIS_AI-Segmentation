@@ -253,7 +253,7 @@ class AutoTileSubmitMixin:
                 if val is not None:
                     submission[key] = val
             self._run_fields_tile_index = tile_idx
-        clean = self._tile_clean_image.get(tile_idx)
+        clean = self._resolve_tile_clean_image(tile_idx)
         if clean is not None:
             submission["clean_image"] = clean
 
@@ -305,6 +305,88 @@ class AutoTileSubmitMixin:
 
 
         self._tile_clean_image.pop(tile_idx, None)
+        with self._clean_image_lock:
+            job = self._tile_clean_jobs.pop(tile_idx, None)
+        if job is not None:
+            job.cancel()
+
+
+
+
+    _CLEAN_IMAGE_MAX_PENDING = 4
+
+    def _queue_tile_clean_image(self, tile_idx, tile_img, x, y, w, h) -> None:
+
+
+
+
+
+        with self._clean_image_lock:
+            jobs = self._tile_clean_jobs
+            if tile_idx in jobs or tile_idx in self._tile_clean_image:
+                return
+            if sum(1 for j in jobs.values() if not j.done()) >= self._CLEAN_IMAGE_MAX_PENDING:
+                return
+            pool = self._clean_image_pool
+            if pool is None:
+                if self._clean_image_closed:
+                    return
+                from concurrent.futures import ThreadPoolExecutor
+                pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tilearchive")
+                self._clean_image_pool = pool
+            try:
+                jobs[tile_idx] = pool.submit(_encode_clean_image, tile_img, x, y, w, h)
+            except RuntimeError:
+                pass
+
+
+
+
+
+    _CLEAN_IMAGE_WAIT_S = 0.05
+
+    def _resolve_tile_clean_image(self, tile_idx: int):
+
+
+
+        clean = self._tile_clean_image.get(tile_idx)
+        if clean is not None:
+            return clean
+        with self._clean_image_lock:
+            job = self._tile_clean_jobs.get(tile_idx)
+        if job is None:
+            return None
+        if not job.done():
+            from concurrent.futures import wait as _wait_futures
+
+            _wait_futures([job], timeout=self._CLEAN_IMAGE_WAIT_S)
+            if not job.done():
+
+                return None
+        with self._clean_image_lock:
+            if self._tile_clean_jobs.get(tile_idx) is job:
+                self._tile_clean_jobs.pop(tile_idx, None)
+        try:
+            clean = job.result()
+        except Exception:  # noqa: BLE001
+            return None
+        if clean is not None:
+            self._tile_clean_image[tile_idx] = clean
+        return clean
+
+    def _close_clean_image_pool(self) -> None:
+
+        with self._clean_image_lock:
+            pool, self._clean_image_pool = self._clean_image_pool, None
+            self._tile_clean_jobs.clear()
+
+            self._clean_image_closed = True
+        if pool is None:
+            return
+        try:
+            pool.shutdown(wait=False, cancel_futures=True)
+        except Exception:  # noqa: BLE001
+            pass  # nosec B110
 
     def _build_submission(self, tile_idx: int, tile_spec, png_bytes) -> tuple[dict, dict]:
 
@@ -615,3 +697,11 @@ class AutoTileSubmitMixin:
             "img_shape": (tile_h, tile_w),
             "crs": self._crs_authid,
         }
+
+
+def _encode_clean_image(tile_img, x, y, w, h):
+
+    from ...core.cloud_detection import encode_tile_archive_copy, tile_png_to_base64
+
+    data = encode_tile_archive_copy(tile_img, x, y, w, h)
+    return tile_png_to_base64(data) if data is not None else None

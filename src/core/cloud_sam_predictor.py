@@ -46,7 +46,9 @@ from .click_crop_encoding import (
     note_crop_upload,
 )
 from .click_phase_clock import active_click_clock
+from .error_policy import LINK_FAILURE_SHIPPED
 from .log_scrub import scrub_sensitive
+from .network_busy import network_busy
 from .sam_predictor import SamWorkerError
 
 
@@ -68,6 +70,20 @@ INVALID_INPUT_CODE = "INVALID_INPUT"
 
 
 INVALID_REQUEST_CODE = "INVALID_REQUEST"
+
+
+
+
+CROP_REBUILD_MISMATCH_CODE = "CROP_REBUILD_MISMATCH"
+_CROP_TILES_MISMATCHES_BEFORE_PIN = 1
+
+
+_CROP_TILES_MAX_RATIO = 0.0
+
+_CROP_PACK_RATIO = 1.0
+
+
+_CROP_AHEAD_WAIT_MS = 0
 
 
 
@@ -115,8 +131,7 @@ def unreached_error(err: Exception) -> bool:
 
 
     code = str(getattr(err, "code", "") or "").strip().upper()
-    if code in ("NO_INTERNET", "DNS_ERROR", "CONNECTION_REFUSED",
-                "PROXY_ERROR", "SSL_ERROR"):
+    if code in LINK_FAILURE_SHIPPED:
         return True
     return code == TIMEOUT_CODE and not _server_answered_yet()
 
@@ -131,12 +146,55 @@ def _accepts_timeout(call) -> bool:
         return False
 
 
+def _accepts_cancel_feedback(call) -> bool:
+
+    try:
+        import inspect
+
+        return "cancel_feedback" in inspect.signature(call).parameters
+    except (TypeError, ValueError):
+        return False
+
+
 def _click_retries_max() -> int:
 
     from .server_dials import dial_in_range
 
     return int(dial_in_range(
         "tuning.click.retries_max", _CLICK_RETRIES_MAX, 0, 3))
+
+
+
+
+
+
+
+_CLICK_TRANSIENT_RETRIES = 0
+_CLICK_TRANSIENT_MIN_LEFT_MS = 40_000
+_CLICK_TRANSIENT_PAUSE_MS = 0
+
+
+
+
+
+_WARMING_POLL_MS = 2_000
+_WARMING_MAX_S = 0
+
+
+WARMING_CODE = "WARMING"
+
+
+def _click_failure_is_transient(answer: dict) -> bool:
+
+
+
+    code = str(answer.get("code") or "").strip().upper()
+    status = answer.get("http_status")
+    if isinstance(status, int) and not isinstance(status, bool):
+        return 500 <= status < 600
+    if code in LINK_FAILURE_SHIPPED or code == "SERVER_ERROR":
+        return True
+    return code == TIMEOUT_CODE and _server_answered_yet()
 
 
 
@@ -521,6 +579,12 @@ class CloudSamPredictor:
         self._webp_refused = False
 
 
+        self._crop_tiles_pinned = False
+        self._crop_tiles_mismatches = 0
+        self._crop_tiles_switch_on = False
+        self._crop_tiles_reason = ""
+
+
 
 
         self._named_seeds: OrderedDict[str, np.ndarray] = OrderedDict()
@@ -543,7 +607,13 @@ class CloudSamPredictor:
 
         self._unreached_generation: int | None = None
         self._register_lock = threading.Lock()
-        self._registering: set = set()
+
+        self._registering: dict = {}
+
+
+
+        self._register_feedback = None
+        self._speculative_probe = None
 
 
 
@@ -791,31 +861,89 @@ class CloudSamPredictor:
         if crop is not self._crop:
             return
         claim = (generation, key)
+        done = threading.Event()
         with self._register_lock:
             if claim in self._registering:
                 return
-            self._registering.add(claim)
+            self._registering[claim] = done
         try:
             self._register_crop_once(crop, generation, key)
         finally:
             with self._register_lock:
-                self._registering.discard(claim)
+                self._registering.pop(claim, None)
+            done.set()
+
+    def _await_registration(self, generation: int) -> None:
+
+
+
+
+
+
+
+
+        with self._register_lock:
+            done = self._registering.get((generation, self._crop_key))
+        if done is None or done.is_set():
+            return
+        try:
+            from ..api.click_transport import wait_until_done
+            from .server_dials import dial_in_range
+
+            wait_ms = int(dial_in_range("tuning.click.crop_ahead_wait_ms",
+                                        _CROP_AHEAD_WAIT_MS, 0, 120_000))
+            if wait_ms <= 0:
+                return
+            started = time.monotonic()
+            wait_until_done(done.is_set, wait_ms,
+                            cancel_check=lambda: self._generation != generation)
+            waited_ms = int((time.monotonic() - started) * 1000)
+            _log(f"Remote refine: the click waited {waited_ms} ms for the crop already on its way")
+        except Exception:  # noqa: BLE001  # nosec B110
+            pass
 
     def _register_crop_once(self, crop, generation, key) -> None:
         started = time.monotonic()
         try:
             if generation != self._generation:
                 return
-            payload, form = self._encoded_crop(crop)
-            body = {"crop": payload, "crop_format": form,
-                    "crop_shape": list(crop.shape), **self._billing_fields()}
             auth = self._resolve_auth()
             auth_fingerprint = self._auth_print(auth)
+            tiles = self._crop_tiles_offer(crop)
+            answer = None
+            sent_bytes = 0
+            upload_s = 0.0
+            if tiles is not None:
 
 
-            sent_at = time.monotonic()
-            answer = self._submit_register(body, auth)
-            upload_s = time.monotonic() - sent_at
+
+                body = {"crop_tiles": tiles, **self._billing_fields()}
+                tiles_bytes = sum(len(t["b64"]) for t in tiles["tiles"])
+                sent_at = time.monotonic()
+                answer = self._submit_register(body, auth)
+                upload_s = time.monotonic() - sent_at
+                sent_bytes = tiles_bytes
+                if generation != self._generation or self._auth_print(self._resolve_auth()) != auth_fingerprint:
+                    return
+                outcome = self._crop_tiles_outcome(answer, tiles["expect_token"])
+                self._note_crop_tiles(outcome, True, tiles_bytes, crop)
+                if outcome in ("mismatch", "old_server"):
+                    answer = None
+            elif self._crop_tiles_switch_on:
+
+
+                self._note_crop_tiles("not_eligible", False, 0, crop)
+            form = None
+            if answer is None:
+                payload, form = self._encoded_crop(crop)
+                body = {"crop": payload, "crop_format": form,
+                        "crop_shape": list(crop.shape), **self._billing_fields()}
+
+
+                sent_at = time.monotonic()
+                answer = self._submit_register(body, auth)
+                upload_s = time.monotonic() - sent_at
+                sent_bytes = len(body["crop"])
             if generation != self._generation or self._auth_print(self._resolve_auth()) != auth_fingerprint:
                 return
             if ((answer or {}).get("code") == TIMEOUT_CODE
@@ -838,6 +966,7 @@ class CloudSamPredictor:
                 sent_at = time.monotonic()
                 answer = self._submit_register(body, auth)
                 upload_s = time.monotonic() - sent_at
+                sent_bytes = len(body["crop"])
             if generation != self._generation or self._auth_print(self._resolve_auth()) != auth_fingerprint:
 
 
@@ -846,10 +975,11 @@ class CloudSamPredictor:
             token = (answer or {}).get("crop_token")
             if not isinstance(token, str) or not token:
                 raise ValueError((answer or {}).get("error") or "no token")
-            note_crop_upload(len(body["crop"]), upload_s)
+            note_crop_upload(sent_bytes, upload_s)
             self._hold_crop_token(key, token, generation)
-            _log("Remote refine: crop sent ahead of the click, {} KB in {} ms".format(
-                len(body["crop"]) // 1024, int((time.monotonic() - started) * 1000)))
+            _log("Remote refine: crop sent ahead of the click{}, {} KB in {} ms".format(
+                "" if form else " as its tiles",
+                sent_bytes // 1024, int((time.monotonic() - started) * 1000)))
         except Exception as err:  # noqa: BLE001
             if generation == self._generation:
                 self._drop_crop_token()
@@ -858,13 +988,164 @@ class CloudSamPredictor:
             _log("Remote refine: crop not sent ahead, the click will carry it: "
                  f"{scrub_sensitive(str(err))}", Qgis.MessageLevel.Info)
 
+    def _crop_tiles_offer(self, crop: np.ndarray) -> dict | None:
+
+
+
+
+
+
+
+        self._crop_tiles_switch_on = False
+        self._crop_tiles_reason = "switch_off"
+        try:
+            from .server_dials import crop_tiles_enabled, dial_in_range
+
+            if not crop_tiles_enabled():
+                return None
+            self._crop_tiles_switch_on = True
+            if self._crop_tiles_pinned:
+                self._crop_tiles_reason = "pinned"
+                return None
+            takes = getattr(self._resolve_client(),
+                            "refine_register_takes_crop_tiles", None)
+            if takes is None or not takes():
+                self._crop_tiles_reason = "relay"
+                return None
+            self._crop_tiles_reason = "no_payload"
+            from .xyz_tile_fetch import (
+                crop_content_token,
+                crop_tiles_for_token,
+                crop_tiles_wire_body,
+            )
+
+            held = crop_tiles_for_token(crop_content_token(crop))
+            if not held:
+                return None
+            body = crop_tiles_wire_body(held)
+
+
+            ratio = dial_in_range("tuning.click.crop_tiles_max_ratio",
+                                  _CROP_TILES_MAX_RATIO, 0.0, 1.0)
+            tiles_bytes = sum(len(t["b64"]) for t in body["tiles"])
+            if tiles_bytes > ratio * self._pixel_body_estimate(crop):
+                self._crop_tiles_reason = "size"
+                return None
+            self._crop_tiles_reason = ""
+            return body
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _crop_tiles_outcome(self, answer: dict, expect_token: str) -> str:
+
+
+        answer = answer or {}
+        code = str(answer.get("code") or "")
+        token = answer.get("crop_token")
+        if isinstance(token, str) and token and "error" not in answer:
+            if token == expect_token:
+                return "match"
+            code = CROP_REBUILD_MISMATCH_CODE
+        error_text = str(answer.get("error") or "")
+        if (answer.get("pin") is True or "needs the pixels" in error_text
+                or code == INVALID_REQUEST_CODE):
+            self._crop_tiles_pinned = True
+            _log("Remote refine: this server does not rebuild crops from tiles, "
+                 "sending pixels from now on", Qgis.MessageLevel.Info)
+            return "old_server"
+        if code == CROP_REBUILD_MISMATCH_CODE or code.startswith("CROP_TILES_"):
+            from .server_dials import dial_in_range
+
+            self._crop_tiles_mismatches += 1
+            pin_after = int(dial_in_range("tuning.click.crop_tiles_mismatches_before_pin",
+                                          _CROP_TILES_MISMATCHES_BEFORE_PIN, 1, 20))
+            if self._crop_tiles_mismatches >= pin_after:
+                self._crop_tiles_pinned = True
+            _log(f"Remote refine: the crop rebuilt from tiles did not match ({code}), "
+                 "sending the pixels", Qgis.MessageLevel.Info)
+            return "mismatch"
+        return "failed"
+
+    def _pixel_body_estimate(self, crop: np.ndarray) -> int:
+
+
+        held = self._crop_body
+        if held is not None:
+            return len(held[0])
+        from .server_dials import dial_in_range
+
+        ratio = float(dial_in_range("tuning.click.crop_pack_ratio",
+                                    _CROP_PACK_RATIO, 0.05, 1.0))
+        return int(crop.nbytes * ratio * 4 / 3)
+
+    def _note_crop_tiles(self, outcome: str, sent: bool, tiles_bytes: int,
+                         crop: np.ndarray) -> None:
+
+        try:
+
+
+            pixel_bytes = self._pixel_body_estimate(crop)
+            from . import telemetry_events as ev
+            from .telemetry import track
+            props = {
+                "crop_tiles_sent": bool(sent),
+                "crop_tiles_bytes": int(tiles_bytes),
+                "crop_pixels_bytes_saved": (
+                    int(pixel_bytes - tiles_bytes) if outcome == "match" else 0),
+                "crop_tiles_outcome": outcome,
+            }
+            if outcome == "not_eligible":
+                props["reason"] = self._crop_tiles_reason or "no_payload"
+            track(ev.MANUAL_CROP_REGISTERED, props)
+        except Exception:  # noqa: BLE001  # nosec B110
+            pass
+
+    def set_speculative_probe(self, probe) -> None:
+
+
+        self._speculative_probe = probe
+
+    def abort_speculative_register(self) -> bool:
+
+
+
+
+
+
+        feedback = self._register_feedback
+        if feedback is None:
+            return False
+        try:
+            feedback.cancel()
+        except (AttributeError, RuntimeError):
+            return False
+        return True
+
     def _submit_register(self, body: dict, auth: dict) -> dict:
 
         call = self._resolve_client().submit_refine_register
         wait_ms = first_answer_wait_ms()
+        kwargs: dict = {}
         if wait_ms is not None and _accepts_timeout(call):
-            return call(body, auth, timeout_ms=wait_ms)
-        return call(body, auth)
+            kwargs["timeout_ms"] = wait_ms
+        feedback = None
+        try:
+            probe = self._speculative_probe
+            if probe is not None and probe() and _accepts_cancel_feedback(call):
+                from qgis.core import QgsFeedback
+
+                feedback = QgsFeedback()
+                kwargs["cancel_feedback"] = feedback
+        except Exception:  # noqa: BLE001  # nosec B110
+            feedback = None
+            kwargs.pop("cancel_feedback", None)
+        self._register_feedback = feedback
+        try:
+            with network_busy("click"):
+                return call(body, auth, **kwargs)
+        finally:
+            if self._register_feedback is feedback:
+                self._register_feedback = None
 
     def predict(
         self,
@@ -931,6 +1212,10 @@ class CloudSamPredictor:
                 self._refuse_late_answer(generation)
             return answer
 
+        self._wait_while_service_warming(generation)
+        if self._held_crop_token() is None:
+            self._await_registration(generation)
+            self._refuse_late_answer(generation)
         answer = self._post(self._build_body(
             point_coords, point_labels, seed, multimask_output,
             send_crop=self._held_crop_token() is None, name_seed=True), generation)
@@ -985,6 +1270,11 @@ class CloudSamPredictor:
                 send_crop=True, name_seed=False), generation)
             self._refuse_late_answer(generation)
 
+        if "error" in answer and _click_failure_is_transient(answer):
+            answer = self._resend_after_transient_failure(
+                answer, point_coords, point_labels, seed, multimask_output,
+                generation, started)
+
         if "error" in answer:
 
 
@@ -993,6 +1283,11 @@ class CloudSamPredictor:
 
 
             code = str(answer.get("code") or "")
+            if code == "CANCELLED":
+
+
+
+                raise RefineSupersededError("The click was cancelled")
             detail = scrub_sensitive(str(answer.get("error") or code or "refused"))
             raise RefineRefusedError(f"Refine failed: {detail}", code=code)
 
@@ -1038,6 +1333,148 @@ class CloudSamPredictor:
             except Exception:  # nosec B110
                 pass
         return masks, scores, low_res_masks
+
+    def _wait_while_service_warming(self, generation: int) -> None:
+
+
+
+
+
+
+
+
+
+
+        from . import cloud_warming_state as warming
+
+        if not warming.is_warming():
+            return
+        from ..api.click_transport import _click_wait_generation, wait_until_done
+        from .server_dials import dial_in_range
+
+        poll_ms = int(dial_in_range("tuning.click.warming_poll_ms",
+                                    _WARMING_POLL_MS, 500, 10_000))
+        max_s = float(dial_in_range("tuning.click.warming_max_s",
+                                    _WARMING_MAX_S, 5, 300))
+        if max_s <= 0:
+            return
+        started = time.monotonic()
+        deadline = started + max_s
+        wait_generation = _click_wait_generation()
+        outcome = "timeout"
+
+        def cancelled() -> bool:
+            return (self._generation != generation
+                    or _click_wait_generation() != wait_generation)
+
+        try:
+            client = self._resolve_client()
+            auth = self._resolve_auth()
+            while True:
+                warming.notify_wait(int(time.monotonic() - started))
+                answer: dict = {}
+                done = threading.Event()
+
+                def probe(answer=answer, done=done) -> None:
+                    try:
+                        answer["state"] = client.detection_health(
+                            auth, timeout_ms=max(poll_ms, 5_000))
+                    except Exception:  # noqa: BLE001
+                        answer["state"] = "error"
+                    finally:
+                        done.set()
+
+                threading.Thread(target=probe, name="ai-seg-warming-probe",
+                                 daemon=True).start()
+                left_ms = max(0, int((deadline - time.monotonic()) * 1000))
+                wait_until_done(done.is_set, max(left_ms, 1), cancel_check=cancelled,
+                                hold_input_ms=0)
+                if cancelled():
+                    outcome = "cancelled"
+                    break
+                state = answer.get("state")
+                if state == "ready":
+                    outcome = "ready"
+                    break
+                if state == "error":
+                    outcome = "health_failed"
+                    break
+                if time.monotonic() >= deadline:
+                    break
+
+                pause_ms = min(poll_ms, int((deadline - time.monotonic()) * 1000))
+                if pause_ms > 0:
+                    wait_until_done(lambda: False, pause_ms, cancel_check=cancelled,
+                                    hold_input_ms=0)
+                if cancelled():
+                    outcome = "cancelled"
+                    break
+                if time.monotonic() >= deadline:
+                    break
+        finally:
+            warming.notify_wait(None)
+        if outcome == "health_failed":
+
+
+
+
+            warming.mark_ready()
+        waited_ms = int((time.monotonic() - started) * 1000)
+        _log(f"Remote refine: waited {waited_ms} ms for the service to start ({outcome})")
+        try:
+            from . import telemetry_events as ev
+            from .telemetry import track
+            track(ev.MANUAL_CLICK_WARMING_WAIT,
+                  {"waited_ms": waited_ms, "outcome": outcome})
+        except Exception:  # noqa: BLE001  # nosec B110
+            pass
+        if outcome == "cancelled":
+            raise RefineSupersededError("The click was cancelled while the service was starting")
+        if outcome == "timeout":
+            raise RefineRefusedError(
+                "Refine failed: the service is still starting", code=WARMING_CODE)
+
+    def _resend_after_transient_failure(
+            self, answer: dict, point_coords, point_labels, seed, multimask_output,
+            generation: int, started: float) -> dict:
+
+
+        from .server_dials import dial_in_range
+
+        tries = int(dial_in_range("tuning.click.transient_retries",
+                                  _CLICK_TRANSIENT_RETRIES, 0, 2))
+        min_left_ms = int(dial_in_range(
+            "tuning.click.transient_min_left_ms", _CLICK_TRANSIENT_MIN_LEFT_MS,
+            1_000, 40_000))
+        for _ in range(tries):
+            try:
+                from ..api.click_transport import click_wait_max_ms, wait_until_done
+
+                left_ms = click_wait_max_ms() - (time.monotonic() - started) * 1000.0
+                if left_ms < min_left_ms or generation != self._generation:
+                    break
+
+                pause_ms = int(dial_in_range("tuning.click.transient_pause_ms",
+                                             _CLICK_TRANSIENT_PAUSE_MS, 0, 5_000))
+                if pause_ms > 0:
+                    wait_until_done(lambda: False, pause_ms,
+                                    cancel_check=lambda: self._generation != generation)
+                self._refuse_late_answer(generation)
+            except RefineSupersededError:
+                raise
+            except Exception:  # noqa: BLE001  # nosec B110
+                break
+            _log("Remote refine: the click was dropped on the way "
+                 f"({answer.get('code') or answer.get('http_status')}); sending it once more",
+                 Qgis.MessageLevel.Info)
+            answer = self._post(self._build_body(
+                point_coords, point_labels, seed, multimask_output,
+                send_crop=self._held_crop_token() is None, name_seed=True),
+                generation)
+            self._refuse_late_answer(generation)
+            if "error" not in answer or not _click_failure_is_transient(answer):
+                break
+        return answer
 
 
 
@@ -1149,17 +1586,18 @@ class CloudSamPredictor:
             extra = ({"timeout_ms": wait_ms}
                      if wait_ms is not None and _accepts_timeout(client.submit_refine)
                      else {})
-            if self._client_accepts_cancel(client):
-                answer = client.submit_refine(
-                    body, auth,
-                    cancel_check=lambda: self._generation != generation,
-                    **extra)
-            else:
+            with network_busy("click"):
+                if self._client_accepts_cancel(client):
+                    answer = client.submit_refine(
+                        body, auth,
+                        cancel_check=lambda: self._generation != generation,
+                        **extra)
+                else:
 
 
 
 
-                answer = client.submit_refine(body, auth, **extra)
+                    answer = client.submit_refine(body, auth, **extra)
         except RefineSupersededError:
             raise
         except Exception as err:  # noqa: BLE001

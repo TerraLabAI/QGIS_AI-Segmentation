@@ -128,12 +128,6 @@ class RunRecipe:
     confidence: float = AUTO_DEFAULT_CONFIDENCE
     refine: dict[str, float | bool] = field(default_factory=dict)
 
-    def normalized_refine(self) -> dict[str, float | bool]:
-
-        merged = dict(_REFINE_DEFAULTS)
-        merged.update(_normalize_refine(self.refine))
-        return merged
-
 
 def _round_coord(value: float) -> float:
     return round(float(value), _COORD_DECIMALS)

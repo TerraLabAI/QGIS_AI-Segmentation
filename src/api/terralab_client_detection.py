@@ -14,12 +14,14 @@ import math
 from qgis.core import Qgis, QgsMessageLog
 
 from ..core import transport_dials as _td
+from ..core.gui_thread import on_gui_thread
 from ..core.i18n import tr
 from ..core.server_dials import dial_in_range
 from .request_compression import answer_refused_the_body, note_gzip_request_refused, packed_request_body
 from .terralab_client_errors import (
+    _answer_from_failed_transfer,
+    _answer_from_status_and_body,
     _classify_qt_error,
-    _error_shaped,
 )
 from .terralab_client_primitives import (
     _TIMEOUT_POLL_DETECTION,
@@ -30,7 +32,6 @@ from .terralab_client_primitives import (
     _apply_redirect_policy,
     _log_warning,
     _NoError,
-    _parse_json_body,
     note_server_contact,
     server_reached_recently,
 )
@@ -62,6 +63,21 @@ class TerraLabDetectionMixin:
 
 
         return f"{self.detection_base_url}/run-export"
+
+    def refine_register_takes_crop_tiles(self) -> bool:
+
+
+
+        try:
+            from ..core.server_dials import read_value
+
+            routes = read_value("features.crop_tiles_routes")
+            if not isinstance(routes, (list, tuple)):
+                return False
+            route = "direct" if getattr(self, "detection_direct", False) else "relay"
+            return route in routes
+        except Exception:  # noqa: BLE001
+            return False
 
     def refine_endpoint_url(self) -> str:
 
@@ -158,11 +174,7 @@ class TerraLabDetectionMixin:
 
 
         try:
-            from qgis.core import QgsApplication
-            from qgis.PyQt.QtCore import QThread
-
-            app = QgsApplication.instance()
-            if app is None or QThread.currentThread() is not app.thread():
+            if not on_gui_thread():
 
 
                 return None, None, False
@@ -196,46 +208,14 @@ class TerraLabDetectionMixin:
             note_server_contact()
 
         if qt_error != _NoError:
-            if http_status is not None and http_status >= 400 and raw_body:
-                try:
-                    parsed = _parse_json_body(raw_body)
-                except Exception:  # noqa: BLE001
-                    parsed = None
-                if parsed is not None:
-                    code, msg = _classify_qt_error(
-                        qt_error, "", http_status,
-                        service_reachable=server_reached_recently())
-                    return _error_shaped(parsed, code, msg), http_status, True
-            code, msg = _classify_qt_error(
-                qt_error, "", http_status,
-                service_reachable=server_reached_recently())
-            return {"error": msg, "code": code}, http_status, False
-
-        if http_status is not None and http_status >= 400:
-
-
-            _log_warning(f"HTTP {http_status} error response")
-            try:
-                error_body = _parse_json_body(raw_body)
-            except Exception:  # noqa: BLE001
-                error_body = None
-            if error_body is None:
-                return ({"error": f"Server error (HTTP {http_status})",
-                         "code": "SERVER_ERROR"}, http_status, False)
-            return (_error_shaped(
-                error_body, "SERVER_ERROR",
-                f"Server error (HTTP {http_status})"), http_status, True)
-        if not raw_body:
-            return {}, http_status, False
-        try:
-            parsed = _parse_json_body(raw_body)
-        except (ValueError, RecursionError):
-            parsed = None
-        if parsed is None:
-            _log_warning(f"Invalid JSON response ({len(raw_body)} bytes)")
-            return ({"error": "Invalid server response",
-                     "code": "SERVER_ERROR"}, http_status, False)
-        return parsed, http_status, True
+            answer, body_was_json = _answer_from_failed_transfer(
+                raw_body, http_status,
+                lambda: _classify_qt_error(
+                    qt_error, "", http_status,
+                    service_reachable=server_reached_recently()))
+            return answer, http_status, body_was_json
+        answer, body_was_json = _answer_from_status_and_body(raw_body, http_status)
+        return answer, http_status, body_was_json
 
     @staticmethod
     def _refine_abandoned(gone) -> dict:
@@ -254,7 +234,8 @@ class TerraLabDetectionMixin:
         return {"error": message, "code": "TIMEOUT"}
 
     def submit_refine_register(self, payload: dict, auth: dict,
-                               timeout_ms: int | None = None) -> dict:
+                               timeout_ms: int | None = None,
+                               cancel_feedback=None) -> dict:
 
 
 
@@ -267,14 +248,26 @@ class TerraLabDetectionMixin:
 
 
         body = json.dumps(payload, allow_nan=False).encode("utf-8")
-        return self._request(
-            "POST",
-            self._detection_refine_url() + "/register",
-            auth=auth,
-            body=body,
-            timeout_ms=timeout_ms or self._submit_timeout(),
-            wall_clock=True,
-        )
+
+        def _send() -> dict:
+            return self._request(
+                "POST",
+                self._detection_refine_url() + "/register",
+                auth=auth,
+                body=body,
+                timeout_ms=timeout_ms or self._submit_timeout(),
+                wall_clock=True,
+            )
+
+        if cancel_feedback is None:
+            return _send()
+
+
+
+        from .request_feedback import request_feedback
+
+        with request_feedback(cancel_feedback):
+            return _send()
 
     def post_run_export_body(self, body: bytes, auth: dict) -> dict:
 
@@ -553,9 +546,17 @@ class TerraLabDetectionMixin:
                     timeout_ms=warmup_timeout_ms,
                     retry_get_failures=False,
                 )
+
+
+
+                from ..core import cloud_warming_state
                 if result.get("status") == "ok":
+                    cloud_warming_state.mark_ready()
                     return True
-                return result.get("http_status") == 503
+                if result.get("http_status") == 503:
+                    cloud_warming_state.mark_warming()
+                    return True
+                return False
             result = self._request(
                 "POST",
                 "/api/ai-segmentation/warmup",
@@ -566,6 +567,35 @@ class TerraLabDetectionMixin:
             return result.get("ok") is True
         except Exception:
             return False
+
+    def detection_health(self, auth: dict, timeout_ms: int = 5000) -> str:
+
+
+
+
+
+        from ..core import cloud_warming_state
+        try:
+            if not self.detection_direct:
+                result = self._request(
+                    "POST", "/api/ai-segmentation/warmup", auth=auth,
+                    body=b"{}", timeout_ms=timeout_ms)
+                if result.get("ok") is True:
+                    cloud_warming_state.mark_ready()
+                    return "ready"
+                return "error"
+            result = self._request(
+                "GET", f"{self.detection_base_url}/health", auth=auth,
+                timeout_ms=timeout_ms, retry_get_failures=False)
+            if result.get("status") == "ok":
+                cloud_warming_state.mark_ready()
+                return "ready"
+            if result.get("http_status") == 503:
+                cloud_warming_state.mark_warming()
+                return "warming"
+            return "error"
+        except Exception:  # noqa: BLE001
+            return "error"
 
     def end_detection_session(self, auth: dict, timeout_ms: int | None = None) -> bool:
 

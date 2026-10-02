@@ -27,7 +27,6 @@ from qgis.PyQt.QtGui import QColor
 from qgis.PyQt.QtWidgets import (
     QHBoxLayout,
     QLabel,
-    QMenu,
     QPushButton,
     QToolButton,
     QVBoxLayout,
@@ -40,7 +39,6 @@ from ..icons import icon_for, logo_pixmap, logo_size
 from .font_scale import scale_px_length, scale_qss_font_px
 from .styles import (
     ACCENT_BORDER,
-    ACCENT_TINT,
     BRAND_BLUE,
     FONT_BODY,
     FONT_MICRO,
@@ -100,14 +98,12 @@ _DOCK_HEADER_QSS = scale_qss_font_px(
 
 
 
-
 _HEADER_ICON_BTN_QSS = (
     "QToolButton { background: transparent; border: none; padding: 3px;"
     f" border-radius: {RADIUS_CONTROL}px; }}"
     f"QToolButton:hover {{ background: {HOVER}; }}"
     f'QToolButton[hover="true"] {{ background: {HOVER}; }}'
     f"QToolButton:pressed {{ background: {HOVER_ON}; }}"
-    f'QToolButton[active="true"] {{ background: {ACCENT_TINT}; }}'
     "QToolButton:disabled { background: transparent; }"
     "QToolButton::menu-indicator { image: none; width: 0; }"
     f"QToolButton:focus {{ border: 2px solid {ACCENT_BORDER}; }}"
@@ -193,7 +189,6 @@ class HeaderIconButton(QToolButton):
         self._glyph = glyph
         self._hovering = False
         self.setProperty("hover", False)
-        self.setProperty("active", False)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
@@ -246,26 +241,6 @@ class HeaderIconButton(QToolButton):
             return
         self.setProperty("hover", hovered)
         self._repolish_header_button()
-
-    def set_active(self, active: bool) -> None:
-
-        if bool(self.property("active")) == active:
-            return
-        self.setProperty("active", active)
-        self._repolish_header_button()
-
-    def attach_menu(self, menu: QMenu) -> None:
-
-        self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.setMenu(menu)
-        menu.aboutToShow.connect(lambda: self.set_active(True))
-        menu.aboutToHide.connect(self._on_header_menu_closed)
-
-    def _on_header_menu_closed(self) -> None:
-        self.setDown(False)
-        self.set_hovered(False)
-        self.set_active(False)
-        self._set_glyph_hover(self.underMouse())
 
 
 class DockHeader(QWidget):
@@ -419,6 +394,8 @@ class DockHeader(QWidget):
 
     def _open_product_page(self) -> None:
 
+        from ...core.server_dials import dial_url
         from ..external_links import open_external_url
 
-        open_external_url(_PRODUCT_PAGE_URL, parent=self)
+        open_external_url(
+            dial_url("tuning.links.product_page_title", _PRODUCT_PAGE_URL), parent=self)

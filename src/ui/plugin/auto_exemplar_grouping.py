@@ -106,6 +106,12 @@ class AutoExemplarGroupingMixin:
             self._auto_merger.result_scored_ided()
             if self._auto_merger is not None else []
         )
+        late = getattr(self, "_auto_late_remerge", None)
+        if late is not None and not getattr(self, "_auto_is_exemplar_only", False):
+
+            self._auto_late_remerge = None
+            self._auto_stitch_shapes_stale = True
+            return self._remerge_raw_fragments(bool(late))
         if not getattr(self, "_auto_is_exemplar_only", False):
             return live
         want_separate = self._decide_exemplar_merge_separate()
@@ -190,6 +196,12 @@ class AutoExemplarGroupingMixin:
             self._auto_merger.result_scored_ided()
             if self._auto_merger is not None else []
         )
+        late = getattr(self, "_auto_late_remerge", None)
+        if late is not None and not getattr(self, "_auto_is_exemplar_only", False):
+
+            self._auto_late_remerge = None
+            self._auto_stitch_shapes_stale = True
+            return None, self._raw_fragment_remerge(bool(late))
         if not getattr(self, "_auto_is_exemplar_only", False):
             return live, None
         want_separate = self._decide_exemplar_merge_separate()
@@ -253,11 +265,6 @@ class AutoExemplarGroupingMixin:
 
 
         from ...core.polygon_exporter import IncrementalMerger
-        from ...workers.auto_detection_worker import (
-            _COMPACT_MIN_FILL,
-            _HARD_TILE_COVERAGE,
-            _MAX_TILE_COVERAGE,
-        )
 
         frags = getattr(self, "_auto_raw_fragments", None) or []
 
@@ -289,9 +296,9 @@ class AutoExemplarGroupingMixin:
             hard_tile_coverage,
             max_tile_coverage,
         )
-        hard_cov = hard_tile_coverage(_HARD_TILE_COVERAGE)
-        max_cov = max_tile_coverage(_MAX_TILE_COVERAGE)
-        min_fill = compact_min_fill(_COMPACT_MIN_FILL)
+        hard_cov = hard_tile_coverage()
+        max_cov = max_tile_coverage()
+        min_fill = compact_min_fill()
         return RawFragmentRemerge(
             list(frags), merger, tile_area, hard_cov, max_cov, min_fill,
             merge_separate)
@@ -300,6 +307,7 @@ class AutoExemplarGroupingMixin:
 
 
         self._auto_is_exemplar_only = False
+        self._late_plan_clear()
         self._auto_retain_raw = False
         self._auto_collect_raw = False
         self._auto_raw_fragments = None

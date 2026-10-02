@@ -45,11 +45,6 @@ class AutoGateScanMixin:
 
 
 
-    def gate_summary(self) -> dict:
-
-
-        return dict(self._gate_stats)
-
     def _gate_ground_mupp(self) -> float | None:
 
 
@@ -86,7 +81,6 @@ class AutoGateScanMixin:
         stats = {"scans": 0, "blocks": 0, "skipped": 0, "prepaid": 0,
                  "unscanned": 0, "prefiltered": 0, "fallback": None,
                  "scan_ms": 0, "aborted": 0}
-        self._gate_stats = stats
         if self._stamps or self._collect_raw or not (self._prompt or "").strip():
             stats["fallback"] = "not_text_run"
             self._track_gate_scan(stats, 0)
@@ -95,11 +89,11 @@ class AutoGateScanMixin:
         from ..gate_scan_phase import apply_scan_result, drain_scan_replies
 
         try:
-            base_group = int(cfg.get("group", 2))
-            max_group = int(cfg.get("max_group", base_group))
-            min_score = float(cfg.get("min_score", 0.0))
-            min_px = max(1, int(cfg.get("min_pixels", 8)))
-        except (TypeError, ValueError):
+            base_group = int(cfg["group"])
+            max_group = int(cfg["max_group"])
+            min_score = float(cfg["min_score"])
+            min_px = max(1, int(cfg["min_pixels"]))
+        except (KeyError, TypeError, ValueError):
             stats["fallback"] = "bad_config"
             self._track_gate_scan(stats, 0)
             return

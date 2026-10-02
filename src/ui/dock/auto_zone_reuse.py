@@ -130,7 +130,11 @@ def build_zone_ready_card(on_use) -> QWidget:
     layout.setContentsMargins(*_CARD_MARGINS)
     layout.setSpacing(6)
 
-    title = QLabel(tr("Zone of interest"))
+    from ...core import zone_of_interest as zoi
+
+
+
+    title = QLabel(zoi.zone_layer_name())
     title.setStyleSheet(_FOLD_TITLE_QSS)
 
 
@@ -250,7 +254,9 @@ class DockAutoZoneReuseMixin:
                 return None
             layer = project.mapLayer(zone.layer_id) if zone.layer_id else None
             layer_name = layer.name() if layer is not None else ""
-            name = zone_card_name(zone.label, layer_name, zoi.ZONE_LAYER_NAME)
+            if zoi.is_default_zone_name(layer_name):
+                layer_name = ""
+            name = zone_card_name(zone.label, layer_name, zoi.zone_layer_name())
             return name, zone.area_km2()
         except Exception:  # noqa: BLE001
             return None

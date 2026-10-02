@@ -33,8 +33,8 @@ from ...core.interaction_dials import (
     restore_align_max_objects,
     restore_confidence_floor,
 )
-from ...core.layer_conventions import crs_measures_in_ground_metres
 from ...core.qt_compat import (
+    DistanceMeters,
     field_type_double,
     field_type_int,
     field_type_string,
@@ -52,7 +52,8 @@ _DEFAULT_START_CONFIDENCE = 0.30
 
 
 
-_RESTORE_CONFIDENCE_FLOOR = 0.15
+
+_RESTORE_CONFIDENCE_FLOOR = 0.0
 
 
 
@@ -70,6 +71,10 @@ _RESTORE_ALIGN_MAX_OBJECTS = 400
 
 
 _RESTORE_ALIGN_BUDGET_S = 2.0
+
+
+
+_STAMP_RECT_MARGIN_PX = 8.0
 
 
 def _log(msg: str, level=None) -> None:
@@ -141,6 +146,65 @@ def _masks_list(payload) -> list:
     return [m for m in payload if isinstance(m, dict)]
 
 
+def _tile_stamp_rect(tile: dict, width, height) -> list | None:
+
+
+
+
+
+
+
+
+
+
+
+
+
+    exemplars = tile.get("exemplars")
+    if not isinstance(exemplars, list) or not exemplars:
+        return None
+    from ...core.tile_manager import OVERLAP_FRACTION, TILE_SIZE
+
+    try:
+        w = float(width or TILE_SIZE)
+        h = float(height or TILE_SIZE)
+    except (TypeError, ValueError):
+        return None
+    if w <= 0 or h <= 0:
+        return None
+    band = OVERLAP_FRACTION * TILE_SIZE * (h / TILE_SIZE)
+    edge = None
+    prev_x1 = None
+    x0 = y0 = float("inf")
+    x1 = y1 = float("-inf")
+    for ex in exemplars:
+        box = ex.get("box") if isinstance(ex, dict) else None
+        if not isinstance(box, list) or len(box) != 4:
+            break
+        try:
+            bx0, by0, bx1, by1 = (float(v) for v in box)
+        except (TypeError, ValueError):
+            break
+        side = "top" if by1 <= band + 1 else ("bottom" if by0 >= h - band - 1 else None)
+        if side is None or (edge is not None and side != edge):
+            break
+        if prev_x1 is not None and bx0 < prev_x1 - 1:
+            break
+        edge = side
+        prev_x1 = bx1
+        x0, y0 = min(x0, bx0), min(y0, by0)
+        x1, y1 = max(x1, bx1), max(y1, by1)
+    if edge is None:
+        return None
+    margin = _STAMP_RECT_MARGIN_PX
+    return [
+        max(0.0, (x0 - margin) / w),
+        0.0 if edge == "top" else max(0.0, (y0 - margin) / h),
+        min(1.0, (x1 + margin) / w),
+        1.0 if edge == "bottom" else min(1.0, (y1 + margin) / h),
+    ]
+
+
 def _run_gsd(tiles: list) -> float:
 
 
@@ -155,6 +219,40 @@ def _run_gsd(tiles: list) -> float:
         if bb is not None:
             widest = max(widest, bb[2] - bb[0])
     return widest / TILE_SIZE if widest > 0 else 0.0
+
+
+def _run_ground_gsd_m(crs_authid: str, tiles: list, gsd: float) -> float:
+
+
+
+
+    if gsd <= 0:
+        return 0.0
+    boxes = [b for b in (_tile_bbox(t) for t in tiles) if b is not None]
+    if not boxes:
+        return 0.0
+    cx = (min(b[0] for b in boxes) + max(b[2] for b in boxes)) / 2.0
+    cy = (min(b[1] for b in boxes) + max(b[3] for b in boxes)) / 2.0
+    try:
+        from qgis.core import (
+            QgsCoordinateReferenceSystem,
+            QgsDistanceArea,
+            QgsPointXY,
+            QgsProject,
+        )
+        crs = QgsCoordinateReferenceSystem(crs_authid)
+        if not crs.isValid():
+            return 0.0
+        da = QgsDistanceArea()
+        da.setSourceCrs(crs, QgsProject.instance().transformContext())
+        da.setEllipsoid("WGS84")
+        dist = max(
+            da.measureLine(QgsPointXY(cx, cy), QgsPointXY(cx + gsd, cy)),
+            da.measureLine(QgsPointXY(cx, cy), QgsPointXY(cx, cy + gsd)))
+        metres = float(da.convertLengthMeasurement(dist, DistanceMeters))
+    except (RuntimeError, AttributeError, TypeError, ValueError):
+        return 0.0
+    return metres if metres > 0 else 0.0
 
 
 def _run_stored_float(run: dict, tiles: list, key: str) -> float:
@@ -286,12 +384,17 @@ def run_merge_separate(plugin, run: dict) -> bool:
 
 
 
-
+    del plugin, run
     capture_project_export_context()
-    try:
-        return bool(plugin._default_merge_separate((run.get("prompt") or "").strip()))
-    except (AttributeError, RuntimeError, TypeError):
-        return True
+    return True
+
+
+def _run_decisions(run: dict) -> dict | None:
+
+
+    from ...core.run_decisions import parse_restore_decisions
+
+    return parse_restore_decisions(run.get("decisions"))
 
 
 def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
@@ -331,19 +434,17 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
         mask_to_polygons,
     )
     from ...core.tile_manager import OVERLAP_FRACTION, TILE_SIZE
+    from ...workers.auto_worker.mask_geometry import AutoMaskGeometryMixin
 
 
 
 
-
-
-    from ...workers.auto_detection_worker import _MAX_TILE_COVERAGE, _MIN_KEEP_PX
+    max_tile_coverage = detection_policy.max_tile_coverage()
 
     crs_authid = run.get("crs_authid") or (tiles[0].get("crs_authid") if tiles else None) or "EPSG:4326"
     gsd = _run_gsd(tiles)
     simplify_mult = _run_simplify_mult(run, tiles)
     pinhole_m = _run_pinhole_m(run, tiles)
-    prompt = (run.get("prompt") or "").strip()
 
 
 
@@ -361,7 +462,9 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
 
 
 
-    merge_separate = bool(merge_separate)
+    decisions = _run_decisions(run)
+    merge_separate = (
+        decisions["merge_separate"] if decisions is not None else bool(merge_separate))
     if gsd > 0:
         seam_min_dim = OVERLAP_FRACTION * TILE_SIZE * gsd
     else:
@@ -377,8 +480,7 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
         gsd=gsd,
         restore_partitions=(
             merge_separate
-            and detection_policy.restore_partitions_for(
-                prompt, exemplar_only=not prompt)),
+            and decisions is not None and decisions["restore_partitions"]),
         **detection_policy.merge_scalar_kwargs(IncrementalMerger, merge_scalars),
     )
 
@@ -388,7 +490,7 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
 
 
 
-    min_keep_px = detection_policy.min_keep_px(_MIN_KEEP_PX)
+    min_keep_px = detection_policy.min_keep_px()
     min_keep_area = (
         max((min_keep_px * gsd) ** 2,
             detection_policy.min_keep_floor_m2(0.0) / area_scale)
@@ -403,6 +505,37 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
     zone = zone_geometry_from_run(run, crs_authid)
     zone_engine = prepare_zone_engine(zone)
     dropped_outside = 0
+
+
+
+
+
+
+
+
+    exemplar_only = not (run.get("prompt") or "").strip()
+    from ...core.hypothesis_nms import select_tile_hypotheses
+    from ...core.server_dials import dial_bool
+    from ...workers.auto_detection_worker import AutoDetectionWorker
+
+    nms_kwargs = {k: merge_scalars[k] for k in (
+        "ios_threshold", "dup_ios_floor", "dup_centroid_frac") if k in merge_scalars}
+    frag_hard_cov = detection_policy.hard_tile_coverage()
+    frag_min_fill = detection_policy.compact_min_fill()
+    if exemplar_only:
+        frag_tile_area = (TILE_SIZE * gsd) ** 2 if gsd > 0 else 0.0
+
+
+
+
+
+
+
+
+    text_nms = merge_separate or dial_bool("features.map_hypothesis_nms", False)
+    shape_escape = detection_policy.hard_cover_shape_escape()
+    span_fraction = detection_policy.tile_span_fraction()
+    map_cover_floor = detection_policy.map_cover_score_floor(0.0)
 
     decoded_tiles = 0
     total = len(tiles)
@@ -429,16 +562,23 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
             "bbox": (xmin, xmax, ymin, ymax),
             "crs": crs_authid,
         }
+
+
+        stamp = _tile_stamp_rect(
+            tile, tile.get("output_width"), tile.get("output_height"))
         tile_had_masks = False
+        tile_frags: list = []
 
 
 
 
 
-        for mask, score, _box in iter_detection_masks(
+        for mask, score, box in iter_detection_masks(
                 response, TILE_SIZE, TILE_SIZE, 0.0):
             if is_cancelled is not None and is_cancelled():
                 return None
+            if stamp and AutoMaskGeometryMixin._centroid_in_stamp(box, mask, stamp):
+                continue
             if not tile_had_masks:
                 tile_had_masks = True
                 decoded_tiles += 1
@@ -455,9 +595,19 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
             ys, xs = np.nonzero(mask)
             if ys.size == 0:
                 continue
-            if merge_separate and ys.size > _MAX_TILE_COVERAGE * float(full_h * full_w):
-                continue
             row0, col0 = int(ys.min()), int(xs.min())
+            blob_check = False
+            if not exemplar_only and ys.size > max_tile_coverage * float(full_h * full_w):
+                coverage = ys.size / float(full_h * full_w)
+                if merge_separate:
+                    if coverage > frag_hard_cov and not shape_escape:
+                        continue
+                    if (int(xs.max()) - col0 + 1 >= span_fraction * full_w
+                            and int(ys.max()) - row0 + 1 >= span_fraction * full_h):
+                        continue
+                    blob_check = True
+                elif map_cover_floor > 0.0 and float(score) < map_cover_floor:
+                    continue
             sub = mask[row0:int(ys.max()) + 1, col0:int(xs.max()) + 1]
             sub = np.pad(sub, 1, constant_values=False)
 
@@ -505,7 +655,25 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
 
                 if min_keep_area > 0.0 and geom.area() < min_keep_area:
                     continue
-                merger.add(geom, float(score))
+                if blob_check and not AutoDetectionWorker._is_compact_shape(
+                        geom, frag_min_fill):
+                    continue
+                tile_frags.append((geom, float(score)))
+        if not exemplar_only and tile_frags:
+            if text_nms:
+                tile_frags = select_tile_hypotheses(tile_frags, **nms_kwargs)
+            for geom, score in tile_frags:
+                merger.add(geom, score)
+        if exemplar_only and tile_frags:
+            for geom, score in select_tile_hypotheses(tile_frags, **nms_kwargs):
+                if merge_separate and frag_tile_area > 0:
+                    cov = geom.area() / frag_tile_area
+                    if cov > frag_hard_cov:
+                        continue
+                    if cov > max_tile_coverage and not AutoDetectionWorker._is_compact_shape(
+                            geom, frag_min_fill):
+                        continue
+                merger.add(geom, score)
 
     if on_tile is not None:
         on_tile(total, total)
@@ -583,7 +751,11 @@ def _run_start_confidence(run: dict, tiles: list) -> float:
         threshold = tiles[0].get("threshold")
     default = _restore_default_confidence(run)
     snapped = snap_confidence(threshold, default)
-    if snapped <= restore_confidence_floor(_RESTORE_CONFIDENCE_FLOOR):
+    floor = restore_confidence_floor(_RESTORE_CONFIDENCE_FLOOR)
+    decisions = _run_decisions(run)
+    if decisions is not None and "restore_confidence_floor" in decisions:
+        floor = decisions["restore_confidence_floor"]
+    if snapped <= floor + 1e-9:
         return default
     return snapped
 
@@ -591,13 +763,10 @@ def _run_start_confidence(run: dict, tiles: list) -> float:
 def _restore_default_confidence(run: dict) -> float:
 
 
-    try:
-        from ...core.review_presets import review_start_confidence_default
-
-        prompt = (run.get("prompt") or "").strip()
-        return float(review_start_confidence_default(prompt, not prompt))
-    except Exception:  # noqa: BLE001  # nosec B110
-        return _DEFAULT_START_CONFIDENCE
+    decisions = _run_decisions(run)
+    if decisions is not None:
+        return float(decisions["start_confidence"])
+    return _DEFAULT_START_CONFIDENCE
 
 
 def _confidence_showing_an_object(conf: float, objects: list) -> float:
@@ -868,6 +1037,8 @@ def restore_run(plugin, run: dict, tiles: list, decoded: dict) -> bool:
     prompt = (run.get("prompt") or "").strip()
     conf = _run_start_confidence(run, tiles)
 
+    plugin._auto_start_confidence_default = _restore_default_confidence(run)
+
 
     plugin._ensure_dock_widget()
     dock = plugin.dock_widget
@@ -895,19 +1066,10 @@ def restore_run(plugin, run: dict, tiles: list, decoded: dict) -> bool:
 
 
 
+
+
     plugin._auto_mask_gsd = 0.0
-    plugin._auto_gsd_m = 0.0
-    try:
-        from qgis.core import QgsCoordinateReferenceSystem
-        crs = QgsCoordinateReferenceSystem(crs_authid)
-
-
-
-
-        if crs_measures_in_ground_metres(crs):
-            plugin._auto_gsd_m = gsd
-    except (RuntimeError, AttributeError, TypeError):
-        pass
+    plugin._auto_gsd_m = _run_ground_gsd_m(crs_authid, tiles, gsd)
     plugin._auto_merge_separate = merge_separate
     plugin._auto_is_exemplar_only = not prompt
     plugin._auto_confidence = conf
@@ -992,7 +1154,8 @@ def restore_run(plugin, run: dict, tiles: list, decoded: dict) -> bool:
     pixel_size = gsd if gsd > 0 else 1.0
     visible = []
     vis_scores = []
-    for base, score, area in plugin._auto_objects:
+    vis_ids = []
+    for det_idx, (base, score, area) in enumerate(plugin._auto_objects):
         if base is None or base.isEmpty():
             continue
         if not plugin._passes_review_filters(score, area, params):
@@ -1001,6 +1164,9 @@ def restore_run(plugin, run: dict, tiles: list, decoded: dict) -> bool:
         if g is not None and not g.isEmpty():
             visible.append(g)
             vis_scores.append(score)
+
+
+            vis_ids.append(plugin._object_fid_for(det_idx))
 
 
     plugin._start_build_preview_cache(pixel_size)
@@ -1013,7 +1179,7 @@ def restore_run(plugin, run: dict, tiles: list, decoded: dict) -> bool:
         pass
 
 
-    plugin._complete_auto_finalize(visible, len(tiles), vis_scores)
+    plugin._complete_auto_finalize(visible, len(tiles), vis_scores, vis_ids)
     if plugin._auto_review is not None:
 
 

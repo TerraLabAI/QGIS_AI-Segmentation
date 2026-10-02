@@ -177,6 +177,67 @@ def _scope_rasterio_data_paths() -> None:
         _log(f"Failed to scope rasterio data paths: {e}", Qgis.MessageLevel.Warning)
 
 
+_openblas_limit = {"done": False}
+
+
+
+_OPENBLAS_SETTERS = (
+    "openblas_set_num_threads64_",
+    "scipy_openblas_set_num_threads64_",
+    "scipy_openblas_set_num_threads",
+    "openblas_set_num_threads",
+)
+
+
+def _single_thread_inprocess_openblas() -> None:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    if _openblas_limit["done"] or sys.platform == "win32":
+        return
+    _openblas_limit["done"] = True
+    try:
+        import ctypes
+
+        import numpy
+
+        root = os.path.dirname(os.path.abspath(numpy.__file__))
+        libs = sorted(
+            glob.glob(os.path.join(root, ".dylibs", "*openblas*"))
+            + glob.glob(os.path.join(os.path.dirname(root), "numpy.libs", "*openblas*"))
+        )
+        for path in libs:
+
+            lib = ctypes.CDLL(path)
+            setter = next(
+                (getattr(lib, name) for name in _OPENBLAS_SETTERS if hasattr(lib, name)),
+                None)
+            if setter is None:
+                continue
+            setter.argtypes = [ctypes.c_int]
+            setter.restype = None
+            setter(1)
+            _log(f"OpenBLAS in numpy {numpy.__version__} set to one thread "
+                 "(fork-safe)", Qgis.MessageLevel.Info)
+    except Exception as e:  # noqa: BLE001
+        _log(f"Could not limit OpenBLAS threads: {e}", Qgis.MessageLevel.Warning)
+
+
 def _repair_poisoned_environment() -> None:
 
 
@@ -369,6 +430,7 @@ def _ensure_venv_packages_available_locked():
 
 
         _scope_rasterio_data_paths()
+        _single_thread_inprocess_openblas()
         return True
 
     qgis_ver = Qgis.QGIS_VERSION.split("-")[0]
@@ -440,6 +502,7 @@ def _ensure_venv_packages_available_locked():
 
 
     _scope_rasterio_data_paths()
+    _single_thread_inprocess_openblas()
     return True
 
 

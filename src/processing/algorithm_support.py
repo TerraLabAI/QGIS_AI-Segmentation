@@ -12,11 +12,11 @@ import re
 
 from qgis.core import (
     Qgis,
-    QgsApplication,
     QgsProcessingAlgorithm,
     QgsProcessingException,
 )
 
+from ..core.gui_thread import on_gui_thread
 from ..core.i18n import tr
 from ..mcp_api import AISEG_KEYS, _find_plugin
 
@@ -233,25 +233,6 @@ def main_thread_run_refusal() -> tuple[bool, str]:
     return True, ""
 
 
-def on_the_gui_thread() -> bool:
-
-
-
-
-
-
-
-    try:
-        from qgis.PyQt.QtCore import QThread
-
-        app = QgsApplication.instance()
-        if app is None:
-            return False
-        return QThread.currentThread() is app.thread()
-    except Exception:  # noqa: BLE001
-        return False
-
-
 def refuse_when_threading_unsafe(feedback) -> None:
 
 
@@ -263,7 +244,7 @@ def refuse_when_threading_unsafe(feedback) -> None:
     if main_thread_only_flag() is None:
         feedback.reportError(MAIN_THREAD_FLAG_MISSING_MESSAGE, fatalError=True)
         raise QgsProcessingException(MAIN_THREAD_FLAG_MISSING_MESSAGE)
-    if not on_the_gui_thread():
+    if not on_gui_thread():
         feedback.reportError(BACKGROUND_THREAD_MESSAGE, fatalError=True)
         raise QgsProcessingException(BACKGROUND_THREAD_MESSAGE)
 

@@ -366,6 +366,11 @@ class ManualHandoffEditMixin:
         from ...core.crop_window import crop_window_key
         cx, cy, scale = self._handoff_crop_spec_for(geom, raster_pt)
         spec = crop_window_key(cx, cy, scale)
+        if (self._encoding_in_progress and spec != getattr(self, "_inflight_crop_window", None)
+                and getattr(self, "_speculative_manual_crop", False)):
+
+
+            self._abandon_speculative_manual_crop()
         if (spec == getattr(self, "_encoded_crop_window", None) and self._current_crop_info is not None):
             self._set_ai_session_armed_line(loading=False)
             return

@@ -150,9 +150,9 @@ def config_from_block(block) -> DensityProbeConfig | None:
     r_med = _num(block.get("refine_median_min", 0), 0, 1000) or 0.0
     r_tiles = _num(block.get("refine_max_tiles", 0), 0, 1000000) or 0.0
     r_free = _num(block.get("refine_max_tiles_free", 0), 0, 1000000) or 0.0
-    change = _num(block.get("min_change_ratio", 0.1), 0.0, 1.0)
+    change = _num(block.get("min_change_ratio"), 0.0, 1.0)
     if change is None:
-        change = 0.1
+        return None
     families = []
     fams = block.get("families")
     if isinstance(fams, dict):

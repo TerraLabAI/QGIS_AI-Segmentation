@@ -15,6 +15,7 @@ import logging
 import time
 
 from ...core.error_policy import OFFLINE_STOP_CODE
+from ...core.streamed_download import sleep_unless_cancelled
 
 __all__ = [
     "AutoRunLifecycleMixin",
@@ -89,7 +90,9 @@ class AutoRunLifecycleMixin:
 
         self._run_nam = self._client.acquire_predict_nam()
         run_timeline.mark("client_ready")
-        total = len(self._tiles)
+
+
+        total = self._plan_len
 
         if total == 0:
             self._terminal_sent = True
@@ -202,6 +205,89 @@ class AutoRunLifecycleMixin:
 
         return [t for i, t in enumerate(self._tiles) if i not in self._completed_idx]
 
+    def resume_state(self) -> dict:
+
+
+
+
+
+
+
+
+        done = set(self._completed_idx)
+        return {
+            "run_id": self._run_id,
+            "tiles": list(self._tiles),
+            "plan_len": int(self._plan_len),
+            "settled": sorted(done),
+            "missing": [i for i in range(self._plan_len) if i not in done],
+            "gate_skip": set(self._gate_skip),
+            "gate_prepaid": set(self._gate_prepaid),
+            "prefilter_skip": set(self._prefilter_skip),
+            "answers": None if self._answer_cache_dropped else dict(self._answer_cache),
+        }
+
+    def _cache_answer(self, tile_idx: int, answer) -> None:
+
+
+        if self._answer_cache_dropped or tile_idx >= self._plan_len:
+            return
+        if self._answer_cache_max_bytes <= 0:
+            self._answer_cache_dropped = True
+            return
+        try:
+            import json
+            text = json.dumps(answer, separators=(",", ":"))
+        except (TypeError, ValueError):
+            return
+        old = self._answer_cache.get(tile_idx)
+        self._answer_cache_bytes += len(text) - (len(old) if old else 0)
+        if self._answer_cache_bytes > self._answer_cache_max_bytes:
+            self._answer_cache_dropped = True
+            self._answer_cache.clear()
+            self._answer_cache_bytes = 0
+            return
+        self._answer_cache[tile_idx] = text
+
+    def apply_resume(self, state: dict) -> None:
+
+
+
+
+
+
+
+
+        plan_len = int(state["plan_len"])
+        if (self._run_id != state["run_id"] or plan_len != self._plan_len
+                or list(self._tiles[:plan_len]) != list(state["tiles"][:plan_len])):
+            raise ValueError("resume plan does not match the stored run")
+
+
+        self._tiles[:] = list(state["tiles"])
+        self._gate_config = None
+        self._density_plan = None
+        self._density_probe_set = frozenset()
+        self._gate_skip = set(state["gate_skip"])
+        self._gate_prepaid = set(state["gate_prepaid"])
+        self._prefilter_skip = set(state["prefilter_skip"])
+        self._resuming = True
+        answers = state.get("answers")
+        if answers and not self._stamps_in_use():
+            self._replay_answers = {
+                i: t for i, t in answers.items()
+                if i < plan_len and i not in self._gate_skip
+                and i not in self._prefilter_skip}
+
+
+            for i in self._replay_answers:
+                self._gate_tile_bytes[i] = ()
+
+    def _stamps_in_use(self) -> bool:
+
+
+        return bool(self._exemplar_stamps_in)
+
     def run_health_summary(self) -> dict:
 
 
@@ -276,6 +362,15 @@ class AutoRunLifecycleMixin:
             "upload_mb": float(self.upload_bytes) / 1048576.0,
             "upload_s": float(self.phase_upload_s),
             "uploads_slow": int(self.uploads_slow),
+            "uploads_requeued": int(self.uploads_requeued),
+            "upload_stalls": int(self.upload_stalls),
+            "dead_link_sweeps": int(getattr(self, "dead_link_sweeps", 0)),
+            "answer_quiet_reposts": int(getattr(self, "answer_quiet_reposts", 0)),
+            "outage_ms": int(self._outage_ms_total()) if hasattr(self, "_outage_since") else 0,
+            "outages": int(getattr(self, "outages", 0)),
+            "uploaded_aborts_reposted": int(self.uploaded_aborts_reposted),
+            "tiles_resent": int(self.tiles_resent),
+            "tiles_replayed_from_cache": int(self.tiles_replayed_from_cache),
             "inflight_cap_final": cap,
             "window_setbacks": setbacks,
             "tiles_timed_out": int(self.tiles_timed_out),
@@ -407,6 +502,7 @@ class AutoRunLifecycleMixin:
 
 
         self._tile_clean_image.clear()
+        self._close_clean_image_pool()
 
 
 
@@ -565,14 +661,7 @@ class AutoRunLifecycleMixin:
 
 
 
-        waited = 0.0
-
-
-
-        while waited < seconds and not self._stop_requested:
-            step = min(0.25, seconds - waited)
-            time.sleep(step)
-            waited += step
+        sleep_unless_cancelled(seconds, lambda: self._stop_requested)
 
     def _skip_network_tile(self, tile_idx: int) -> None:
 

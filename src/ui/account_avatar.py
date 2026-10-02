@@ -18,9 +18,9 @@ from qgis.PyQt.QtNetwork import QNetworkReply, QNetworkRequest
 
 from ..core.cache_paths import PLUGIN_CACHE_DIR
 from ..core.qt_compat import (
-    HttpStatusCodeAttribute,
     NoLessSafeRedirectPolicy,
     RedirectPolicyAttribute,
+    reply_http_status,
     resolve_qt_enum,
 )
 
@@ -59,11 +59,17 @@ def circular_avatar_pixmap(image: QImage, diameter: int) -> QPixmap | None:
     if image.isNull() or diameter <= 0:
         return None
     side = int(diameter) * AVATAR_OVERSAMPLE
-    scaled = image.scaled(
-        side, side,
-        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-        Qt.TransformationMode.SmoothTransformation,
-    )
+
+
+
+    from ..core.qimage_strips import smooth_scaled_in_python
+
+    src_w, src_h = image.width(), image.height()
+    if src_w <= src_h:
+        target_w, target_h = side, max(side, src_h * side // max(1, src_w))
+    else:
+        target_w, target_h = max(side, src_w * side // max(1, src_h)), side
+    scaled = smooth_scaled_in_python(image, target_w, target_h)
     square = scaled.copy(
         max(0, (scaled.width() - side) // 2),
         max(0, (scaled.height() - side) // 2),
@@ -187,8 +193,8 @@ class AccountAvatarLoader(QObject):
             return
         data = b""
         try:
-            status = reply.attribute(HttpStatusCodeAttribute)
-            served = int(status) if status is not None else 200
+            status = reply_http_status(reply)
+            served = status if status is not None else 200
             if reply.error() == _NETWORK_NO_ERROR and served == 200:
                 data = bytes(reply.readAll())
         except (RuntimeError, TypeError, ValueError):

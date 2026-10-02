@@ -10,7 +10,13 @@ from __future__ import annotations
 
 from .detection_policy_core import (
     _is_finite_policy_value,
+    policy_scope,
     review_policy,
+)
+from .served_config import (
+    ServedConfigMissing,
+    require_served_list,
+    require_served_number,
 )
 
 
@@ -251,9 +257,6 @@ def vertex_budget_settings(policy: dict | None = None) -> dict:
     }
 
 
-_CANOPY_HINT_FALLBACK = frozenset({"tree", "trees", "canopy", "forest"})
-
-
 def prompt_suggests_canopy(prompt: str, policy: dict | None = None) -> bool:
 
 
@@ -264,18 +267,13 @@ def prompt_suggests_canopy(prompt: str, policy: dict | None = None) -> bool:
     norm = (prompt or "").strip().lower().replace("_", " ")
     if not norm:
         return False
-    tokens = review_policy(policy).get("canopy_hint_tokens")
-    words: frozenset[str] = _CANOPY_HINT_FALLBACK
-    if isinstance(tokens, list):
-        server = frozenset(
-            str(v).strip().lower().replace("_", " ")
-            for v in tokens if isinstance(v, str) and str(v).strip())
-        if server:
-            words = server
+    try:
+        with policy_scope(policy):
+            tokens = require_served_list("detection_policy.review.canopy_hint_tokens")
+    except ServedConfigMissing:
+        return False
+    words = frozenset(t.lower().replace("_", " ") for t in tokens)
     return norm in words or any(w in words for w in norm.split())
-
-
-_CLOSED_CANOPY_FALLBACK = {"max_raw_per_tile": 8.0, "min_span_dropped": 3, "min_tiles": 12}
 
 
 def closed_canopy_signature(raw_total: int, tiles: int, span_dropped: int,
@@ -288,25 +286,27 @@ def closed_canopy_signature(raw_total: int, tiles: int, span_dropped: int,
 
 
 
-
-    dial = review_policy(policy).get("closed_canopy_advice")
-    cfg = dict(_CLOSED_CANOPY_FALLBACK)
-    if isinstance(dial, dict):
-        for key in cfg:
-            v = dial.get(key)
-            if isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0:
-                cfg[key] = float(v)
+    try:
+        with policy_scope(policy):
+            max_raw = require_served_number(
+                "detection_policy.review.closed_canopy_advice.max_raw_per_tile", 0.0, 10000.0)
+            min_span = require_served_number(
+                "detection_policy.review.closed_canopy_advice.min_span_dropped", 0.0, 100000.0)
+            min_tiles = require_served_number(
+                "detection_policy.review.closed_canopy_advice.min_tiles", 0.0, 100000.0)
+    except ServedConfigMissing:
+        return False
     try:
         tiles = int(tiles)
         raw_total = int(raw_total)
         span_dropped = int(span_dropped)
     except (TypeError, ValueError):
         return False
-    if tiles < cfg["min_tiles"] or tiles <= 0:
+    if tiles < min_tiles or tiles <= 0:
         return False
-    if span_dropped < cfg["min_span_dropped"]:
+    if span_dropped < min_span:
         return False
-    return (raw_total / tiles) <= cfg["max_raw_per_tile"]
+    return (raw_total / tiles) <= max_raw
 
 
 def adaptive_confidence_policy(policy: dict | None = None) -> dict:
@@ -335,11 +335,9 @@ def semantic_rescue_coverage_floor(policy: dict | None = None) -> float:
 
 
 
-
-    val = semantic_rescue_policy(policy).get("coverage_floor")
-    if _is_finite_policy_value(val) and 0.0 <= val <= 1.0:
-        return float(val)
-    return 0.45
+    with policy_scope(policy):
+        return require_served_number(
+            "detection_policy.review.semantic_rescue.coverage_floor", 0.0, 1.0)
 
 
 def fp_filter_policy(policy: dict | None = None) -> dict:

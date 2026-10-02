@@ -4,7 +4,7 @@ description=AI segmentation for QGIS: detect and extract building footprints, tr
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
 supportsQt6=True
-version=3.2.0
+version=3.3.0
 author=Yvann and Lilien from TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
@@ -32,9 +32,17 @@ about=
     • 12 languages: English, French, Portuguese, Spanish, German, Italian, Dutch, Polish, Indonesian, Japanese, Chinese (simplified and traditional)
 
 changelog=
+    3.3.0
+    - Automatic: a run cut by a lost connection carries on once the link is back, and its missing tiles can be continued instead of starting over
+    - Semi-Auto: faster first click on a slow connection, and Esc stops a click still waiting for the service
+    - Library: a run reopened from the history comes back with the same objects, colours and size filter
+    - Setup and online basemaps follow the proxy set in QGIS, including QGIS 4.2, Default Proxy and a host typed as a URL
+    - Exported shapes open cleanly in any GIS tool, and the shared area of interest is saved with the project
+    - Stability and reliability improvements, especially on macOS and on slow networks
+
     3.2.0
     - Review: right-drag a rectangle to delete every detection inside it, and show the detections hidden only by confidence in one press
-    - Semi-Auto: Tab cycles through the other outlines of your click, and an object cut by the edge of the view is asked again on a wider area
+    - Semi-Auto: an object cut by the edge of the view is asked again on a wider area
     - Sharper results on online basemaps: detection tiles and clicks use the finest zoom the basemap serves
     - Update installs the new version straight from the plugin
     - QGIS stays responsive while imagery is prepared, and the progress bar only moves forward

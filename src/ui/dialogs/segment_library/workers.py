@@ -246,6 +246,7 @@ class _RunFetchWorker(QThread):
                 self._auth,
                 run_id=self._run.get("run_id"),
                 group_key=self._run.get("group_key"),
+                prompt=str(self._run.get("prompt") or "").strip(),
             )
         except Exception as err:  # noqa: BLE001
             self.failed.emit(f"detail exception: {err}")
@@ -262,7 +263,7 @@ class _RunFetchWorker(QThread):
             self.failed.emit("detail: no tiles")
             return None
 
-        for key in ("threshold", "mask_threshold", "crs_authid", "pixel_size_m"):
+        for key in ("threshold", "mask_threshold", "crs_authid", "pixel_size_m", "decisions"):
             if self._run.get(key) is None and detail.get(key) is not None:
                 self._run[key] = detail.get(key)
         return tiles

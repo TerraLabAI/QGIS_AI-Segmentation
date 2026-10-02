@@ -416,9 +416,6 @@ class TaskDisc(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
-    def disc_state(self) -> str:
-        return self._state
-
     def set_disc_state(self, state: str) -> None:
         if state not in ("done", "active", "todo"):
             state = "todo"

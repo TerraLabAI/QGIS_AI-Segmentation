@@ -224,32 +224,17 @@ class ProcessAlignPass:
 
 
     def _spawn(self) -> bool:
-        import subprocess  # nosec B404
-
-        from .tile_convert_pool import (
-            child_creation_flags,
-            child_cwd,
-            child_python,
-            keep_child_off_power_throttling,
-        )
+        from .tile_convert_pool import child_python, spawn_worker_child
 
         exe = child_python()
         if not exe:
             return False
-        boot = "from src.workers.align_process_pool import child_main; child_main()"
         for _ in range(self._workers):
-            proc = subprocess.Popen(  # nosec B603
-                [exe, "-s", "-c", boot],
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL, env=self._env, cwd=child_cwd(),
-                close_fds=True,
 
 
 
 
-
-                creationflags=child_creation_flags())
-            keep_child_off_power_throttling(proc)
+            proc = spawn_worker_child(exe, "src.workers.align_process_pool", self._env)
             with self._lock:
                 self._children.append(proc)
             if self._stop.is_set():

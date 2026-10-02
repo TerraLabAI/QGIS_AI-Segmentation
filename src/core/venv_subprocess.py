@@ -30,7 +30,7 @@ from .venv_deps import (
     UV_HTTP_RETRIES,
     UV_HTTP_TIMEOUT_S,
 )
-from .venv_network import _get_effective_proxy_url, _get_qgis_no_proxy_hosts
+from .venv_network import _get_effective_proxy_url
 
 
 def _read_text_file(path: str, max_bytes: int = 2 * 1024 * 1024) -> str:
@@ -243,7 +243,9 @@ def _get_clean_env_for_venv() -> dict:
 
 
 
-        no_proxy = _get_qgis_no_proxy_hosts()
+        from .qgis_proxy_reader import qgis_proxy_bypass
+
+        no_proxy = qgis_proxy_bypass()
         if no_proxy:
             env.setdefault("NO_PROXY", no_proxy)
             env.setdefault("no_proxy", no_proxy)

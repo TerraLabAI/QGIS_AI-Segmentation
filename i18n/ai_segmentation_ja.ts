@@ -20,7 +20,7 @@
     </message>
     <message>
         <source>AI Segmentation {version} is out</source>
-        <translation>AI Segmentation {version} が公開されました</translation>
+        <translation>AI Segmentation {version}が公開されました</translation>
     </message>
     <message>
         <source>Later</source>
@@ -28,15 +28,15 @@
     </message>
     <message>
         <source>Lower precision to fit</source>
-        <translation>精度を下げて収める</translation>
+        <translation>詳細度を下げて収める</translation>
     </message>
     <message>
         <source>Sweeps the same zone in a coarser grid, so it fits in one run.</source>
-        <translation>同じ範囲を粗いグリッドでスイープするため、1回の実行に収まります。</translation>
+        <translation>同じ範囲を粗いグリッドでスキャンするため、1回の実行に収まります。</translation>
     </message>
     <message>
         <source>AI Segmentation {version} is available.</source>
-        <translation>AI Segmentation {version} が利用可能です。</translation>
+        <translation>AI Segmentation {version}が利用可能です。</translation>
     </message>
     <message>
         <source>The update applies once QGIS reloads the plugin. Restart QGIS if the panel misbehaves after it.</source>
@@ -48,11 +48,11 @@
     </message>
     <message>
         <source>Custom quota, team seats, invoices, or a custom AI solution.</source>
-        <translation>個別のクォータ、チーム用ライセンス、請求書、または個別開発のAIソリューション。</translation>
+        <translation>カスタム利用枠、チーム用ライセンス、請求書、または個別開発のAIソリューション。</translation>
     </message>
     <message>
         <source>Book a call</source>
-        <translation>打ち合わせを予約</translation>
+        <translation>相談を予約</translation>
     </message>
     <message>
         <source>Need more than Pro?</source>
@@ -80,11 +80,11 @@
     </message>
     <message>
         <source>Saving...</source>
-        <translation>保存中...</translation>
+        <translation>保存中…</translation>
     </message>
     <message>
         <source>Your selection is sent to our servers in Europe {dot} {privacy}</source>
-        <translation>選択内容はヨーロッパにある当社のサーバーに送信されます {dot} {privacy}</translation>
+        <translation>選択内容はヨーロッパにある当社のサーバーに送信されます{dot}{privacy}</translation>
     </message>
     <message>
         <source>Normal</source>
@@ -116,7 +116,7 @@
     </message>
     <message>
         <source>Exclude a look-alike</source>
-        <translation>似ているものを除外</translation>
+        <translation>似たものを除外</translation>
     </message>
     <message>
         <source>Too generic to name. Clear the box to search from your example alone, or type a concrete object.</source>
@@ -140,11 +140,11 @@
     </message>
     <message>
         <source>Confidence:</source>
-        <translation>信頼度:</translation>
+        <translation>信頼度：</translation>
     </message>
     <message>
         <source>Minimum confidence to keep a detected object. Lower finds more objects but may add false positives; raise it for cleaner results on large, distinct features.</source>
-        <translation>検出したオブジェクトを保持する最低信頼度です。下げるとより多くのオブジェクトが見つかりますが誤検出も増える可能性があります。大きく明瞭なフィーチャではより綺麗な結果を得るために上げてください。</translation>
+        <translation>検出したオブジェクトを保持する最低信頼度です。下げるとより多くのオブジェクトが見つかりますが、誤検出も増える可能性があります。大きくてはっきりしたオブジェクトでは、上げるときれいな結果になります。</translation>
     </message>
     <message>
         <source>Dependencies</source>
@@ -184,7 +184,7 @@
     </message>
     <message>
         <source>Repairing installation...</source>
-        <translation>インストールを修復中...</translation>
+        <translation>インストールを修復中…</translation>
     </message>
     <message>
         <source>Restart QGIS Required</source>
@@ -192,11 +192,11 @@
     </message>
     <message>
         <source>Something went wrong with this click, so it was not applied. Please try again.</source>
-        <translation>このクリックの処理中に問題が発生したため、適用されませんでした。再試行してください。</translation>
+        <translation>このクリックの処理中に問題が発生したため、適用されませんでした。もう一度お試しください。</translation>
     </message>
     <message>
         <source>The Python runtime used by the AI engine is damaged (this can be caused by a disk cleanup tool or antivirus). It will now be repaired automatically. Please try your selection again once the repair finishes.</source>
-        <translation>AIエンジンが使用するPython環境が破損しています(ディスククリーンアップツールやアンチウイルスソフトが原因の場合があります)。これから自動的に修復します。修復が完了したら、選択操作を再試行してください。</translation>
+        <translation>AIエンジンが使用するPython環境が破損しています（ディスククリーンアップツールやアンチウイルスソフトが原因の場合があります）。これから自動的に修復します。修復が完了したら、もう一度選択をお試しください。</translation>
     </message>
     <message>
         <source>Your polygons were added as a temporary layer so nothing is lost.</source>
@@ -204,7 +204,7 @@
     </message>
     <message>
         <source>Could not write to {name}. Saved to a separate file instead.</source>
-        <translation>{name} に書き込めませんでした。代わりに別のファイルに保存しました。</translation>
+        <translation>{name}に書き込めませんでした。代わりに別のファイルに保存しました。</translation>
     </message>
     <message>
         <source>Click Install to set up AI Segmentation</source>
@@ -212,23 +212,23 @@
     </message>
     <message>
         <source>Installing AI Segmentation...</source>
-        <translation>AI Segmentationをインストール中...</translation>
+        <translation>AI Segmentationをインストール中…</translation>
     </message>
     <message>
         <source>Verifying installation...</source>
-        <translation>インストールを検証中...</translation>
+        <translation>インストールを検証中…</translation>
     </message>
     <message>
         <source>Detecting device...</source>
-        <translation>デバイスを検出中...</translation>
+        <translation>デバイスを検出中…</translation>
     </message>
     <message>
         <source>Install path: {}</source>
-        <translation>インストール先: {}</translation>
+        <translation>インストール先：{}</translation>
     </message>
     <message>
         <source>To install in a different folder, set the environment variable AI_SEGMENTATION_CACHE_DIR:</source>
-        <translation>別のフォルダにインストールするには、環境変数 AI_SEGMENTATION_CACHE_DIR を設定してください:</translation>
+        <translation>別のフォルダにインストールするには、環境変数AI_SEGMENTATION_CACHE_DIRを設定してください：</translation>
     </message>
     <message>
         <source>1. Open Windows Settings &gt; System &gt; Advanced system settings
@@ -237,18 +237,18 @@
 4. Variable name: AI_SEGMENTATION_CACHE_DIR
 5. Variable value: the folder path you want to use
 6. Click OK and restart QGIS</source>
-        <translation>1. Windowsの「設定」&gt;「システム」&gt;「システムの詳細設定」を開く
-2. 「環境変数」をクリック
-3. 「ユーザー環境変数」で「新規」をクリック
-4. 変数名: AI_SEGMENTATION_CACHE_DIR
-5. 変数値: 使用したいフォルダのパス
-6. 「OK」をクリックしてQGISを再起動</translation>
+        <translation>1. Windowsの「設定」→「システム」→「システムの詳細設定」を開きます
+2. 「環境変数」をクリックします
+3. 「ユーザー環境変数」で「新規」をクリックします
+4. 変数名：AI_SEGMENTATION_CACHE_DIR
+5. 変数値：使用するフォルダのパス
+6. 「OK」をクリックしてQGISを再起動します</translation>
     </message>
     <message>
         <source>Run this command in Terminal, then restart QGIS:
 
 launchctl setenv AI_SEGMENTATION_CACHE_DIR /your/path</source>
-        <translation>ターミナルで次のコマンドを実行し、QGISを再起動してください:
+        <translation>ターミナルで次のコマンドを実行し、QGISを再起動してください：
 
 launchctl setenv AI_SEGMENTATION_CACHE_DIR /your/path</translation>
     </message>
@@ -256,13 +256,13 @@ launchctl setenv AI_SEGMENTATION_CACHE_DIR /your/path</translation>
         <source>Add this line to your ~/.bashrc or ~/.profile, then restart QGIS:
 
 export AI_SEGMENTATION_CACHE_DIR=/your/path</source>
-        <translation>次の行を ~/.bashrc または ~/.profile に追加し、QGISを再起動してください:
+        <translation>次の行を~/.bashrcまたは~/.profileに追加し、QGISを再起動してください：
 
 export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     </message>
     <message>
         <source>Checking...</source>
-        <translation>確認中...</translation>
+        <translation>確認中…</translation>
     </message>
     <message>
         <source>Install</source>
@@ -274,7 +274,7 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     </message>
     <message>
         <source>Downloading AI model...</source>
-        <translation>AIモデルをダウンロード中...</translation>
+        <translation>AIモデルをダウンロード中…</translation>
     </message>
     <message>
         <source>Cancel</source>
@@ -286,7 +286,7 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     </message>
     <message>
         <source>Are you sure you want to cancel the installation?</source>
-        <translation>インストールを本当にキャンセルしますか?</translation>
+        <translation>インストールを本当にキャンセルしますか？</translation>
     </message>
     <message>
         <source>Installation cancelled</source>
@@ -298,7 +298,7 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     </message>
     <message>
         <source>Verification failed:</source>
-        <translation>検証に失敗しました:</translation>
+        <translation>検証に失敗しました：</translation>
     </message>
     <message>
         <source>Verification Failed</source>
@@ -322,7 +322,7 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     </message>
     <message>
         <source>Failed to download model:</source>
-        <translation>モデルのダウンロードに失敗しました:</translation>
+        <translation>モデルのダウンロードに失敗しました：</translation>
     </message>
     <message>
         <source>AI Segmentation by TerraLab</source>
@@ -330,7 +330,7 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     </message>
     <message>
         <source>Select a raster layer (GeoTIFF, WMS, XYZ tiles, etc.)</source>
-        <translation>ラスタレイヤを選択(GeoTIFF、WMS、XYZタイルなど)</translation>
+        <translation>ラスタレイヤを選択（GeoTIFF、WMS、XYZタイルなど）</translation>
     </message>
     <message>
         <source>Save polygon</source>
@@ -358,19 +358,19 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     </message>
     <message>
         <source>The AI model works best on one element at a time.</source>
-        <translation>AIモデルは一度に1つの要素を処理するのが最も効果的です。</translation>
+        <translation>AIモデルは一度に1つのオブジェクトを処理するのが最も効果的です。</translation>
     </message>
     <message>
         <source>Save your polygon before selecting the next element.</source>
-        <translation>次の要素を選択する前にポリゴンを保存してください。</translation>
+        <translation>次のオブジェクトを選択する前にポリゴンを保存してください。</translation>
     </message>
     <message>
         <source>Export polygon to a layer</source>
-        <translation>ポリゴンをレイヤへExport</translation>
+        <translation>ポリゴンをレイヤにエクスポート</translation>
     </message>
     <message>
         <source>Export {count} polygons to a layer</source>
-        <translation>{count} 個のポリゴンをレイヤへExport</translation>
+        <translation>{count}個のポリゴンをレイヤへエクスポート</translation>
     </message>
     <message>
         <source>Refine selection</source>
@@ -422,11 +422,11 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     </message>
     <message>
         <source>Export Failed</source>
-        <translation>Export失敗</translation>
+        <translation>エクスポートに失敗</translation>
     </message>
     <message>
         <source>Could not save layer to file:</source>
-        <translation>レイヤをファイルに保存できませんでした:</translation>
+        <translation>レイヤをファイルに保存できませんでした：</translation>
     </message>
     <message>
         <source>You have {count} unsaved polygon(s).</source>
@@ -434,7 +434,7 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     </message>
     <message>
         <source>Change Layer?</source>
-        <translation>レイヤを変更しますか?</translation>
+        <translation>レイヤを変更しますか？</translation>
     </message>
     <message>
         <source>Stop Segmentation?</source>
@@ -498,7 +498,7 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     </message>
     <message>
         <source>Segment elements on raster images using AI</source>
-        <translation>AIでラスタ画像上の要素をセグメント化</translation>
+        <translation>AIでラスタ画像上のオブジェクトをセグメンテーションします。</translation>
     </message>
     <message>
         <source>Copy your logs with the button below and send them to our support email.</source>
@@ -522,7 +522,7 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     </message>
     <message>
         <source>Copied!</source>
-        <translation>コピーしました!</translation>
+        <translation>コピー済み</translation>
     </message>
     <message>
         <source>SSL Certificate Error</source>
@@ -534,7 +534,7 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     </message>
     <message>
         <source>Click is outside the '{layer}' raster. To segment another raster, stop the current segmentation first.</source>
-        <translation>クリック位置がラスタ「{layer}」の外側です。別のラスタをセグメント化するには、まず現在のセグメンテーションを停止してください。</translation>
+        <translation>クリック位置がラスタ「{layer}」の外側です。別のラスタをセグメンテーションするには、まず現在のセグメンテーションを停止してください。</translation>
     </message>
     <message>
         <source>trees</source>
@@ -543,20 +543,20 @@ export AI_SEGMENTATION_CACHE_DIR=/your/path</translation>
     <message>
         <source>{ext} format is not directly supported. GDAL is not available.
 Please convert your raster to GeoTIFF (.tif) before using AI Segmentation.</source>
-        <translation>{ext} 形式は直接サポートされていません。GDALが利用できません。
-AI Segmentationを使用する前に、ラスタをGeoTIFF(.tif)に変換してください。</translation>
+        <translation>{ext}形式は直接サポートされていません。GDALが利用できません。
+AI Segmentationを使用する前に、ラスタをGeoTIFF（.tif）に変換してください。</translation>
     </message>
     <message>
         <source>Cannot open {ext} file. The format may not be supported by your QGIS installation.
 Please convert your raster to GeoTIFF (.tif) before using AI Segmentation.</source>
-        <translation>{ext} ファイルを開けません。お使いのQGISではこの形式がサポートされていない可能性があります。
-AI Segmentationを使用する前に、ラスタをGeoTIFF(.tif)に変換してください。</translation>
+        <translation>{ext}ファイルを開けません。お使いのQGISではこの形式がサポートされていない可能性があります。
+AI Segmentationを使用する前に、ラスタをGeoTIFF（.tif）に変換してください。</translation>
     </message>
     <message>
         <source>Failed to read {ext} file: {error}
 Please convert your raster to GeoTIFF (.tif) manually.</source>
-        <translation>{ext} ファイルの読み込みに失敗しました: {error}
-ラスタを手動でGeoTIFF(.tif)に変換してください。</translation>
+        <translation>{ext}ファイルの読み込みに失敗しました：{error}
+ラスタを手動でGeoTIFF（.tif）に変換してください。</translation>
     </message>
     <message>
         <source>PyTorch cannot load on Windows</source>
@@ -598,7 +598,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Disconnected parts detected. For best accuracy, segment one element at a time.</source>
-        <translation>分断された部分が検出されました。精度を高めるには、一度に1つの要素をセグメント化してください。</translation>
+        <translation>分断された部分が検出されました。精度を高めるには、一度に1つのオブジェクトをセグメンテーションしてください。</translation>
     </message>
     <message>
         <source>Updating...</source>
@@ -614,7 +614,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Loading AI model...</source>
-        <translation>AIモデルを読み込み中...</translation>
+        <translation>AIモデルを読み込み中…</translation>
     </message>
     <message>
         <source>Ready</source>
@@ -626,7 +626,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>New here?</source>
-        <translation>初めてご利用ですか?</translation>
+        <translation>初めてご利用ですか？</translation>
     </message>
     <message>
         <source>Watch the tutorial</source>
@@ -638,11 +638,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Your connection appears unstable or blocked. Check: (1) your internet is working, (2) QGIS &gt; Settings &gt; Options &gt; Network has a proxy configured if you are on a corporate network, (3) your firewall allows connections to pypi.org and files.pythonhosted.org.</source>
-        <translation>接続が不安定またはブロックされている可能性があります。次を確認してください: (1) インターネット接続が有効であること、(2) 社内ネットワークを使用している場合はQGIS &gt;「設定」&gt;「オプション」&gt;「ネットワーク」でプロキシが設定されていること、(3) ファイアウォールがpypi.orgおよびfiles.pythonhosted.orgへの接続を許可していること。</translation>
+        <translation>接続が不安定またはブロックされている可能性があります。次を確認してください：（1）インターネット接続が有効であること、（2）社内ネットワークを使用している場合はQGISの「設定」→「オプション」→「ネットワーク」でプロキシが設定されていること、（3）ファイアウォールがpypi.orgおよびfiles.pythonhosted.orgへの接続を許可していること。</translation>
     </message>
     <message>
         <source>Checking...</source>
-        <translation>確認中...</translation>
+        <translation>確認中…</translation>
     </message>
     <message>
         <source>AI Edit</source>
@@ -650,7 +650,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Generate imagery with AI on map zones (opens AI Edit plugin)</source>
-        <translation>地図上のゾーンをAIで画像生成(AI Editプラグインを開きます)</translation>
+        <translation>地図上の範囲でAIにより画像を生成します（AI Editプラグインを開きます）。</translation>
     </message>
     <message>
         <source>Right-click must be inside the current selection area.</source>
@@ -662,7 +662,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Loading account info...</source>
-        <translation>アカウント情報を読み込み中...</translation>
+        <translation>アカウント情報を読み込み中…</translation>
     </message>
     <message>
         <source>Model File Corrupted</source>
@@ -674,23 +674,23 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>The AI model file was corrupted and is being re-downloaded. Please try your selection again once it finishes.</source>
-        <translation>AIモデルファイルが破損していたため再ダウンロード中です。完了したら選択操作を再試行してください。</translation>
+        <translation>AIモデルファイルが破損していたため再ダウンロード中です。完了したら、もう一度選択をお試しください。</translation>
     </message>
     <message>
         <source>The AI model file is corrupted but could not be removed automatically. Please delete this folder and restart QGIS:</source>
-        <translation>AIモデルファイルが破損していますが、自動的に削除できませんでした。次のフォルダを削除してQGISを再起動してください:</translation>
+        <translation>AIモデルファイルが破損していますが、自動的に削除できませんでした。次のフォルダを削除してQGISを再起動してください：</translation>
     </message>
     <message>
         <source>Segment your map with AI</source>
-        <translation>AIで地図をセグメント化</translation>
+        <translation>AIで地図をセグメンテーション</translation>
     </message>
     <message>
         <source>Sign in / Sign up to start</source>
-        <translation>サインイン / サインアップして開始</translation>
+        <translation>ログイン／新規登録して開始</translation>
     </message>
     <message>
         <source>Sign in via your browser to start using AI Segmentation</source>
-        <translation>ブラウザでサインインしてAI Segmentationの利用を開始</translation>
+        <translation>ブラウザでログインしてAI Segmentationの利用を開始</translation>
     </message>
     <message>
         <source>Open again</source>
@@ -698,23 +698,23 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Didn't open? Open the page again</source>
-        <translation>開きませんでしたか?ページを再度開く</translation>
+        <translation>開きませんでしたか？ページを再度開く</translation>
     </message>
     <message>
         <source>Sign-in timed out. Click Sign in to try again.</source>
-        <translation>サインインがタイムアウトしました。「サインイン」をクリックして再試行してください。</translation>
+        <translation>ログインがタイムアウトしました。「ログイン」をクリックして、もう一度お試しください。</translation>
     </message>
     <message>
         <source>Sign-in was cancelled in the browser. Click Sign in to try again.</source>
-        <translation>ブラウザでサインインがキャンセルされました。「サインイン」をクリックして再試行してください。</translation>
+        <translation>ブラウザでログインがキャンセルされました。「ログイン」をクリックして、もう一度お試しください。</translation>
     </message>
     <message>
         <source>Unexpected response from the server. Please try again.</source>
-        <translation>サーバーから予期しない応答がありました。再試行してください。</translation>
+        <translation>サーバーから予期しない応答がありました。もう一度お試しください。</translation>
     </message>
     <message>
         <source>This account has no active AI Segmentation plan. Reactivate it on terra-lab.ai, then click Sign in again.</source>
-        <translation>このアカウントはアクティブなAI Segmentationプランを持っていません。terra-lab.aiで再度アクティベートしてから、「サインイン」を再度クリックしてください。</translation>
+        <translation>このアカウントには有効なAI Segmentationプランがありません。terra-lab.aiでプランを再開してから、もう一度「ログイン」をクリックしてください。</translation>
     </message>
     <message>
         <source>Connecting AI Segmentation</source>
@@ -722,7 +722,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Cancelling sign-in</source>
-        <translation>サインインをキャンセル中</translation>
+        <translation>ログインをキャンセル中</translation>
     </message>
     <message>
         <source>Help / Report a problem</source>
@@ -738,15 +738,15 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Sign out</source>
-        <translation>サインアウト</translation>
+        <translation>ログアウト</translation>
     </message>
     <message>
         <source>Sign out of AI Segmentation?</source>
-        <translation>AI Segmentationからサインアウトしますか?</translation>
+        <translation>AI Segmentationからログアウトしますか？</translation>
     </message>
     <message>
         <source>You can sign back in anytime from QGIS.</source>
-        <translation>QGISからいつでも再度サインインできます。</translation>
+        <translation>QGISからいつでも再度ログインできます。</translation>
     </message>
     <message>
         <source>Active</source>
@@ -794,15 +794,15 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Spot reserved · starting in ~{eta}</source>
-        <translation>順番を確保済み · ~{eta}後に開始</translation>
+        <translation>順番を確保済み・約{eta}後に開始</translation>
     </message>
     <message>
         <source>{s} seconds</source>
-        <translation>{s} 秒</translation>
+        <translation>{s}秒</translation>
     </message>
     <message>
         <source>{m} min</source>
-        <translation>{m} 分</translation>
+        <translation>{m}分</translation>
     </message>
     <message>
         <source>{n} cloud detections remaining</source>
@@ -814,15 +814,15 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>{remaining} / {total} cloud detections</source>
-        <translation>{remaining} / {total} クラウド検出</translation>
+        <translation>{remaining}/{total}件のクラウド検出</translation>
     </message>
     <message>
         <source>Auto detection (live)</source>
-        <translation>自動検出(実行中)</translation>
+        <translation>自動検出（実行中）</translation>
     </message>
     <message>
         <source>Preparing your zone...</source>
-        <translation>ゾーンを準備中...</translation>
+        <translation>範囲を準備中…</translation>
     </message>
     <message>
         <source>Cancelling...</source>
@@ -830,11 +830,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Finishing the previous run, please wait a moment...</source>
-        <translation>前回の処理を終了しています。少々お待ちください...</translation>
+        <translation>前回の実行を終了しています。少々お待ちください…</translation>
     </message>
     <message>
         <source>Detection failed. Check your connection and try again.</source>
-        <translation>検出に失敗しました。接続を確認して再試行してください。</translation>
+        <translation>検出に失敗しました。接続を確認して、もう一度お試しください。</translation>
     </message>
     <message>
         <source>Automatic detection is temporarily unavailable. Please try again later.</source>
@@ -842,11 +842,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Draw a zone first. Automatic detection on online layers needs a zone.</source>
-        <translation>まずゾーンを描いてください。オンラインレイヤでの自動検出にはゾーンが必要です。</translation>
+        <translation>まず範囲を描いてください。オンラインレイヤでの自動検出には範囲が必要です。</translation>
     </message>
     <message>
         <source>The zone is outside the selected raster layer. Pick the right layer or redraw the zone.</source>
-        <translation>ゾーンが選択したラスタレイヤの外側にあります。正しいレイヤを選ぶか、ゾーンを再描画してください。</translation>
+        <translation>範囲が選択したラスタレイヤの外側にあります。正しいレイヤを選ぶか、範囲を描き直してください。</translation>
     </message>
     <message>
         <source>Less</source>
@@ -890,7 +890,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Request timed out. Check your connection or try again.</source>
-        <translation>リクエストがタイムアウトしました。接続を確認するか再試行してください。</translation>
+        <translation>リクエストがタイムアウトしました。接続を確認するか、もう一度お試しください。</translation>
     </message>
     <message>
         <source>SSL certificate error. Your network may be blocking secure connections.</source>
@@ -898,11 +898,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Proxy connection failed. Check QGIS proxy settings (Settings &gt; Options &gt; Network).</source>
-        <translation>プロキシ接続に失敗しました。QGISのプロキシ設定を確認してください(「設定」&gt;「オプション」&gt;「ネットワーク」)。</translation>
+        <translation>プロキシ接続に失敗しました。QGISのプロキシ設定を確認してください（「設定」→「オプション」→「ネットワーク」）。</translation>
     </message>
     <message>
         <source>Authentication failed. Please sign in again.</source>
-        <translation>認証に失敗しました。再度サインインしてください。</translation>
+        <translation>認証に失敗しました。再度ログインしてください。</translation>
     </message>
     <message>
         <source>Network error. Check your internet connection.</source>
@@ -915,6 +915,14 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Loading AI Segmentation settings</source>
         <translation>AI Segmentationの設定を読み込み中</translation>
+    </message>
+    <message>
+        <source>Connecting to load settings</source>
+        <translation>設定を読み込むために接続中</translation>
+    </message>
+    <message>
+        <source>Loading run settings</source>
+        <translation>実行の設定を読み込み中</translation>
     </message>
     <message>
         <source>Refreshing your cloud detections</source>
@@ -942,7 +950,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Too generic. Draw an example instead, or use a concrete word like building.</source>
-        <translation>汎用的すぎます。代わりに例を描くか、building のような具体的な単語を使ってください。</translation>
+        <translation>汎用的すぎます。代わりに例を描くか、「建物」のような具体的な単語を使ってください。</translation>
     </message>
     <message>
         <source>Name a concrete object, not how it looks.</source>
@@ -950,7 +958,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Segment one object - drop words like 'near' or 'with'.</source>
-        <translation>1つのオブジェクトをセグメント化してください - 「near」や「with」のような単語は省いてください。</translation>
+        <translation>セグメンテーションするオブジェクトは1つにしてください。「近く」や「付き」のような言葉は省いてください。</translation>
     </message>
     <message>
         <source>Use a real object word.</source>
@@ -962,11 +970,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Did you mean '{term}'?</source>
-        <translation>「{term}」ですか?</translation>
+        <translation>「{term}」ですか？</translation>
     </message>
     <message>
         <source>Loading...</source>
-        <translation>読み込み中...</translation>
+        <translation>読み込み中…</translation>
     </message>
     <message>
         <source>No preview</source>
@@ -990,7 +998,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>{n} days ago</source>
-        <translation>{n} 日前</translation>
+        <translation>{n}日前</translation>
     </message>
     <message>
         <source>{n} detection(s)</source>
@@ -1006,11 +1014,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Search objects... e.g. building, solar panel</source>
-        <translation>オブジェクトを検索... 例: building, solar panel</translation>
+        <translation>オブジェクトを検索（例：建物、太陽光パネル）</translation>
     </message>
     <message>
         <source>Fuzzy edges: this one may need cleanup after detection.</source>
-        <translation>境界が不明瞭: 検出後に修正が必要な場合があります。</translation>
+        <translation>境界が不明瞭：検出後に修正が必要な場合があります。</translation>
     </message>
     <message>
         <source>Use this prompt</source>
@@ -1026,11 +1034,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Draw your example inside the selected zone.</source>
-        <translation>選択したゾーンの内側に例を描いてください。</translation>
+        <translation>選択した範囲の内側に例を描いてください。</translation>
     </message>
     <message>
         <source>{n} objects found</source>
-        <translation>{n} 件のオブジェクトが見つかりました</translation>
+        <translation>オブジェクトが{n}件見つかりました</translation>
     </message>
     <message>
         <source>No objects found</source>
@@ -1038,7 +1046,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>0 shown at {pct}% - lower Confidence to reveal them</source>
-        <translation>信頼度 {pct}% では0件 - 表示するには信頼度を下げてください</translation>
+        <translation>信頼度{pct}%では0件表示。信頼度を下げると表示されます</translation>
     </message>
     <message>
         <source>More objects</source>
@@ -1050,7 +1058,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Export {n} polygons</source>
-        <translation>{n} 個のポリゴンをExport</translation>
+        <translation>ポリゴン{n}個をエクスポート</translation>
     </message>
     <message>
         <source>Lower Confidence to show objects first.</source>
@@ -1058,11 +1066,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Discard these detections?</source>
-        <translation>これらの検出結果を破棄しますか?</translation>
+        <translation>これらの検出結果を破棄しますか？</translation>
     </message>
     <message>
         <source>Your {total} detections will be discarded. You keep your zone, object and settings. Running Detect again spends new cloud detections.</source>
-        <translation>{total}個の検出が破棄されます。ゾーン、オブジェクト、設定は保持されます。「検出」を再度実行すると新しいクラウド検出を使用します。</translation>
+        <translation>{total}件の検出結果が破棄されます。範囲、オブジェクト、設定は保持されます。「オブジェクトを検出」をもう一度実行すると、新たにクラウド検出を使用します。</translation>
     </message>
     <message>
         <source>Discard &amp;&amp; adjust</source>
@@ -1070,7 +1078,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Keep your detections?</source>
-        <translation>検出結果を保持しますか?</translation>
+        <translation>検出結果を保持しますか？</translation>
     </message>
     <message>
         <source>Save &amp;&amp; exit</source>
@@ -1086,11 +1094,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Start Automatic AI Segmentation</source>
-        <translation>自動AI Segmentationを開始</translation>
+        <translation>自動モードでAI Segmentationを開始</translation>
     </message>
     <message>
         <source>Draw your zone</source>
-        <translation>ゾーンを描く</translation>
+        <translation>範囲を描く</translation>
     </message>
     <message>
         <source>Click on the map to outline the area to scan.</source>
@@ -1106,7 +1114,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>undo point</source>
-        <translation>点を取り消す</translation>
+        <translation>点を元に戻す</translation>
     </message>
     <message>
         <source>cancel</source>
@@ -1118,19 +1126,19 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>e.g. building, tree, road, car</source>
-        <translation>例: building, tree, road, car</translation>
+        <translation>例：建物、樹木、道路、車</translation>
     </message>
     <message>
         <source>Browse ready-to-use objects with before / after previews.</source>
-        <translation>ビフォー/アフタープレビューつきの、すぐに使えるオブジェクトを閲覧します。</translation>
+        <translation>ビフォー／アフターのプレビュー付きで、すぐに使えるオブジェクトを閲覧します。</translation>
     </message>
     <message>
         <source>Filter detections by confidence. Lower shows more (and noisier), higher keeps only the strongest. Free and instant.</source>
-        <translation>信頼度で検出結果を絞り込みます。下げるとより多く(かつノイズも増えて)表示され、上げると信頼度の高いものだけが残ります。無料かつ即時反映です。</translation>
+        <translation>信頼度で検出結果を絞り込みます。下げるとより多く（かつノイズも増えて）表示され、上げると信頼度の高いものだけが残ります。無料かつ即時反映です。</translation>
     </message>
     <message>
         <source>Show tiles (debug)</source>
-        <translation>タイルを表示(デバッグ)</translation>
+        <translation>タイルを表示（デバッグ）</translation>
     </message>
     <message>
         <source>"{word}" will run as "{token}".</source>
@@ -1138,11 +1146,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>That word isn't recognized - try a common object like building or tree.</source>
-        <translation>その単語は認識されません - building や tree のような一般的なオブジェクトを試してください。</translation>
+        <translation>その単語は認識されません。「建物」や「樹木」のような一般的なオブジェクトを試してください。</translation>
     </message>
     <message>
         <source>One object per run - start with the first one, then run again.</source>
-        <translation>1回の実行につきオブジェクトは1種類です - まず1つ目を実行し、その後再実行してください。</translation>
+        <translation>1回の実行で扱えるオブジェクトは1つです。まず1つ目を実行し、その後もう一度実行してください。</translation>
     </message>
     <message>
         <source>The Library has ready-to-use objects.</source>
@@ -1178,7 +1186,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Copied</source>
-        <translation>コピーしました</translation>
+        <translation>コピー済み</translation>
     </message>
     <message>
         <source>Template</source>
@@ -1186,11 +1194,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Your detection</source>
-        <translation>あなたの検出結果</translation>
+        <translation>検出結果</translation>
     </message>
     <message>
         <source>Open the Library from the Automatic page to use this.</source>
-        <translation>これを使用するには、自動ページからライブラリを開いてください。</translation>
+        <translation>これを使用するには、自動モードのページからライブラリを開いてください。</translation>
     </message>
     <message>
         <source>DATE</source>
@@ -1226,11 +1234,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Reopens this run's review at the same place, with its imagery. Free, and it costs no cloud detections.</source>
-        <translation>この実行のレビューを同じ場所で再度開きます(画像付き)。無料で、クラウド検出は使用されません。</translation>
+        <translation>この実行のレビューを同じ場所で再度開きます（画像付き）。無料で、クラウド検出は使用されません。</translation>
     </message>
     <message>
         <source>Export...</source>
-        <translation>Export...</translation>
+        <translation>エクスポート…</translation>
     </message>
     <message>
         <source>Remove from favorites</source>
@@ -1242,7 +1250,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Format:</source>
-        <translation>形式:</translation>
+        <translation>形式：</translation>
     </message>
     <message>
         <source>GeoPackage keeps the embedded style; other formats are saved without a style.</source>
@@ -1250,7 +1258,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Browse...</source>
-        <translation>参照...</translation>
+        <translation>参照…</translation>
     </message>
     <message>
         <source>Recent</source>
@@ -1274,15 +1282,15 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Nothing to export at this confidence. Lower it and try again.</source>
-        <translation>この信頼度ではExportできるものがありません。下げて再試行してください。</translation>
+        <translation>この信頼度ではエクスポートできるものがありません。下げて、もう一度お試しください。</translation>
     </message>
     <message>
         <source>The export failed. Check the file path and try again.</source>
-        <translation>Exportに失敗しました。ファイルパスを確認して再試行してください。</translation>
+        <translation>エクスポートに失敗しました。ファイルパスを確認して、もう一度お試しください。</translation>
     </message>
     <message>
         <source>Exported {n} polygon(s).</source>
-        <translation>{n} 件のポリゴンをExportしました。</translation>
+        <translation>{n}個のポリゴンをエクスポートしました。</translation>
     </message>
     <message>
         <source>Add a point</source>
@@ -1306,7 +1314,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Could not place the example on the image. Redraw the example box inside the zone and try again.</source>
-        <translation>画像上に例を配置できませんでした。ゾーン内に例のボックスを再度描いて、もう一度お試しください。</translation>
+        <translation>画像上に例を配置できませんでした。範囲内に例のボックスを描き直して、もう一度お試しください。</translation>
     </message>
     <message>
         <source>Could not rebuild this run's detections.</source>
@@ -1334,7 +1342,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Finish the zone</source>
-        <translation>ゾーンを閉じる</translation>
+        <translation>範囲の描画を完了</translation>
     </message>
     <message>
         <source>General</source>
@@ -1366,7 +1374,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>One color per object - check neighbors are separated</source>
-        <translation>オブジェクトごとに色分け - 隣接するオブジェクトが分離されているか確認できます</translation>
+        <translation>オブジェクトごとに色分け。隣接するものが分かれているか確認できます</translation>
     </message>
     <message>
         <source>Out of cloud detections at {done}/{total}. Everything found so far is kept below and stays yours.</source>
@@ -1374,7 +1382,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Outlines only - check boundaries against the imagery</source>
-        <translation>輪郭のみ表示 - 画像と境界を確認してください</translation>
+        <translation>輪郭のみ表示。画像と照らして境界を確認してください</translation>
     </message>
     <message>
         <source>Pan the map</source>
@@ -1382,7 +1390,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Part of your zone is outside "{layer}" - only the overlapping area will return objects.</source>
-        <translation>ゾーンの一部が「{layer}」の外側にあります - 重なっている範囲のみオブジェクトが返されます。</translation>
+        <translation>範囲の一部が「{layer}」の外側にあります。重なっている部分からのみオブジェクトが返されます。</translation>
     </message>
     <message>
         <source>Pick an object to detect first (nothing was selected).</source>
@@ -1390,7 +1398,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Polygon saved ({n} total). Click another element, or export when done.</source>
-        <translation>ポリゴンを保存しました(合計 {n} 件)。別の要素をクリックするか、完了したらExportしてください。</translation>
+        <translation>ポリゴンを保存しました（合計{n}個）。別のオブジェクトをクリックするか、完了したらエクスポートしてください。</translation>
     </message>
     <message>
         <source>Refine seeds</source>
@@ -1406,15 +1414,15 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Remove zone</source>
-        <translation>ゾーンを削除</translation>
+        <translation>範囲を削除</translation>
     </message>
     <message>
         <source>Resets {date}</source>
-        <translation>{date} にリセット</translation>
+        <translation>{date}にリセット</translation>
     </message>
     <message>
         <source>Restored "{prompt}" - adjust and export below.</source>
-        <translation>「{prompt}」を復元しました - 以下で調整してExportしてください。</translation>
+        <translation>「{prompt}」を復元しました。下で調整してエクスポートしてください。</translation>
     </message>
     <message>
         <source>Right-click</source>
@@ -1426,11 +1434,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Session expired. Sign in again to continue.</source>
-        <translation>セッションが期限切れです。続けるには再度サインインしてください。</translation>
+        <translation>セッションの有効期限が切れました。続けるには再度ログインしてください。</translation>
     </message>
     <message>
         <source>Start (the visible mode's Start button)</source>
-        <translation>開始(表示中のモードの「開始」ボタン)</translation>
+        <translation>開始（表示中のモードの「開始」ボタン）</translation>
     </message>
     <message>
         <source>The raster was removed. Your polygons were saved to a layer.</source>
@@ -1450,11 +1458,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Writes a GeoPackage layer with your {n} kept polygons.</source>
-        <translation>保持した {n} 件のポリゴンをGeoPackageレイヤに書き込みます。</translation>
+        <translation>保持した{n}個のポリゴンをGeoPackageレイヤに書き込みます。</translation>
     </message>
     <message>
         <source>Your zone is outside "{layer}". Pick the right layer or draw inside it.</source>
-        <translation>ゾーンが「{layer}」の外側にあります。正しいレイヤを選ぶか、その内側に描いてください。</translation>
+        <translation>範囲が「{layer}」の外側にあります。正しいレイヤを選ぶか、その内側に描いてください。</translation>
     </message>
     <message>
         <source>Zone too large. Reduce the area to {max} tiles or fewer.</source>
@@ -1462,7 +1470,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>{n} of {total} free cloud detections left</source>
-        <translation>無料クラウド検出{n}個中{total}個が残っています</translation>
+        <translation>無料のクラウド検出は{total}件のうち残り{n}件</translation>
     </message>
     <message>
         <source>≈ 1 cloud detection</source>
@@ -1474,7 +1482,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>{visible} of {n} shown</source>
-        <translation>{n} 件中 {visible} 件を表示中</translation>
+        <translation>{n}件中{visible}件を表示中</translation>
     </message>
     <message>
         <source>all shown</source>
@@ -1482,7 +1490,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>{visible} of {n} shown</source>
-        <translation>{n} 件中 {visible} 件を表示中</translation>
+        <translation>{n}件中{visible}件を表示中</translation>
     </message>
     <message>
         <source>Show guidance tips again</source>
@@ -1498,15 +1506,15 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Reload this zone and object, ready to detect.</source>
-        <translation>このゾーンとオブジェクトを再読み込みし、検出できる状態にします。</translation>
+        <translation>この範囲とオブジェクトを再読み込みし、検出できる状態にします。</translation>
     </message>
     <message>
         <source>Same object, new zone</source>
-        <translation>同じオブジェクト、新しいゾーン</translation>
+        <translation>同じオブジェクト、新しい範囲</translation>
     </message>
     <message>
         <source>Keep this object and draw a new zone on the map.</source>
-        <translation>このオブジェクトを保持し、地図上に新しいゾーンを描きます。</translation>
+        <translation>このオブジェクトを保持し、地図上に新しい範囲を描きます。</translation>
     </message>
     <message>
         <source>Upgrade to Pro</source>
@@ -1514,7 +1522,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Free account - sign up takes 15 seconds in your browser.</source>
-        <translation>無料アカウント - ブラウザでの登録は15秒で完了します。</translation>
+        <translation>無料アカウント。ブラウザでの新規登録は15秒で完了します。</translation>
     </message>
     <message>
         <source>Then segment any imagery: point and click, or fully automatic.</source>
@@ -1522,11 +1530,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Waiting for your browser sign-in...</source>
-        <translation>ブラウザでのサインインを待っています...</translation>
+        <translation>ブラウザでのログインを待っています…</translation>
     </message>
     <message>
         <source>Got it - hide this tip</source>
-        <translation>わかりました - このヒントを隠す</translation>
+        <translation>わかりました。このヒントを非表示にします</translation>
     </message>
     <message>
         <source>Finish or cancel the current detection before re-running a past one.</source>
@@ -1534,7 +1542,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>0 shown - lower the Min size filter to reveal them</source>
-        <translation>0件 - 表示するには最小サイズフィルタを下げてください</translation>
+        <translation>0件表示。最小サイズのフィルタを下げると表示されます</translation>
     </message>
     <message>
         <source>A Component Failed to Load</source>
@@ -1554,7 +1562,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>An install or detection is still running. Wait for it to finish, then try again.</source>
-        <translation>インストールまたは検出が実行中です。完了するまで待ってから再試行してください。</translation>
+        <translation>インストールまたは検出が実行中です。完了するまで待ってからもう一度お試しください。</translation>
     </message>
     <message>
         <source>Any GeoTIFF, WMS or XYZ basemap.</source>
@@ -1574,21 +1582,21 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Could not reach the service. Check your connection and try again.</source>
-        <translation>サービスに接続できませんでした。接続を確認して再試行してください。</translation>
+        <translation>サービスに接続できませんでした。接続を確認して、もう一度お試しください。</translation>
     </message>
     <message>
         <source>Could not read pixels from this {ext} file. The file may be corrupt, truncated, or use a compression your GDAL build cannot decode.
 Try opening it in QGIS to confirm it displays, or convert it to GeoTIFF (.tif) before using AI Segmentation.</source>
         <translation>この{ext}ファイルからピクセルを読み込めませんでした。ファイルが破損・切り詰められているか、お使いのGDALビルドがデコードできない圧縮形式を使用している可能性があります。
-QGISで開いて表示できるか確認するか、AI Segmentationを使用する前にGeoTIFF(.tif)に変換してください。</translation>
+QGISで開いて表示できるか確認するか、AI Segmentationを使用する前にGeoTIFF（.tif）に変換してください。</translation>
     </message>
     <message>
         <source>Could not remove the AI data. Try again.</source>
-        <translation>AIデータを削除できませんでした。再試行してください。</translation>
+        <translation>AIデータを削除できませんでした。もう一度お試しください。</translation>
     </message>
     <message>
         <source>Couldn't load the demo imagery. Check your internet connection, or add your own layer.</source>
-        <translation>デモ画像を読み込めませんでした。インターネット接続を確認するか、独自のレイヤを追加してください。</translation>
+        <translation>サンプル画像を読み込めませんでした。インターネット接続を確認するか、独自のレイヤを追加してください。</translation>
     </message>
     <message>
         <source>Detected object</source>
@@ -1596,11 +1604,11 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Detection failed. Run Detect again, and lower the precision if it fails a second time.</source>
-        <translation>検出に失敗しました。「検出」を再度実行し、2回目の失敗の場合は精度を下げてください。</translation>
+        <translation>検出に失敗しました。「オブジェクトを検出」をもう一度実行し、再度失敗する場合は詳細度を下げてください。</translation>
     </message>
     <message>
         <source>Downloaded AI data removed. You have been signed out.</source>
-        <translation>ダウンロード済みのAIデータを削除しました。サインアウトされました。</translation>
+        <translation>ダウンロード済みのAIデータを削除しました。ログアウトされました。</translation>
     </message>
     <message>
         <source>Draw on the map</source>
@@ -1608,7 +1616,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Free plan</source>
-        <translation>無料プラン</translation>
+        <translation>Freeプラン</translation>
     </message>
     <message>
         <source>Hide parts larger than this ground area. 0 = no limit.</source>
@@ -1656,7 +1664,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Online layer returned blank tiles for this area. The current zoom level may be outside the service's range, or this area has no coverage. Zoom to a level where the layer is visible on the map, then try again.</source>
-        <translation>オンラインレイヤがこの範囲で空白のタイルを返しました。現在のズームレベルがサービスの対応範囲外か、この範囲にデータがない可能性があります。レイヤが地図上に表示されるズームレベルに変更してから、再試行してください。</translation>
+        <translation>オンラインレイヤがこのエリアで空白のタイルを返しました。現在のズームレベルがサービスの対応範囲外か、このエリアにデータがない可能性があります。レイヤが地図上に表示されるズームレベルに変更してから、もう一度お試しください。</translation>
     </message>
     <message>
         <source>Open the step-by-step tutorial</source>
@@ -1696,15 +1704,15 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Remove the downloaded AI data from this computer?</source>
-        <translation>このコンピュータからダウンロード済みのAIデータを削除しますか?</translation>
+        <translation>このコンピュータからダウンロード済みのAIデータを削除しますか？</translation>
     </message>
     <message>
         <source>Removing...</source>
-        <translation>削除中...</translation>
+        <translation>削除中…</translation>
     </message>
     <message>
         <source>Right level for {obj} in this zone.</source>
-        <translation>このゾーンの{obj}に適した詳細度です。</translation>
+        <translation>この範囲の{obj}に適した詳細度です。</translation>
     </message>
     <message>
         <source>Rotated raster</source>
@@ -1712,23 +1720,23 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Save {save} detections ({hidden} currently hidden by Confidence) to a layer before leaving?</source>
-        <translation>終了する前に、{save} 件の検出結果(うち {hidden} 件は現在信頼度により非表示)をレイヤに保存しますか?</translation>
+        <translation>終了する前に、検出結果{save}件（うち{hidden}件は現在、信頼度により非表示）をレイヤに保存しますか？</translation>
     </message>
     <message>
         <source>Save {save} detections to a layer before leaving?</source>
-        <translation>終了する前に、{save} 件の検出結果をレイヤに保存しますか?</translation>
+        <translation>終了する前に、検出結果{save}件をレイヤに保存しますか？</translation>
     </message>
     <message>
         <source>Segment library (view only)</source>
-        <translation>セグメントライブラリ(閲覧のみ)</translation>
+        <translation>セグメントライブラリ（閲覧のみ）</translation>
     </message>
     <message>
         <source>Segmentation failed. Please try again.</source>
-        <translation>セグメンテーションに失敗しました。再試行してください。</translation>
+        <translation>セグメンテーションに失敗しました。もう一度お試しください。</translation>
     </message>
     <message>
         <source>Sharper than {obj} usually needs - catches the smallest ones.</source>
-        <translation>{obj}に通常必要な精度より高く、最も小さいものまで捉えます。</translation>
+        <translation>{obj}に通常必要な詳細度より高く、最も小さいものまで捉えます。</translation>
     </message>
     <message>
         <source>Small {obj} may be missed at this level.</source>
@@ -1736,15 +1744,15 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Something went wrong saving your detections. Please try again.</source>
-        <translation>検出結果の保存中に問題が発生しました。再試行してください。</translation>
+        <translation>検出結果の保存中に問題が発生しました。もう一度お試しください。</translation>
     </message>
     <message>
         <source>Something went wrong starting the detection. Please try again.</source>
-        <translation>検出の開始中に問題が発生しました。再試行してください。</translation>
+        <translation>検出の開始中に問題が発生しました。もう一度お試しください。</translation>
     </message>
     <message>
         <source>Support code: {code}</source>
-        <translation>サポートコード: {code}</translation>
+        <translation>サポートコード：{code}</translation>
     </message>
     <message>
         <source>Team or organization?</source>
@@ -1756,11 +1764,11 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>The detection service is busy right now. Please try again in a moment.</source>
-        <translation>検出サービスは現在混雑しています。しばらくしてから再試行してください。</translation>
+        <translation>検出サービスは現在混雑しています。しばらくしてから、もう一度お試しください。</translation>
     </message>
     <message>
         <source>The service is temporarily unavailable (server error). Your connection is fine - please try again in a few minutes.</source>
-        <translation>サービスは一時的に利用できません(サーバーエラー)。接続には問題ありません - 数分後に再試行してください。</translation>
+        <translation>サービスは一時的に利用できません（サーバーエラー）。接続には問題ありません。数分後にもう一度お試しください。</translation>
     </message>
     <message>
         <source>There's a problem with your subscription. Open Settings to update your payment method or review your plan.</source>
@@ -1776,11 +1784,11 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>This raster uses a geographic CRS (degrees), which distorts the imagery sent to the AI. For best results, reproject it to a projected CRS (e.g. UTM).</source>
-        <translation>このラスタは地理座標系(度単位)を使用しており、AIに送信される画像が歪んでしまいます。最良の結果を得るには、投影座標系(UTMなど)に再投影してください。</translation>
+        <translation>このラスタは地理座標系（度単位）を使用しており、AIに送信される画像が歪んでしまいます。最良の結果を得るには、投影座標系（UTMなど）に再投影してください。</translation>
     </message>
     <message>
         <source>Tip: this raster has no overviews (pyramids). Build them (Raster menu, Miscellaneous, Build Overviews) to make detection much faster.</source>
-        <translation>ヒント: このラスタにはオーバービュー(ピラミッド)がありません。作成する(ラスタメニュー &gt; その他 &gt; オーバービューの作成)と、検出が大幅に高速化されます。</translation>
+        <translation>ヒント：このラスタにはオーバービュー（ピラミッド）がありません。「ラスタ」→「その他」→「オーバービューの作成」で作成すると、検出が大幅に高速化されます。</translation>
     </message>
     <message>
         <source>Try "{word}" instead</source>
@@ -1800,7 +1808,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Very fine for {obj} - large ones may come back split in parts.</source>
-        <translation>{obj}には非常に細かい設定です - 大きなものは分割されて返される場合があります。</translation>
+        <translation>{obj}には非常に細かい設定です。大きなものは分割されて返される場合があります。</translation>
     </message>
     <message>
         <source>View detections as:</source>
@@ -1832,41 +1840,41 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>your object</source>
-        <translation>あなたのオブジェクト</translation>
+        <translation>オブジェクト</translation>
     </message>
     <message>
         <source>{n} found so far</source>
-        <translation>これまでに {n} 件発見</translation>
+        <translation>これまでに{n}件発見</translation>
     </message>
     
     <message>
         <source>This zone is {area} km². Free zones stop at {max} km².</source>
-        <translation>このゾーンは{area} km²です。無料のゾーンは{max} km²までです。</translation>
+        <translation>この範囲は{area}km²です。無料で描ける範囲は{max}km²までです。</translation>
     </message>
 
     <message>
         <source>&lt;a href="{url}"&gt;Upgrade to Pro&lt;/a&gt; to run this zone as drawn, or make it smaller.</source>
-        <translation>&lt;a href="{url}"&gt;Proにアップグレード&lt;/a&gt;してこのゾーンを描画どおりに実行するか、ゾーンを小さくしてください。</translation>
+        <translation>&lt;a href="{url}"&gt;Proにアップグレード&lt;/a&gt;してこの範囲をそのまま実行するか、範囲を小さくしてください。</translation>
     </message>
     <message>
         <source>Sending to the AI...</source>
-        <translation>AIに送信中...</translation>
+        <translation>AIに送信中…</translation>
     </message>
     <message>
         <source>Spot reserved · starting in a few seconds...</source>
-        <translation>順番を確保済み · 数秒後に開始...</translation>
+        <translation>順番を確保済み・数秒後に開始…</translation>
     </message>
     <message>
         <source>Spot reserved · starting soon...</source>
-        <translation>順番を確保済み · もうすぐ開始...</translation>
+        <translation>順番を確保済み・もうすぐ開始…</translation>
     </message>
     <message>
         <source>Stopping - keeping everything already found...</source>
-        <translation>停止中 - 既に見つかったすべてが保持されています...</translation>
+        <translation>停止中…見つかったものはすべて保持されます</translation>
     </message>
     <message>
         <source>Stopping...</source>
-        <translation>停止中...</translation>
+        <translation>停止中…</translation>
     </message>
     <message>
         <source>The AI is starting up, almost there... {n}s</source>
@@ -1878,7 +1886,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>You're next · starting now...</source>
-        <translation>順番が来ました · 開始します...</translation>
+        <translation>順番が来ました・開始します…</translation>
     </message>
     <message>
         <source>Cancelled</source>
@@ -1890,7 +1898,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Select a raster layer to segment:</source>
-        <translation>セグメント化するラスタレイヤを選択:</translation>
+        <translation>セグメンテーションするラスタレイヤを選択:</translation>
     </message>
     <message>
         <source>Your {n} free detections are used up</source>
@@ -1898,7 +1906,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>1 object found</source>
-        <translation>1 件のオブジェクトが見つかりました</translation>
+        <translation>オブジェクトが1件見つかりました</translation>
     </message>
     <message>
         <source>Download AI model</source>
@@ -1906,11 +1914,11 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Export 1 polygon</source>
-        <translation>1 個のポリゴンをExport</translation>
+        <translation>ポリゴン1個をエクスポート</translation>
     </message>
     <message>
         <source>Resolving object name</source>
-        <translation>オブジェクト名を解決しています</translation>
+        <translation>オブジェクト名を解決中</translation>
     </message>
     <message>
         <source>Your free detections are used up</source>
@@ -1946,7 +1954,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>A shape was removed. Click Save to confirm.</source>
-        <translation>形状が削除されました。保存をクリックして確定してください。</translation>
+        <translation>図形が削除されました。「保存」をクリックして確定してください。</translation>
     </message>
     <message>
         <source>AI</source>
@@ -1962,7 +1970,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Add another example - more references detect more</source>
-        <translation>例をもう1つ追加 - 参照が増えるほど検出も増えます</translation>
+        <translation>例をもう1つ追加。参照が増えるほど多く検出します</translation>
     </message>
     <message>
         <source>Add one more example for the best results.</source>
@@ -1974,15 +1982,15 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Almost done - building the shapes...</source>
-        <translation>もうすぐ完了 - 形状を生成中...</translation>
+        <translation>もうすぐ完了です。図形を生成中…</translation>
     </message>
     <message>
         <source>Another QGIS window is installing the AI components. Wait for it to finish, then try again.</source>
-        <translation>別のQGISウィンドウでAIコンポーネントをインストール中です。完了するまで待ってから、再試行してください。</translation>
+        <translation>別のQGISウィンドウでAIコンポーネントをインストール中です。完了するまで待ってから、もう一度お試しください。</translation>
     </message>
     <message>
         <source>Another QGIS window is installing the AI engine. Wait for it to finish, then try again.</source>
-        <translation>別のQGISウィンドウでAIエンジンをインストール中です。完了するまで待ってから、再試行してください。</translation>
+        <translation>別のQGISウィンドウでAIエンジンをインストール中です。完了するまで待ってから、もう一度お試しください。</translation>
     </message>
     <message>
         <source>Automatic detection failed</source>
@@ -1990,19 +1998,19 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Automatic: detect</source>
-        <translation>自動: 検出</translation>
+        <translation>自動：検出</translation>
     </message>
     <message>
         <source>Automatic: draw the zone</source>
-        <translation>自動: ゾーンを描く</translation>
+        <translation>自動：範囲を描く</translation>
     </message>
     <message>
         <source>Automatic: merge with neighbours</source>
-        <translation>自動: 隣接する図形と結合</translation>
+        <translation>自動：隣接する図形と結合</translation>
     </message>
     <message>
         <source>Automatic: review and Correct</source>
-        <translation>自動: レビューと修正</translation>
+        <translation>自動：レビューと修正</translation>
     </message>
     <message>
         <source>Best quality. Two references locked in.</source>
@@ -2014,7 +2022,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Calculating...</source>
-        <translation>計算中...</translation>
+        <translation>計算中…</translation>
     </message>
     <message>
         <source>Cancel the example box, the detection, or exit Automatic</source>
@@ -2034,15 +2042,15 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Checking the object name...</source>
-        <translation>オブジェクト名を確認中...</translation>
+        <translation>オブジェクト名を確認中…</translation>
     </message>
     <message>
         <source>Choose how to fix the polygon: AI points or QGIS vertices</source>
-        <translation>ポリゴンの修正方法を選択: AIの点操作かQGISの頂点操作</translation>
+        <translation>ポリゴンの修正方法を選択：AIの点操作かQGISの頂点操作</translation>
     </message>
     <message>
         <source>Clean up the outlines</source>
-        <translation>輪郭をクリーンに</translation>
+        <translation>輪郭を整える</translation>
     </message>
     <message>
         <source>Clear all</source>
@@ -2054,7 +2062,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Clear the selection, or stop the segmentation</source>
-        <translation>選択を解除、またはセグメンテーションを停止</translation>
+        <translation>選択範囲を解除、またはセグメンテーションを停止</translation>
     </message>
     <message>
         <source>Click a polygon, then click the spot the AI missed.</source>
@@ -2070,11 +2078,11 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Click each corner of the object, then Finish.</source>
-        <translation>オブジェクトの角を順にクリックし、完了してください。</translation>
+        <translation>オブジェクトの角を順にクリックし、「線を完了」をクリックしてください。</translation>
     </message>
     <message>
         <source>Click each corner on the map, then Finish the line.</source>
-        <translation>地図上で角を1つずつクリックしてから、線の描画を完了してください。</translation>
+        <translation>地図上で角を1つずつクリックしてから、「線を完了」をクリックしてください。</translation>
     </message>
     <message>
         <source>Click each piece of the object you want to join.</source>
@@ -2086,7 +2094,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Close the fix, clear the selection, or exit the review</source>
-        <translation>修正を閉じる、選択を解除、またはレビューを終了</translation>
+        <translation>修正を閉じる、選択範囲を解除、またはレビューを終了</translation>
     </message>
     <message>
         <source>Close the gaps inside this polygon, without filling the courtyards the rest of the layer is meant to keep.</source>
@@ -2126,7 +2134,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Cut thin spurs off this polygon (0 = off). Raise it on a single ragged outline instead of eroding the whole layer.</source>
-        <translation>このポリゴンの細いギザギザを除去します(0 = オフ)。レイヤ全体を侵食するのではなく、輪郭が特に荒れたこの1枚だけで値を上げてください。</translation>
+        <translation>このポリゴンの細い突起を取り除きます（0でオフ）。レイヤ全体を削るのではなく、輪郭が荒れた1つのポリゴンだけで値を上げてください。</translation>
     </message>
     <message>
         <source>Delete this corner</source>
@@ -2138,11 +2146,11 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Delete this polygon (the Delete key works too, and a right-click on the map deletes the shape under the cursor). Undo brings it back.</source>
-        <translation>このポリゴンを削除します(Deleteキーでも削除でき、地図上で右クリックするとカーソル下の形状を削除できます)。元に戻すと復元できます。</translation>
+        <translation>このポリゴンを削除します（Deleteキーでも削除でき、地図上で右クリックするとカーソル下の図形を削除できます）。元に戻すと復元できます。</translation>
     </message>
     <message>
         <source>Deleting the downloaded data...</source>
-        <translation>ダウンロード済みのデータを削除中...</translation>
+        <translation>ダウンロード済みのデータを削除中…</translation>
     </message>
     <message>
         <source>Dense area {current}/{total}</source>
@@ -2150,7 +2158,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Dense forest? "Forest" takes it as one block; "Tree" picks individual trees.</source>
-        <translation>密集した森林ですか?「Forest」は全体を1つの塊として扱い、「Tree」は個々の木を検出します。</translation>
+        <translation>密集した森林ですか？「森林」は全体を1つの塊として扱い、「樹木」は個々の木を検出します。</translation>
     </message>
     <message>
         <source>Detection stopped early after {done} cloud detection(s). Everything found is kept below and stays yours.</source>
@@ -2158,7 +2166,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Discard reviewed results and run again? Confirm</source>
-        <translation>レビュー済みの結果を破棄して再実行しますか? 確定</translation>
+        <translation>レビュー済みの結果を破棄して再実行しますか？確定</translation>
     </message>
     <message>
         <source>Distinct</source>
@@ -2182,7 +2190,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Draw a line right across the shape, then Finish.</source>
-        <translation>形状を横切るように線を描き、完了してください。</translation>
+        <translation>図形を横切るように線を描き、「線を完了」をクリックしてください。</translation>
     </message>
     <message>
         <source>Draw an example, or type what to find.</source>
@@ -2194,15 +2202,15 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Draw one '{object}' - the AI finds the rest</source>
-        <translation>「{object}」を1つ描く - あとはAIが見つけます</translation>
+        <translation>「{object}」を1つ描くと、残りはAIが見つけます</translation>
     </message>
     <message>
         <source>Draw one example - the AI finds the rest</source>
-        <translation>例を1つ描く - あとはAIが見つけます</translation>
+        <translation>例を1つ描くと、残りはAIが見つけます</translation>
     </message>
     <message>
         <source>Draw the new edge: start outside the shape, cross it, end outside, then Finish.</source>
-        <translation>新しい辺を描きます: 形状の外側から始めて横切り、外側で終えたら完了してください。</translation>
+        <translation>新しい辺を描きます：図形の外側から始めて横切り、外側で終えたら「線を完了」をクリックしてください。</translation>
     </message>
     <message>
         <source>Drawn examples</source>
@@ -2210,7 +2218,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Drop points closer than this distance to a straight edge (0 = off). A distance, not a count: pushed high it can flatten curved walls. Points is usually the better dial for thinning an outline.</source>
-        <translation>直線の辺からこの距離より近い点を削除します(0 = オフ)。これは距離であり、点の数ではありません。上げすぎると曲線の壁が平らになることがあります。輪郭を間引くには、通常「点の数」の方が適しています。</translation>
+        <translation>直線の辺からこの距離より近い点を削除します（0でオフ）。これは距離であり、点の数ではありません。上げすぎると曲線の壁が平らになることがあります。輪郭を間引くには、通常「点の数」の方が適しています。</translation>
     </message>
     <message>
         <source>Drop points closer than this distance to a straight edge (0 = off). A distance, not a count: pushed high it can flatten curved walls. Points is usually the better dial; this stays for comparison.</source>
@@ -2218,7 +2226,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Drop this polygon's points closer than this distance to a straight edge (0 = off). A distance, not a count; Points is usually the better dial.</source>
-        <translation>このポリゴンで、直線の辺からこの距離より近い点を削除します(0 = オフ)。これは距離であり点の数ではありません。通常は「点の数」の方が適しています。</translation>
+        <translation>このポリゴンで、直線の辺からこの距離より近い点を削除します（0でオフ）。これは距離であり点の数ではありません。通常は「点の数」の方が適しています。</translation>
     </message>
     <message>
         <source>Edit an existing polygon</source>
@@ -2238,7 +2246,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Fill only holes smaller than this ground area. Bigger holes (a road median, a courtyard) stay open. No limit = fill every hole.</source>
-        <translation>この地上面積より小さい穴のみを埋めます。それより大きな穴(道路の中央分離帯や中庭など)はそのまま残ります。上限なし = すべての穴を埋めます。</translation>
+        <translation>この地上面積より小さい穴のみを埋めます。それより大きな穴（道路の中央分離帯や中庭など）はそのまま残ります。無制限 = すべての穴を埋めます。</translation>
     </message>
     <message>
         <source>Finish the line</source>
@@ -2254,7 +2262,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Give this one polygon its own shape settings, without moving the dials that drive the whole layer.</source>
-        <translation>レイヤ全体に影響する設定はそのままに、このポリゴンだけに専用の形状設定を与えます。</translation>
+        <translation>レイヤ全体に影響する設定はそのままに、このポリゴンだけに専用の図形の設定を与えます。</translation>
     </message>
     <message>
         <source>Go back to picking polygons. Everything you kept stays, and so does the outline on screen.</source>
@@ -2262,7 +2270,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Go back to your zone, references and settings, then detect the whole zone again. Nothing is saved.</source>
-        <translation>ゾーン、参照画像、設定に戻り、ゾーン全体を再度検出します。何も保存されません。</translation>
+        <translation>範囲、参照、設定に戻り、範囲全体をもう一度検出します。何も保存されません。</translation>
     </message>
     <message>
         <source>Grow / shrink</source>
@@ -2270,7 +2278,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>How detections are coloured on the map (visual only): Normal fill, Outline, Confidence heatmap, or a distinct colour per object to tell them apart.</source>
-        <translation>地図上での検出結果の色分け方法(表示のみ): 通常の塗りつぶし、輪郭、信頼度ヒートマップ、またはオブジェクトごとに色を変えて見分ける、から選べます。</translation>
+        <translation>地図上での検出結果の色分け方法（表示のみ）：通常の塗りつぶし、輪郭、信頼度ヒートマップ、またはオブジェクトごとの個別色から選べます。</translation>
     </message>
     <message>
         <source>How many of this polygon's points to keep. The count in the title row follows it. It runs before Right angles, so lowering it gives the squaring straight walls instead of a staircase.</source>
@@ -2278,15 +2286,15 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>How sure the AI is about each object. Lower shows more, higher keeps only the sure ones.</source>
-        <translation>AIが各オブジェクトをどれだけ確信しているかです。下げるとより多く表示され、上げると確信度の高いものだけが残ります。</translation>
+        <translation>AIが各オブジェクトをどれだけ確信しているかです。下げるとより多く表示され、上げると信頼度の高いものだけが残ります。</translation>
     </message>
     <message>
         <source>Closed forest: the AI takes it as one cover and does not separate its trees. For the forest as one area, re-run with "forest".</source>
-        <translation>閉鎖した森林: AIは全体を1つの樹冠として扱い、個々の木を分けません。森全体を1つのエリアとして扱うには、「forest」で再実行してください。</translation>
+        <translation>密な森林：AIは全体をひとまとまりとして扱い、樹木を1本ずつには分けません。森林を1つのエリアとして扱うには、「森林」で再実行してください。</translation>
     </message>
     <message>
         <source>Identify new shape</source>
-        <translation>新しい形状を識別</translation>
+        <translation>新しい図形を識別</translation>
     </message>
     <message>
         <source>Installation Already Running</source>
@@ -2330,7 +2338,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Keep this outline and point at the next object. Shortcut: S</source>
-        <translation>この輪郭を保持し、次のオブジェクトを指定します。キー: S</translation>
+        <translation>この輪郭を保持し、次のオブジェクトを指定します。ショートカット：S</translation>
     </message>
     <message>
         <source>Left-click adds a keep point, right-click a trim point. The outline follows.</source>
@@ -2342,7 +2350,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Loading stored detections ({done} of {total})</source>
-        <translation>保存済み検出結果を読み込み中 ({done}/{total})</translation>
+        <translation>保存済み検出結果を読み込み中（{done}/{total}）</translation>
     </message>
     <message>
         <source>Maximum</source>
@@ -2350,11 +2358,11 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Measuring AI data size...</source>
-        <translation>AIデータのサイズを測定中...</translation>
+        <translation>AIデータのサイズを測定中…</translation>
     </message>
     <message>
         <source>Measuring the downloaded data...</source>
-        <translation>ダウンロード済みデータを測定中...</translation>
+        <translation>ダウンロード済みデータを測定中…</translation>
     </message>
     <message>
         <source>Merge with neighbours</source>
@@ -2362,7 +2370,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Merge {n} shapes · Free</source>
-        <translation>{n} 件の形状を結合 · 無料</translation>
+        <translation>{n}個の図形を結合 · 無料</translation>
     </message>
     <message>
         <source>Minimum</source>
@@ -2378,7 +2386,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Navigation (while a tool is armed)</source>
-        <translation>ナビゲーション(ツールが有効なとき)</translation>
+        <translation>ナビゲーション（ツールが有効なとき）</translation>
     </message>
     <message>
         <source>New polygon</source>
@@ -2386,11 +2394,11 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>New shape added. Click Save to keep it.</source>
-        <translation>新しい形状が追加されました。保存をクリックして確定してください。</translation>
+        <translation>新しい図形を追加しました。「保存」をクリックして保持してください。</translation>
     </message>
     <message>
         <source>No connection to the sign-in service. Check your internet connection, then click Sign in to try again.</source>
-        <translation>サインインサービスに接続できません。インターネット接続を確認してから、「サインイン」をクリックして再試行してください。</translation>
+        <translation>ログインサービスに接続できません。インターネット接続を確認してから、「ログイン」をクリックして、もう一度お試しください。</translation>
     </message>
     <message>
         <source>No detection under that click.</source>
@@ -2406,7 +2414,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Nothing changed. The line has to cross the outline twice, starting and ending outside the shape.</source>
-        <translation>何も変更されませんでした。線は輪郭を2回横切り、形状の外側で始まって外側で終わる必要があります。</translation>
+        <translation>何も変更されませんでした。線は輪郭を2回横切り、図形の外側で始まって外側で終わる必要があります。</translation>
     </message>
     <message>
         <source>Nothing was added. A polygon needs at least three corners.</source>
@@ -2414,7 +2422,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Nothing was split. The line has to cross the shape completely, starting and ending outside it.</source>
-        <translation>何も分割されませんでした。線は形状を完全に横切り、外側で始まって外側で終わる必要があります。</translation>
+        <translation>何も分割されませんでした。線は図形を完全に横切り、外側で始まって外側で終わる必要があります。</translation>
     </message>
     <message>
         <source>Now click the other pieces of this object.</source>
@@ -2426,11 +2434,11 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>One object per run - Detect will run "{first}" first.</source>
-        <translation>1回の実行で扱えるオブジェクトは1つです - 検出はまず「{first}」を実行します。</translation>
+        <translation>1回の実行で扱えるオブジェクトは1つです。まず「{first}」を検出します。</translation>
     </message>
     <message>
         <source>One object per run - detecting "{first}" now. Run the other objects as separate detections.</source>
-        <translation>1回の実行で扱えるオブジェクトは1つです - 現在「{first}」を検出中です。他のオブジェクトは別の検出として実行してください。</translation>
+        <translation>1回の実行で扱えるオブジェクトは1つです。現在「{first}」を検出中です。他のオブジェクトは別の検出として実行してください。</translation>
     </message>
     <message>
         <source>Open the selected saved polygon for AI editing</source>
@@ -2450,7 +2458,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Pick at least two shapes to merge them.</source>
-        <translation>結合するには、少なくとも2つの形状を選んでください。</translation>
+        <translation>結合するには、図形を2つ以上選んでください。</translation>
     </message>
     <message>
         <source>Pick or un-pick an object</source>
@@ -2470,7 +2478,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Points: {n}</source>
-        <translation>点の数: {n}</translation>
+        <translation>点の数：{n}</translation>
     </message>
     <message>
         <source>Positive = grow outward, negative = shrink inward</source>
@@ -2482,7 +2490,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Push this polygon's edge out (positive) or in (negative), for the one footprint the model cut short or overran.</source>
-        <translation>このポリゴンの縁を外側(正の値)または内側(負の値)に押し出します。モデルが縮めすぎた、または広げすぎた輪郭に使います。</translation>
+        <translation>このポリゴンの縁を外側（正の値）または内側（負の値）に押し出します。モデルが縮めすぎた、または広げすぎた輪郭に使います。</translation>
     </message>
     <message>
         <source>QGIS could not activate the temporary review layer. Close any other editing session, then try Edit manually again.</source>
@@ -2494,23 +2502,23 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Re-run the whole zone</source>
-        <translation>ゾーン全体を再実行</translation>
+        <translation>範囲全体を再実行</translation>
     </message>
     <message>
         <source>Reading the imagery around this polygon...</source>
-        <translation>このポリゴン周辺の画像を読み込み中...</translation>
+        <translation>このポリゴン周辺の画像を読み込み中…</translation>
     </message>
     <message>
         <source>Reading the imagery around your click...</source>
-        <translation>クリック周辺の画像を読み込み中...</translation>
+        <translation>クリック周辺の画像を読み込み中…</translation>
     </message>
     <message>
         <source>Reading this run...</source>
-        <translation>この実行を読み込み中...</translation>
+        <translation>この実行を読み込み中…</translation>
     </message>
     <message>
         <source>Rebuilding shapes ({done} of {total})</source>
-        <translation>形状を再構築中 ({done}/{total})</translation>
+        <translation>図形を再構築中（{done}/{total}）</translation>
     </message>
     <message>
         <source>Redraw edge</source>
@@ -2530,7 +2538,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Removing the downloaded AI data...</source>
-        <translation>ダウンロード済みのAIデータを削除中...</translation>
+        <translation>ダウンロード済みのAIデータを削除中…</translation>
     </message>
     <message>
         <source>Replace one side by drawing a new line across the outline.</source>
@@ -2566,7 +2574,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Run this zone again</source>
-        <translation>このゾーンを再実行</translation>
+        <translation>この範囲を再実行</translation>
     </message>
     <message>
         <source>Save</source>
@@ -2574,23 +2582,23 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Save the fix and go back to the review</source>
-        <translation>修正を保存し、レビューに戻ります。</translation>
+        <translation>修正を保存してレビューに戻る</translation>
     </message>
     <message>
         <source>Shape updated. Keep editing, or click Save.</source>
-        <translation>形状が更新されました。編集を続けるか、保存をクリックしてください。</translation>
+        <translation>図形を更新しました。編集を続けるか、「保存」をクリックしてください。</translation>
     </message>
     <message>
         <source>Shapes</source>
-        <translation>形状</translation>
+        <translation>図形</translation>
     </message>
     <message>
         <source>Shared borders:</source>
-        <translation>境界線を共有:</translation>
+        <translation>共有境界:</translation>
     </message>
     <message>
         <source>Shave thin spikes and ragged bits off each shape's outline. It leaves the main body alone; higher values trim more. 0 = off.</source>
-        <translation>各形状の輪郭から細いギザギザを取り除きます。本体部分はそのまま残り、値を上げるほど多く削られます。0 = オフ。</translation>
+        <translation>各図形の輪郭から細い突起やギザギザを取り除きます。本体はそのまま残り、値を上げるほど多く削られます。0でオフになります。</translation>
     </message>
     <message>
         <source>Show what it looks like</source>
@@ -2598,15 +2606,15 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Simplify</source>
-        <translation>単純化</translation>
+        <translation>簡素化</translation>
     </message>
     <message>
         <source>Snap walls to right angles, 45 degree walls included. Made for buildings, pools and solar panels. A shape it would distort is left as it is.</source>
-        <translation>壁を直角にスナップします(45度の壁も含みます)。建物、プール、太陽光パネル向けです。形状が歪んでしまう場合はそのまま残します。</translation>
+        <translation>壁を直角にスナップします（45度の壁も含みます）。建物、プール、太陽光パネル向けです。歪んでしまう図形はそのまま残します。</translation>
     </message>
     <message>
         <source>Something went wrong preparing the results. Please run Detect again.</source>
-        <translation>結果の準備中に問題が発生しました。もう一度検出を実行してください。</translation>
+        <translation>結果の準備中に問題が発生しました。「オブジェクトを検出」をもう一度実行してください。</translation>
     </message>
     <message>
         <source>Something went wrong preparing the results. Your detections were saved to the layer {name}.</source>
@@ -2626,7 +2634,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Still waiting for the sign-in page. If no browser opened, or the page shows an error, click Cancel and try again.</source>
-        <translation>サインインページを待っています。ブラウザが開かない場合やエラーが表示される場合は、「キャンセル」をクリックして再試行してください。</translation>
+        <translation>ログインページを待っています。ブラウザが開かない場合やエラーが表示される場合は、「キャンセル」をクリックして、もう一度お試しください。</translation>
     </message>
     <message>
         <source>Stop adding</source>
@@ -2634,11 +2642,11 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Stopping the local AI...</source>
-        <translation>ローカルAIを停止中...</translation>
+        <translation>オフラインAIを停止中…</translation>
     </message>
     <message>
         <source>That area does not touch the object you are editing, so nothing was added. Reshaping works on one object at a time.</source>
-        <translation>その範囲は編集中のオブジェクトに接していないため、何も追加されませんでした。形状変更は一度に1つのオブジェクトに対してのみ行えます。</translation>
+        <translation>その部分は編集中のオブジェクトに接していないため、何も追加されませんでした。形状変更は一度に1つのオブジェクトに対してのみ行えます。</translation>
     </message>
     <message>
         <source>The AI finds every object that looks like your examples - you can draw up to 3.</source>
@@ -2646,11 +2654,11 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>The connection to the server was interrupted. Please try again.</source>
-        <translation>サーバーへの接続が中断されました。再試行してください。</translation>
+        <translation>サーバーへの接続が中断されました。もう一度お試しください。</translation>
     </message>
     <message>
         <source>The detection service had a problem and the run stopped. Please try again.</source>
-        <translation>検出サービスで問題が発生し、実行が停止しました。再試行してください。</translation>
+        <translation>検出サービスで問題が発生し、実行が停止しました。もう一度お試しください。</translation>
     </message>
     <message>
         <source>The detection stopped responding. Keeping the {n} cloud detection(s) already paid for.</source>
@@ -2666,11 +2674,11 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>The installer could not start a helper process (a damaged Python launcher). Click Reinstall Dependencies to rebuild the environment from scratch.</source>
-        <translation>インストーラがヘルパープロセスを起動できませんでした(Pythonランチャーが破損しています)。「依存関係を再インストール」をクリックして、環境を最初から再構築してください。</translation>
+        <translation>インストーラがヘルパープロセスを起動できませんでした（Pythonランチャが破損しています）。「依存関係を再インストール」をクリックして、環境を最初から再構築してください。</translation>
     </message>
     <message>
         <source>The removal could not start. You are signed out, but the downloaded AI data is still on this computer. Try again.</source>
-        <translation>削除を開始できませんでした。サインアウトされましたが、ダウンロード済みのAIデータはこのコンピュータに残っています。再試行してください。</translation>
+        <translation>削除を開始できませんでした。ログアウトされましたが、ダウンロード済みのAIデータはこのコンピュータに残っています。もう一度お試しください。</translation>
     </message>
     <message>
         <source>The removal did not finish. Close this window, then check the AI data folder before trying again.</source>
@@ -2682,11 +2690,11 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>The reply did not come from the service. If this network shows a sign-in page, open it in your browser first, then try again.</source>
-        <translation>応答がサービスから返ってきませんでした。このネットワークにサインインページが表示される場合は、先にブラウザで開いてから再試行してください。</translation>
+        <translation>応答がサービスから返ってきませんでした。このネットワークにログインページが表示される場合は、先にブラウザで開いてからもう一度お試しください。</translation>
     </message>
     <message>
         <source>The server returned an unexpected response. Please try again.</source>
-        <translation>サーバーから予期しない応答がありました。再試行してください。</translation>
+        <translation>サーバーから予期しない応答がありました。もう一度お試しください。</translation>
     </message>
     <message>
         <source>Thin this polygon's points before you edit them by hand. 100% keeps the outline as it is.</source>
@@ -2702,11 +2710,11 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>This raster is rotated. Run Warp (Reproject) on it to straighten it before segmenting.</source>
-        <translation>このラスタは回転しています。セグメント化する前に、ワープ(再投影)を実行して補正してください。</translation>
+        <translation>このラスタは回転しています。セグメンテーションの前に、「再投影（warp）」を実行して補正してください。</translation>
     </message>
     <message>
         <source>This run did not keep where it looked, so it cannot be pointed at the same place. Draw the zone again.</source>
-        <translation>この実行はどこを見たかを記録していなかったため、同じ場所を指定できません。ゾーンを描き直してください。</translation>
+        <translation>この実行はどこを見たかを記録していなかったため、同じ場所を指定できません。範囲を描き直してください。</translation>
     </message>
     <message>
         <source>Those shapes could not be joined. Nothing was changed.</source>
@@ -2714,11 +2722,11 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Trim spikes</source>
-        <translation>ギザギザを除去</translation>
+        <translation>突起を除去</translation>
     </message>
     <message>
         <source>Two references give the strongest detection. Draw a second to reach best quality.</source>
-        <translation>参照画像が2つあると、検出精度が最も高くなります。2つ目を描いて最高品質にしましょう。</translation>
+        <translation>参照が2つあると、検出の精度が最も高くなります。2つ目を描くと最高品質になります。</translation>
     </message>
     <message>
         <source>Unavailable while Right angles is on. Turn it off to adjust this setting.</source>
@@ -2750,19 +2758,19 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Writing the file...</source>
-        <translation>ファイルを書き込み中...</translation>
+        <translation>ファイルを書き込み中…</translation>
     </message>
     <message>
         <source>Your examples drive the search - naming the object makes it even more accurate.</source>
-        <translation>あなたが描いた例が検索の基準になります - オブジェクトに名前を付けると、さらに精度が上がります。</translation>
+        <translation>描いた例が検索の基準になります。オブジェクトに名前を付けると、さらに精度が上がります。</translation>
     </message>
     <message>
         <source>Your free detections come back on {date}.</source>
-        <translation>無料検出は{date}に復活します。</translation>
+        <translation>無料検出は{date}に回復します。</translation>
     </message>
     <message>
         <source>Your network proxy requires a username and password. Enter them in QGIS &gt; Settings &gt; Options &gt; Network, then restart QGIS and try again.</source>
-        <translation>ネットワークプロキシにはユーザー名とパスワードが必要です。QGIS &gt;「設定」&gt;「オプション」&gt;「ネットワーク」で入力し、QGISを再起動してから再試行してください。</translation>
+        <translation>ネットワークプロキシにはユーザー名とパスワードが必要です。QGISの「設定」→「オプション」→「ネットワーク」で入力し、QGISを再起動してから、もう一度お試しください。</translation>
     </message>
     <message>
         <source>a month ago</source>
@@ -2818,7 +2826,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>{n} corrections this round</source>
-        <translation>今回の修正 {n}件</translation>
+        <translation>今回の修正{n}件</translation>
     </message>
     <message>
         <source>{n} kept</source>
@@ -2854,7 +2862,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>{n} part(s) of this run took too long to load and are missing from this result.</source>
-        <translation>この実行の{n}部分の読み込みに時間がかかりすぎたため、結果から削除されました。</translation>
+        <translation>この実行の{n}部分の読み込みに時間がかかりすぎたため、この結果に含まれていません。</translation>
     </message>
     <message>
         <source>{n} weeks ago</source>
@@ -2875,11 +2883,11 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Adding an object uses the free on-device AI, which is not installed yet. Install it now? It runs once and takes a few minutes. The review waits for it, then arms Add for you.</source>
-        <translation>オブジェクトの追加には無料のローカルAIを使用しますが、まだインストールされていません。今すぐインストールしますか?初回のみ実行され、数分かかります。レビューはそれが終わるまで待ち、完了すると追加が有効になります。</translation>
+        <translation>オブジェクトの追加には無料のオフラインAIを使用しますが、まだインストールされていません。今すぐインストールしますか？初回のみ実行され、数分かかります。レビューはそれが終わるまで待ち、完了すると追加が有効になります。</translation>
     </message>
     <message>
         <source>At this precision {obj} is too small to spot - raise the precision.</source>
-        <translation>この詳細度では{obj}が小さすぎて見つけられません - 詳細度を上げてください。</translation>
+        <translation>この詳細度では{obj}が小さすぎて見つけられません。詳細度を上げてください。</translation>
     </message>
     <message>
         <source>Automatic mode sweeps your zone in a grid. Each grid cell costs one cloud detection, so this run costs about {n}. More precision means a finer grid and more cloud detections.</source>
@@ -2891,11 +2899,11 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Clean up this outline</source>
-        <translation>この輪郭をクリーンに</translation>
+        <translation>この輪郭を整える</translation>
     </message>
     <message>
         <source>Click points around one look-alike, then double-click to close.</source>
-        <translation>似ているものの周りに点をクリックしていき、最後にダブルクリックして閉じてください。</translation>
+        <translation>似たものの周りの点をクリックし、最後にダブルクリックして閉じます。</translation>
     </message>
     <message>
         <source>Click points around one object, then double-click to close.</source>
@@ -2911,7 +2919,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Connection is slow - still working, everything already found is kept...</source>
-        <translation>接続が遅い - まだ実行中です。既に見つかったすべてが保持されています...</translation>
+        <translation>接続が遅くなっています。処理を続けています。見つかったものはすべて保持されます…</translation>
     </message>
     <message>
         <source>Could not save your detections to a file.</source>
@@ -2927,7 +2935,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Drawing (click to stop)</source>
-        <translation>描画中(クリックで停止)</translation>
+        <translation>描画中（クリックで停止）</translation>
     </message>
     <message>
         <source>Errors, versions and the words you type, linked to your account. Never your imagery, layers or coordinates.</source>
@@ -2935,7 +2943,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Fixing a polygon uses the free on-device AI, which is not installed yet. Install it now? It runs once and takes a few minutes. The review waits for it, then opens this polygon for you.</source>
-        <translation>ポリゴンの修正には無料のローカルAIを使用しますが、まだインストールされていません。今すぐインストールしますか?初回のみ実行され、数分かかります。レビューはそれが終わるまで待ち、完了するとこのポリゴンが開きます。</translation>
+        <translation>ポリゴンの修正には無料のオフラインAIを使用しますが、まだインストールされていません。今すぐインストールしますか？初回のみ実行され、数分かかります。レビューはそれが終わるまで待ち、完了するとこのポリゴンが開きます。</translation>
     </message>
     <message>
         <source>Fixing needs a one-time setup</source>
@@ -2955,11 +2963,11 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Keep this shape. The polygon stays picked, so you can still adjust, merge or delete it.</source>
-        <translation>この形状を保持します。ポリゴンは選択されたままなので、引き続き調整、結合、削除ができます。</translation>
+        <translation>この図形を保持します。ポリゴンは選択されたままなので、引き続き調整、結合、削除ができます。</translation>
     </message>
     <message>
         <source>Loading the imagery...</source>
-        <translation>画像を読み込み中...</translation>
+        <translation>画像を読み込み中…</translation>
     </message>
     <message>
         <source>Loading the imagery... {n}s</source>
@@ -2967,7 +2975,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Max precision for this zone - draw a larger zone to go finer.</source>
-        <translation>このゾーンでの詳細度は上限です - より細かくするには、より大きなゾーンを描いてください。</translation>
+        <translation>この範囲の詳細度は上限です。さらに細かくするには、範囲を大きく描いてください。</translation>
     </message>
     <message>
         <source>More precision finds smaller objects and uses more cloud detections.</source>
@@ -2979,7 +2987,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>More precision keeps helping {obj} in this zone.</source>
-        <translation>このゾーンでは{obj}に対して詳細度を上げるとさらに効果があります。</translation>
+        <translation>この範囲では、詳細度を上げるほど{obj}が見つかりやすくなります。</translation>
     </message>
     <message>
         <source>Name the object (or draw an example) first - Precision then tunes itself to it.</source>
@@ -2999,7 +3007,7 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>No image over this zone at this precision, so nothing was analyzed (not charged). Lower Precision, or pick a layer that covers this area.</source>
-        <translation>この詳細度ではこのゾーンに画像がないため、解析されませんでした(課金なし)。詳細度を下げるか、この範囲をカバーするレイヤを選んでください。</translation>
+        <translation>この詳細度ではこの範囲に画像がないため、何も解析されませんでした（課金なし）。詳細度を下げるか、このエリアをカバーするレイヤを選んでください。</translation>
     </message>
     <message>
         <source>Opens your terra-lab.ai dashboard: your plan, your cloud detections and your payment details.</source>
@@ -3027,19 +3035,19 @@ QGISで開いて表示できるか確認するか、AI Segmentationを使用す�
     </message>
     <message>
         <source>Same setup as your last run - the result will match. Add an example or change the precision for a different result.</source>
-        <translation>前回の実行と同じ設定です - 結果も同じになります。異なる結果を得るには、例を追加するか詳細度を変更してください。</translation>
+        <translation>前回の実行と同じ設定です。結果も同じになります。異なる結果を得るには、例を追加するか詳細度を変更してください。</translation>
     </message>
     <message>
         <source>Setting up the on-device AI. This runs once and takes a few minutes. The review waits here until it is done.</source>
-        <translation>ローカルAIをセットアップしています。初回のみ実行され、数分かかります。完了するまでレビューはここで待機します。</translation>
+        <translation>オフラインAIをセットアップしています。初回のみ実行され、数分かかります。完了するまでレビューはここで待機します。</translation>
     </message>
     <message>
         <source>Setting up the on-device AI...</source>
-        <translation>ローカルAIをセットアップ中...</translation>
+        <translation>オフラインAIをセットアップ中…</translation>
     </message>
     <message>
         <source>Shadows getting detected instead of trees? Use 'Exclude a look-alike' on one shadow - the AI drops similar false positives.</source>
-        <translation>木の代わりに影が検出されていますか?影の1つで「似ているものを除外」を使うと、AIが似たような誤検出を除外します。</translation>
+        <translation>木の代わりに影が検出されていますか？影1つに対して「似たものを除外」を使うと、AIが同じような誤検出を除外します。</translation>
     </message>
     <message>
         <source>Share of each outline's points to keep. 100% is the class default.
@@ -3051,7 +3059,7 @@ Lower thins the smallest detail first, keeps the corners, and gives Right angles
         <source>Share of the outline's points to keep. 100% is the standard density.
 Lower thins the smallest detail first, keeps the corners, and gives Right angles straight walls to square.</source>
         <translation>輪郭で保持する点の割合です。100%は標準の密度です。
-下げると最も細かいディテールから間引かれ、角は保たれ、「直角化」に使うまっすぐな壁ができます。</translation>
+下げると最も細かい部分から間引かれ、角は保たれ、「直角化」に使うまっすぐな壁ができます。</translation>
     </message>
     <message>
         <source>Share usage statistics with TerraLab</source>
@@ -3059,7 +3067,7 @@ Lower thins the smallest detail first, keeps the corners, and gives Right angles
     </message>
     <message>
         <source>Simplify this outline first</source>
-        <translation>まずこの輪郭を単純化</translation>
+        <translation>まずこの輪郭を簡素化</translation>
     </message>
     <message>
         <source>Stop the setup</source>
@@ -3071,11 +3079,11 @@ Lower thins the smallest detail first, keeps the corners, and gives Right angles
     </message>
     <message>
         <source>Stop the setup?</source>
-        <translation>セットアップを停止しますか?</translation>
+        <translation>セットアップを停止しますか？</translation>
     </message>
     <message>
         <source>The detection stopped responding before anything came back. Check your connection, then run Detect again (nothing was charged).</source>
-        <translation>検出は何も返される前に応答を停止しました。接続を確認してから、「検出」を再度実行してください(課金なし)。</translation>
+        <translation>結果が返る前に検出が応答しなくなりました。接続を確認してから、「オブジェクトを検出」をもう一度実行してください（課金なし）。</translation>
     </message>
     <message>
         <source>The file may be open in QGIS or in another program. Close it and try Finish again.</source>
@@ -3087,15 +3095,15 @@ Lower thins the smallest detail first, keeps the corners, and gives Right angles
     </message>
     <message>
         <source>The on-device AI could not start, so the AI fix is off. Your detections are safe: switch the fix method to Manual to keep correcting, or save them as they are.</source>
-        <translation>ローカルAIを起動できなかったため、AI修正は使用できません。検出結果は失われていません: 修正方法を手動に切り替えて修正を続けるか、そのまま保存してください。</translation>
+        <translation>オフラインAIを起動できなかったため、AI修正は使用できません。検出結果は失われていません：修正方法を手動に切り替えて修正を続けるか、そのまま保存してください。</translation>
     </message>
     <message>
         <source>The on-device AI is unavailable, so the AI fix is off. Switch the fix method to Manual to keep correcting.</source>
-        <translation>ローカルAIが利用できないため、AI修正は使用できません。修正を続けるには、修正方法を手動に切り替えてください。</translation>
+        <translation>オフラインAIが利用できないため、AI修正は使用できません。修正を続けるには、修正方法を手動に切り替えてください。</translation>
     </message>
     <message>
         <source>The on-device AI will not be installed, so fixing a polygon with it stays unavailable. What is already downloaded is kept, so starting again resumes from there.</source>
-        <translation>ローカルAIはインストールされないため、それを使ったポリゴンの修正は引き続き利用できません。ダウンロード済みの分は保持されるため、再開すればその続きから始まります。</translation>
+        <translation>オフラインAIはインストールされないため、それを使ったポリゴンの修正は引き続き利用できません。ダウンロード済みの分は保持されるため、再開すればその続きから始まります。</translation>
     </message>
     <message>
         <source>The package index refused the download (error 403).
@@ -3103,18 +3111,18 @@ Lower thins the smallest detail first, keeps the corners, and gives Right angles
 This is usually a company or campus network filtering downloads. Ask your IT administrator to allow pypi.org and files.pythonhosted.org, or run the install from another network.
 
 Automatic (cloud) mode does not need this download.</source>
-        <translation>パッケージインデックスがダウンロードを拒否しました(エラー403)。
+        <translation>パッケージインデックスがダウンロードを拒否しました（エラー403）。
 
 これは通常、会社や学校のネットワークがダウンロードをフィルタリングしていることが原因です。IT管理者にpypi.orgとfiles.pythonhosted.orgへのアクセスを許可してもらうか、別のネットワークからインストールを実行してください。
 
-自動(クラウド)モードではこのダウンロードは不要です。</translation>
+自動（クラウド）モードではこのダウンロードは不要です。</translation>
     </message>
     <message>
         <source>The raster file could not be found:
 {path}
 
 It may have been moved or renamed, or the drive or network share it is on may be disconnected. Reload the layer from where the file is now, then start again.</source>
-        <translation>ラスタファイルが見つかりませんでした:
+        <translation>ラスタファイルが見つかりませんでした：
 {path}
 
 移動または名前が変更されたか、保存されているドライブやネットワーク共有が切断されている可能性があります。ファイルの現在の場所からレイヤを再読み込みし、もう一度やり直してください。</translation>
@@ -3137,11 +3145,11 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>This layer has no image over your zone at this precision. The map source answered with an empty tile, so there is nothing to detect on. Lower Precision, zoom the layer out until the imagery shows, or pick a layer that covers this area.</source>
-        <translation>この詳細度では、このレイヤにゾーン上の画像がありません。地図ソースが空のタイルを返したため、検出対象がありません。詳細度を下げるか、画像が表示されるまでレイヤをズームアウトするか、この範囲をカバーするレイヤを選んでください。</translation>
+        <translation>このレイヤには、この詳細度で範囲上の画像がありません。地図ソースが空のタイルを返したため、検出対象がありません。詳細度を下げるか、画像が表示されるまで縮小表示するか、このエリアをカバーするレイヤを選んでください。</translation>
     </message>
     <message>
         <source>This polygon only. Every other one follows the Shapes step.</source>
-        <translation>このポリゴンのみです。他はすべて「形状」ステップの設定に従います。</translation>
+        <translation>このポリゴンのみです。他はすべて「図形」ステップの設定に従います。</translation>
     </message>
     <message>
         <source>This polygon only. Fewer points means fewer corners to drag.</source>
@@ -3169,15 +3177,15 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Wait for the on-device AI to finish installing.</source>
-        <translation>ローカルAIのインストールが完了するのを待ってください。</translation>
+        <translation>オフラインAIのインストールが完了するまでお待ちください。</translation>
     </message>
     <message>
         <source>{n} {object} saved</source>
-        <translation>{n} 件の{object}を保存しました</translation>
+        <translation>{n}件の{object}を保存しました</translation>
     </message>
     <message>
         <source>{n} {object} saved to {layer}</source>
-        <translation>{n} 件の{object}を{layer}に保存しました</translation>
+        <translation>{n}件の{object}を{layer}に保存しました</translation>
     </message>
     
     <message>
@@ -3198,11 +3206,11 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Almost ready: the AI file did not download.</source>
-        <translation>もうすぐ準備完了: AIファイルのダウンロードに失敗しました。</translation>
+        <translation>もうすぐ準備完了：AIファイルのダウンロードに失敗しました。</translation>
     </message>
     <message>
         <source>Almost ready: the AI file is still missing.</source>
-        <translation>もうすぐ準備完了: AIファイルがまだ見つかっていません。</translation>
+        <translation>もうすぐ準備完了：AIファイルがまだ見つかっていません。</translation>
     </message>
     <message>
         <source>Answered on your computer this time. TerraLab could not be reached.</source>
@@ -3210,11 +3218,11 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>As fine as {obj} benefits from - finer splits them into pieces.</source>
-        <translation>{obj}に適した詳細度です - これ以上細かくすると分割されてしまいます。</translation>
+        <translation>{obj}に有効な最大の詳細度です。これ以上細かくすると分割されます。</translation>
     </message>
     <message>
         <source>Automatic mode is ready. The on-device AI could not be installed, so Semi-Auto mode and the AI fix are off until it is. Everything else works.</source>
-        <translation>自動モードは準備完了です。ローカルAIをインストールできなかったため、インストールが完了するまで半自動モードとAI修正は利用できません。それ以外の機能はすべて利用できます。</translation>
+        <translation>自動モードは準備完了です。オフラインAIをインストールできなかったため、インストールが完了するまで半自動モードとAI修正は利用できません。それ以外の機能はすべて利用できます。</translation>
     </message>
     <message>
         <source>Automatic mode needs a small one-time setup before it can read your imagery. It takes about a minute.</source>
@@ -3234,19 +3242,19 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Choose where the AI runs: on TerraLab servers, or on your own computer</source>
-        <translation>AIの実行場所を選択: TerraLabのサーバー、またはお使いのコンピュータ</translation>
+        <translation>AIの実行場所を選択：TerraLabのサーバー、またはお使いのコンピュータ</translation>
     </message>
     <message>
         <source>Click the object you want to segment:</source>
-        <translation>セグメント化したいオブジェクトをクリック:</translation>
+        <translation>セグメンテーションするオブジェクトをクリックしてください：</translation>
     </message>
     <message>
         <source>Cloud AI</source>
-        <translation>Cloud AI</translation>
+        <translation>クラウドAI</translation>
     </message>
     <message>
         <source>Cloud AI needs your account, and it is signed out. Sign back in, or install the offline AI to work without one.</source>
-        <translation>Cloud AIにはアカウントが必要ですが、現在サインアウトされています。再度サインインするか、アカウントなしで使うにはオフラインAIをインストールしてください。</translation>
+        <translation>クラウドAIにはアカウントが必要ですが、現在ログアウトされています。再度ログインするか、アカウントなしで使うにはオフラインAIをインストールしてください。</translation>
     </message>
     <message>
         <source>How Cloud AI works</source>
@@ -3266,7 +3274,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Draw a zone, name one kind of object, and get all of them in one run. Use Semi-Auto mode to work one object at a time.</source>
-        <translation>ゾーンを描き、オブジェクトの種類を1つ指定すると、1回の実行ですべて取得できます。1つずつ作業するには、半自動モードを使用してください。</translation>
+        <translation>範囲を描き、オブジェクトの種類を1つ指定すると、1回の実行ですべて検出します。1つずつ作業するには、半自動モードを使用してください。</translation>
     </message>
     <message>
         <source>Each click sends a small square of the image to our servers in Europe, and the outline comes back.</source>
@@ -3298,15 +3306,15 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Intel Mac: using the older AI model.</source>
-        <translation>Intel Mac: 旧バージョンのAIモデルを使用中。</translation>
+        <translation>Intel Mac：旧バージョンのAIモデルを使用中。</translation>
     </message>
     <message>
         <source>It needs &lt;b&gt;{gb} GB&lt;/b&gt; of free disk space.</source>
-        <translation>空きディスク容量が&lt;b&gt;{gb} GB&lt;/b&gt;必要です。</translation>
+        <translation>空きディスク容量が&lt;b&gt;{gb}GB&lt;/b&gt;必要です。</translation>
     </message>
     <message>
         <source>My computer</source>
-        <translation>自分のコンピュータ</translation>
+        <translation>お使いのコンピュータ</translation>
     </message>
     <message>
         <source>My work</source>
@@ -3330,7 +3338,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>One precision level fits {obj} in a zone this size - draw a larger zone for a choice.</source>
-        <translation>このサイズのゾーンでは{obj}に合う詳細度は1つだけです - 選択肢を増やすには、より大きなゾーンを描いてください。</translation>
+        <translation>この大きさの範囲では{obj}に合う詳細度は1つだけです。選択肢を増やすには、範囲を大きく描いてください。</translation>
     </message>
     <message>
         <source>One-time setup</source>
@@ -3346,11 +3354,11 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Preparing the install...</source>
-        <translation>インストールを準備中...</translation>
+        <translation>インストールを準備中…</translation>
     </message>
     <message>
         <source>Pro is active on this account. Your cloud detections are ready.</source>
-        <translation>このアカウントで Pro が有効になりました。クラウド検出をご利用いただけます。</translation>
+        <translation>このアカウントでProが有効になりました。クラウド検出をご利用いただけます。</translation>
     </message>
     <message>
         <source>Read the privacy policy</source>
@@ -3394,7 +3402,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Semi-Auto mode needs to install local dependencies, which is not supported inside this sandboxed QGIS installation (Flatpak or Snap). Please use Automatic mode instead, which runs fully in the cloud and needs no local install.</source>
-        <translation>半自動モードはローカルの依存関係のインストールが必要ですが、このサンドボックス化されたQGIS環境(FlatpakまたはSnap)ではサポートされていません。代わりに、クラウド上で完全に動作しローカルインストールが不要な自動モードをご利用ください。</translation>
+        <translation>半自動モードはローカルの依存関係のインストールが必要ですが、このサンドボックス化されたQGIS環境（FlatpakまたはSnap）ではサポートされていません。代わりに、クラウド上で完全に動作しローカルインストールが不要な自動モードをご利用ください。</translation>
     </message>
     <message>
         <source>Session ended</source>
@@ -3406,7 +3414,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Start Semi-Auto AI Segmentation</source>
-        <translation>半自動AI Segmentationを開始</translation>
+        <translation>半自動モードでAI Segmentationを開始</translation>
     </message>
     <message>
         <source>Stop the install</source>
@@ -3414,7 +3422,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>The AI is still loading. Try again in a few seconds.</source>
-        <translation>AIを読み込み中です。数秒後に再試行してください。</translation>
+        <translation>AIを読み込み中です。数秒後にもう一度お試しください。</translation>
     </message>
     <message>
         <source>The AI was set up but could not start.</source>
@@ -3426,7 +3434,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>The install did not finish. Retry it, or pick Cloud AI.</source>
-        <translation>インストールが完了しませんでした。再試行するか、Cloud AIを選択してください。</translation>
+        <translation>インストールが完了しませんでした。再試行するか、クラウドAIを選択してください。</translation>
     </message>
     <message>
         <source>The model is unsure about this outline. Click again to correct it, or draw it by hand.</source>
@@ -3450,23 +3458,23 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>This drive has {free} GB free, under the {need} GB the install needs. Free some space, or use Cloud AI.</source>
-        <translation>このドライブの空き容量は{free} GBで、インストールに必要な{need} GBに届きません。空き容量を増やすか、Cloud AIを使用してください。</translation>
+        <translation>このドライブの空き容量は{free}GBで、インストールに必要な{need}GBに届きません。空き容量を増やすか、クラウドAIを使用してください。</translation>
     </message>
     <message>
         <source>This image has no position on the map, so Automatic cannot place what it finds. Give it one with the QGIS Georeferencer, or use Semi-Auto mode on it as is.</source>
-        <translation>この画像には地図上の位置情報がないため、自動モードは検出結果を配置できません。QGISの地理参照ツールで位置情報を付与するか、そのまま半自動モードを使用してください。</translation>
+        <translation>この画像には地図上の位置情報がないため、自動モードは検出結果を配置できません。QGISのジオリファレンサで位置情報を付与するか、そのまま半自動モードを使用してください。</translation>
     </message>
     <message>
         <source>This model rates every object the same, so filtering by confidence would show all of them or none. Use Size below, or fix objects in the next step.</source>
-        <translation>このモデルはすべてのオブジェクトを同じように評価するため、信頼度で絞り込むとすべて表示されるか何も表示されないかのどちらかになります。以下のサイズを使用するか、次のステップでオブジェクトを修正してください。</translation>
+        <translation>このモデルはすべてのオブジェクトを同じように評価するため、信頼度で絞り込むとすべて表示されるか何も表示されないかのどちらかになります。下の「サイズ」を使うか、次のステップでオブジェクトを修正してください。</translation>
     </message>
     <message>
         <source>This raster is rotated. Run Warp (Reproject) on it to straighten it first. Semi-Auto mode cannot read it either.</source>
-        <translation>このラスタは回転しています。まずワープ(再投影)を実行して補正してください。半自動モードでもこれを読み込めません。</translation>
+        <translation>このラスタは回転しています。まず「再投影（warp）」を実行して補正してください。半自動モードでもこれを読み取れません。</translation>
     </message>
     <message>
         <source>Use Cloud AI instead</source>
-        <translation>代わりにCloud AIを使用</translation>
+        <translation>代わりにクラウドAIを使用</translation>
     </message>
     <message>
         <source>Use my computer instead</source>
@@ -3490,7 +3498,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>This online layer returned no imagery for this area. Its server refused the request. Check the layer's URL in Layer Properties, or use another basemap.</source>
-        <translation>このオンラインレイヤはこの範囲の画像を返しませんでした。サーバーがリクエストを拒否しました。レイヤプロパティでレイヤのURLを確認するか、別のベースマップを使用してください。</translation>
+        <translation>このオンラインレイヤはこのエリアの画像を返しませんでした。サーバーがリクエストを拒否しました。「レイヤのプロパティ」でレイヤのURLを確認するか、別のベースマップを使用してください。</translation>
     </message>
     <message>
         <source>1 credit covers about 0.17 km² at default precision.</source>
@@ -3498,11 +3506,11 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Clear all {n}</source>
-        <translation>すべてクリア ({n}件)</translation>
+        <translation>すべてクリア（{n}件）</translation>
     </message>
     <message>
         <source>Could not check your AI Segmentation account. If this lasts, sign out and sign in again.</source>
-        <translation>AI Segmentationアカウントを確認できませんでした。この状態が続く場合は、サインアウトしてから再度サインインしてください。</translation>
+        <translation>AI Segmentationアカウントを確認できませんでした。この状態が続く場合は、ログアウトしてから再度ログインしてください。</translation>
     </message>
     <message>
         <source>Could not load your account. Try again in a moment.</source>
@@ -3514,7 +3522,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Editing by hand could not open on this polygon on its own. Try again, or fix it with the AI.</source>
-        <translation>手作業での編集がこのポリゴンで自動的に起動できませんでした。再試行するか、AIで修正してください。</translation>
+        <translation>このポリゴンで手作業での編集を自動的に開けませんでした。もう一度お試しいただくか、AIで修正してください。</translation>
     </message>
     <message>
         <source>It downloads first, and takes about 10 minutes.</source>
@@ -3535,28 +3543,28 @@ It may have been moved or renamed, or the drive or network share it is on may be
     <message>
         <source>QGIS could not open a browser. Open this address to finish signing in, then come back here. It works once:
 {}</source>
-        <translation>QGISがブラウザを開けませんでした。次のアドレスを開いてサインインを完了し、その後ここに戻ってきてください。これは1回のみ有効です:
+        <translation>QGISがブラウザを開けませんでした。次のアドレスを開いてログインを完了し、その後ここに戻ってきてください。これは1回のみ有効です：
 {}</translation>
     </message>
     <message>
         <source>QGIS could not open a browser. The sign-in address is copied to your clipboard: paste it into a browser to finish, then come back here. It works once.</source>
-        <translation>QGISがブラウザを開けませんでした。サインイン用のアドレスはクリップボードにコピーされています。ブラウザに貼り付けて完了し、その後ここに戻ってきてください。これは1回のみ有効です。</translation>
+        <translation>QGISがブラウザを開けませんでした。ログイン用のアドレスはクリップボードにコピーされています。ブラウザに貼り付けて完了し、その後ここに戻ってきてください。これは1回のみ有効です。</translation>
     </message>
     <message>
         <source>Reading your logs...</source>
-        <translation>ログを読み込み中...</translation>
+        <translation>ログを読み取り中…</translation>
     </message>
     <message>
         <source>Sign in again to fix with the AI. Switched to editing by hand, which needs no account.</source>
-        <translation>AIで修正するには、再度サインインしてください。手作業での編集に切り替えました。アカウントは不要です。</translation>
+        <translation>AIで修正するには、再度ログインしてください。手作業での編集に切り替えました。アカウントは不要です。</translation>
     </message>
     <message>
         <source>The export did not finish. Your polygons are still on the map, so you can try again.</source>
-        <translation>Exportが完了しませんでした。ポリゴンはまだ地図上に残っているので、再試行できます。</translation>
+        <translation>エクスポートが完了しませんでした。ポリゴンはまだ地図上に残っているので、もう一度お試しいただけます。</translation>
     </message>
     <message>
         <source>The install did not finish {dot} &lt;b&gt;retry it, or pick Cloud AI&lt;/b&gt;</source>
-        <translation>インストールが完了しませんでした {dot} &lt;b&gt;再試行するか、Cloud AIを選択&lt;/b&gt;</translation>
+        <translation>インストールが完了しませんでした{dot}&lt;b&gt;再試行するか、クラウドAIを選択&lt;/b&gt;</translation>
     </message>
     <message>
         <source>The polygons could not be put into the new layer, so nothing was saved. They are still on the map, so you can try again.</source>
@@ -3564,7 +3572,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>This layer has no usable position on the map. Open it in QGIS and check its extent.</source>
-        <translation>このレイヤには地図上で使用できる位置情報がありません。QGISで開いて範囲を確認してください。</translation>
+        <translation>このレイヤには地図上で使用できる位置情報がありません。QGISで開いて領域を確認してください。</translation>
     </message>
     <message>
         <source>This run found nothing. Add the object yourself below, or press Exit and run again with another word or a smaller zone.</source>
@@ -3584,11 +3592,11 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>You are signed in on this computer, but QGIS cannot read your sign-in until you enter its master password.</source>
-        <translation>このコンピュータでサインイン済みですが、マスターパスワードを入力するまでQGISはサインイン情報を読み取れません。</translation>
+        <translation>このコンピュータでログイン済みですが、マスターパスワードを入力するまでQGISはログイン情報を読み取れません。</translation>
     </message>
     <message>
         <source>AI: point at what to keep or trim, one cloud detection per polygon. Manual: move the corners yourself, free.</source>
-        <translation>AI: 保持または削除するものをポイント、ポリゴンあたり1つのクラウド検出。手動: コーナーを自分で移動、無料。</translation>
+        <translation>AI：保持または除外したいところを指すだけ。ポリゴン1個につきクラウド検出1件。手動：角を自分で動かします（無料）。</translation>
     </message>
     <message>
         <source>Start now, nothing to install {dot} &lt;b&gt;1 cloud detection per object you save&lt;/b&gt;</source>
@@ -3596,11 +3604,11 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>The AI outlines it. One cloud detection per object.</source>
-        <translation>AIがそれを描きます。オブジェクトあたり1つのクラウド検出。</translation>
+        <translation>AIが輪郭を描きます。オブジェクト1件につきクラウド検出を1件使います。</translation>
     </message>
     <message>
         <source>Add an object the AI missed. In AI, point at it and the model outlines it for one cloud detection; in Manual, draw its corners for free.</source>
-        <translation>AIが見落としたオブジェクトを追加します。AIでそれをポイントするとモデルが1つのクラウド検出で描きます。手動では、コーナーを無料で描いてください。</translation>
+        <translation>AIが見逃したオブジェクトを追加します。AIの場合は、地図上で指すとモデルが輪郭を描き、クラウド検出を1件使います。手動の場合は、角を自分で描きます（無料）。</translation>
     </message>
     <message>
         <source>This zone at this precision needs more than one run covers. Draw a smaller zone, or lower the precision. Free runs stop well below that ceiling, so Pro keeps more precision on a zone this size.</source>
@@ -3616,7 +3624,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>This zone at this precision is too big for one run. Draw a smaller zone, or lower the precision.</source>
-        <translation>このゾーンの精度は1回の実行には大きすぎます。より小さいゾーンを描くか、精度を下げてください。</translation>
+        <translation>この詳細度では、この範囲は1回の実行には大きすぎます。範囲を小さく描くか、詳細度を下げてください。</translation>
     </message>
     <message>
         <source>No cloud detections left this month. Semi-Auto mode runs on your computer, free and unlimited.</source>
@@ -3636,7 +3644,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>One object at a time: click it, the AI outlines it. You choose where it runs, on our servers or on your own computer.</source>
-        <translation>一度に 1 つの物体をクリックすると、AI が輪郭を描きます。実行場所は当社のサーバーか自分のパソコンかを選べます。</translation>
+        <translation>オブジェクトを1つずつクリックすると、AIが輪郭を描きます。実行場所は、当社のサーバーかお使いのコンピュータから選べます。</translation>
     </message>
     <message>
         <source>Draw a zone, name one kind of object, get all of them in one run. Runs on our servers and uses your cloud detections.</source>
@@ -3688,7 +3696,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>QGIS waits while this installs. To segment right away, stop the install and use Cloud AI.</source>
-        <translation>インストール中はQGISが待機します。すぐにセグメンテーションするには、インストールを停止してCloud AIを使用してください。</translation>
+        <translation>インストール中はQGISが待機します。すぐにセグメンテーションするには、インストールを停止してクラウドAIを使用してください。</translation>
     </message>
     <message>
         <source>Runs on this computer {dot} &lt;b&gt;save as many as you like&lt;/b&gt;</source>
@@ -3696,7 +3704,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Setting up on your computer {dot} &lt;b&gt;wait for it to finish&lt;/b&gt;</source>
-        <translation>お使いのコンピュータでセットアップ中 {dot} &lt;b&gt;完了までお待ちください&lt;/b&gt;</translation>
+        <translation>お使いのコンピュータでセットアップ中{dot}&lt;b&gt;完了までお待ちください&lt;/b&gt;</translation>
     </message>
     <message>
         <source>Small objects still show up on wide areas.</source>
@@ -3704,15 +3712,15 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Stop and use my computer</source>
-        <translation>停止して自分のコンピュータを使用</translation>
+        <translation>停止してお使いのコンピュータを使用</translation>
     </message>
     <message>
         <source>Stop the install?</source>
-        <translation>インストールを停止しますか?</translation>
+        <translation>インストールを停止しますか？</translation>
     </message>
     <message>
         <source>Take back the last point you placed. Shortcut: Ctrl+Z</source>
-        <translation>配置した最後の点を取り消します。ショートカット: Ctrl+Z</translation>
+        <translation>配置した最後の点を取り消します。ショートカット：Ctrl+Z</translation>
     </message>
     <message>
         <source>The layer you picked has no imagery here. You are looking at &quot;{other}&quot;. Pick it at the top of the panel, then click again.</source>
@@ -3720,7 +3728,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>The offline AI is not installed yet. Stop the install?</source>
-        <translation>オフラインAIはまだインストールされていません。インストールを停止しますか?</translation>
+        <translation>オフラインAIはまだインストールされていません。インストールを停止しますか？</translation>
     </message>
     <message>
         <source>The same cloud AI, and the cleanest shapes.</source>
@@ -3732,7 +3740,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>This layer has no imagery at this zoom. Zoom in until you see it on the map, then click again.</source>
-        <translation>このズームレベルではレイヤに画像がありません。地図上に表示されるまでズームインしてから、もう一度クリックしてください。</translation>
+        <translation>このズームレベルではレイヤに画像がありません。地図上に表示されるまで拡大してから、もう一度クリックしてください。</translation>
     </message>
     <message>
         <source>This layer&apos;s file is no longer where QGIS expects it. Reload it from where the file is now, then start again.</source>
@@ -3744,7 +3752,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>This polygon stays on the map, and Export still works.</source>
-        <translation>このポリゴンは地図上に残り、Exportも引き続き使用できます。</translation>
+        <translation>このポリゴンは地図上に残り、エクスポートも引き続き使えます。</translation>
     </message>
     <message>
         <source>This polygon stays on the map, but it cannot be saved.</source>
@@ -3764,7 +3772,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Use my computer</source>
-        <translation>自分のコンピュータを使用</translation>
+        <translation>お使いのコンピュータを使用</translation>
     </message>
     <message>
         <source>You place the corners, the same as on any QGIS layer. Free.</source>
@@ -3816,7 +3824,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>You covered your {n} km² of Automatic this month</source>
-        <translation>今月のAutomatic {n} km²を使い切りました</translation>
+        <translation>今月の自動モード{n}km²を使い切りました</translation>
     </message>
     <message>
         <source>This run needs {n} cloud detections and you have {left} left this month. Lower the precision or shrink the zone. Pro covers 300 km² of Automatic a month, on zones of any size.</source>
@@ -3860,7 +3868,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>You saved your cloud objects for this month. Switch to your own computer to keep working free, or upgrade from the panel.</source>
-        <translation>今月のクラウドオブジェクトを保存できる数に達しました。無料で作業を続けるにはご自身のコンピュータに切り替えるか、パネルからアップグレードしてください。</translation>
+        <translation>今月のクラウドオブジェクトを保存できる数に達しました。無料で作業を続けるには「お使いのコンピュータ」に切り替えるか、パネルからアップグレードしてください。</translation>
     </message>
     <message>
         <source>Your cloud allowance for this month is used, so the AI fix cannot answer. Switched to editing by hand, which is free.</source>
@@ -3900,19 +3908,19 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>{n} of {total} cloud objects left in Semi-Auto this month</source>
-        <translation>今月のSemi-Autoのクラウドオブジェクト残り {n} / {total}</translation>
+        <translation>今月の半自動モードのクラウドオブジェクト：{total}件のうち残り{n}件</translation>
     </message>
     <message>
         <source>{n} of {total} km² left in Automatic this month</source>
-        <translation>今月のAutomaticの残り {n} / {total} km²</translation>
+        <translation>今月の自動モードは{total}km²のうち残り{n}km²</translation>
     </message>
     <message>
         <source>Draw a whole city and let it run, at the finest precision.</source>
-        <translation>都市全体を描いて実行できます。最高精度で処理します。</translation>
+        <translation>都市全体を描いて、最高の詳細度で実行できます。</translation>
     </message>
     <message>
         <source>Or click objects one by one in Semi-Auto.</source>
-        <translation>または、Semi-Autoでオブジェクトを1つずつクリックします。</translation>
+        <translation>または、半自動モードでオブジェクトを1つずつクリックします。</translation>
     </message>
     <message>
         <source>(optional)</source>
@@ -3920,15 +3928,15 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>More precision sweeps your zone in a finer grid, so it catches smaller objects.</source>
-        <translation>精度を上げると、ゾーンをより細かいグリッドでスキャンするため、より小さなオブジェクトも検出できます。</translation>
+        <translation>詳細度を上げると、範囲をより細かいグリッドでスキャンするため、より小さなオブジェクトも検出できます。</translation>
     </message>
     <message>
         <source>Your Automatic allowance ran out mid-zone.</source>
-        <translation>ゾーンの途中でAutomaticの利用枠を使い切りました。</translation>
+        <translation>範囲の途中で自動モードの利用枠を使い切りました。</translation>
     </message>
     <message>
         <source>Pro picks it up where it stopped and finishes the zone.</source>
-        <translation>Proは停止した地点から再開し、ゾーンを最後まで処理します。</translation>
+        <translation>Proは停止した地点から再開し、範囲を最後まで処理します。</translation>
     </message>
     <message>
         <source>Finish with Pro</source>
@@ -3936,19 +3944,19 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>This zone at this precision is more than one run covers. Draw a smaller zone, or lower the precision.</source>
-        <translation>この精度では、このゾーンは1回の実行で処理できる範囲を超えています。小さいゾーンを描くか、精度を下げてください。</translation>
+        <translation>この詳細度では、この範囲は1回の実行で処理できる大きさを超えています。範囲を小さく描くか、詳細度を下げてください。</translation>
     </message>
     <message>
         <source>This zone at this precision is more than one run covers. Draw a smaller zone, or lower the precision. Free runs stop well below that ceiling, so Pro keeps more precision on a zone this size.</source>
-        <translation>この精度では、このゾーンは1回の実行で処理できる範囲を超えています。小さいゾーンを描くか、精度を下げてください。無料実行の上限はさらに低いため、このサイズのゾーンではProのほうが高い精度を維持できます。</translation>
+        <translation>この詳細度では、この範囲は1回の実行で処理できる大きさを超えています。範囲を小さく描くか、詳細度を下げてください。無料の実行はその上限よりずっと手前で止まるため、この大きさの範囲ではProのほうが高い詳細度を維持できます。</translation>
     </message>
     <message>
         <source>{n} km²</source>
-        <translation>{n} km²</translation>
+        <translation>{n}km²</translation>
     </message>
     <message>
         <source>Automatic is counted by surface. Precision changes how finely the zone is scanned, never the price. A run never costs more than the zone you drew.</source>
-        <translation>Automaticは面積で計算します。精度によってゾーンをスキャンする細かさは変わりますが、料金は変わりません。1回の実行で、描いたゾーン以上の料金がかかることはありません。</translation>
+        <translation>自動モードは面積で計算されます。詳細度を変えると範囲の走査の細かさは変わりますが、料金は変わりません。1回の実行で、描いた範囲を超える料金がかかることはありません。</translation>
     </message>
     <message>
         <source>Pro raises the month to 300 km² of Automatic.</source>
@@ -3956,31 +3964,31 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>This zone is {zone} km². You have {left} km² left in Automatic this month.</source>
-        <translation>このゾーンは {zone} km²です。今月のAutomaticは {left} km²残っています。</translation>
+        <translation>この範囲は{zone}km²です。今月の自動モードは残り{left}km²です。</translation>
     </message>
     <message>
         <source>Or draw a smaller zone.</source>
-        <translation>または、小さいゾーンを描いてください。</translation>
+        <translation>または、範囲を小さく描いてください。</translation>
     </message>
     <message>
         <source>This zone is {area} km². Free runs stop at {max} km².</source>
-        <translation>このゾーンは {area} km²です。無料実行は {max} km²までです。</translation>
+        <translation>この範囲は{area}km²です。無料で描ける範囲は{max}km²までです。</translation>
     </message>
     <message>
         <source>Pro has no size limit and runs the zone as you drew it.</source>
-        <translation>Proにはサイズ制限がなく、描いたままのゾーンを実行できます。</translation>
+        <translation>Proにはサイズ制限がなく、描いたままの範囲を実行できます。</translation>
     </message>
     <message>
         <source>Or make the zone smaller and run it free.</source>
-        <translation>または、ゾーンを小さくして無料で実行してください。</translation>
+        <translation>または、範囲を小さくして無料で実行してください。</translation>
     </message>
     <message>
         <source>{n} km² of Automatic left, back on {date}.</source>
-        <translation>Automaticが {n} km²残っています。{date}に復旧します。</translation>
+        <translation>自動モードの残りは{n}km²です。{date}に回復します。</translation>
     </message>
     <message>
         <source>{n} km² of Automatic left this month.</source>
-        <translation>今月のAutomaticは {n} km²残っています。</translation>
+        <translation>今月の自動モードの残りは{n}km²です。</translation>
     </message>
     <message>
         <source>{n} free detections left, back on {date}.</source>
@@ -4000,7 +4008,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Zoom in for a finer outline. The AI reads the image at your current zoom.</source>
-        <translation>より細かい輪郭を描くにはズームインしてください。AIは現在のズームで画像を読み取ります。</translation>
+        <translation>より細かい輪郭を描くには拡大してください。AIは現在のズームで画像を読み取ります。</translation>
     </message>
     <message>
         <source>Keep clicking with the same cloud AI, nothing to install.</source>
@@ -4016,19 +4024,19 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>{n} of {total} cloud objects left in Semi-Auto, back on {date}.</source>
-        <translation>Semi-Autoのクラウドオブジェクトが {n} / {total} 残っています。{date}に復旧します。</translation>
+        <translation>半自動モードのクラウドオブジェクトは{total}件のうち残り{n}件です。{date}に回復します。</translation>
     </message>
     <message>
         <source>{n} of {total} cloud objects left in Semi-Auto this month.</source>
-        <translation>今月のSemi-Autoのクラウドオブジェクトが {n} / {total} 残っています。</translation>
+        <translation>今月の半自動モードのクラウドオブジェクトは{total}件のうち残り{n}件です。</translation>
     </message>
     <message>
         <source>{n} cloud detections left, back on {date}.</source>
-        <translation>クラウド検出が {n}個残っています。{date}に復旧します。</translation>
+        <translation>クラウド検出の残りは{n}件です。{date}に回復します。</translation>
     </message>
     <message>
         <source>{n} cloud detections left.</source>
-        <translation>クラウド検出が {n}個残っています。</translation>
+        <translation>クラウド検出の残りは{n}件です。</translation>
     </message>
     <message>
         <source>Pro gives you 2,000 cloud objects a month in Semi-Auto.</source>
@@ -4052,15 +4060,15 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>This zone is larger than the surface you have left this month. Draw a smaller zone.</source>
-        <translation>このゾーンは今月残っている面積を超えています。小さいゾーンを描いてください。</translation>
+        <translation>この範囲は今月の残り面積を超えています。範囲を小さく描いてください。</translation>
     </message>
     <message>
         <source>It comes back on {date}.</source>
-        <translation>{date}に復旧します。</translation>
+        <translation>{date}に回復します。</translation>
     </message>
     <message>
         <source>A zone detection is already running. Wait for it to finish, or stop it, before starting another.</source>
-        <translation>ゾーン検出はすでに実行中です。完了するか停止するまで待ってから、別の検出を開始してください。</translation>
+        <translation>範囲の検出はすでに実行中です。完了するか停止するまで待ってから、別の検出を開始してください。</translation>
     </message>
     <message>
         <source>Type what to find first. An example is optional.</source>
@@ -4068,7 +4076,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Your plan is already running on its maximum number of computers. Close AI Segmentation on one of them, then run Detect again.</source>
-        <translation>お使いのプランはすでに最大台数のコンピューターで実行されています。いずれかのコンピューターでAI Segmentationを終了してから、Detectを再度実行してください。</translation>
+        <translation>お使いのプランはすでに最大台数のコンピュータで実行されています。いずれかのコンピュータでAI Segmentationを終了してから、「オブジェクトを検出」をもう一度実行してください。</translation>
     </message>
     <message>
         <source>This zone is larger than the area you have left this month. Draw a smaller zone, or subscribe for a larger monthly area.</source>
@@ -4076,19 +4084,19 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Your monthly allowance ran out, so this run did not start.</source>
-        <translation>月間割り当てを使い切ったため、この実行は開始されませんでした。</translation>
+        <translation>毎月の利用枠を使い切ったため、この実行は開始されませんでした。</translation>
     </message>
     <message>
         <source>"{word}" is hard to spot from above - "{term}" detects better. Your word still runs.</source>
-        <translation>"{word}"は上空から見つけにくい対象です。"{term}"のほうが検出しやすくなります。入力した単語でも実行されます。</translation>
+        <translation>「{word}」は上空から見つけにくい対象です。「{term}」のほうが検出しやすくなります。入力した単語でも実行されます。</translation>
     </message>
     <message>
         <source>"{word}" cannot be seen from above. Pick an object on the ground - the Library has ready-to-use ones.</source>
-        <translation>"{word}"は上空から見えません。地上のオブジェクトを選んでください。ライブラリにはすぐ使えるものがあります。</translation>
+        <translation>「{word}」は上空から見えません。地上のオブジェクトを選んでください。ライブラリにはすぐ使えるものがあります。</translation>
     </message>
     <message>
         <source>"{obj}" is not an object the AI knows well. The run may come back empty - a more common word finds more.</source>
-        <translation>"{obj}"はAIがあまりよく認識できないオブジェクトです。実行結果が空になる場合があります。より一般的な単語を使うと、検出しやすくなります。</translation>
+        <translation>「{obj}」はAIがあまりよく認識できないオブジェクトです。結果が空になる場合があります。より一般的な単語を使うと、検出しやすくなります。</translation>
     </message>
     <message>
         <source>(~{n} min left)</source>
@@ -4116,15 +4124,15 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Automatic is temporarily unavailable. Try again later.</source>
-        <translation>自動は一時的に利用できません。後でもう一度お試しください。</translation>
+        <translation>自動モードは一時的に利用できません。後でもう一度お試しください。</translation>
     </message>
     <message>
         <source>Could not read the pixel grid of this raster. Check the layer opens and shows in QGIS, then try again.</source>
-        <translation>このラスタのピクセルグリッドを読み取れませんでした。レイヤーがQGISで開いて表示されることを確認してから、もう一度お試しください。</translation>
+        <translation>このラスタのピクセルグリッドを読み取れませんでした。レイヤがQGISで開いて表示されることを確認してから、もう一度お試しください。</translation>
     </message>
     <message>
         <source>Detection stopped before any result came back. Run Detect again when you are ready.</source>
-        <translation>結果が返る前に検出が停止しました。準備ができたら、もう一度検出を実行してください。</translation>
+        <translation>結果が返る前に検出が停止しました。準備ができたら、「オブジェクトを検出」をもう一度実行してください。</translation>
     </message>
     <message>
         <source>Export now?</source>
@@ -4140,11 +4148,11 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>No Automatic surface left this month. Semi-Auto still works until it comes back.</source>
-        <translation>今月は自動で利用できる面積が残っていません。自動が再開するまで、Semi-Autoは引き続き利用できます。</translation>
+        <translation>今月の自動モードの残り面積はありません。自動モードが回復するまで、半自動モードは引き続き利用できます。</translation>
     </message>
     <message>
         <source>No Automatic surface left this month. Semi-Auto still works, and Automatic comes back on {date}.</source>
-        <translation>今月は自動で利用できる面積が残っていません。Semi-Autoは引き続き利用でき、自動は{date}に再開します。</translation>
+        <translation>今月の自動モードの残り面積はありません。半自動モードは引き続き利用でき、自動モードは{date}に回復します。</translation>
     </message>
     <message>
         <source>None of the objects came out as a shape the file could take. Turn the cleanup settings down and try Finish again.</source>
@@ -4160,19 +4168,19 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Removes the last point you placed on the object.</source>
-        <translation>オブジェクトに配置した最後のポイントを削除します。</translation>
+        <translation>オブジェクトに配置した最後の点を削除します。</translation>
     </message>
     <message>
         <source>Saved all {n} objects found to {name}, including any the Confidence slider hid.</source>
-        <translation>信頼度スライダーで非表示になったものを含め、検出した{n}個のオブジェクトをすべて{name}に保存しました。</translation>
+        <translation>信頼度スライダーで非表示になったものを含め、検出したオブジェクト{n}件をすべて{name}に保存しました。</translation>
     </message>
     <message>
         <source>Saved the 1 object found to {name}.</source>
-        <translation>検出した1個のオブジェクトを{name}に保存しました。</translation>
+        <translation>検出したオブジェクト1件を{name}に保存しました。</translation>
     </message>
     <message>
         <source>Sign in to run Automatic.</source>
-        <translation>自動を実行するにはサインインしてください。</translation>
+        <translation>自動モードを実行するには、ログインしてください。</translation>
     </message>
     <message>
         <source>The AI Segmentation panel is closed, so there is nothing to detect from. Open it and try again.</source>
@@ -4180,7 +4188,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>The AI did not load, so this click was not answered. Use the Install button in the panel to set it up again.</source>
-        <translation>AIが読み込まれなかったため、このクリックを処理できませんでした。パネルのインストールボタンを使って、もう一度設定してください。</translation>
+        <translation>AIが読み込まれなかったため、このクリックを処理できませんでした。パネルの「インストール」ボタンでもう一度セットアップしてください。</translation>
     </message>
     <message>
         <source>The AI is still loading, so this click was not answered. Try again in a few seconds.</source>
@@ -4204,7 +4212,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>The offline AI did not load, so this session cannot start. Use the Install button in the panel to set it up again.</source>
-        <translation>オフラインAIが読み込まれなかったため、このセッションを開始できません。パネルのインストールボタンを使って、もう一度設定してください。</translation>
+        <translation>オフラインAIが読み込まれなかったため、このセッションを開始できません。パネルの「インストール」ボタンでもう一度セットアップしてください。</translation>
     </message>
     <message>
         <source>This computer is no longer signed in. Sign out, then sign in again to reconnect it.</source>
@@ -4212,7 +4220,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>This sign-in code has expired. Click Cancel, then Sign in to get a new one.</source>
-        <translation>このサインインコードは期限切れです。キャンセルをクリックしてから、サインインして新しいコードを取得してください。</translation>
+        <translation>このログインコードは有効期限が切れています。「キャンセル」をクリックしてから、「ログイン」をクリックして新しいコードを取得してください。</translation>
     </message>
     <message>
         <source>This will discard 1 polygon.</source>
@@ -4238,7 +4246,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>You have been signed out. Sign in again to keep using the cloud features.</source>
-        <translation>サインアウトされました。クラウド機能を引き続き使うには、もう一度サインインしてください。</translation>
+        <translation>ログアウトされました。クラウド機能を引き続き使うには、もう一度ログインしてください。</translation>
     </message>
     <message>
         <source>You have {count} unsaved polygons.</source>
@@ -4246,7 +4254,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>You used your Automatic allowance for this month. Semi-Auto on your computer keeps working, free, with no counter.</source>
-        <translation>今月の自動利用枠を使い切りました。お使いのコンピューターでは、Semi-Autoを無料で引き続き利用できます。回数制限はありません。</translation>
+        <translation>今月の自動モードの利用枠を使い切りました。お使いのコンピュータでの半自動モードは、無料で引き続き使えます。回数制限はありません。</translation>
     </message>
     <message>
         <source>Your plan is already running on its maximum number of computers. Close AI Segmentation on one of them, then try again.</source>
@@ -4286,47 +4294,47 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>  - exclude these hosts from inspection:</source>
-        <translation>  - 次のホストを検査対象から除外する:</translation>
+        <translation>  - 次のホストを検査対象から除外する：</translation>
     </message>
     <message>
         <source>  - install the network&apos;s root certificate on this machine, or</source>
-        <translation>  - ネットワークのルート証明書をこのマシンにインストールする、または</translation>
+        <translation>  - ネットワークのルート証明書をこのコンピュータにインストールする、または</translation>
     </message>
     <message>
         <source>  1. Add an antivirus exclusion for the folder:</source>
-        <translation>  1. フォルダーをウイルス対策ソフトの除外対象に追加する:</translation>
+        <translation>  1. ウイルス対策ソフトの除外対象にフォルダを追加します：</translation>
     </message>
     <message>
         <source>  1. Close all QGIS windows (File &gt; Exit)</source>
-        <translation>  1. すべてのQGISウィンドウを閉じる（ファイル &gt; 終了）</translation>
+        <translation>  1. すべてのQGISウィンドウを閉じます（「ファイル」→「終了」）</translation>
     </message>
     <message>
         <source>  1. Delete the folder: {folder}</source>
-        <translation>  1. フォルダーを削除する: {folder}</translation>
+        <translation>  1. フォルダを削除します：{folder}</translation>
     </message>
     <message>
         <source>  1. Free up disk space (empty the trash, remove large unused files)</source>
-        <translation>  1. ディスク容量を空ける（ゴミ箱を空にし、大きくて不要なファイルを削除する）</translation>
+        <translation>  1. ディスク容量を空けます（ゴミ箱を空にし、大きくて不要なファイルを削除します）</translation>
     </message>
     <message>
         <source>  1. If that folder is inside OneDrive or another sync tool, pause
      syncing (or mark the folder &apos;Always keep on this device&apos;)</source>
-        <translation>  1. そのフォルダーがOneDriveなどの同期ツール内にある場合は、同期を一時停止する
-     （またはフォルダーを「このデバイス上に常に保持」に設定する）</translation>
+        <translation>  1. そのフォルダがOneDriveなどの同期ツール内にある場合は、同期を一時停止します
+     （またはフォルダを「このデバイス上に常に保持」に設定します）</translation>
     </message>
     <message>
         <source>  1. Install the latest VC++ Redistributable (x64):
      {url}</source>
-        <translation>  1. 最新のVC++ Redistributable（x64）をインストールする:
+        <translation>  1. 最新のVC++ Redistributable（x64）をインストールします：
      {url}</translation>
     </message>
     <message>
         <source>  1. Temporarily disable real-time antivirus scanning</source>
-        <translation>  1. ウイルス対策ソフトのリアルタイムスキャンを一時的に無効にする</translation>
+        <translation>  1. ウイルス対策ソフトのリアルタイムスキャンを一時的に無効にします</translation>
     </message>
     <message>
         <source>  1. Upgrade your distribution to a version released after 2019</source>
-        <translation>  1. 2019年以降にリリースされたバージョンにディストリビューションをアップグレードする</translation>
+        <translation>  1. 2019年以降にリリースされたバージョンにディストリビューションをアップグレードします</translation>
     </message>
     <message>
         <source>  1. Use a QGIS build bundling Python 3.12 or older, or</source>
@@ -4338,47 +4346,47 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>  2. Add an exclusion for the plugin folder:</source>
-        <translation>  2. プラグインフォルダーを除外対象に追加する:</translation>
+        <translation>  2. プラグインのフォルダを除外対象に追加します：</translation>
     </message>
     <message>
         <source>  2. If it persists, update QGIS to the latest LTR release
      (newer QGIS ships a newer Python) and try again</source>
-        <translation>  2. 解決しない場合は、QGISを最新のLTRリリースに更新する
-     （新しいQGISには新しいPythonが付属しています）その後、もう一度試す</translation>
+        <translation>  2. 解決しない場合は、QGISを最新のLTRリリースに更新し
+     （新しいQGISには新しいPythonが付属しています）、もう一度試します</translation>
     </message>
     <message>
         <source>  2. If you cannot upgrade, this plugin&apos;s AI engine is unfortunately
      not supported on this machine</source>
         <translation>  2. アップグレードできない場合、このプラグインのAIエンジンは残念ながら
-     このマシンではサポートされません</translation>
+     このコンピュータではサポートされません</translation>
     </message>
     <message>
         <source>  2. On Apple Silicon, run the native (arm64) QGIS rather than the
      Intel build under Rosetta</source>
-        <translation>  2. Apple Siliconでは、Rosetta上のIntel版ではなくネイティブ（arm64）のQGISを実行する</translation>
+        <translation>  2. Apple Siliconでは、Rosetta上のIntel版ではなくネイティブ（arm64）のQGISを実行します</translation>
     </message>
     <message>
         <source>  2. Or set the AI_SEGMENTATION_CACHE_DIR environment variable to a
      short local folder outside any synced area (e.g. C:\qgis_ai),
      then restart QGIS</source>
-        <translation>  2. またはAI_SEGMENTATION_CACHE_DIR環境変数を、同期対象外の短いローカルフォルダー
-     （例: C:\qgis_ai）に設定し、その後QGISを再起動する</translation>
+        <translation>  2. またはAI_SEGMENTATION_CACHE_DIR環境変数を、同期対象外の短いローカルフォルダ
+     （例：C:\qgis_ai）に設定し、その後QGISを再起動します</translation>
     </message>
     <message>
         <source>  2. Reopen QGIS</source>
-        <translation>  2. QGISを再度開く</translation>
+        <translation>  2. QGISをもう一度開きます</translation>
     </message>
     <message>
         <source>  2. Restart QGIS and try again</source>
-        <translation>  2. QGISを再起動して、もう一度試す</translation>
+        <translation>  2. QGISを再起動して、もう一度試します</translation>
     </message>
     <message>
         <source>  2. Restart your computer after installing</source>
-        <translation>  2. インストール後にコンピューターを再起動する</translation>
+        <translation>  2. インストール後にコンピュータを再起動します</translation>
     </message>
     <message>
         <source>  2. The environment is installed under: {location}</source>
-        <translation>  2. 環境のインストール先: {location}</translation>
+        <translation>  2. 環境のインストール先：{location}</translation>
     </message>
     <message>
         <source>  2. {step} to build everything again</source>
@@ -4386,31 +4394,31 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>  3. Check folder permissions: {command}</source>
-        <translation>  3. フォルダーの権限を確認する: {command}</translation>
+        <translation>  3. フォルダの権限を確認します：{command}</translation>
     </message>
     <message>
         <source>  3. If the error is still there after the reboot:</source>
-        <translation>  3. 再起動後もエラーが残る場合:</translation>
+        <translation>  3. 再起動後もエラーが残る場合：</translation>
     </message>
     <message>
         <source>  3. If the issue persists, reinstall QGIS</source>
-        <translation>  3. 解決しない場合はQGISを再インストールする</translation>
+        <translation>  3. 解決しない場合はQGISを再インストールします</translation>
     </message>
     <message>
         <source>  3. Open the AI Segmentation panel - installation will resume</source>
-        <translation>  3. AI Segmentationパネルを開く - インストールが再開されます</translation>
+        <translation>  3. AI Segmentationパネルを開きます。インストールが再開されます</translation>
     </message>
     <message>
         <source>  3. Run QGIS as administrator (right-click &gt; Run as administrator)</source>
-        <translation>  3. QGISを管理者として実行する（右クリック &gt; 管理者として実行）</translation>
+        <translation>  3. QGISを管理者として実行します（右クリック→「管理者として実行」）</translation>
     </message>
     <message>
         <source>  3. To install on another drive, set the AI_SEGMENTATION_CACHE_DIR
      environment variable to a folder on a disk with more space,
      then restart QGIS and try again</source>
         <translation>  3. 別のドライブにインストールするには、AI_SEGMENTATION_CACHE_DIR環境変数を
-     より空き容量の多いディスク上のフォルダーに設定し、
-     QGISを再起動してもう一度試す</translation>
+     より空き容量の多いディスク上のフォルダに設定し、
+     QGISを再起動してもう一度試します</translation>
     </message>
     <message>
         <source>  3. {step} again</source>
@@ -4426,29 +4434,29 @@ It may have been moved or renamed, or the drive or network share it is on may be
      Open a terminal and run: where python
      If you see multiple results, remove the extra ones from PATH</source>
         <translation>  4. 他のPython（Anaconda、Miniconda、スタンドアロンPython）が競合するtorch DLLを
-     システムのPATHに追加していないことを確認する。
-     ターミナルを開いて次を実行する: where python
-     複数の結果が表示された場合は、余分なものをPATHから削除する</translation>
+     システムのPATHに追加していないことを確認します。
+     ターミナルを開いて次を実行します：where python
+     複数の結果が表示された場合は、余分なものをPATHから削除します</translation>
     </message>
     <message>
         <source>  4. If the issue persists, run QGIS as administrator</source>
-        <translation>  4. 解決しない場合はQGISを管理者として実行する</translation>
+        <translation>  4. 解決しない場合はQGISを管理者として実行します</translation>
     </message>
     <message>
         <source>  4. Try the installation again</source>
-        <translation>  4. インストールをもう一度試す</translation>
+        <translation>  4. もう一度インストールします</translation>
     </message>
     <message>
         <source>  4. Uninstall the plugin (Plugins &gt; Manage and Install Plugins &gt; Installed &gt; AI Segmentation)</source>
-        <translation>  4. プラグインをアンインストールする（プラグイン &gt; プラグインの管理とインストール &gt; インストール済み &gt; AI Segmentation）</translation>
+        <translation>  4. プラグインをアンインストールします（「プラグイン」→「プラグインの管理とインストール」→「インストール済み」→「AI Segmentation」）</translation>
     </message>
     <message>
         <source>  5. Restart QGIS</source>
-        <translation>  5. QGISを再起動する</translation>
+        <translation>  5. QGISを再起動します</translation>
     </message>
     <message>
         <source>  6. Reinstall the plugin</source>
-        <translation>  6. プラグインを再インストールする</translation>
+        <translation>  6. プラグインを再インストールします</translation>
     </message>
     <message>
         <source>A required DLL failed to initialize.</source>
@@ -4456,19 +4464,19 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Ask your IT department to add a path-based allow rule for this folder:</source>
-        <translation>IT部門に、このフォルダーのパスベースの許可ルールを追加するよう依頼してください:</translation>
+        <translation>IT部門に、このフォルダのパスベースの許可ルールを追加するよう依頼してください：</translation>
     </message>
     <message>
         <source>Ask your IT department to either:</source>
-        <translation>IT部門に次のいずれかを依頼してください:</translation>
+        <translation>IT部門に次のいずれかを依頼してください：</translation>
     </message>
     <message>
         <source>Cache error, retrying {package}... ({done}/{total})</source>
-        <translation>キャッシュエラー、{package}を再試行中...（{done}/{total}）</translation>
+        <translation>キャッシュエラー、{package}を再試行中…（{done}/{total}）</translation>
     </message>
     <message>
         <source>Creating virtual environment...</source>
-        <translation>仮想環境を作成中...</translation>
+        <translation>仮想環境を作成中…</translation>
     </message>
     <message>
         <source>Disabling antivirus or running QGIS as administrator will not help.</source>
@@ -4476,7 +4484,7 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Downloaded {mb} MB, saving...</source>
-        <translation>{mb} MBをダウンロードしました。保存中...</translation>
+        <translation>{mb}MBをダウンロードしました。保存中…</translation>
     </message>
     <message>
         <source>Downloading PyTorch (~180 MB)... {elapsed}</source>
@@ -4484,41 +4492,41 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Downloading Python: {done} MB</source>
-        <translation>Pythonをダウンロード中: {done} MB</translation>
+        <translation>Pythonをダウンロード中：{done}MB</translation>
     </message>
     <message>
         <source>Downloading Python: {done} MB of {total} MB</source>
-        <translation>Pythonをダウンロード中: {done} MB / {total} MB</translation>
+        <translation>Pythonをダウンロード中：{done}MB/{total}MB</translation>
     </message>
     <message>
         <source>Downloading uv package installer...</source>
-        <translation>uvパッケージインストーラーをダウンロード中...</translation>
+        <translation>uvパッケージインストーラをダウンロード中…</translation>
     </message>
     <message>
         <source>Failed to create venv: this Python is missing its venv support.
 
 </source>
-        <translation>venvの作成に失敗しました: このPythonにはvenvのサポートがありません。
+        <translation>venvの作成に失敗しました：このPythonにはvenvのサポートがありません。
 
 </translation>
     </message>
     <message>
         <source>How to fix this:</source>
-        <translation>解決方法:</translation>
+        <translation>解決方法：</translation>
     </message>
     <message>
         <source>If it still fails after restarting QGIS:</source>
-        <translation>QGISを再起動しても失敗する場合:</translation>
+        <translation>QGISを再起動しても失敗する場合：</translation>
     </message>
     <message>
         <source>Install it, then retry:
 </source>
-        <translation>インストールしてから再試行してください:
+        <translation>インストールしてからもう一度お試しください：
 </translation>
     </message>
     <message>
         <source>Install the venv module for your Python with your system&apos;s package manager, then retry.</source>
-        <translation>システムのパッケージマネージャーでPython用のvenvモジュールをインストールしてから、再試行してください。</translation>
+        <translation>システムのパッケージマネージャでPython用のvenvモジュールをインストールしてから、もう一度お試しください。</translation>
     </message>
     <message>
         <source>Installation failed due to network restrictions.</source>
@@ -4526,31 +4534,31 @@ It may have been moved or renamed, or the drive or network share it is on may be
     </message>
     <message>
         <source>Installation failed: Python&apos;s SSL module is not available.</source>
-        <translation>インストールに失敗しました: PythonのSSLモジュールを利用できません。</translation>
+        <translation>インストールに失敗しました：PythonのSSLモジュールを利用できません。</translation>
     </message>
     <message>
         <source>Installation failed: no compatible AI engine build exists for this
 combination of Intel Mac and Python version.</source>
-        <translation>インストールに失敗しました: このIntel MacとPythonバージョンの組み合わせに対応する
+        <translation>インストールに失敗しました：このIntel MacとPythonバージョンの組み合わせに対応する
 AIエンジンのビルドがありません。</translation>
     </message>
     <message>
         <source>Installation failed: the download server presented a certificate this computer does not trust.</source>
-        <translation>インストールに失敗しました: ダウンロードサーバーが、このコンピューターで信頼されていない証明書を提示しました。</translation>
+        <translation>インストールに失敗しました：ダウンロードサーバーが、このコンピュータで信頼されていない証明書を提示しました。</translation>
     </message>
     <message>
         <source>Installation failed: your Linux distribution is too old for the
 current AI engine. PyTorch wheels now require a recent system
 library (glibc 2.28+, i.e. Ubuntu 20.04 / Debian 10 / CentOS 8 or
 newer).</source>
-        <translation>インストールに失敗しました: お使いのLinuxディストリビューションは
+        <translation>インストールに失敗しました：お使いのLinuxディストリビューションは
 現在のAIエンジンには古すぎます。PyTorchのwheelには現在、新しいシステム
 ライブラリ（glibc 2.28以降、つまりUbuntu 20.04 / Debian 10 / CentOS 8
 以降）が必要です。</translation>
     </message>
     <message>
         <source>Installation failed: your disk ran out of space.</source>
-        <translation>インストールに失敗しました: ディスク容量が不足しています。</translation>
+        <translation>インストールに失敗しました：ディスク容量が不足しています。</translation>
     </message>
     <message>
         <source>Installation was blocked, likely by antivirus software or security policy.</source>
@@ -4562,11 +4570,11 @@ newer).</source>
     </message>
     <message>
         <source>Installing {package}... ({done}/{total})</source>
-        <translation>{package}をインストール中...（{done}/{total}）</translation>
+        <translation>{package}をインストール中…（{done}/{total}）</translation>
     </message>
     <message>
         <source>Installing {package}... {elapsed}</source>
-        <translation>{package}をインストール中... {elapsed}</translation>
+        <translation>{package}をインストール中… {elapsed}</translation>
     </message>
     <message>
         <source>Intel (x86_64) Macs are supported only up to PyTorch 2.2.2, which
@@ -4576,23 +4584,23 @@ Python 3.8から3.12向けに提供されています。お使いのPythonはそ
     </message>
     <message>
         <source>Network error, retry {attempt}/{total} in {wait}s...</source>
-        <translation>ネットワークエラー、{wait}秒後に再試行します（{attempt}/{total}）...</translation>
+        <translation>ネットワークエラー、{wait}秒後に再試行します（{attempt}/{total}）…</translation>
     </message>
     <message>
         <source>Network error, retrying in {seconds}s...</source>
-        <translation>ネットワークエラー、{seconds}秒後に再試行します...</translation>
+        <translation>ネットワークエラー、{seconds}秒後に再試行します…</translation>
     </message>
     <message>
         <source>Not enough free disk space to install dependencies: {free_gb:.1f} GB available at {cache_dir}, at least {min_free_gb:.1f} GB is required.
 
 Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR environment variable to a directory on a larger drive, then restart QGIS.</source>
-        <translation>依存関係をインストールするための空きディスク容量が不足しています: {cache_dir}で利用可能なのは{free_gb:.1f} GB、少なくとも{min_free_gb:.1f} GB必要です。
+        <translation>依存関係をインストールするための空きディスク容量が不足しています：{cache_dir}で利用可能なのは{free_gb:.1f}GB、少なくとも{min_free_gb:.1f}GB必要です。
 
 ディスク容量を空けるか、AI_SEGMENTATION_CACHE_DIR環境変数を容量の大きいドライブ上のディレクトリに設定してから、QGISを再起動してください。</translation>
     </message>
     <message>
         <source>Once the rule is in place, restart QGIS and try again.</source>
-        <translation>ルールを設定したら、QGISを再起動してもう一度試してください。</translation>
+        <translation>ルールを設定したら、QGISを再起動してもう一度お試しください。</translation>
     </message>
     <message>
         <source>Open the AI Segmentation panel and click Install</source>
@@ -4600,11 +4608,11 @@ Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR environment variable to
     </message>
     <message>
         <source>Please contact your IT department to allow access to:</source>
-        <translation>次へのアクセスを許可するようIT部門に依頼してください:</translation>
+        <translation>次へのアクセスを許可するようIT部門に依頼してください：</translation>
     </message>
     <message>
         <source>Please try:</source>
-        <translation>次をお試しください:</translation>
+        <translation>次をお試しください：</translation>
     </message>
     <message>
         <source>Python standalone ready</source>
@@ -4612,31 +4620,31 @@ Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR environment variable to
     </message>
     <message>
         <source>Retrying {package}... ({done}/{total})</source>
-        <translation>{package}を再試行中...（{done}/{total}）</translation>
+        <translation>{package}を再試行中…（{done}/{total}）</translation>
     </message>
     <message>
         <source>SSL bypass retry for {package}... ({done}/{total})</source>
-        <translation>{package}のSSLバイパス再試行中...（{done}/{total}）</translation>
+        <translation>{package}のSSLバイパス再試行中…（{done}/{total}）</translation>
     </message>
     <message>
         <source>SSL error, retrying {package} (system certs)... ({done}/{total})</source>
-        <translation>SSLエラー、{package}を再試行中（システム証明書）...（{done}/{total}）</translation>
+        <translation>SSLエラー、{package}を再試行中（システム証明書）…（{done}/{total}）</translation>
     </message>
     <message>
         <source>The AI engine needs roughly {gb} GB free during installation.</source>
-        <translation>インストール中、AIエンジンには約{gb} GBの空き容量が必要です。</translation>
+        <translation>インストール中、AIエンジンには約{gb}GBの空き容量が必要です。</translation>
     </message>
     <message>
         <source>The environment installs under: {location}</source>
-        <translation>環境のインストール先: {location}</translation>
+        <translation>環境のインストール先：{location}</translation>
     </message>
     <message>
         <source>The install has not reported anything for a while. QGIS is yours again: leave this running, or stop it and use Cloud AI.</source>
-        <translation>しばらくインストールの進捗がありません。QGISを再び操作できます。このまま実行するか、停止してCloud AIを使用してください。</translation>
+        <translation>しばらくインストールの進捗がありません。QGISを再び操作できます。このまま実行するか、停止してクラウドAIを使用してください。</translation>
     </message>
     <message>
         <source>The installer process crashed unexpectedly (access violation).</source>
-        <translation>インストーラープロセスが予期せずクラッシュしました（アクセス違反）。</translation>
+        <translation>インストーラプロセスが予期せずクラッシュしました（アクセス違反）。</translation>
     </message>
     <message>
         <source>The next installation will rebuild it from scratch automatically.</source>
@@ -4646,7 +4654,7 @@ Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR environment variable to
         <source>The package resolver could not find a compatible set of versions.
 This usually comes from stale cached package data or a Python
 version the AI packages no longer support.</source>
-        <translation>パッケージリゾルバーが互換性のあるバージョンの組み合わせを見つけられませんでした。
+        <translation>パッケージリゾルバが互換性のあるバージョンの組み合わせを見つけられませんでした。
 通常は、古いキャッシュ済みパッケージデータ、またはAIパッケージがサポートしなくなった
 Pythonバージョンが原因です。</translation>
     </message>
@@ -4654,9 +4662,9 @@ Pythonバージョンが原因です。</translation>
         <source>The plugin always uses this folder, so one rule keeps working across updates.
 It contains a standalone Python runtime, the uv installer and Python packages,
 all downloaded from their official open-source sources.</source>
-        <translation>プラグインは常にこのフォルダーを使用するため、1つのルールで更新後も機能します。
-このフォルダーには、公式のオープンソース提供元からダウンロードした
-スタンドアロンPythonランタイム、uvインストーラー、Pythonパッケージが含まれます。</translation>
+        <translation>プラグインは常にこのフォルダを使用するため、1つのルールで更新後も機能します。
+このフォルダには、公式のオープンソース提供元からダウンロードした
+スタンドアロンPythonランタイム、uvインストーラ、Pythonパッケージが含まれます。</translation>
     </message>
     <message>
         <source>The plugin&apos;s Python environment is damaged (files are missing inside it).</source>
@@ -4671,7 +4679,7 @@ first installation.</source>
     </message>
     <message>
         <source>This is usually caused by:</source>
-        <translation>通常の原因:</translation>
+        <translation>通常の原因：</translation>
     </message>
     <message>
         <source>This usually means the Python installation is incomplete or corrupted.</source>
@@ -4679,27 +4687,27 @@ first installation.</source>
     </message>
     <message>
         <source>This usually means the install folder is cloud-synced (OneDrive/Dropbox), contains unusual characters, or the path grew past the Windows length limit.</source>
-        <translation>通常、インストールフォルダーがクラウド同期対象（OneDrive/Dropbox）である、特殊文字を含む、またはパスがWindowsの長さ制限を超えたことを意味します。</translation>
+        <translation>通常、インストールフォルダがクラウド同期対象（OneDrive/Dropbox）である、特殊文字を含む、またはパスがWindowsの長さ制限を超えたことを意味します。</translation>
     </message>
     <message>
         <source>Try these steps in order:</source>
-        <translation>次の手順を順番にお試しください:</translation>
+        <translation>次の手順を順番にお試しください：</translation>
     </message>
     <message>
         <source>Upgrading pip...</source>
-        <translation>pipをアップグレード中...</translation>
+        <translation>pipをアップグレード中…</translation>
     </message>
     <message>
         <source>Using system Python (NixOS)...</source>
-        <translation>システムPythonを使用中（NixOS）...</translation>
+        <translation>システムPythonを使用中（NixOS）…</translation>
     </message>
     <message>
         <source>Using system Python (fallback)...</source>
-        <translation>システムPythonを使用中（フォールバック）...</translation>
+        <translation>システムPythonを使用中（フォールバック）…</translation>
     </message>
     <message>
         <source>Using uv package installer...</source>
-        <translation>uvパッケージインストーラーを使用中...</translation>
+        <translation>uvパッケージインストーラを使用中…</translation>
     </message>
     <message>
         <source>Verification complete</source>
@@ -4707,7 +4715,7 @@ first installation.</source>
     </message>
     <message>
         <source>Verifying {package}... ({done}/{total})</source>
-        <translation>{package}を検証中...（{done}/{total}）</translation>
+        <translation>{package}を検証中…（{done}/{total}）</translation>
     </message>
     <message>
         <source>Virtual environment created</source>
@@ -4727,33 +4735,33 @@ first installation.</source>
     </message>
     <message>
         <source>You can also try checking your proxy settings in QGIS (Settings &gt; Options &gt; Network).</source>
-        <translation>QGISのプロキシ設定（設定 &gt; オプション &gt; ネットワーク）を確認することもできます。</translation>
+        <translation>QGISのプロキシ設定（「設定」→「オプション」→「ネットワーク」）を確認することもできます。</translation>
     </message>
     <message>
         <source>Your network inspects secure connections and re-signs them with its own certificate, and that certificate is not in the computer&apos;s certificate store.</source>
-        <translation>ネットワークが安全な接続を検査し、独自の証明書で再署名しています。その証明書はコンピューターの証明書ストアにありません。</translation>
+        <translation>ネットワークが安全な接続を検査し、独自の証明書で再署名しています。その証明書はコンピュータの証明書ストアにありません。</translation>
     </message>
     <message>
         <source>Your organization&apos;s security policy (application control, e.g. AppLocker or WDAC)
 is blocking the plugin&apos;s local AI environment.</source>
         <translation>組織のセキュリティポリシー（AppLockerやWDACなどのアプリケーション制御）により、
-プラグインのローカルAI環境がブロックされています。</translation>
+プラグインのオフラインAI環境がブロックされています。</translation>
     </message>
     <message>
         <source>uv package installer ready</source>
-        <translation>uvパッケージインストーラーの準備完了</translation>
+        <translation>uvパッケージインストーラの準備完了</translation>
     </message>
     <message>
         <source>uv: ready</source>
-        <translation>uv: 準備完了</translation>
+        <translation>uv：準備完了</translation>
     </message>
     <message>
         <source>uv: unavailable, using pip</source>
-        <translation>uv: 利用できないため、pipを使用します</translation>
+        <translation>uv：利用できないため、pipを使用します</translation>
     </message>
     <message>
         <source>{free_gb:.1f} GB free at {cache_dir}, under the {min_free_gb:.0f} GB the local model needs. Installing the Automatic packages only. Free up space and install again to turn Semi-Auto mode on.</source>
-        <translation>{cache_dir}の空き容量は{free_gb:.1f} GBで、ローカルモデルに必要な{min_free_gb:.0f} GBを下回っています。自動モードのパッケージのみをインストールします。空き容量を増やして再インストールすると、半自動モードを有効にできます。</translation>
+        <translation>{cache_dir}の空き容量は{free_gb:.1f}GBで、ローカルモデルに必要な{min_free_gb:.0f}GBを下回っています。自動モードのパッケージのみをインストールします。空き容量を増やして再インストールすると、半自動モードを有効にできます。</translation>
     </message>
     <message>
         <source>{package} unavailable</source>
@@ -4817,23 +4825,23 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>The on-device AI is not installed. Click Install to add it.</source>
-        <translation>デバイス上のAIがインストールされていません。追加するには「インストール」をクリックしてください。</translation>
+        <translation>オフラインAIがインストールされていません。追加するには「インストール」をクリックしてください。</translation>
     </message>
     <message>
         <source>Cannot close download file: {error}</source>
-        <translation>ダウンロードファイルを閉じられません: {error}</translation>
+        <translation>ダウンロードファイルを閉じられません：{error}</translation>
     </message>
     <message>
         <source>Cannot open download file: {error}</source>
-        <translation>ダウンロードファイルを開けません: {error}</translation>
+        <translation>ダウンロードファイルを開けません：{error}</translation>
     </message>
     <message>
         <source>Cannot save download: {error}</source>
-        <translation>ダウンロードを保存できません: {error}</translation>
+        <translation>ダウンロードを保存できません：{error}</translation>
     </message>
     <message>
         <source>Cannot write download file: {error}</source>
-        <translation>ダウンロードファイルに書き込めません: {error}</translation>
+        <translation>ダウンロードファイルに書き込めません：{error}</translation>
     </message>
     <message>
         <source>Download failed</source>
@@ -4849,12 +4857,12 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>the network reported: {error}</source>
-        <translation>ネットワークから次の報告がありました: {error}</translation>
+        <translation>ネットワークから次の報告がありました：{error}</translation>
     </message>
     <message>
         <location filename="../src/ui/plugin/manual_predict.py" line="0" />
         <source>That click selected nothing. Move the points and click again.</source>
-        <translation>そのクリックでは何も選択されませんでした。ポイントを移動してもう一度クリックしてください。</translation>
+        <translation>そのクリックでは何も選択されませんでした。点を移動してもう一度クリックしてください。</translation>
     </message>
     <message>
         <source>Clear selection (C)</source>
@@ -4862,11 +4870,11 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Removes the points and the shape you are working on. Saved polygons stay.</source>
-        <translation>作業中のポイントと形状を削除します。保存済みのポリゴンは残ります。</translation>
+        <translation>作業中の点と図形を削除します。保存済みのポリゴンは残ります。</translation>
     </message>
     <message>
         <source>Clear the selection in progress</source>
-        <translation>作業中の選択をクリア</translation>
+        <translation>作業中の選択範囲を解除</translation>
     </message>
     <message>
         <source>This map source has no sharper picture of this area. The run uses the sharpest one it has, and costs fewer tiles than the estimate.</source>
@@ -4878,11 +4886,11 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>The folder is copied to your clipboard: paste it into your file manager.</source>
-        <translation>フォルダーをクリップボードにコピーしました。ファイルマネージャーに貼り付けてください。</translation>
+        <translation>フォルダをクリップボードにコピーしました。ファイルマネージャーに貼り付けてください。</translation>
     </message>
     <message>
         <source>Copy the folder below and paste it into your file manager.</source>
-        <translation>下のフォルダーをコピーして、ファイルマネージャーに貼り付けてください。</translation>
+        <translation>下のフォルダをコピーして、ファイルマネージャーに貼り付けてください。</translation>
     </message>
     <message>
         <source>QGIS could not open your email app.</source>
@@ -4918,19 +4926,19 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Finishing the current AI task, then the install starts.</source>
-        <translation type="unfinished"></translation>
+        <translation>現在のAIタスクを終了してから、インストールを開始します。</translation>
     </message>
     <message>
         <source>Right angles is off: this QGIS does not carry the shapely geometry library it needs. Every other shape control still works.</source>
-        <translation type="unfinished"></translation>
+        <translation>「直角化」はオフです：お使いのQGISに必要なshapelyジオメトリライブラリがありません。ほかの図形の調整は引き続き使えます。</translation>
     </message>
     <message>
         <source>Unavailable: this QGIS does not carry the shapely geometry library that squares the walls. A QGIS installed with its full package set carries it.</source>
-        <translation type="unfinished"></translation>
+        <translation>利用できません：お使いのQGISには、壁を直角にするshapelyジオメトリライブラリがありません。パッケージを一式インストールしたQGISには含まれています。</translation>
     </message>
     <message>
         <source>Report copied: paste it into your email</source>
-        <translation type="unfinished"></translation>
+        <translation>レポートをコピーしました。メールに貼り付けてください</translation>
     </message>
     <message>
         <source>Sign in to reopen, export or run this detection again.</source>
@@ -4942,7 +4950,7 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>More from TerraLab...</source>
-        <translation>TerraLabの詳細...</translation>
+        <translation>TerraLabのその他の製品…</translation>
     </message>
     <message>
         <source>BEFORE</source>
@@ -4954,15 +4962,15 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>(more than {n} min left)</source>
-        <translation>(残り{n}分以上)</translation>
+        <translation>（残り{n}分以上）</translation>
     </message>
     <message>
         <source>(retry {done}/{total})</source>
-        <translation>(再試行 {done}/{total})</translation>
+        <translation>（再試行{done}/{total}）</translation>
     </message>
     <message>
         <source>0 shown - raise the Max size filter to reveal them</source>
-        <translation>0件表示 - 表示するには最大サイズフィルターを上げてください</translation>
+        <translation>0件表示。最大サイズのフィルタを上げると表示されます</translation>
     </message>
     <message>
         <source>1 charged</source>
@@ -4978,7 +4986,7 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>200 km² of Automatic a month, on zones of any size.</source>
-        <translation>月200km²のAutomatic、サイズを問わないゾーンで使えます。</translation>
+        <translation>毎月200km²の自動モード、サイズを問わない範囲で使えます。</translation>
     </message>
     <message>
         <source>200 km² of Automatic every month, on zones of any size</source>
@@ -4986,11 +4994,11 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>500 cloud objects every month in Semi-Auto</source>
-        <translation>Semi-Autoで毎月500件のクラウドオブジェクト</translation>
+        <translation>半自動モードで毎月500件のクラウドオブジェクト</translation>
     </message>
     <message>
         <source>A firewall or proxy may be blocking the download. Check your network settings in QGIS (Settings &gt; Options &gt; Network).</source>
-        <translation>ファイアウォールやプロキシがダウンロードをブロックしている可能性があります。QGISのネットワーク設定を確認してください(設定 &gt; オプション &gt; ネットワーク)。</translation>
+        <translation>ファイアウォールやプロキシがダウンロードをブロックしている可能性があります。QGISのネットワーク設定を確認してください（「設定」→「オプション」→「ネットワーク」）。</translation>
     </message>
     <message>
         <source>Account settings</source>
@@ -4998,7 +5006,7 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Added to the project: {0}.</source>
-        <translation>プロジェクトに追加しました: {0}。</translation>
+        <translation>プロジェクトに追加しました：{0}。</translation>
     </message>
     <message>
         <source>Advanced settings - name the object first</source>
@@ -5010,7 +5018,7 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Another QGIS window is downloading the AI model. Wait for it to finish, then try again.</source>
-        <translation>別のQGISウィンドウでAIモデルをダウンロード中です。完了するまで待ってから、再試行してください。</translation>
+        <translation>別のQGISウィンドウでAIモデルをダウンロード中です。完了するまで待ってから、もう一度お試しください。</translation>
     </message>
     <message>
         <source>Another QGIS window is installing the AI components.</source>
@@ -5018,7 +5026,7 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Building the shapes</source>
-        <translation>形状を作成中</translation>
+        <translation>図形を作成中</translation>
     </message>
     <message>
         <source>Cancelled before the model was asked for. Nothing was spent.</source>
@@ -5026,11 +5034,11 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Cancelled before the point was sent. Nothing was spent.</source>
-        <translation>ポイントを送信する前にキャンセルされました。何も消費されていません。</translation>
+        <translation>点を送信する前にキャンセルされました。何も消費されていません。</translation>
     </message>
     <message>
         <source>Cancelled before the zone was sent. Nothing was spent.</source>
-        <translation>ゾーンを送信する前にキャンセルされました。何も消費されていません。</translation>
+        <translation>範囲を送信する前にキャンセルされました。何も消費されていません。</translation>
     </message>
     <message>
         <source>Cancelled while the model was loading. Nothing was spent.</source>
@@ -5038,7 +5046,7 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Cancelled. Kept the {0} object(s) already found, from the {1} tile(s) processed before the stop. The zone was charged when the run started, so the stop does not lower the bill. Added to the project: {2}.</source>
-        <translation>キャンセルしました。停止前に処理された{1}タイルから見つかった{0}個のオブジェクトは保持されます。ゾーンは実行開始時に課金されているため、停止しても料金は減りません。プロジェクトに追加しました: {2}。</translation>
+        <translation>キャンセルしました。停止前に処理された{1}タイルから見つかった{0}件のオブジェクトは保持されます。範囲は実行開始時に課金されているため、停止しても料金は減りません。プロジェクトに追加しました：{2}。</translation>
     </message>
     <message>
         <source>Cancelled. The AI service had processed {0} tile(s) before the stop, and nothing was added to the project. Open the AI Segmentation panel and look for a run waiting for review before starting another one. Run '{1}' to see what is left on the plan.</source>
@@ -5046,7 +5054,7 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Cannot restart the download: {error}</source>
-        <translation>ダウンロードを再開できません: {error}</translation>
+        <translation>ダウンロードを再開できません：{error}</translation>
     </message>
     <message>
         <source>Charged</source>
@@ -5054,19 +5062,19 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Check disk space and folder permissions, then try again.</source>
-        <translation>ディスク容量とフォルダーの権限を確認してから、再試行してください。</translation>
+        <translation>ディスク容量とフォルダの権限を確認してから、もう一度お試しください。</translation>
     </message>
     <message>
         <source>Checking the {size} MB download...</source>
-        <translation>{size} MBのダウンロードを確認中...</translation>
+        <translation>{size}MBのダウンロードを確認中…</translation>
     </message>
     <message>
         <source>Click on the map to outline your zone.</source>
-        <translation>地図をクリックしてゾーンの輪郭を描いてください。</translation>
+        <translation>地図をクリックして範囲の輪郭を描いてください。</translation>
     </message>
     <message>
         <source>Click the object first. Save polygon keeps it in your session; Export writes all kept polygons to a layer.</source>
-        <translation>まずオブジェクトをクリックしてください。「ポリゴンを保存」はセッション内に保持し、「エクスポート」は保持したすべてのポリゴンをレイヤーに書き出します。</translation>
+        <translation>まずオブジェクトをクリックしてください。「ポリゴンを保存」はセッション内に保持し、「エクスポート」は保持したすべてのポリゴンをレイヤに書き出します。</translation>
     </message>
     <message>
         <source>Close</source>
@@ -5078,11 +5086,11 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Connecting to download server...</source>
-        <translation>ダウンロードサーバーに接続中...</translation>
+        <translation>ダウンロードサーバーに接続中…</translation>
     </message>
     <message>
         <source>Could not reach TerraLab. Your runs are still there.</source>
-        <translation>TerraLabに接続できませんでした。実行結果はそのまま残っています。</translation>
+        <translation>TerraLabに接続できませんでした。実行はそのまま残っています。</translation>
     </message>
     <message>
         <source>Could not reach TerraLab. Your saved runs are still there.</source>
@@ -5090,7 +5098,7 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Could not remove this run. Try again later.</source>
-        <translation>この実行結果を削除できませんでした。後でもう一度試してください。</translation>
+        <translation>この実行を削除できませんでした。後でもう一度お試しください。</translation>
     </message>
     <message>
         <source>Date</source>
@@ -5098,7 +5106,7 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Delete run</source>
-        <translation>実行結果を削除</translation>
+        <translation>実行を削除</translation>
     </message>
     <message>
         <source>Dense area {current}/{total} · no extra cost</source>
@@ -5106,47 +5114,47 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Download failed after {attempts} attempts: {reason}</source>
-        <translation>{attempts}回試行してもダウンロードに失敗しました: {reason}</translation>
+        <translation>{attempts}回試行してもダウンロードに失敗しました：{reason}</translation>
     </message>
     <message>
         <source>Download started...</source>
-        <translation>ダウンロードを開始しました...</translation>
+        <translation>ダウンロードを開始しました…</translation>
     </message>
     <message>
         <source>Downloading Python {version}...</source>
-        <translation>Python {version}をダウンロード中...</translation>
+        <translation>Python {version}をダウンロード中…</translation>
     </message>
     <message>
         <source>Downloading {package} ({size})... {elapsed}</source>
-        <translation>{package}をダウンロード中({size})... {elapsed}</translation>
+        <translation>{package}をダウンロード中（{size}）… {elapsed}</translation>
     </message>
     <message>
         <source>Downloading {package}... {elapsed}</source>
-        <translation>{package}をダウンロード中... {elapsed}</translation>
+        <translation>{package}をダウンロード中… {elapsed}</translation>
     </message>
     <message>
         <source>Downloading: {done} / {total} MB ({speed} MB/s, {eta})</source>
-        <translation>ダウンロード中: {done} / {total} MB ({speed} MB/s、{eta})</translation>
+        <translation>ダウンロード中：{done}/{total}MB（{speed}MB/s、{eta}）</translation>
     </message>
     <message>
         <source>Downloading: {done} MB ({speed} MB/s)</source>
-        <translation>ダウンロード中: {done} MB ({speed} MB/s)</translation>
+        <translation>ダウンロード中：{done}MB（{speed}MB/s）</translation>
     </message>
     <message>
         <source>Draw a zone, name one kind of object, get all of them in one run. Runs on our servers and uses your cloud objects.</source>
-        <translation>ゾーンを描いてオブジェクトの種類を1つ指定すると、1回の実行ですべて検出します。当社のサーバー上で実行され、クラウドオブジェクトを使用します。</translation>
+        <translation>範囲を描いてオブジェクトの種類を1つ指定すると、1回の実行ですべて検出します。当社のサーバー上で実行され、クラウドオブジェクトを使用します。</translation>
     </message>
     <message>
         <source>Drop points closer than this distance to a straight edge (0 = off).</source>
-        <translation>直線の端からこの距離より近い点を間引きます(0 = オフ)。</translation>
+        <translation>直線の辺からこの距離より近い点を間引きます（0でオフ）。</translation>
     </message>
     <message>
         <source>Everything stays on this computer {dot} &lt;b&gt;about {n} minutes to install&lt;/b&gt;</source>
-        <translation>すべてこのコンピュータ内に残ります {dot} &lt;b&gt;インストールに約{n}分&lt;/b&gt;</translation>
+        <translation>すべてこのコンピュータ内に残ります{dot}&lt;b&gt;インストールに約{n}分&lt;/b&gt;</translation>
     </message>
     <message>
         <source>Everything stays on this computer {dot} &lt;b&gt;{gb} GB and about {n} minutes to install&lt;/b&gt;</source>
-        <translation>すべてこのコンピュータ内に残ります {dot} &lt;b&gt;{gb} GBでインストールに約{n}分&lt;/b&gt;</translation>
+        <translation>すべてこのコンピュータ内に残ります{dot}&lt;b&gt;{gb}GB、インストールに約{n}分&lt;/b&gt;</translation>
     </message>
     <message>
         <source>Export</source>
@@ -5158,7 +5166,7 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Extracting Python...</source>
-        <translation>Pythonを展開中...</translation>
+        <translation>Pythonを展開中…</translation>
     </message>
     <message>
         <source>Failed</source>
@@ -5170,7 +5178,7 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Found {0} object(s) across {1} processed tile(s). Run '{2}' to read what is left on the plan: the run is charged for the surface of its zone, so the tile count is not the cost.</source>
-        <translation>処理した{1}タイルから{0}個のオブジェクトが見つかりました。プランの残量は「{2}」で確認できます。実行はゾーンの面積に対して課金されるため、タイル数は料金と関係ありません。</translation>
+        <translation>処理した{1}タイルから{0}件のオブジェクトが見つかりました。プランの残量は「{2}」で確認できます。実行は範囲の面積に対して課金されるため、タイル数は料金と関係ありません。</translation>
     </message>
     <message>
         <source>Free up disk space, or set the AI_SEGMENTATION_CACHE_DIR environment variable to a directory on a larger drive, then restart QGIS.</source>
@@ -5198,7 +5206,7 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Keep clicking around the zone, at least 3 points.</source>
-        <translation>ゾーンの周りをクリックし続けてください。最低3点必要です。</translation>
+        <translation>範囲の周りをクリックし続けてください。最低3点必要です。</translation>
     </message>
     <message>
         <source>Layer is off screen</source>
@@ -5206,7 +5214,7 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Loading your runs...</source>
-        <translation>実行結果を読み込み中...</translation>
+        <translation>実行を読み込み中…</translation>
     </message>
     <message>
         <source>Local AI files</source>
@@ -5214,7 +5222,7 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Looking at ({0}, {1}) on {2}.</source>
-        <translation>{2}上の({0}, {1})を確認中です。</translation>
+        <translation>{2}上の（{0}, {1}）を確認中です。</translation>
     </message>
     <message>
         <source>Looking for '{0}' on {1}.</source>
@@ -5222,7 +5230,7 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Model download failed: {reason}. Retrying will not help. Update the plugin, or ask your IT administrator whether the download is being filtered.</source>
-        <translation>モデルのダウンロードに失敗しました: {reason}。再試行しても解決しません。プラグインを更新するか、ダウンロードがフィルタリングされていないかIT管理者に確認してください。</translation>
+        <translation>モデルのダウンロードに失敗しました：{reason}。再試行しても解決しません。プラグインを更新するか、ダウンロードがフィルタリングされていないかIT管理者に確認してください。</translation>
     </message>
     <message>
         <source>Model downloaded.</source>
@@ -5230,23 +5238,23 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>No internet connection. Check your connection and try again.</source>
-        <translation>インターネット接続がありません。接続を確認してから、再試行してください。</translation>
+        <translation>インターネット接続がありません。接続を確認して、もう一度お試しください。</translation>
     </message>
     <message>
         <source>No run matches that search.</source>
-        <translation>その検索に一致する実行結果はありません。</translation>
+        <translation>その検索に一致する実行はありません。</translation>
     </message>
     <message>
         <source>No run matches that search. Load older runs to look further back.</source>
-        <translation>その検索に一致する実行結果はありません。さらに過去を確認するには、古い実行結果を読み込んでください。</translation>
+        <translation>その検索に一致する実行はありません。さらに過去を調べるには「以前の実行を読み込む」をクリックしてください。</translation>
     </message>
     <message>
         <source>No runs yet. Your Automatic runs appear here, ready to reuse, restore or export.</source>
-        <translation>まだ実行結果はありません。Automaticの実行結果はここに表示され、再利用、復元、エクスポートができます。</translation>
+        <translation>まだ実行はありません。自動モードの実行はここに表示され、再利用、復元、エクスポートができます。</translation>
     </message>
     <message>
         <source>Not enough free disk space to download the AI model: {free} MB available, at least {needed} MB is required.</source>
-        <translation>AIモデルをダウンロードするための空きディスク容量が不足しています: 利用可能{free} MB、必要最低{needed} MB。</translation>
+        <translation>AIモデルをダウンロードするための空きディスク容量が不足しています：利用可能{free}MB、必要最低{needed}MB。</translation>
     </message>
     <message>
         <source>Nothing to export yet. Click an object and save it first.</source>
@@ -5258,23 +5266,23 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Outlined one object, score {0}.</source>
-        <translation>オブジェクトを1つ輪郭抽出しました。スコア{0}。</translation>
+        <translation>オブジェクト1件の輪郭を描きました。スコア{0}。</translation>
     </message>
     <message>
         <source>Partial file ({size} MB) saved, it will resume on the next try.</source>
-        <translation>部分ファイル({size} MB)を保存しました。次回の試行時に再開します。</translation>
+        <translation>部分ファイル（{size}MB）を保存しました。次回の試行時に再開します。</translation>
     </message>
     <message>
         <source>Points the map back at this run, ready to detect the same object again. Nothing is spent until you do.</source>
-        <translation>この実行結果に地図を戻し、同じオブジェクトを再度検出できる状態にします。実際に検出するまでは何も消費されません。</translation>
+        <translation>この実行に地図を戻し、同じオブジェクトを再度検出できる状態にします。実際に検出するまでは何も消費されません。</translation>
     </message>
     <message>
         <source>Preparing installation...</source>
-        <translation>インストールを準備中...</translation>
+        <translation>インストールを準備中…</translation>
     </message>
     <message>
         <source>Preparing the imagery for the AI...</source>
-        <translation>AI用に画像を準備中...</translation>
+        <translation>AI用に画像を準備中…</translation>
     </message>
     <message>
         <source>Pro gives you 200 km² of Automatic a month, so you keep working.</source>
@@ -5286,7 +5294,7 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Pro raises the month to 200 km² of Automatic.</source>
-        <translation>Proなら月間のAutomaticが200km²に増えます。</translation>
+        <translation>Proなら毎月の自動モードが200km²に増えます。</translation>
     </message>
     <message>
         <source>Pro: 500 cloud objects a month in Semi-Auto with Cloud AI, and 200 km² of Automatic. Same AI, same free clicks and corrections, every machine you work on.</source>
@@ -5298,11 +5306,11 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>QGIS would not open this layer for editing, so the manual tools could not start.</source>
-        <translation>QGISがこのレイヤーを編集用に開けなかったため、手動ツールを開始できませんでした。</translation>
+        <translation>QGISがこのレイヤを編集用に開けなかったため、手動ツールを開始できませんでした。</translation>
     </message>
     <message>
         <source>Raise the Max size filter to show objects first.</source>
-        <translation>まず最大サイズフィルターを上げてオブジェクトを表示してください。</translation>
+        <translation>まず最大サイズフィルタを上げてオブジェクトを表示してください。</translation>
     </message>
     <message>
         <source>Remove this run from your history? Its detections stay stored, but it will not be listed here any more.</source>
@@ -5310,7 +5318,7 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Reshaping the objects...</source>
-        <translation>オブジェクトを再整形中...</translation>
+        <translation>オブジェクトを再整形中…</translation>
     </message>
     <message>
         <source>Resolution</source>
@@ -5322,11 +5330,11 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Resuming download...</source>
-        <translation>ダウンロードを再開中...</translation>
+        <translation>ダウンロードを再開中…</translation>
     </message>
     <message>
         <source>Retry {done}/{total} in {seconds}s...</source>
-        <translation>再試行 {done}/{total}、{seconds}秒後...</translation>
+        <translation>再試行{done}/{total}、{seconds}秒後…</translation>
     </message>
     <message>
         <source>Run again</source>
@@ -5354,39 +5362,39 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Session expired. Open the AI Segmentation panel and sign in again.</source>
-        <translation>セッションの有効期限が切れました。AI Segmentationパネルを開いて、再度サインインしてください。</translation>
+        <translation>セッションの有効期限が切れました。AI Segmentationパネルを開いて、再度ログインしてください。</translation>
     </message>
     <message>
         <source>Shared borders is off above {cap} shapes. This result has {count}.</source>
-        <translation>「境界共有」は{cap}形状を超えるとオフになります。この結果は{count}件です。</translation>
+        <translation>「共有境界」は図形が{cap}個を超えるとオフになります。この結果は{count}個です。</translation>
     </message>
     <message>
         <source>Shared borders needs a position for the shapes and this result carries none.</source>
-        <translation>「境界共有」には形状の位置情報が必要ですが、この結果には含まれていません。</translation>
+        <translation>「共有境界」には図形の位置情報が必要ですが、この結果には含まれていません。</translation>
     </message>
     <message>
         <source>Sign in</source>
-        <translation>サインイン</translation>
+        <translation>ログイン</translation>
     </message>
     <message>
         <source>Sign in to keep detections here.</source>
-        <translation>サインインすると検出結果をここに保持できます。</translation>
+        <translation>ログインすると検出結果をここに保持できます。</translation>
     </message>
     <message>
         <source>Sign in to reopen, export or run this zone again.</source>
-        <translation>サインインすると、このゾーンを再度開いたり、エクスポートしたり、再実行したりできます。</translation>
+        <translation>ログインすると、この範囲を再度開いたり、エクスポートしたり、再実行したりできます。</translation>
     </message>
     <message>
         <source>Sign in to see every run on your account.</source>
-        <translation>サインインすると、アカウントのすべての実行結果を確認できます。</translation>
+        <translation>ログインすると、アカウントのすべての実行を確認できます。</translation>
     </message>
     <message>
         <source>Sign in to see your past runs.</source>
-        <translation>サインインすると、過去の実行結果を確認できます。</translation>
+        <translation>ログインすると、過去の実行を確認できます。</translation>
     </message>
     <message>
         <source>Star a run or an object to keep it here.</source>
-        <translation>実行結果やオブジェクトにスターを付けると、ここに保持されます。</translation>
+        <translation>実行またはオブジェクトにスターを付けると、ここに保持されます。</translation>
     </message>
     <message>
         <source>Starred objects</source>
@@ -5394,11 +5402,11 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>State: {0}. Ready: {1}.</source>
-        <translation>状態: {0}。準備完了: {1}。</translation>
+        <translation>状態：{0}。準備完了：{1}。</translation>
     </message>
     <message>
         <source>Status</source>
-        <translation>ステータス</translation>
+        <translation>状態</translation>
     </message>
     <message>
         <source>Stop</source>
@@ -5410,15 +5418,15 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>Takes this run out of your history. Its detections stay stored.</source>
-        <translation>この実行結果を履歴から外します。検出結果は保存されたままです。</translation>
+        <translation>この実行を履歴から外します。検出結果は保存されたままです。</translation>
     </message>
     <message>
         <source>That click could not be handled. Please try again.</source>
-        <translation>そのクリックを処理できませんでした。もう一度試してください。</translation>
+        <translation>そのクリックを処理できませんでした。もう一度お試しください。</translation>
     </message>
     <message>
         <source>That shape was not added. Adjust it with a click and try again.</source>
-        <translation>その形状は追加されませんでした。クリックで調整してから、もう一度試してください。</translation>
+        <translation>その図形は追加されませんでした。クリックで調整してから、もう一度お試しください。</translation>
     </message>
     <message>
         <source>The AI engine cannot load on Windows</source>
@@ -5430,15 +5438,15 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>The AI service answers this in one go, so the progress bar stays still and QGIS stays busy. This can take several minutes. Do not start it again. The zone is charged when the run starts; Cancel stops the run and keeps what was found.</source>
-        <translation>AIサービスはこれを一括で処理するため、進捗バーは止まったまま表示され、QGISはビジー状態になります。数分かかることがあります。再度開始しないでください。ゾーンは実行開始時に課金されます。「キャンセル」は実行を停止し、見つかった結果を保持します。</translation>
+        <translation>AIサービスはこれを一括で処理するため、進捗バーは止まったまま表示され、QGISはビジー状態になります。数分かかることがあります。再度開始しないでください。範囲は実行開始時に課金されます。「キャンセル」は実行を停止し、見つかった結果を保持します。</translation>
     </message>
     <message>
         <source>The AI service is waking up. Holding your spot...</source>
-        <translation>AIサービスが起動中です。順番を確保しています...</translation>
+        <translation>AIサービスが起動中です。順番を確保しています…</translation>
     </message>
     <message>
         <source>The local AI did not stop in time, so the install was not started. Close and reopen QGIS, then try again.</source>
-        <translation>ローカルAIが時間内に停止しなかったため、インストールを開始できませんでした。QGISを閉じて再度開いてから、もう一度試してください。</translation>
+        <translation>オフラインAIが時間内に停止しなかったため、インストールを開始できませんでした。QGISを閉じて再度開いてから、もう一度お試しください。</translation>
     </message>
     <message>
         <source>The model file arrived complete twice and did not match its checksum either time. Something between this computer and the download is altering the file, usually a proxy or a security appliance. Ask your IT administrator to let the download through untouched.</source>
@@ -5450,7 +5458,7 @@ is blocking the plugin&apos;s local AI environment.</source>
     </message>
     <message>
         <source>The object was outlined but saving it failed: {0}. The outline is still returned as POLYGON_WKT.</source>
-        <translation>オブジェクトは輪郭抽出されましたが、保存に失敗しました: {0}。輪郭はPOLYGON_WKTとして返されます。</translation>
+        <translation>オブジェクトの輪郭を描きましたが、保存に失敗しました：{0}。輪郭はPOLYGON_WKTとして返されます。</translation>
     </message>
     <message>
         <source>The plugin requires Visual C++ Redistributables to run the local AI engine.
@@ -5459,16 +5467,16 @@ Please download and install:
 https://aka.ms/vs/17/release/vc_redist.x64.exe
 
 After installation, restart QGIS and try again.</source>
-        <translation>このプラグインでローカルAIエンジンを実行するには、Visual C++ Redistributablesが必要です。
+        <translation>このプラグインでオフラインAIエンジンを実行するには、Visual C++ Redistributablesが必要です。
 
-以下からダウンロードしてインストールしてください:
+以下からダウンロードしてインストールしてください：
 https://aka.ms/vs/17/release/vc_redist.x64.exe
 
-インストール後、QGISを再起動してから、もう一度試してください。</translation>
+インストール後、QGISを再起動してから、もう一度お試しください。</translation>
     </message>
     <message>
         <source>The run finished but added no layer to the project. Look in the AI Segmentation panel: results waiting for review live there.</source>
-        <translation>実行は完了しましたが、プロジェクトにレイヤーは追加されませんでした。AI Segmentationパネルを確認してください。レビュー待ちの結果はそこにあります。</translation>
+        <translation>実行は完了しましたが、プロジェクトにレイヤは追加されませんでした。AI Segmentationパネルを確認してください。レビュー待ちの結果はそこにあります。</translation>
     </message>
     <message>
         <source>This raster is outside the current map view, so clicks would land on nothing.</source>
@@ -5492,19 +5500,19 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Undo every correction? Confirm</source>
-        <translation>すべての修正を取り消しますか?確定</translation>
+        <translation>すべての修正を取り消しますか？確定</translation>
     </message>
     <message>
         <source>Unknown error. Try again, or use Cloud AI instead.</source>
-        <translation>不明なエラーです。もう一度試すか、代わりにCloud AIを使用してください。</translation>
+        <translation>不明なエラーです。もう一度お試しいただくか、代わりにクラウドAIを使用してください。</translation>
     </message>
     <message>
         <source>Verifying Python installation...</source>
-        <translation>Pythonのインストールを確認中...</translation>
+        <translation>Pythonのインストールを確認中…</translation>
     </message>
     <message>
         <source>Wait for it to finish, then try again.</source>
-        <translation>完了するまで待ってから、再試行してください。</translation>
+        <translation>完了するまで待ってから、もう一度お試しください。</translation>
     </message>
     <message>
         <source>Yesterday</source>
@@ -5516,15 +5524,15 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Zone</source>
-        <translation>ゾーン</translation>
+        <translation>範囲</translation>
     </message>
     <message>
         <source>Zone too large - draw a smaller zone</source>
-        <translation>ゾーンが大きすぎます - より小さいゾーンを描いてください</translation>
+        <translation>範囲が大きすぎます。小さく描いてください</translation>
     </message>
     <message>
         <source>Zone too large. Draw a zone of {max} tiles or fewer.</source>
-        <translation>ゾーンが大きすぎます。{max}タイル以下のゾーンを描いてください。</translation>
+        <translation>範囲が大きすぎます。{max}タイル以下の範囲を描いてください。</translation>
     </message>
     <message>
         <source>Zoom to the layer first?</source>
@@ -5576,7 +5584,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>{n} ha</source>
-        <translation>{n} ha</translation>
+        <translation>{n}ha</translation>
     </message>
     <message>
         <source>{n} km2</source>
@@ -5628,11 +5636,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>{current} of {total} tiles</source>
-        <translation>{current}/{total} タイル</translation>
+        <translation>{current}/{total}タイル</translation>
     </message>
     <message>
         <source>{done} of {total} km²</source>
-        <translation>{done}/{total} km²</translation>
+        <translation>{done}/{total}km²</translation>
     </message>
     <message>
         <source>{km2} km² · {eta}</source>
@@ -5640,7 +5648,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>{pct}% done</source>
-        <translation>{pct}% 完了</translation>
+        <translation>{pct}%完了</translation>
     </message>
     <message>
         <source>Free includes one example per run, and this run has it.</source>
@@ -5656,11 +5664,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>The AI finds every object that looks like your example. Free includes one example per run.</source>
-        <translation>AIはあなたの例に似たすべてのオブジェクトを見つけます。無料プランは1回の実行につき例を1つ含みます。</translation>
+        <translation>AIは、描いた例に似たオブジェクトをすべて見つけます。Freeプランでは1回の実行につき例を1つ使えます。</translation>
     </message>
     <message>
         <source>The AI finds every object that looks like your examples - you can draw up to {max}.</source>
-        <translation>AIはあなたの例に似たすべてのオブジェクトを見つけます。最大{max}個まで描けます。</translation>
+        <translation>AIは描いた例に似たオブジェクトをすべて見つけます。例は最大{max}個まで描けます。</translation>
     </message>
     <message>
         <source>The AI finds every object that looks like your examples.</source>
@@ -5672,11 +5680,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>{left} of {cap} Semi-Auto objects left this month</source>
-        <translation>今月のSemi-Autoオブジェクト残り {left}/{cap}</translation>
+        <translation>今月の半自動モードのオブジェクトは{cap}件のうち残り{left}件</translation>
     </message>
     <message>
         <source>Copy email</source>
-        <translation>メールアドレスをコピー</translation>
+        <translation>アドレスをコピー</translation>
     </message>
     <message>
         <source>Custom needs? Write to us: {email}</source>
@@ -5684,7 +5692,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Automatic is unavailable right now.</source>
-        <translation type="unfinished"></translation>
+        <translation>自動モードは現在利用できません</translation>
     </message>
     <message>
         <source>Describe what to find, show what it looks like, or do both. Both together is the most accurate.</source>
@@ -5696,11 +5704,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Detect objects ({n} km²)</source>
-        <translation type="unfinished"></translation>
+        <translation>オブジェクトを検出（{n}km²）</translation>
     </message>
     <message>
         <source>Draw a smaller zone</source>
-        <translation type="unfinished"></translation>
+        <translation>範囲を小さく描く</translation>
     </message>
     <message>
         <source>Each tile covers a lot of ground at this precision. Raise the precision in Advanced settings for sharper detections.</source>
@@ -5708,19 +5716,19 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Exclude {n}</source>
-        <translation type="unfinished"></translation>
+        <translation>除外{n}</translation>
     </message>
     <message>
         <source>Reference {n}</source>
-        <translation type="unfinished"></translation>
+        <translation>参照{n}</translation>
     </message>
     <message>
         <source>Semi-Auto still works until it comes back.</source>
-        <translation type="unfinished"></translation>
+        <translation>半自動モードは、自動モードが回復するまで引き続き利用できます。</translation>
     </message>
     <message>
         <source>Semi-Auto still works, and Automatic comes back on {date}.</source>
-        <translation type="unfinished"></translation>
+        <translation>半自動モードは引き続き利用でき、自動モードは{date}に回復します。</translation>
     </message>
     <message>
         <source>Size of each object</source>
@@ -5728,27 +5736,27 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>The AI drops objects that look like this.</source>
-        <translation type="unfinished"></translation>
+        <translation>AIはこれに似たオブジェクトを除外します。</translation>
     </message>
     <message>
         <source>The AI looks for more objects like this.</source>
-        <translation type="unfinished"></translation>
+        <translation>AIはこれに似たオブジェクトをさらに探します。</translation>
     </message>
     <message>
         <source>Try again in a few minutes. Your zone and your settings are kept.</source>
-        <translation type="unfinished"></translation>
+        <translation>数分後にもう一度お試しください。範囲と設定は保持されています。</translation>
     </message>
     <message>
         <source>Type what to find, or draw an example of it.</source>
-        <translation type="unfinished"></translation>
+        <translation>見つけたいものを入力するか、その例を描いてください。</translation>
     </message>
     <message>
         <source>What you asked for</source>
-        <translation type="unfinished"></translation>
+        <translation>指定内容</translation>
     </message>
     <message>
         <source>You used your Automatic surface for this month.</source>
-        <translation type="unfinished"></translation>
+        <translation>今月の自動モードの面積枠を使い切りました</translation>
     </message>
     <message>
         <source>and / or</source>
@@ -5756,11 +5764,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Building the shapes on this computer - still working, everything already found is kept...</source>
-        <translation type="unfinished"></translation>
+        <translation>お使いのコンピュータで図形を生成中です。処理を続けています。見つかったものはすべて保持されます…</translation>
     </message>
     <message>
         <source>After an Automatic run, its technical log lines are sent too.</source>
-        <translation type="unfinished"></translation>
+        <translation>自動モードの実行後は、技術的なログ行も送信されます。</translation>
     </message>
     <message>
         <source>Free allowance used up: this run covered {done} of the {zone} km² you drew.</source>
@@ -5776,11 +5784,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>We can detect on the {done} km² outlined on the map (center of your zone).</source>
-        <translation type="unfinished"></translation>
+        <translation>地図に示した{done}km²（範囲の中央）で検出できます。</translation>
     </message>
     <message>
         <source>Detect on {done} km²</source>
-        <translation type="unfinished"></translation>
+        <translation>{done}km²で検出</translation>
     </message>
     <message>
         <source>Upgrade to Pro: whole zone, no limit</source>
@@ -5788,11 +5796,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>"{obj}" is not an object the AI knows well. Drawing one example on the map shows it what to detect.</source>
-        <translation>"{obj}" は AI があまりよく知らないオブジェクトです。地図上に例を 1 つ描くと、何を検出すればよいかを AI に示せます。</translation>
+        <translation>「{obj}」はAIがあまりよく知らないオブジェクトです。地図上に例を1つ描くと、何を検出すればよいかをAIに示せます。</translation>
     </message>
     <message>
         <source>500 cloud objects a month with Pro</source>
-        <translation>Pro なら月に 500 件のクラウドオブジェクト</translation>
+        <translation>Proなら毎月500件のクラウドオブジェクト</translation>
     </message>
     <message>
         <source>A name plus an example works best.</source>
@@ -5800,11 +5808,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>A newer version is ready. Opens the QGIS plugin manager on it.</source>
-        <translation>新しいバージョンが利用可能です。それを対象に QGIS の plugin マネージャーを開きます。</translation>
+        <translation>新しいバージョンが利用可能です。QGISのプラグインマネージャでこのプラグインを開きます。</translation>
     </message>
     <message>
         <source>AI Segmentation settings</source>
-        <translation>AI Segmentation の設定</translation>
+        <translation>AI Segmentationの設定</translation>
     </message>
     <message>
         <source>Account</source>
@@ -5824,7 +5832,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>After the grace period your data is erased for good. Until then, sign in on terra-lab.ai to cancel it.</source>
-        <translation>猶予期間が過ぎると、データは完全に消去されます。それまでは terra-lab.ai にサインインすればキャンセルできます。</translation>
+        <translation>猶予期間が過ぎると、データは完全に消去されます。それまではterra-lab.aiにログインすればキャンセルできます。</translation>
     </message>
     <message>
         <source>After your account loads</source>
@@ -5836,11 +5844,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>All {n} used. Back on {date}.</source>
-        <translation>{n} をすべて使用しました。{date} に復活します。</translation>
+        <translation>{n}件すべて使い切りました。{date}に回復します。</translation>
     </message>
     <message>
         <source>Also signs you out</source>
-        <translation>サインアウトも行います</translation>
+        <translation>ログアウトも行います</translation>
     </message>
     <message>
         <source>Applying the review settings</source>
@@ -5848,11 +5856,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Automatic km² left of {total}</source>
-        <translation>自動 km²、{total} のうち残り</translation>
+        <translation>自動モードの残り面積（{total}km²中）</translation>
     </message>
     <message>
         <source>Back on {date}.</source>
-        <translation>{date} に復活します。</translation>
+        <translation>{date}に回復します。</translation>
     </message>
     <message>
         <source>Before</source>
@@ -5872,11 +5880,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>By continuing you accept the {terms} and the {privacy}.</source>
-        <translation>続行すると、{terms} と {privacy} に同意したことになります。</translation>
+        <translation>続行すると、{terms}と{privacy}に同意したことになります。</translation>
     </message>
     <message>
         <source>Cancel the example, the detection, or exit Automatic</source>
-        <translation>例、検出をキャンセル、または自動を終了</translation>
+        <translation>例や検出をキャンセル、または自動モードを終了</translation>
     </message>
     <message>
         <source>Cancel this detection?</source>
@@ -5892,7 +5900,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Choose the imagery to segment</source>
-        <translation>セグメントする画像を選択</translation>
+        <translation>セグメンテーションする画像を選択</translation>
     </message>
     <message>
         <source>Clear</source>
@@ -5900,7 +5908,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Clear selection</source>
-        <translation>選択をクリア</translation>
+        <translation>選択範囲を解除</translation>
     </message>
     <message>
         <source>Click each piece of the object you want to merge.</source>
@@ -5908,11 +5916,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Close it on another computer.</source>
-        <translation>別のコンピューターで閉じてください。</translation>
+        <translation>別のコンピュータで閉じてください。</translation>
     </message>
     <message>
         <source>Closing AI Segmentation session</source>
-        <translation>AI Segmentation セッションを終了中</translation>
+        <translation>AI Segmentationセッションを終了中</translation>
     </message>
     <message>
         <source>Commercial use, higher limits</source>
@@ -5920,7 +5928,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Confidence cutoff</source>
-        <translation>信頼度のしきい値</translation>
+        <translation>信頼度の閾値</translation>
     </message>
     <message>
         <source>Continue</source>
@@ -5928,7 +5936,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Copy your logs, then send them to us.</source>
-        <translation>ログをコピーして、私たちに送ってください。</translation>
+        <translation>ログをコピーして、当社に送信してください。</translation>
     </message>
     <message>
         <source>Could not load your account</source>
@@ -5936,11 +5944,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Could not reach TerraLab</source>
-        <translation>TerraLab に接続できませんでした</translation>
+        <translation>TerraLabに接続できませんでした</translation>
     </message>
     <message>
         <source>Danger zone</source>
-        <translation>危険ゾーン</translation>
+        <translation>危険な操作</translation>
     </message>
     <message>
         <source>Delete</source>
@@ -5960,23 +5968,23 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Delete your TerraLab account</source>
-        <translation>TerraLab アカウントを削除</translation>
+        <translation>TerraLabアカウントを削除</translation>
     </message>
     <message>
         <source>Deletes the local model files, signs you out and resets the plugin. Your account and your cloud detections are not affected.</source>
-        <translation>ローカルのモデルファイルを削除し、サインアウトして plugin をリセットします。アカウントとクラウドの検出結果には影響しません。</translation>
+        <translation>ローカルのモデルファイルを削除し、ログアウトしてプラグインをリセットします。アカウントとクラウドの検出結果には影響しません。</translation>
     </message>
     <message>
         <source>Deletes the offline AI files and signs you out. Your account stays.</source>
-        <translation>オフライン AI のファイルを削除し、サインアウトします。アカウントは残ります。</translation>
+        <translation>オフラインAIのファイルを削除し、ログアウトします。アカウントは残ります。</translation>
     </message>
     <message>
         <source>Deleting account...</source>
-        <translation>アカウントを削除中...</translation>
+        <translation>アカウントを削除中…</translation>
     </message>
     <message>
         <source>Deleting...</source>
-        <translation>削除中...</translation>
+        <translation>削除中…</translation>
     </message>
     <message>
         <source>Describe what to detect</source>
@@ -5988,7 +5996,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Detection stopped early. Everything found is kept below and stays yours.</source>
-        <translation>検出は途中で停止しました。見つかったものはすべて下に保持され、あなたのものです。</translation>
+        <translation>検出は途中で停止しました。見つかったものはすべて下に保持され、そのままお使いいただけます。</translation>
     </message>
     <message>
         <source>Dismiss</source>
@@ -5996,11 +6004,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Do more with Pro</source>
-        <translation>Pro でもっとできること</translation>
+        <translation>Proでもっとできること</translation>
     </message>
     <message>
         <source>Dock or undock this panel</source>
-        <translation>このパネルをドッキング/ドッキング解除</translation>
+        <translation>このパネルをドッキング／ドッキング解除</translation>
     </message>
     <message>
         <source>Done</source>
@@ -6008,11 +6016,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Double-click, or click the first point, to close the zone.</source>
-        <translation>ダブルクリックするか、最初の点をクリックしてゾーンを閉じます。</translation>
+        <translation>ダブルクリックするか、最初の点をクリックして範囲を閉じます。</translation>
     </message>
     <message>
         <source>Each tile covers a lot of ground at this precision. Raise the precision for sharper detections.</source>
-        <translation>この精度では、各タイルが広い範囲をカバーします。精度を上げるとより鮮明に検出できます。</translation>
+        <translation>この詳細度では、各タイルが広い面積をカバーします。詳細度を上げるとより鮮明に検出できます。</translation>
     </message>
     <message>
         <source>Edit</source>
@@ -6028,7 +6036,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Erases your account and its data. Every TerraLab plugin stops, and a paid plan stops renewing.</source>
-        <translation>アカウントとそのデータを消去します。すべての TerraLab plugin が停止し、有料プランの更新も停止します。</translation>
+        <translation>アカウントとそのデータを消去します。すべてのTerraLabプラグインが停止し、有料プランの更新も停止します。</translation>
     </message>
     <message>
         <source>Every key the panel answers, grouped by where it works.</source>
@@ -6036,7 +6044,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Everything we make</source>
-        <translation>私たちが作るすべて</translation>
+        <translation>当社のすべての製品</translation>
     </message>
     <message>
         <source>Export or exit the review first.</source>
@@ -6052,7 +6060,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Finer tiles find smaller objects. The grid shows on the map.</source>
-        <translation>より細かいタイルは小さなオブジェクトを見つけます。グリッドは地図上に表示されます。</translation>
+        <translation>タイルを細かくすると小さなオブジェクトも見つかります。グリッドが地図上に表示されます。</translation>
     </message>
     <message>
         <source>Finishing the last tiles</source>
@@ -6060,27 +6068,27 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>First a download, about {n} minutes.</source>
-        <translation>まずダウンロード、約 {n} 分。</translation>
+        <translation>最初にダウンロードがあり、約{n}分かかります。</translation>
     </message>
     <message>
         <source>First a download.</source>
-        <translation>まずダウンロード。</translation>
+        <translation>最初にダウンロードがあります。</translation>
     </message>
     <message>
         <source>First a {gb} GB download, about {n} minutes.</source>
-        <translation>まず {gb} GB のダウンロード、約 {n} 分。</translation>
+        <translation>最初に{gb}GBのダウンロードがあり、約{n}分かかります。</translation>
     </message>
     <message>
         <source>Free allowance used: {done} of {zone} km² processed</source>
-        <translation>無料枠の使用: {zone} km² のうち {done} を処理済み</translation>
+        <translation>無料枠の使用：{zone}km²のうち{done}km²を処理済み</translation>
     </message>
     <message>
         <source>Free takes one example per run</source>
-        <translation>無料では 1 回の実行につき例は 1 つ</translation>
+        <translation>Freeでは1回の実行につき例は1つまで</translation>
     </message>
     <message>
         <source>Get Pro</source>
-        <translation>Pro を入手</translation>
+        <translation>Proを始める</translation>
     </message>
     <message>
         <source>Guidance tips</source>
@@ -6088,15 +6096,15 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>How AI Segmentation uses your data</source>
-        <translation>AI Segmentation があなたのデータをどのように使用するか</translation>
+        <translation>AI Segmentationのデータの扱い</translation>
     </message>
     <message>
         <source>Image to segment</source>
-        <translation>セグメントする画像</translation>
+        <translation>セグメンテーションする画像</translation>
     </message>
     <message>
         <source>Install in QGIS</source>
-        <translation>QGIS にインストール</translation>
+        <translation>QGISにインストール</translation>
     </message>
     <message>
         <source>Installed</source>
@@ -6104,7 +6112,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>It is installed but did not start. Restart QGIS to use it.</source>
-        <translation>インストールされていますが起動しませんでした。使用するには QGIS を再起動してください。</translation>
+        <translation>インストールされていますが起動しませんでした。使用するにはQGISを再起動してください。</translation>
     </message>
     <message>
         <source>It is installed but switched off. Turns it on and opens it.</source>
@@ -6112,7 +6120,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>It is outside the current map view.</source>
-        <translation>現在の地図ビューの外にあります。</translation>
+        <translation>現在の表示範囲の外にあります。</translation>
     </message>
     <message>
         <source>It leaves your history. Its detections stay stored.</source>
@@ -6144,7 +6152,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Loading your plan...</source>
-        <translation>プランを読み込み中...</translation>
+        <translation>プランを読み込み中…</translation>
     </message>
     <message>
         <source>Local model</source>
@@ -6156,7 +6164,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Manage account in browser</source>
-        <translation>ブラウザーでアカウントを管理</translation>
+        <translation>ブラウザでアカウントを管理</translation>
     </message>
     <message>
         <source>Mark an object to detect more like it.</source>
@@ -6164,11 +6172,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>More plugins</source>
-        <translation>その他の plugin</translation>
+        <translation>その他のプラグイン</translation>
     </message>
     <message>
         <source>Need more this month? Write to us and we set up a custom quota.</source>
-        <translation>今月もっと必要ですか？ ご連絡いただければ、カスタムクォータを設定します。</translation>
+        <translation>今月の分が足りませんか？ご連絡いただければ、カスタム利用枠を設定します。</translation>
     </message>
     <message>
         <source>Needs a restart</source>
@@ -6180,11 +6188,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Next: {step}</source>
-        <translation>次: {step}</translation>
+        <translation>次：{step}</translation>
     </message>
     <message>
         <source>No account matches this sign-in. Sign in with the account that has your plan.</source>
-        <translation>このサインインに一致するアカウントがありません。プランをお持ちのアカウントでサインインしてください。</translation>
+        <translation>このログインに一致するアカウントがありません。プランをお持ちのアカウントでログインしてください。</translation>
     </message>
     <message>
         <source>No matches in this zone. Add the object's name, like "building", or draw a clearer example, and try a smaller zone.</source>
@@ -6200,23 +6208,23 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>None of the objects came out as a shape the file could take. Turn the cleanup settings down and try Export again.</source>
-        <translation>どのオブジェクトもファイルが受け取れる形状になりませんでした。クリーンアップ設定を下げて、もう一度エクスポートを試してください。</translation>
+        <translation>どのオブジェクトもファイルに書き込める図形になりませんでした。クリーンアップ設定を下げて、もう一度エクスポートをお試しください。</translation>
     </message>
     <message>
         <source>Not processed: {x} km², dashed on the map</source>
-        <translation>未処理: {x} km²、地図上では破線</translation>
+        <translation>未処理：{x}km²（地図上では破線）</translation>
     </message>
     <message>
         <source>Nothing found in the first {n} tiles. Check the spelling of your prompt, try a simpler word, or check the zone and the imagery. The run continues and each tile still counts.</source>
-        <translation>最初の {n} タイルでは何も見つかりませんでした。prompt のつづりを確認し、より簡単な単語を試すか、ゾーンと画像を確認してください。実行は続行され、各タイルは引き続きカウントされます。</translation>
+        <translation>最初の{n}タイルでは何も見つかりませんでした。プロンプトのつづりを確認するか、より簡単な単語を試すか、範囲と画像を確認してください。実行は続行され、各タイルは引き続きカウントされます。</translation>
     </message>
     <message>
         <source>Nothing has been found yet. The surface already scanned still counts.</source>
-        <translation>まだ何も見つかっていません。すでにスキャンされた範囲は引き続きカウントされます。</translation>
+        <translation>まだ何も見つかっていません。すでにスキャンした面積は引き続きカウントされます。</translation>
     </message>
     <message>
         <source>Nothing is visible to save. Lower Confidence, or widen the size range, then try Export again.</source>
-        <translation>保存できるものが表示されていません。Confidence を下げるか、サイズ範囲を広げてから、もう一度エクスポートを試してください。</translation>
+        <translation>保存できるものが表示されていません。信頼度を下げるか、サイズ範囲を広げてから、もう一度エクスポートをお試しください。</translation>
     </message>
     <message>
         <source>Nothing was sent. Press the button again to read the notice.</source>
@@ -6224,7 +6232,7 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>On Pro, lifecycle and counts only, no content.</source>
-        <translation>Pro では、ライフサイクルとカウントのみで、コンテンツは含まれません。</translation>
+        <translation>Proでは、ライフサイクルとカウントのみで、コンテンツは含まれません。</translation>
     </message>
     <message>
         <source>Open dashboard</source>
@@ -6232,15 +6240,15 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Open in QGIS</source>
-        <translation>QGIS で開く</translation>
+        <translation>QGISで開く</translation>
     </message>
     <message>
         <source>Open terra-lab.ai</source>
-        <translation>terra-lab.ai を開く</translation>
+        <translation>terra-lab.aiを開きます。</translation>
     </message>
     <message>
         <source>Open the AI Segmentation page</source>
-        <translation>AI Segmentation ページを開く</translation>
+        <translation>AI Segmentationページを開きます。</translation>
     </message>
     <message>
         <source>Opens a dialog</source>
@@ -6248,11 +6256,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Opens the QGIS plugin manager on this plugin.</source>
-        <translation>この plugin を対象に QGIS の plugin マネージャーを開きます。</translation>
+        <translation>QGISのプラグインマネージャでこのプラグインを開きます。</translation>
     </message>
     <message>
         <source>Or end this session and use a free AI on this computer. Saved polygons stay.</source>
-        <translation>または、このセッションを終了して、このコンピューターの無料 AI を使用します。保存したポリゴンは残ります。</translation>
+        <translation>または、このセッションを終了して、このコンピュータの無料AIを使用します。保存したポリゴンは残ります。</translation>
     </message>
     <message>
         <source>Or run with this one.</source>
@@ -6260,19 +6268,19 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Or use a smaller free AI on this computer.</source>
-        <translation>または、このコンピューターでより小さな無料 AI を使用します。</translation>
+        <translation>または、このコンピュータで小さめの無料AIを使用します。</translation>
     </message>
     <message>
         <source>Other TerraLab plugins...</source>
-        <translation>その他の TerraLab plugin...</translation>
+        <translation>その他のTerraLabプラグイン…</translation>
     </message>
     <message>
         <source>Payments happen on terra-lab.ai.</source>
-        <translation>支払いは terra-lab.ai で行われます。</translation>
+        <translation>支払いはterra-lab.aiで行われます。</translation>
     </message>
     <message>
         <source>Permanent. Stops every TerraLab plugin.</source>
-        <translation>永続的。すべての TerraLab plugin を停止します。</translation>
+        <translation>元に戻せません。すべてのTerraLabプラグインが停止します。</translation>
     </message>
     <message>
         <source>Personal, non-commercial use only.</source>
@@ -6284,11 +6292,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Points, Simplify, Trim, Grow</source>
-        <translation>ポイント、簡略化、トリム、拡張</translation>
+        <translation>点の数、簡素化、突起除去、拡張</translation>
     </message>
     <message>
         <source>Points, Simplify, Trim, Grow, Size</source>
-        <translation>ポイント、簡略化、トリム、拡張、サイズ</translation>
+        <translation>点の数、簡素化、突起除去、拡張、サイズ</translation>
     </message>
     <message>
         <source>Privacy Policy</source>
@@ -6296,19 +6304,19 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Pro takes up to {max}, look-alikes to exclude included.</source>
-        <translation>Pro は最大 {max} まで、除外する類似オブジェクトを含めて対応します。</translation>
+        <translation>Proでは、除外する似たものを含めて最大{max}個まで使えます。</translation>
     </message>
     <message>
         <source>Pro unlocks far more Automatic surface every month, on zones of any size.</source>
-        <translation>Pro では毎月のはるかに広い Automatic 対象面積を解放でき、任意のサイズのゾーンで利用できます。</translation>
+        <translation>Proなら毎月の自動モードの面積枠が大幅に増え、どんな大きさの範囲でも使えます。</translation>
     </message>
     <message>
         <source>QGIS could not activate the temporary review layer. Close any other editing session, then try again.</source>
-        <translation>QGIS が一時レビューレイヤを有効化できませんでした。他の編集セッションを閉じてから、もう一度お試しください。</translation>
+        <translation>QGISが一時レビューレイヤを有効化できませんでした。他の編集セッションを閉じてから、もう一度お試しください。</translation>
     </message>
     <message>
         <source>QGIS could not save these edits. Fix the geometry and click Save again.</source>
-        <translation>QGIS がこれらの編集を保存できませんでした。ジオメトリを修正して、もう一度「保存」をクリックしてください。</translation>
+        <translation>QGISがこれらの編集を保存できませんでした。ジオメトリを修正して、もう一度「保存」をクリックしてください。</translation>
     </message>
     <message>
         <source>Read the guide</source>
@@ -6316,11 +6324,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Remove AI files</source>
-        <translation>AI ファイルを削除</translation>
+        <translation>AIファイルを削除</translation>
     </message>
     <message>
         <source>Removing duplicate fragments</source>
-        <translation>重複フラグメントを削除しています</translation>
+        <translation>重複した断片を削除中</translation>
     </message>
     <message>
         <source>Repaint your imagery from a sentence.</source>
@@ -6328,27 +6336,27 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Reshapes the outline only: no new AI run, no credits.</source>
-        <translation>輪郭のみを変更します。新しい AI 実行もクレジット消費もありません。</translation>
+        <translation>輪郭の形だけを変えます。AIの再実行も、利用枠の消費もありません。</translation>
     </message>
     <message>
         <source>Restart QGIS</source>
-        <translation>QGIS を再起動</translation>
+        <translation>QGISを再起動</translation>
     </message>
     <message>
         <source>Run QGIS from a sentence.</source>
-        <translation>一文から QGIS を実行します。</translation>
+        <translation>一文からQGISを実行します。</translation>
     </message>
     <message>
         <source>Run the whole zone with Pro</source>
-        <translation>Pro でゾーン全体を実行</translation>
+        <translation>Proで範囲全体を実行</translation>
     </message>
     <message>
         <source>Save 1 polygon to a layer before leaving?</source>
-        <translation>終了する前に 1 つのポリゴンをレイヤに保存しますか？</translation>
+        <translation>終了する前にポリゴン1個をレイヤに保存しますか？</translation>
     </message>
     <message>
         <source>Save {count} polygons to a layer before leaving?</source>
-        <translation>終了する前に {count} 個のポリゴンをレイヤに保存しますか？</translation>
+        <translation>終了する前にポリゴン{count}個をレイヤに保存しますか？</translation>
     </message>
     <message>
         <source>Saved</source>
@@ -6360,11 +6368,11 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>Scheduling the deletion...</source>
-        <translation>削除をスケジュール中...</translation>
+        <translation>削除をスケジュール中…</translation>
     </message>
     <message>
         <source>See Pro</source>
-        <translation>Pro を確認</translation>
+        <translation>Proを見る</translation>
     </message>
     <message>
         <source>See usage</source>
@@ -6372,15 +6380,15 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     </message>
     <message>
         <source>See what Pro unlocks</source>
-        <translation>Pro でできることを確認</translation>
+        <translation>Proでできることを確認</translation>
     </message>
     <message>
         <source>Semi-Auto objects left of {total}</source>
-        <translation>Semi-Auto オブジェクト残り {total}</translation>
+        <translation>半自動のオブジェクトの残り（{total}件中）</translation>
     </message>
     <message>
         <source>Semi-Auto's offline AI files.</source>
-        <translation>Semi-Auto のオフライン AI ファイル。</translation>
+        <translation>半自動モード用のオフラインAIファイル。</translation>
     </message>
     <message>
         <source>Settings pages</source>
@@ -6389,12 +6397,12 @@ https://aka.ms/vs/17/release/vc_redist.x64.exe
     <message>
         <source>Share of each outline's points to keep. 100% is the class default.
 Lower thins the smallest detail first while keeping the corners.</source>
-        <translation>各輪郭で保持するポイントの割合。100% がクラスの既定値です。
-下げると、角を保ちながら最も細かいディテールから間引きます。</translation>
+        <translation>各輪郭で保持する点の割合です。100%がクラスの既定値です。
+下げると、角を保ちながら最も細かい部分から間引きます。</translation>
     </message>
     <message>
         <source>Shortcut: {key}</source>
-        <translation>ショートカット: {key}</translation>
+        <translation>ショートカット：{key}</translation>
     </message>
     <message>
         <source>Show again</source>
@@ -6402,7 +6410,7 @@ Lower thins the smallest detail first while keeping the corners.</source>
     </message>
     <message>
         <source>Show the plugin's panel.</source>
-        <translation>plugin のパネルを表示します。</translation>
+        <translation>プラグインのパネルを表示します。</translation>
     </message>
     <message>
         <source>Shown once your account loads.</source>
@@ -6410,11 +6418,11 @@ Lower thins the smallest detail first while keeping the corners.</source>
     </message>
     <message>
         <source>Sign in again.</source>
-        <translation>再度サインインしてください。</translation>
+        <translation>再度ログインしてください。</translation>
     </message>
     <message>
         <source>Signed in as {email}</source>
-        <translation>{email} でサインイン中</translation>
+        <translation>{email}でログイン中</translation>
     </message>
     <message>
         <source>Size range to keep</source>
@@ -6434,19 +6442,19 @@ Lower thins the smallest detail first while keeping the corners.</source>
     </message>
     <message>
         <source>The AI detects every object that looks like your examples.</source>
-        <translation>AI が、あなたの例に似たすべてのオブジェクトを検出します。</translation>
+        <translation>AIが、例に似たすべてのオブジェクトを検出します。</translation>
     </message>
     <message>
         <source>The AI is starting up, almost there...</source>
-        <translation>AI を起動中です。もうすぐです...</translation>
+        <translation>AIを起動中です。もうすぐです…</translation>
     </message>
     <message>
         <source>The AI outlines it.</source>
-        <translation>AI がその輪郭を抽出します。</translation>
+        <translation>AIが輪郭を描きます。</translation>
     </message>
     <message>
         <source>The deletion could not be started. Try again in a few minutes.</source>
-        <translation>削除を開始できませんでした。数分後に再度お試しください。</translation>
+        <translation>削除を開始できませんでした。数分後にもう一度お試しください。</translation>
     </message>
     <message>
         <source>The deletion did not get an answer. Check your connection, then try again.</source>
@@ -6462,15 +6470,15 @@ Lower thins the smallest detail first while keeping the corners.</source>
     </message>
     <message>
         <source>The file may be open in QGIS or in another program. Close it and try Export again.</source>
-        <translation>ファイルが QGIS または別のプログラムで開かれている可能性があります。閉じてから、もう一度エクスポートをお試しください。</translation>
+        <translation>ファイルがQGISまたは別のプログラムで開かれている可能性があります。閉じてから、もう一度エクスポートをお試しください。</translation>
     </message>
     <message>
         <source>The imagery is loading slowly...</source>
-        <translation>画像の読み込みに時間がかかっています...</translation>
+        <translation>画像の読み込みに時間がかかっています…</translation>
     </message>
     <message>
         <source>The map area you detect on, and what you ask us to find in it, go to our servers only to run the detection.</source>
-        <translation>検出対象の地図領域と、その中で検出してほしい内容は、検出を実行するためだけに当社のサーバーへ送信されます。</translation>
+        <translation>検出対象の地図上のエリアと、そこで検出したい内容は、検出を実行するためだけに当社のサーバーへ送信されます。</translation>
     </message>
     <message>
         <source>The object already found is kept and opens in the review. The surface already scanned still counts.</source>
@@ -6482,7 +6490,7 @@ Lower thins the smallest detail first while keeping the corners.</source>
     </message>
     <message>
         <source>The service answered for {n} tile(s) and this plugin could not read the results, so nothing was placed on the map. This is a fault on our side, not your zone or your wording. Send the report and we will look at it, and write to us so we can put the tiles back.</source>
-        <translation>サービスは {n} タイルに応答しましたが、この plugin は結果を読み取れず、地図上には何も配置されませんでした。これは、お客様のゾーンや表現の問題ではなく、当社側の障害です。レポートを送信していただければ確認します。また、タイルを戻せるようご連絡ください。</translation>
+        <translation>サービスは{n}タイルに応答しましたが、このプラグインが結果を読み取れず、地図上には何も配置されませんでした。これは範囲や入力した言葉の問題ではなく、当社側の障害です。レポートを送信してください。当社で確認します。また、タイルを戻せるよう、お問い合わせください。</translation>
     </message>
     <message>
         <source>The shortcuts could not be listed.</source>
@@ -6494,55 +6502,55 @@ Lower thins the smallest detail first while keeping the corners.</source>
     </message>
     <message>
         <source>The written tutorial, on the TerraLab blog.</source>
-        <translation>TerraLab ブログの文章チュートリアル。</translation>
+        <translation>TerraLabブログの文章チュートリアル。</translation>
     </message>
     <message>
         <source>The {n} objects already found are kept and open in the review. The surface already scanned still counts.</source>
-        <translation>既に見つかった {n} 個のオブジェクトは保持され、レビューで開きます。すでにスキャンした面積は引き続きカウントされます。</translation>
+        <translation>すでに見つかった{n}件のオブジェクトは保持され、レビューで開きます。すでにスキャンした面積は引き続きカウントされます。</translation>
     </message>
     <message>
         <source>This account is already scheduled for deletion, so it can no longer be used from QGIS. To cancel, sign in on terra-lab.ai.</source>
-        <translation>このアカウントは削除がすでにスケジュールされているため、QGIS から使用できなくなりました。キャンセルするには terra-lab.ai にサインインしてください。</translation>
+        <translation>このアカウントは削除がすでにスケジュールされているため、QGISから使用できなくなりました。キャンセルするにはterra-lab.aiにログインしてください。</translation>
     </message>
     <message>
         <source>This account is already scheduled for deletion. Its data is erased on {}. To cancel, sign in on terra-lab.ai.</source>
-        <translation>このアカウントは削除がすでにスケジュールされています。データは {} に消去されます。キャンセルするには terra-lab.ai にサインインしてください。</translation>
+        <translation>このアカウントは削除がすでにスケジュールされています。データは{}に消去されます。キャンセルするにはterra-lab.aiにログインしてください。</translation>
     </message>
     <message>
         <source>This account is already scheduled for deletion. To cancel, sign in on terra-lab.ai.</source>
-        <translation>このアカウントは削除がすでにスケジュールされています。キャンセルするには terra-lab.ai にサインインしてください。</translation>
+        <translation>このアカウントは削除がすでにスケジュールされています。キャンセルするにはterra-lab.aiにログインしてください。</translation>
     </message>
     <message>
         <source>This computer is no longer signed in</source>
-        <translation>このコンピューターはサインインされていません</translation>
+        <translation>このコンピュータのログインが切れました</translation>
     </message>
     <message>
         <source>This computer is no longer signed in. Sign in again, then try.</source>
-        <translation>このコンピューターはもうサインインされていません。再度サインインしてから、お試しください。</translation>
+        <translation>このコンピュータはもうログインされていません。再度ログインしてから、もう一度お試しください。</translation>
     </message>
     <message>
         <source>This computer is not linked to a TerraLab account, so there is nothing to delete here.</source>
-        <translation>このコンピューターは TerraLab アカウントにリンクされていないため、削除するものはありません。</translation>
+        <translation>このコンピュータはTerraLabアカウントにリンクされていないため、削除するものはありません。</translation>
     </message>
     <message>
         <source>This layer is filed under {crs}, which counts in degrees, but its coordinates are projected metres. Set the layer's CRS to the projected one the pixels are really in, in Layer Properties, before detecting.</source>
-        <translation>このレイヤは {crs} として登録されていますが、これは度で数える座標系で、実際の座標は投影されたメートル単位です。検出の前に、レイヤプロパティでレイヤの CRS を、ピクセルが実際に持つ投影座標系に設定してください。</translation>
+        <translation>このレイヤは{crs}として登録されていますが、これは度で数える座標系で、実際の座標は投影されたメートル単位です。検出の前に、レイヤプロパティでレイヤのCRSを、ピクセルが実際に持つ投影座標系に設定してください。</translation>
     </message>
     <message>
         <source>This layer is filed under {crs}, which counts in metres, but its coordinates are longitude and latitude. Detection would measure the whole image as under a millimetre of ground and return nothing. Set the layer's CRS to the one the pixels are really in (EPSG:4326 for plain longitude and latitude) in Layer Properties, or reproject it.</source>
-        <translation>このレイヤは {crs} として登録されていますが、これはメートルで数える座標系で、実際の座標は経度と緯度です。このまま検出すると、画像全体が地面上で 1 ミリ未満として測定され、何も返されません。レイヤプロパティでレイヤの CRS を、ピクセルが実際に持つ座標系（単純な経度と緯度なら EPSG:4326）に設定するか、再投影してください。</translation>
+        <translation>このレイヤは{crs}として登録されていますが、これはメートルで数える座標系で、実際の座標は経度と緯度です。このまま検出すると、画像全体が地面上で1ミリ未満として測定され、何も返されません。レイヤプロパティでレイヤのCRSを、ピクセルが実際に持つ座標系（単純な経度と緯度ならEPSG:4326）に設定するか、再投影してください。</translation>
     </message>
     <message>
         <source>This zone is larger than the surface you have left this month. Draw a smaller zone, or get Pro for a larger monthly surface.</source>
-        <translation>このゾーンは今月残っている対象面積よりも大きいです。より小さいゾーンを描くか、Pro を利用して毎月の対象面積を増やしてください。</translation>
+        <translation>この範囲は今月の残り面積を超えています。範囲を小さく描くか、Proにアップグレードして毎月の面積枠を増やしてください。</translation>
     </message>
     <message>
         <source>Those shapes could not be merged. Nothing was changed.</source>
-        <translation>それらのシェイプをマージできませんでした。何も変更されていません。</translation>
+        <translation>それらの図形を結合できませんでした。何も変更されていません。</translation>
     </message>
     <message>
         <source>To cancel, sign in on terra-lab.ai before the grace period ends.</source>
-        <translation>キャンセルするには、猶予期間が終了するまでに terra-lab.ai にサインインしてください。</translation>
+        <translation>キャンセルするには、猶予期間が終了するまでにterra-lab.aiにログインしてください。</translation>
     </message>
     <message>
         <source>To confirm, you type your email address again.</source>
@@ -6554,7 +6562,7 @@ Lower thins the smallest detail first while keeping the corners.</source>
     </message>
     <message>
         <source>Too many attempts. Wait {} seconds, then try again.</source>
-        <translation>試行回数が多すぎます。{} 秒待ってから、もう一度お試しください。</translation>
+        <translation>試行回数が多すぎます。{}秒待ってから、もう一度お試しください。</translation>
     </message>
     <message>
         <source>Try again in a moment.</source>
@@ -6562,7 +6570,7 @@ Lower thins the smallest detail first while keeping the corners.</source>
     </message>
     <message>
         <source>Turn it on in Plugins &gt; Manage and Install Plugins.</source>
-        <translation>「Plugins &gt; Manage and Install Plugins」からオンにしてください。</translation>
+        <translation>「プラグイン」→「プラグインの管理とインストール」でオンにしてください。</translation>
     </message>
     <message>
         <source>Turn on</source>
@@ -6586,11 +6594,11 @@ Lower thins the smallest detail first while keeping the corners.</source>
     </message>
     <message>
         <source>Update available</source>
-        <translation>アップデートがあります</translation>
+        <translation>更新があります</translation>
     </message>
     <message>
         <source>Update required</source>
-        <translation>アップデートが必要です</translation>
+        <translation>更新が必要です</translation>
     </message>
     <message>
         <source>Update to keep using AI Segmentation. It takes one click in the QGIS Plugin Manager; the plugin reloads on its own.</source>
@@ -6606,7 +6614,7 @@ Lower thins the smallest detail first while keeping the corners.</source>
     </message>
     <message>
         <source>Usage statistics linked to your account help us fix bugs; you can turn them off in Settings at any time.</source>
-        <translation>アカウントに紐づく使用統計は、不具合の修正に役立ちます。設定でいつでもオフにできます。</translation>
+        <translation>アカウントに紐づく使用統計は、不具合の修正に役立ちます。「設定」でいつでもオフにできます。</translation>
     </message>
     <message>
         <source>Video tutorial</source>
@@ -6614,15 +6622,15 @@ Lower thins the smallest detail first while keeping the corners.</source>
     </message>
     <message>
         <source>Waking up the AI...</source>
-        <translation>AI を起動しています...</translation>
+        <translation>AIを起動中…</translation>
     </message>
     <message>
         <source>What Pro unlocks, on the TerraLab website.</source>
-        <translation>TerraLab ウェブサイトで、Pro でできることを確認できます。</translation>
+        <translation>TerraLabのウェブサイトで、Proでできることを確認できます。</translation>
     </message>
     <message>
         <source>What is left of your plan this month.</source>
-        <translation>今月のプラン使用状況の残りです。</translation>
+        <translation>今月のプランの残りです。</translation>
     </message>
     <message>
         <source>Written guide</source>
@@ -6630,7 +6638,7 @@ Lower thins the smallest detail first while keeping the corners.</source>
     </message>
     <message>
         <source>You have {installed}.</source>
-        <translation>インストールされているのは {installed} です。</translation>
+        <translation>インストールされているのは{installed}です。</translation>
     </message>
     <message>
         <source>You place the corners.</source>
@@ -6642,15 +6650,15 @@ Lower thins the smallest detail first while keeping the corners.</source>
     </message>
     <message>
         <source>Your account and its data are erased. Every TerraLab plugin stops, and a paid plan stops renewing.</source>
-        <translation>アカウントとそのデータは消去されます。すべての TerraLab plugin が停止し、有料プランは更新を停止します。</translation>
+        <translation>アカウントとそのデータは消去されます。すべてのTerraLabプラグインが停止し、有料プランは更新されなくなります。</translation>
     </message>
     <message>
         <source>Your account is scheduled for deletion. Every TerraLab plugin is signed out on this computer now.</source>
-        <translation>アカウントは削除がスケジュールされています。このコンピューターではすべての TerraLab plugin がサインアウトされました。</translation>
+        <translation>アカウントは削除がスケジュールされています。このコンピュータではすべてのTerraLabプラグインがログアウトされました。</translation>
     </message>
     <message>
         <source>Your data is erased for good on {}. Until then, sign in on terra-lab.ai to cancel it.</source>
-        <translation>データは {} に完全に消去されます。それまでに terra-lab.ai にサインインしてキャンセルしてください。</translation>
+        <translation>データは{}に完全に消去されます。それまでにterra-lab.aiにログインしてキャンセルしてください。</translation>
     </message>
     <message>
         <source>Your last payment may have failed</source>
@@ -6658,27 +6666,27 @@ Lower thins the smallest detail first while keeping the corners.</source>
     </message>
     <message>
         <source>Your monthly allowance ran out before the end of the zone. Everything found so far is kept below and stays yours.</source>
-        <translation>ゾーンの終了前に毎月の利用枠が尽きました。これまでに見つかったものはすべて下に保持され、あなたのものとして残ります。</translation>
+        <translation>範囲の途中で毎月の利用枠を使い切りました。これまでに見つかったものはすべて下に保持され、そのままお使いいただけます。</translation>
     </message>
     <message>
         <source>Your plan is not active, so the cloud AI cannot run. Check your subscription to keep detecting.</source>
-        <translation>プランがアクティブでないため、クラウド AI を実行できません。検出を続けるにはサブスクリプションを確認してください。</translation>
+        <translation>プランがアクティブでないため、クラウドAIを実行できません。検出を続けるにはサブスクリプションを確認してください。</translation>
     </message>
     <message>
         <source>Your plan is on its maximum number of computers</source>
-        <translation>プランのコンピューター数が上限に達しています</translation>
+        <translation>プランのコンピュータ数が上限に達しています</translation>
     </message>
     <message>
         <source>Your subscription is not active, so the service refused the request. Open your account on terra-lab.ai, then try again.</source>
-        <translation>サブスクリプションがアクティブでないため、サービスはリクエストを拒否しました。terra-lab.ai でアカウントを開いて、もう一度お試しください。</translation>
+        <translation>サブスクリプションがアクティブでないため、サービスはリクエストを拒否しました。terra-lab.aiでアカウントを開いて、もう一度お試しください。</translation>
     </message>
     <message>
         <source>Your zone crosses itself. Draw it again without crossing lines.</source>
-        <translation>ゾーンが自分自身と交差しています。線が交差しないように描き直してください。</translation>
+        <translation>範囲が自分自身と交差しています。線が交差しないように描き直してください。</translation>
     </message>
     <message>
         <source>Your {zone} km² zone is larger than this month's free surface.</source>
-        <translation>あなたの {zone} km² のゾーンは、今月の無料対象面積よりも大きいです。</translation>
+        <translation>{zone}km²の範囲は、今月の無料の面積枠より大きいです。</translation>
     </message>
     <message>
         <source>Zoom</source>
@@ -6690,23 +6698,23 @@ Lower thins the smallest detail first while keeping the corners.</source>
     </message>
     <message>
         <source>by TerraLab</source>
-        <translation>TerraLab 提供</translation>
+        <translation>TerraLab提供</translation>
     </message>
     <message>
         <source>cloud detections left of {total} this month</source>
-        <translation>今月のクラウド検出 残り {total}</translation>
+        <translation>今月のクラウド検出の残り（{total}件中）</translation>
     </message>
     <message>
         <source>free cloud detections left of {total} this month</source>
-        <translation>今月の無料クラウド検出 残り {total}</translation>
+        <translation>今月の無料クラウド検出の残り（{total}件中）</translation>
     </message>
     <message>
         <source>free cloud detections left this month</source>
-        <translation>今月の無料クラウド検出 残り</translation>
+        <translation>今月の無料クラウド検出の残り</translation>
     </message>
     <message>
         <source>its CRS</source>
-        <translation>その CRS</translation>
+        <translation>そのCRS</translation>
     </message>
     <message>
         <source>objects outside it are hidden</source>
@@ -6714,27 +6722,27 @@ Lower thins the smallest detail first while keeping the corners.</source>
     </message>
     <message>
         <source>over {n}</source>
-        <translation>{n} 以上</translation>
+        <translation>{n}以上</translation>
     </message>
     <message>
         <source>{basemap} is a drawn map, not aerial imagery, so detection usually finds nothing on it and the tiles are still charged. Switch the layer to a satellite basemap (Google, Esri, Bing) or to your own raster first.</source>
-        <translation>{basemap} は航空画像ではなく描画された地図なので、通常は検出しても何も見つからず、タイルは引き続き課金されます。まずレイヤを衛星ベースマップ（Google、Esri、Bing）または自分の raster に切り替えてください。</translation>
+        <translation>{basemap}は航空写真ではなく描画された地図なので、通常は検出しても何も見つからず、タイルは引き続き課金されます。まずレイヤを衛星ベースマップ（Google、Esri、Bing）またはご自身のラスタに切り替えてください。</translation>
     </message>
     <message>
         <source>{count} points</source>
-        <translation>{count} ポイント</translation>
+        <translation>{count}点</translation>
     </message>
     <message>
         <source>{n} cloud objects used this month</source>
-        <translation>今月使用したクラウドオブジェクト {n}</translation>
+        <translation>今月、クラウドオブジェクトを{n}件使用しました</translation>
     </message>
     <message>
         <source>{n} km² · {eta}</source>
-        <translation>{n} km² · {eta}</translation>
+        <translation>{n}km² · {eta}</translation>
     </message>
     <message>
         <source>{n} shapes picked. Press Enter to merge.</source>
-        <translation>{n} 個のシェイプを選択しました。Enter を押してマージします。</translation>
+        <translation>{n}個の図形を選択しました。Enterを押して結合します。</translation>
     </message>
     <message>
         <source>{plan} · Personal, non-commercial</source>
@@ -6754,43 +6762,163 @@ Lower thins the smallest detail first while keeping the corners.</source>
     </message>
     <message>
         <source>Or use an existing zone</source>
-        <translation>既存のゾーンを使用する</translation>
+        <translation>既存の範囲を使用</translation>
     </message>
     <message>
         <source>Saving... {pct}%</source>
-        <translation>保存中... {pct}%</translation>
+        <translation>保存中…{pct}%</translation>
     </message>
     <message>
         <source>Signed in (from {}).</source>
-        <translation>{} からサインイン済み。</translation>
+        <translation>ログイン中（{}から）。</translation>
     </message>
     <message>
         <source>Signed in as {} (from {}).</source>
-        <translation>{} としてサインイン済み（{} から）。</translation>
+        <translation>{}でログイン中（{}から）。</translation>
     </message>
     <message>
         <source>Take the zone from a layer or a selection</source>
-        <translation>レイヤまたは選択範囲からゾーンを取得</translation>
+        <translation>レイヤまたは選択範囲から範囲を取得</translation>
     </message>
     <message>
         <source>That zone cannot be moved onto this map. Draw it instead.</source>
-        <translation>そのゾーンはこのマップ上に移動できません。代わりに描画してください。</translation>
+        <translation>その範囲はこの地図に移動できません。代わりに描いてください。</translation>
     </message>
     <message>
         <source>That zone is empty. Pick another one.</source>
-        <translation>そのゾーンは空です。別のゾーンを選択してください。</translation>
+        <translation>その範囲は空です。別の範囲を選んでください。</translation>
     </message>
     <message>
         <source>Use this zone</source>
-        <translation>このゾーンを使用</translation>
+        <translation>この範囲を使用</translation>
     </message>
     <message>
         <source>Zone of interest</source>
-        <translation>対象ゾーン</translation>
+        <translation>対象範囲</translation>
     </message>
     <message>
         <source>{name}, {n} selected</source>
-        <translation>{name}、{n} 選択中</translation>
+        <translation>{name}、{n}件選択中</translation>
+    </message>
+    <message>
+        <source>At {gsd} m per pixel, one {object} is about {px} pixels wide</source>
+        <translation>解像度が{gsd}m/pxの場合、{object}1つの幅は約{px}ピクセルです</translation>
+    </message>
+    <message>
+        <source>Continue missing tiles</source>
+        <translation>残りのタイルを続行</translation>
+    </message>
+    <message>
+        <source>Could not check your account. Your connection may be slow or lost.</source>
+        <translation>アカウントを確認できませんでした。接続が遅いか、切断されている可能性があります。</translation>
+    </message>
+    <message>
+        <source>Detection needs sharper imagery to find it.</source>
+        <translation>検出するには、より鮮明な画像が必要です。</translation>
+    </message>
+    <message>
+        <source>Detection works on aerial or satellite images.</source>
+        <translation>検出は航空写真や衛星画像で行います。</translation>
+    </message>
+    <message>
+        <source>Finest this zone allows - draw a smaller zone to go finer.</source>
+        <translation>この範囲で設定できる最も細かい詳細度です。さらに細かくするには、範囲を小さく描いてください。</translation>
+    </message>
+    <message>
+        <source>No matches in this zone. Add the object's name, like "building", or draw a clearer example.</source>
+        <translation>この範囲では何も見つかりませんでした。「建物」のようにオブジェクト名を追加するか、より分かりやすい例を描いてください。</translation>
+    </message>
+    <message>
+        <source>No matches in this zone. Try one plain word for the object, "building" and not "building footprint".</source>
+        <translation>この範囲では何も見つかりませんでした。オブジェクトにはシンプルな単語を1つ使ってください（「建物フットプリント」ではなく「建物」）。</translation>
+    </message>
+    <message>
+        <source>One precision level fits this zone - draw a smaller zone for a choice.</source>
+        <translation>この範囲に合う詳細度は1つだけです。選択肢を増やすには、範囲を小さく描いてください。</translation>
+    </message>
+    <message>
+        <source>One precision level suits {obj}.</source>
+        <translation>{obj}に適した詳細度は1つだけです。</translation>
+    </message>
+    <message>
+        <source>Right-drag a rectangle to delete every polygon inside it.</source>
+        <translation>右ドラッグで四角形を描くと、その内側のポリゴンをすべて削除します。</translation>
+    </message>
+    <message>
+        <source>Run anyway</source>
+        <translation>それでも実行</translation>
+    </message>
+    <message>
+        <source>TerraLab could not be reached. Check your internet connection, or stop and pick My computer to work offline.</source>
+        <translation>TerraLabに接続できませんでした。インターネット接続を確認するか、停止して「お使いのコンピュータ」を選び、オフラインで作業してください。</translation>
+    </message>
+    <message>
+        <source>TerraLab could not be reached. Your computer answers the clicks for this session.</source>
+        <translation>TerraLabに接続できませんでした。このセッションのクリックは、お使いのコンピュータで処理します。</translation>
+    </message>
+    <message>
+        <source>The run did not start. Continue to try again.</source>
+        <translation>実行を開始できませんでした。「残りのタイルを続行」でもう一度お試しください。</translation>
+    </message>
+    <message>
+        <source>The zone or settings changed, so this run cannot be continued. Run Detect again.</source>
+        <translation>範囲または設定が変更されたため、この実行は続行できません。「オブジェクトを検出」をもう一度実行してください。</translation>
+    </message>
+    <message>
+        <source>This imagery is too coarse for {obj}. A sharper layer finds more.</source>
+        <translation>この画像は{obj}には粗すぎます。解像度の高いレイヤならさらに多く見つかります。</translation>
+    </message>
+    <message>
+        <source>This looks like a drawn map, not a photo</source>
+        <translation>写真ではなく、描画された地図のようです</translation>
+    </message>
+    <message>
+        <source>This looks like terrain shading, not a photo</source>
+        <translation>写真ではなく、地形の陰影図のようです</translation>
+    </message>
+    <message>
+        <source>This map source has no sharper picture of this area. The run uses the sharpest one it has.</source>
+        <translation>このマップソースには、このエリアのより鮮明な画像がありません。実行では、利用できる最も鮮明な画像を使用します。</translation>
+    </message>
+    <message>
+        <source>This run found nothing. Add the object yourself below, or use "Re-run the whole zone" with another word.</source>
+        <translation>この実行では何も見つかりませんでした。下でオブジェクトを自分で追加するか、別の単語で「範囲全体を再実行」を使ってください。</translation>
+    </message>
+    <message>
+        <source>Tiles are larger than usual: this zone reaches the run's tile limit. Draw a smaller zone for sharper detections.</source>
+        <translation>タイルが通常より大きくなっています。この範囲は1回の実行で扱えるタイル数の上限に達しています。より細かく検出するには、範囲を小さく描いてください。</translation>
+    </message>
+    <message>
+        <source>Update to keep using AI Segmentation. Update now installs it and the plugin reloads on its own.</source>
+        <translation>AI Segmentationを使い続けるには更新してください。「今すぐ更新」でインストールされ、プラグインは自動的に再読み込みされます。</translation>
+    </message>
+    <message>
+        <source>Updating…</source>
+        <translation>更新中…</translation>
+    </message>
+    <message>
+        <source>Upgrade AI Segmentation here. If it is not listed yet, try again later.</source>
+        <translation>ここでAI Segmentationを更新してください。一覧にまだない場合は、後でもう一度お試しください。</translation>
+    </message>
+    <message>
+        <source>Version {version} is installed.</source>
+        <translation>バージョン{version}がインストールされています。</translation>
+    </message>
+    <message>
+        <source>Version {version} is installed. Restart QGIS to use it.</source>
+        <translation>バージョン{version}がインストールされています。使用するにはQGISを再起動してください。</translation>
+    </message>
+    <message>
+        <source>Your connection is slow or was lost. Click again in a moment.</source>
+        <translation>接続が遅いか、切断されました。しばらくしてから、もう一度クリックしてください。</translation>
+    </message>
+    <message>
+        <source>{n} more found at lower confidence.</source>
+        <translation>信頼度の低いものがほかに{n}件見つかりました。</translation>
+    </message>
+    <message>
+        <source>The AI is still waking up. Click again in a few seconds.</source>
+        <translation>AIはまだ起動中です。数秒後にもう一度クリックしてください。</translation>
     </message>
 </context>
 </TS>

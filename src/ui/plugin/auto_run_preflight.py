@@ -733,11 +733,20 @@ class AutoRunPreflightMixin:
 
 
 
+        from ...core.served_config import ServedConfigMissing
         try:
             layer = self._get_active_raster_layer()
             grid = self._compute_auto_grid(layer) if layer is not None else None
         except (RuntimeError, AttributeError, TypeError, ValueError):
             grid = None
+        except ServedConfigMissing as err:
+
+
+            QgsMessageLog.logMessage(
+                f"Auto detection: served setting missing ({err.key})",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            self._refuse_start_without_settings()
+            return
         if grid is None or self._imagery_probe_signature(layer, grid) != probe["signature"]:
             QgsMessageLog.logMessage(
                 "Auto detection: the zone changed during the imagery check; "

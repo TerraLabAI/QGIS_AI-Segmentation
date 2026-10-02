@@ -13,28 +13,15 @@ from qgis.PyQt.QtCore import QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
 from .cache_paths import PLUGIN_CACHE_DIR, remove_tree_quietly
+from .file_replace_retry import replace_file_with_retry
 from .model_config import (
     CHECKPOINT_FILENAME,
     CHECKPOINT_SHA256,
     CHECKPOINT_URL,
     USE_SAM2,
 )
-from .qt_compat import NoLessSafeRedirectPolicy, RedirectPolicyAttribute
-
-
-def tr(text: str) -> str:
-
-
-
-
-
-    try:
-        from .i18n import tr as translate
-
-        return translate(text)
-    except Exception:  # noqa: BLE001
-        return text
-
+from .qt_compat import NoLessSafeRedirectPolicy, RedirectPolicyAttribute, reply_http_status
+from .streamed_download import sleep_unless_cancelled, tr
 
 CHECKPOINTS_DIR = os.path.join(PLUGIN_CACHE_DIR, "checkpoints")
 FEATURES_DIR = os.path.join(PLUGIN_CACHE_DIR, "features")
@@ -301,14 +288,7 @@ def _wait_or_cancel(seconds: float) -> bool:
 
 
 
-    deadline = time.monotonic() + seconds
-    while True:
-        if _cancel_requested:
-            return False
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            return True
-        time.sleep(min(0.25, remaining))
+    return not sleep_unless_cancelled(seconds, lambda: _cancel_requested)
 
 
 def _resolved_retry_ladder(max_attempts: int | None,
@@ -346,22 +326,20 @@ def _replace_with_retry(src: str, dst: str, max_attempts: int | None = None,
 
     max_attempts, delay = _resolved_retry_ladder(max_attempts, delay)
     gc.collect()
-    for attempt in range(1, max_attempts + 1):
-        try:
-            os.replace(src, dst)
-            return True
-        except PermissionError:
-            if attempt == max_attempts:
-                raise
-            QgsMessageLog.logMessage(
-                f"File locked, retry {attempt}/{max_attempts} in {delay}s...",
-                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+    retries = 0
+
+    def _wait_logged(seconds: float) -> bool:
+        nonlocal retries
+        retries += 1
+        QgsMessageLog.logMessage(
+            f"File locked, retry {retries}/{max_attempts} in {delay}s...",
+            "AI Segmentation", level=Qgis.MessageLevel.Warning)
 
 
 
-            if not _wait_or_cancel(delay):
-                return False
-    return False
+        return _wait_or_cancel(seconds)
+
+    return replace_file_with_retry(src, dst, max_attempts, delay, wait=_wait_logged)
 
 
 def _remove_with_retry(path: str, max_attempts: int | None = None,
@@ -670,12 +648,7 @@ def _download_checkpoint(
 
             if download_state["resume_offset"] > 0 and not download_state.get("status_checked"):
                 download_state["status_checked"] = True
-                try:
-                    status = attempt_reply.attribute(
-                        QNetworkRequest.Attribute.HttpStatusCodeAttribute)
-                except (RuntimeError, AttributeError):
-                    status = None
-                if status == 200:
+                if reply_http_status(attempt_reply) == 200:
                     QgsMessageLog.logMessage(
                         "Server ignored the resume range (HTTP 200): "
                         "restarting the file from scratch",
@@ -846,7 +819,7 @@ def _download_checkpoint(
                     _wait_or_cancel(_retry_wait_s(attempt))
                 continue
 
-            status_code = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
+            status_code = reply_http_status(reply)
 
 
             if status_code == 416:

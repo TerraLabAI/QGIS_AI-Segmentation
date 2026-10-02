@@ -368,6 +368,8 @@ class DockExemplarsMixin:
 
 
         from qgis.PyQt.QtGui import QPixmap
+
+        from ...core.qimage_strips import smooth_scaled_in_python
         is_pos = label == 1
         rgba = "67,160,71" if is_pos else "229,57,53"
 
@@ -390,17 +392,16 @@ class DockExemplarsMixin:
         thumb_lbl.setStyleSheet("border: none; background: transparent;")
         if thumbnail is not None:
             try:
-                pm = QPixmap.fromImage(thumbnail)
-                if not pm.isNull():
+                if not thumbnail.isNull():
 
 
 
                     ratio = widget_pixel_ratio(thumb_lbl)
                     edge = int(round((side - 2) * ratio))
-                    pm = pm.scaled(
-                        edge, edge,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation)
+
+
+                    pm = QPixmap.fromImage(smooth_scaled_in_python(
+                        thumbnail, edge, edge, keep_aspect=True))
                     pm.setDevicePixelRatio(ratio)
                     thumb_lbl.setPixmap(pm)
 
@@ -467,18 +468,17 @@ class DockExemplarsMixin:
         try:
             from qgis.PyQt.QtGui import QPixmap
             from qgis.PyQt.QtWidgets import QDialog, QLabel, QVBoxLayout
-            pm = QPixmap.fromImage(image)
-            if pm.isNull():
+
+            from ...core.qimage_strips import smooth_scaled_in_python
+            if image is None or image.isNull():
                 return
 
 
 
             ratio = widget_pixel_ratio(self)
             edge = int(round(320 * ratio))
-            pm = pm.scaled(
-                edge, edge,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation)
+            pm = QPixmap.fromImage(smooth_scaled_in_python(
+                image, edge, edge, keep_aspect=True))
             pm.setDevicePixelRatio(ratio)
             dlg = QDialog(self)
             dlg.setWindowTitle(

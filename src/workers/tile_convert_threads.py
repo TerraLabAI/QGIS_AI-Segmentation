@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 import os
 import queue
+import sys
 from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
@@ -65,7 +66,7 @@ def default_workers(default_max: int | None = None,
         cores = 2
     top = DEFAULT_MAX_WORKERS if default_max is None else max(1, int(default_max))
     spare = SPARE_CORES if spare_cores is None else max(0, int(spare_cores))
-    return max(_MIN_WORKERS, min(top, cores - spare))
+    return max(_MIN_WORKERS, min(top, cores - spare, physical_worker_cap(cores)))
 
 
 class TileConvertPool:
@@ -225,3 +226,131 @@ def usable_cores() -> int:
     except Exception:  # noqa: BLE001
         readings.append(2)
     return max(1, min(r for r in readings if r > 0))
+
+
+_PHYSICAL_UNSET = object()
+_physical_cache = _PHYSICAL_UNSET
+
+
+def physical_cores() -> int | None:
+
+
+    global _physical_cache
+    if _physical_cache is not _PHYSICAL_UNSET:
+        return _physical_cache
+    try:
+        value = _read_physical_cores()
+    except Exception:  # noqa: BLE001  # nosec B110
+        value = None
+    _physical_cache = value if value and value > 0 else None
+    return _physical_cache
+
+
+def _read_physical_cores() -> int | None:
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        fn = kernel32.GetLogicalProcessorInformationEx
+        fn.argtypes = [wintypes.DWORD, ctypes.c_void_p, ctypes.POINTER(wintypes.DWORD)]
+        fn.restype = wintypes.BOOL
+        size = wintypes.DWORD(0)
+        fn(0, None, ctypes.byref(size))
+        if size.value == 0:
+            return None
+        buf = ctypes.create_string_buffer(size.value)
+        if not fn(0, buf, ctypes.byref(size)):
+            return None
+        raw = buf.raw[:size.value]
+        count = 0
+        offset = 0
+        while offset + 8 <= len(raw):
+            relation = int.from_bytes(raw[offset:offset + 4], "little")
+            record = int.from_bytes(raw[offset + 4:offset + 8], "little")
+            if record <= 0:
+                break
+            if relation == 0:
+                count += 1
+            offset += record
+        return count or None
+    if sys.platform == "darwin":
+        import ctypes
+        import ctypes.util
+
+        libc = ctypes.CDLL(ctypes.util.find_library("c") or "libc.dylib")
+        out = ctypes.c_int(0)
+        out_size = ctypes.c_size_t(ctypes.sizeof(out))
+        if libc.sysctlbyname(b"hw.physicalcpu", ctypes.byref(out),
+                             ctypes.byref(out_size), None, 0) == 0:
+            return int(out.value) or None
+        return None
+    pairs = set()
+    physical_id = None
+    with open("/proc/cpuinfo", encoding="utf-8") as handle:
+        for line in handle:
+            key, _, value = line.partition(":")
+            key = key.strip()
+            if key == "physical id":
+                physical_id = value.strip()
+            elif key == "core id":
+                pairs.add((physical_id, value.strip()))
+    return len(pairs) or None
+
+
+def physical_worker_cap(logical_cores: int) -> int:
+
+
+
+
+
+
+
+    try:
+        physical = physical_cores()
+        if physical is None or physical >= logical_cores:
+            return logical_cores
+        from ..core.server_dials import dial_bool
+
+        if not dial_bool("tuning.convert.use_physical_cores", True):
+            return logical_cores
+        return max(0, physical - 1)
+    except Exception:  # noqa: BLE001
+        return logical_cores
+
+
+def available_memory_mb() -> int | None:
+
+
+
+
+
+
+    try:
+        if os.name == "nt":
+            import ctypes
+
+            class _MemoryStatus(ctypes.Structure):
+                _fields_ = [
+                    ("dwLength", ctypes.c_uint32), ("dwMemoryLoad", ctypes.c_uint32),
+                    ("ullTotalPhys", ctypes.c_uint64), ("ullAvailPhys", ctypes.c_uint64),
+                    ("ullTotalPageFile", ctypes.c_uint64), ("ullAvailPageFile", ctypes.c_uint64),
+                    ("ullTotalVirtual", ctypes.c_uint64), ("ullAvailVirtual", ctypes.c_uint64),
+                    ("ullAvailExtendedVirtual", ctypes.c_uint64)]
+
+            status = _MemoryStatus()
+            status.dwLength = ctypes.sizeof(_MemoryStatus)
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+            kernel32.GlobalMemoryStatusEx.argtypes = [ctypes.POINTER(_MemoryStatus)]
+            if kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                return int(status.ullAvailPhys // (1024 * 1024))
+            return None
+        with open("/proc/meminfo", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) // 1024
+    except Exception:  # noqa: BLE001  # nosec B110
+        pass
+    return None

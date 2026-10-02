@@ -56,12 +56,13 @@ from qgis.core import (
     QgsNetworkAccessManager,
     QgsTask,
 )
-from qgis.PyQt.QtCore import QByteArray, QSettings, QThread, QTimer, QUrl
+from qgis.PyQt.QtCore import QByteArray, QSettings, QTimer, QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
 from . import transport_dials as _td
 from .gil_safe_qobject import prime as _gil_safe
-from .qt_compat import HttpStatusCodeAttribute, silent_task_flags
+from .gui_thread import on_gui_thread
+from .qt_compat import reply_http_status, silent_task_flags
 from .telemetry_events import FLUSH_NOW, NO_CONSENT_EVENTS, REGISTRY_VERSION
 from .telemetry_payload import _scrub_telemetry_properties, scrub_payload_value  # noqa: F401
 
@@ -73,6 +74,8 @@ _BATCH_MAX = 10
 
 TELEMETRY_PRODUCT_ID = "ai-segmentation"
 _PENDING_PRE_AUTH_MAX = 50
+
+_RELAY_MAX_EVENTS = 50
 _TELEMETRY_ENABLED_KEY = "TerraLab/telemetry_enabled"
 
 
@@ -257,6 +260,12 @@ def drop_queued_events() -> None:
         _pending_pre_auth.clear()
         pending_tasks = list(_inflight)
         _inflight.clear()
+    try:
+        from . import telemetry_disk_queue
+
+        telemetry_disk_queue.clear()
+    except Exception:  # nosec B110
+        pass
     for task in pending_tasks:
         try:
             task.cancel()
@@ -396,14 +405,6 @@ def _has_consent() -> bool:
         return False
 
 
-def on_main_thread() -> bool:
-    try:
-        app = QgsApplication.instance()
-        return app is not None and QThread.currentThread() == app.thread()
-    except Exception:
-        return False
-
-
 
 
 
@@ -433,12 +434,45 @@ class _TelemetryFlushTask(QgsTask):
             return False
 
 
-        if not self._post() and not self.isCanceled():
+        ok = self._post(self._events)
+        if not ok and not self.isCanceled():
             self._wait_before_retry(_td.telemetry_retry_backoff_s(_RETRY_BACKOFF_S))
             if self.isCanceled():
                 return False
-            self._post()
+            ok = self._post(self._events)
+        if self.isCanceled():
+            return True
+        if not ok:
+
+
+            try:
+                from . import telemetry_disk_queue
+
+                telemetry_disk_queue.park(self._events)
+            except Exception:  # nosec B110
+                pass
+        else:
+            self._drain_disk_queue()
         return True
+
+    def _drain_disk_queue(self) -> None:
+
+
+        try:
+            from . import telemetry_disk_queue
+
+            parked = telemetry_disk_queue.take(_td.telemetry_post_max_bytes(_POST_MAX_BYTES) // 2)
+            if not parked:
+                return
+
+
+            chunks = _split_for_post(parked)
+            for i, chunk in enumerate(chunks):
+                if self.isCanceled() or not self._post(chunk):
+                    telemetry_disk_queue.park([e for c in chunks[i:] for e in c])
+                    return
+        except Exception:  # nosec B110
+            pass
 
     def _wait_before_retry(self, seconds: float) -> None:
 
@@ -448,7 +482,7 @@ class _TelemetryFlushTask(QgsTask):
                 return
             time.sleep(0.1)
 
-    def _post(self) -> bool:
+    def _post(self, events: list) -> bool:
         try:
             _forget_enabled_cache()
             if self.isCanceled() or not is_telemetry_enabled():
@@ -456,7 +490,7 @@ class _TelemetryFlushTask(QgsTask):
             from .activation_manager import auth_revision
             if not _has_consent() or auth_revision() != self._auth_revision:
                 return True
-            payload = json.dumps({"events": self._events}).encode("utf-8")
+            payload = json.dumps({"events": events}).encode("utf-8")
             url = f"{_build_base_url().rstrip('/')}/api/plugin/track"
             from .server_dials import cleartext_remote_url
 
@@ -488,7 +522,7 @@ class _TelemetryFlushTask(QgsTask):
 
 
 
-            status = self._http_status(reply)
+            status = reply_http_status(reply)
             if status is None or status < 400:
                 return True
             return not (status >= 500 or status == 429)
@@ -503,25 +537,6 @@ class _TelemetryFlushTask(QgsTask):
         except (AttributeError, RuntimeError):
             return False
         return getattr(error, "value", error) == 0
-
-    @staticmethod
-    def _http_status(reply) -> int | None:
-
-
-        if HttpStatusCodeAttribute is None:
-            return None
-        try:
-            if reply is None:
-                return None
-            attr = reply.attribute(HttpStatusCodeAttribute)
-        except (RuntimeError, AttributeError):
-            return None
-        if attr is None:
-            return None
-        try:
-            return int(attr)
-        except (TypeError, ValueError):
-            return None
 
     def finished(self, result: bool) -> None:
         return
@@ -578,7 +593,7 @@ def track(event: str, properties: dict | None = None, flush_now: bool = False) -
         should_flush = urgent or len(_batch) >= _batch_max()
     _arm_flush_timer()
     if should_flush:
-        flush()
+        _flush_if_quiet()
 
 
 def _trim_batch_locked() -> None:
@@ -607,7 +622,7 @@ def _on_flush_timer() -> None:
 
 
     try:
-        flush()
+        _flush_if_quiet()
     except Exception:  # nosec B110
         pass
 
@@ -621,7 +636,7 @@ def _arm_flush_timer() -> None:
 
 
     global _flush_timer
-    if _flush_timer is not None or not on_main_thread():
+    if _flush_timer is not None or not on_gui_thread():
         return
     try:
         timer = QTimer()
@@ -662,6 +677,7 @@ def _split_for_post(events: list[dict]) -> list[list[dict]]:
 
 
 
+
     chunks: list[list[dict]] = []
     current: list[dict] = []
     envelope_bytes = len(b'{"events": []}')
@@ -676,7 +692,8 @@ def _split_for_post(events: list[dict]) -> list[list[dict]]:
         if envelope_bytes + evt_bytes > post_max:
             continue
         separator_bytes = 2 if current else 0
-        if current and size + separator_bytes + evt_bytes > post_max:
+        if current and (size + separator_bytes + evt_bytes > post_max
+                        or len(current) >= _RELAY_MAX_EVENTS):
             chunks.append(current)
             current = []
             size = envelope_bytes
@@ -688,11 +705,48 @@ def _split_for_post(events: list[dict]) -> list[list[dict]]:
     return chunks
 
 
-def flush() -> None:
+
+_paused_since: float | None = None
+
+
+_MAX_PAUSE_S = 300.0
+
+
+def _flush_if_quiet() -> None:
 
 
 
-    if not on_main_thread():
+
+    global _paused_since
+    if not on_gui_thread():
+        return
+    try:
+        from .network_busy import is_busy, low_priority_slot_free
+
+        deferred = is_busy() or not low_priority_slot_free()
+    except Exception:  # noqa: BLE001
+        deferred = False
+    if deferred:
+        now = time.monotonic()
+        if _paused_since is None:
+            _paused_since = now
+        try:
+            from .server_dials import dial_in_range
+
+            max_pause = float(dial_in_range("telemetry.max_pause_s", _MAX_PAUSE_S, 10, 3600))
+        except Exception:  # noqa: BLE001
+            max_pause = _MAX_PAUSE_S
+        if now - _paused_since < max_pause:
+            return
+    _paused_since = None
+    flush(_overflow_to_batch=True)
+
+
+def flush(_overflow_to_batch: bool = False) -> None:
+
+
+
+    if not on_gui_thread():
         return
 
 
@@ -706,6 +760,14 @@ def flush() -> None:
         if not _batch and not _pending_pre_auth:
             return
         available = max(0, _inflight_max() - len(_inflight))
+
+
+        try:
+            from qgis.PyQt.QtCore import QThreadPool
+
+            available = min(available, max(1, int(QThreadPool.globalInstance().maxThreadCount()) - 1))
+        except Exception:  # noqa: BLE001  # nosec B110
+            pass
         if not available:
             return
 
@@ -735,9 +797,22 @@ def flush() -> None:
 
     chunks = _split_for_post(events_to_send)
     tasks = [_TelemetryFlushTask(chunk, dict(auth)) for chunk in chunks[:available]]
+    overflow = chunks[available:]
+    if overflow and not _overflow_to_batch:
+
+
+
+        try:
+            from . import telemetry_disk_queue
+
+            for chunk in overflow:
+                telemetry_disk_queue.park(chunk)
+            overflow = []
+        except Exception:  # noqa: BLE001  # nosec B110
+            pass
     with _lock:
         _inflight.extend(tasks)
-        for chunk in chunks[available:]:
+        for chunk in overflow:
             _batch.extend(chunk)
         _trim_batch_locked()
     for task in tasks:

@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from ..core.error_policy import LINK_FAILURE_SHIPPED
+
 
 DEFAULT_COOLDOWN_CYCLES = 1
 DEFAULT_FAILURE_THRESHOLD = 3
@@ -82,6 +84,12 @@ class AdaptiveConcurrency:
         if self._cap < self._max:
             self._cap += 1
 
+    def restore(self, cap: int) -> None:
+
+
+
+        self._cap = min(max(int(cap), self._min), self._max)
+
     def on_setback(self) -> None:
 
 
@@ -118,9 +126,8 @@ class OfflineFastFail:
 
 
 
-    HARD_CODES = frozenset({
-        "DNS_ERROR", "CONNECTION_REFUSED", "PROXY_ERROR", "NO_INTERNET",
-    })
+
+    HARD_CODES = LINK_FAILURE_SHIPPED - {"SSL_ERROR"}
 
     def __init__(self, threshold: int = DEFAULT_FAILURE_THRESHOLD) -> None:
         self._threshold = max(1, int(threshold))

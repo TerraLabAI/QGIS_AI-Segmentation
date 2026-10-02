@@ -175,17 +175,6 @@ def _activate_dock(plugin) -> bool:
     return False
 
 
-def open_ai_edit_page() -> None:
-
-
-
-    open_sibling_page("ai-edit")
-
-
-def open_ai_agent_page() -> None:
-    open_sibling_page("ai-agent")
-
-
 def open_plugin_manager(plugin_name: str, fallback_url: str) -> str:
 
 
@@ -402,11 +391,6 @@ def make_ai_edit_action(parent, iface, label: str, tooltip: str,
     return action
 
 
-def make_ai_agent_action(parent, iface, label: str, tooltip: str,
-                         icon: QIcon | None = None) -> QAction:
-    return make_sibling_action(parent, iface, "ai-agent", label, tooltip, icon)
-
-
 def is_sibling_installed(product_id: str) -> bool:
 
     sibling = SIBLINGS.get(product_id)
@@ -437,13 +421,6 @@ def _product_url(product_id: str) -> str:
     if product_id == "ai-edit":
         url = cross_promo_url(url)
     return url
-
-
-def open_sibling_page(product_id: str) -> None:
-
-    url = _product_url(product_id)
-    if url:
-        open_external_url(url)
 
 
 def open_sibling_tutorial(product_id: str) -> None:

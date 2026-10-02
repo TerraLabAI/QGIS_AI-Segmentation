@@ -28,8 +28,6 @@ __all__ = [
     "_FIELD_TYPE_DOUBLE",
     "_FIELD_TYPE_INT",
     "_FIELD_TYPE_STRING",
-    "_RECALL_FLOOR",
-    "_RECALL_FLOOR_EXEMPLAR_ONLY",
     "_WEBMERC_MUPP_Z0",
     "_add_features_fast",
     "_add_features_with_ids",
@@ -382,16 +380,6 @@ def backend_stalled_flag(tiles_done: int, warming_ms: int,
 
 
 
-_RECALL_FLOOR = 0.10
-
-
-
-_RECALL_FLOOR_EXEMPLAR_ONLY = 0.20
-
-
-
-
-
 
 
 
@@ -697,6 +685,24 @@ def park_orphaned_worker(worker) -> None:
         finished_in_gap = True
     if finished_in_gap:
         _release()
+
+
+def release_worker_ref(worker, wait_ms: int = 2000) -> None:
+
+
+
+
+
+
+
+
+    if worker is None:
+        return
+    try:
+        if worker.isRunning() or not worker.wait(wait_ms):
+            park_orphaned_worker(worker)
+    except (RuntimeError, AttributeError):
+        pass
 
 
 def join_orphaned_workers(budget_seconds: float) -> int:

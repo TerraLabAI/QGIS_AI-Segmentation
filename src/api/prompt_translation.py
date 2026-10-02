@@ -19,9 +19,10 @@ import re
 import threading
 import unicodedata
 
-from qgis.PyQt.QtCore import QMetaObject, QObject, QSettings, Qt, QThread, pyqtSlot
+from qgis.PyQt.QtCore import QMetaObject, QObject, QSettings, Qt, pyqtSlot
 
 from ..core import transport_dials as _td
+from ..core.gui_thread import on_gui_thread
 from ..core.qt_compat import resolve_qt_enum
 
 _CACHE_KEY = "TerraLab/AI_Segmentation/prompt_translations"
@@ -137,10 +138,10 @@ def _save_disk_cache(cache: dict) -> None:
     try:
         from qgis.core import QgsApplication
 
-        app = QgsApplication.instance()
-        if app is None or QThread.currentThread() == app.thread():
+        if on_gui_thread(unknown=True):
             _write_disk_cache_now()
             return
+        app = QgsApplication.instance()
         with _disk_lock:
             if _writer is None:
                 _writer = _CacheWriter()

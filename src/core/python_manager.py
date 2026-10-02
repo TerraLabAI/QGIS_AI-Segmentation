@@ -28,6 +28,7 @@ from qgis.core import Qgis
 from .archive_utils import safe_extract_tar as _safe_extract_tar
 from .archive_utils import safe_extract_zip as _safe_extract_zip
 from .cache_paths import PLUGIN_CACHE_DIR, plugin_cache_tmp_dir, remove_tree_quietly
+from .install_config import capped_backoff_s
 from .logging_utils import log as _log
 from .model_config import IS_ROSETTA
 from .python_release_pins import (
@@ -39,6 +40,7 @@ from .streamed_download import (
     discard_part_file,
     sleep_unless_cancelled,
     stream_url_to_file,
+    tr,
 )
 from .subprocess_utils import (  # nosec B404
     get_clean_env_for_venv,
@@ -59,20 +61,6 @@ from .uv_manager import (
 
 
 _DOWNLOAD_HARD_TIMEOUT_MS = 60 * 60 * 1000
-
-
-def tr(text: str) -> str:
-
-
-
-
-
-    try:
-        from .i18n import tr as translate
-
-        return translate(text)
-    except Exception:  # noqa: BLE001
-        return text
 
 
 STANDALONE_DIR = os.path.join(PLUGIN_CACHE_DIR, "python_standalone")
@@ -623,7 +611,7 @@ def download_python_standalone(
 
 
                 if attempt < max_retries - 1:
-                    wait = backoff_base_s * (2 ** attempt)
+                    wait = capped_backoff_s(backoff_base_s, attempt + 1)
                     _log(
                         f"Download failed (attempt {attempt + 1}/{max_retries}): {error_msg}. "
                         f"Retrying in {wait}s...",

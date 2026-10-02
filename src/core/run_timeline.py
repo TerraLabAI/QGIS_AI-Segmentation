@@ -20,7 +20,6 @@ _ENV = "AI_SEGMENTATION_RUN_TIMELINE"
 
 _t0: float | None = None
 _marks: list = []
-_once: set = set()
 
 
 def enabled() -> bool:
@@ -29,12 +28,11 @@ def enabled() -> bool:
 
 def begin(name: str = "detect_click") -> None:
 
-    global _t0, _marks, _once
+    global _t0, _marks
     if not enabled():
         return
     _t0 = time.perf_counter()
     _marks = []
-    _once = set()
     _marks.append((0.0, name, threading.current_thread().name))
 
 
@@ -44,14 +42,6 @@ def mark(name: str) -> None:
     if t0 is None or not enabled():
         return
     _marks.append((time.perf_counter() - t0, name, threading.current_thread().name))
-
-
-def mark_once(name: str) -> None:
-
-    if _t0 is None or name in _once or not enabled():
-        return
-    _once.add(name)
-    mark(name)
 
 
 def marks() -> list:

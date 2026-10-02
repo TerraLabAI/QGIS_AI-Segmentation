@@ -51,6 +51,7 @@ from .tile_convert_child import (  # noqa: F401
     child_python,
     keep_child_off_power_throttling,
     skip_unused_child_imports,
+    spawn_worker_child,
     unthrottle_this_process,
 )
 from .tile_convert_handshake import (  # noqa: F401
@@ -64,7 +65,10 @@ from .tile_convert_threads import (  # noqa: F401
     DEFAULT_MAX_WORKERS,
     SPARE_CORES,
     TileConvertPool,
+    available_memory_mb,
     default_workers,
+    physical_cores,
+    physical_worker_cap,
     usable_cores,
 )
 
@@ -82,6 +86,12 @@ PROCESS_POOL_MIN_TILES = 24
 
 
 PROCESS_MAX_WORKERS = 3
+
+
+
+
+CHILD_RAM_RESERVE_MB = 1024
+CHILD_RAM_EACH_MB = 600
 
 
 
@@ -122,7 +132,20 @@ def process_workers(default_max: int | None = None,
     cores = usable_cores()
     top = PROCESS_MAX_WORKERS if default_max is None else max(1, int(default_max))
     spare = SPARE_CORES if spare_cores is None else max(0, int(spare_cores))
-    children = min(top, cores - spare)
+    children = min(top, cores - spare, physical_worker_cap(cores))
+
+
+
+
+    free_mb = available_memory_mb()
+    if free_mb is not None:
+        from ..core.server_dials import dial_in_range
+
+        reserve = dial_in_range(
+            "tuning.convert.child_ram_reserve_mb", CHILD_RAM_RESERVE_MB, 0, 8192)
+        each = dial_in_range(
+            "tuning.convert.child_ram_each_mb", CHILD_RAM_EACH_MB, 128, 4096)
+        children = min(children, int(max(0, free_mb - reserve) // each))
     return children if children >= 2 else 0
 
 

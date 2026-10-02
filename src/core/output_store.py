@@ -646,6 +646,16 @@ def write_planned_run_table(memory_layer, plan: dict, load=None) -> WriteResult 
     friendly = plan["friendly"]
     context = plan["context"]
     transform = _ground_metre_transform(memory_layer, plan)
+    if transform is not None:
+
+
+
+
+        from .layer_conventions import reprojected_valid_copy
+
+        reprojected = reprojected_valid_copy(memory_layer, transform)
+        if reprojected is not None:
+            memory_layer, transform = reprojected, None
 
 
 

@@ -26,7 +26,7 @@ import time
 import traceback
 
 from qgis.core import Qgis, QgsMessageLog, QgsProject
-from qgis.PyQt.QtCore import QCoreApplication, QEvent, QMetaObject, QObject, Qt, QThread, pyqtSlot
+from qgis.PyQt.QtCore import QEvent, QMetaObject, QObject, Qt, pyqtSlot
 from qgis.PyQt.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -38,6 +38,7 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
+from ...core.gui_thread import on_gui_thread
 from ...core.qt_compat import safe_single_shot
 from .styles import (
     apply_input_theme_to_tree,
@@ -49,11 +50,6 @@ from .widgets import _WheelGuard
 
 
 _WHEEL_GUARDED = (QComboBox, QSpinBox, QDoubleSpinBox, QSlider)
-
-
-def _on_gui_thread() -> bool:
-    app = QCoreApplication.instance()
-    return app is not None and QThread.currentThread() is app.thread()
 
 
 class _DockQueuedCall(QObject):
@@ -114,7 +110,7 @@ class DockLazyBuildMixin:
 
 
 
-        if not name.startswith("__") and _on_gui_thread():
+        if not name.startswith("__") and on_gui_thread():
             state = self.__dict__.get("_dock_content_state")
             if state == "pending":
                 self.ensure_dock_content(trigger=name)

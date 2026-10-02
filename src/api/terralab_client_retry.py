@@ -130,7 +130,6 @@ def _note_retry_after(answer, reply):
 
 
 _WINDOW_HINT_MIN = 1
-_WINDOW_HINT_MAX = 16
 
 
 def _window_hint(reply) -> int | None:
@@ -148,7 +147,7 @@ def _window_hint(reply) -> int | None:
         value = int(raw.strip())
     except (TypeError, ValueError):
         return None
-    if _WINDOW_HINT_MIN <= value <= _td.window_hint_ceiling(_WINDOW_HINT_MAX):
+    if _WINDOW_HINT_MIN <= value <= _td.window_hint_ceiling():
         return value
     return None
 

@@ -38,6 +38,15 @@ if sys.platform == "win32":
         pass  # nosec B110
 
 
+def _whole_crop_ratio(value: Any) -> float:
+
+    try:
+        ratio = float(value)
+    except (TypeError, ValueError):
+        return 1.0
+    return ratio if 0.5 <= ratio <= 1.0 else 1.0
+
+
 def opt_out_of_windows_power_throttling():
 
 
@@ -763,12 +772,14 @@ def main():
 
 
 
+
                     if auto_best and masks.shape[0] > 1:
                         total = masks.shape[1] * masks.shape[2]
                         areas = [int(np.count_nonzero(m)) for m in masks]
+                        ratio = _whole_crop_ratio(request.get("whole_crop_ratio"))
                         candidates = [
                             i for i in range(len(scores))
-                            if 0 < areas[i] < 0.8 * total
+                            if 0 < areas[i] < ratio * total
                         ]
                         if candidates:
                             best_idx = max(

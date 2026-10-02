@@ -22,21 +22,7 @@ import re
 import sys
 
 from .install_config import classifier_markers
-
-
-def tr(text: str) -> str:
-
-
-
-
-
-
-    try:
-        from .i18n import tr as translate
-
-        return translate(text)
-    except Exception:  # noqa: BLE001
-        return text
+from .streamed_download import tr
 
 
 

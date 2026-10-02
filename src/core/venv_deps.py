@@ -27,6 +27,7 @@ from .pip_diagnostics import is_dll_init_error as _is_dll_init_error
 from .pip_diagnostics import is_file_locked_error as _is_file_locked_error
 from .pip_diagnostics import is_rename_or_record_error as _is_rename_or_record_error
 from .pip_diagnostics import is_windows_process_crash as _is_windows_process_crash
+from .streamed_download import tr  # noqa: F401
 from .venv_paths import (
     DEPS_HASH_FILE,
     INSTALL_MARKER_FILE,
@@ -168,21 +169,6 @@ MIN_FREE_GB_FULL = 5.0
 
 
 MIN_FREE_GB_AUTOMATIC = 1.5
-
-
-def tr(text: str) -> str:
-
-
-
-
-
-
-    try:
-        from .i18n import tr as translate
-
-        return translate(text)
-    except Exception:  # noqa: BLE001
-        return text
 
 
 def resolved_min_free_gb_full() -> float:

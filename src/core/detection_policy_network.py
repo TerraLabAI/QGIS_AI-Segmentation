@@ -204,14 +204,6 @@ def min_poll_backoff_s(fallback: float, policy: dict | None = None) -> float:
     return _net_float("min_poll_backoff_s", fallback, policy, high=30.0)
 
 
-def window_hint_max(fallback: int, policy: dict | None = None) -> int:
-
-
-
-
-    return int(_net_float("window_hint_max", float(fallback), policy, high=32.0))
-
-
 def aimd_min(fallback: int, policy: dict | None = None) -> int:
 
 

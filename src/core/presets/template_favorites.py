@@ -16,9 +16,9 @@
 
 from __future__ import annotations
 
-import json
-
 from qgis.PyQt.QtCore import QSettings
+
+from .bounded_setting_json import read_bounded_json_setting, write_bounded_json_setting
 
 _FAVORITE_TEMPLATES_KEY = "AISegmentation/favorite_templates"
 
@@ -35,13 +35,7 @@ def favorite_template_ids() -> list[str]:
 
 
 
-    raw = QSettings().value(_FAVORITE_TEMPLATES_KEY, "")
-    if not raw or not isinstance(raw, str) or len(raw.encode("utf-8")) > _MAX_FAVORITE_BYTES:
-        return []
-    try:
-        data = json.loads(raw)
-    except (ValueError, TypeError):
-        return []
+    data = read_bounded_json_setting(_FAVORITE_TEMPLATES_KEY, _MAX_FAVORITE_BYTES)
     if not isinstance(data, list):
         return []
     from ..server_dials import dial_in_range
@@ -99,12 +93,4 @@ def clear_favorite_templates() -> None:
 def _save_favorite_template_ids(ids: list[str]) -> bool:
     from ..server_dials import dial_in_range
     cap = dial_in_range("tuning.library.favorite_templates_cap", _FAVORITE_TEMPLATES_CAP, 20, 2000)
-    settings = QSettings()
-    existing = settings.value(_FAVORITE_TEMPLATES_KEY, "")
-    if isinstance(existing, str) and len(existing.encode("utf-8")) > _MAX_FAVORITE_BYTES:
-        return False
-    payload = json.dumps(ids[:cap], ensure_ascii=False)
-    if len(payload.encode("utf-8")) > _MAX_FAVORITE_BYTES:
-        return False
-    settings.setValue(_FAVORITE_TEMPLATES_KEY, payload)
-    return True
+    return write_bounded_json_setting(_FAVORITE_TEMPLATES_KEY, ids[:cap], _MAX_FAVORITE_BYTES)

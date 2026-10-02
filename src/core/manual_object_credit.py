@@ -162,7 +162,3 @@ class ManualObjectLedger:
 
 
         self._charged.add(self._object_key(det_id))
-
-    def charged_count(self) -> int:
-
-        return len(self._charged)

@@ -60,10 +60,11 @@ class AutoDensityProbeMixin:
 
 
         if self._density_plan is None:
-            return deque(enumerate(self._tiles))
+            return deque((i, t) for i, t in enumerate(self._tiles)
+                         if i < self._plan_len)
         first = [(i, self._tiles[i]) for i in self._density_plan["indices"]]
         rest = [(i, t) for i, t in enumerate(self._tiles)
-                if i not in self._density_probe_set]
+                if i not in self._density_probe_set and i < self._plan_len]
         return deque(first + rest)
 
     def _density_note_count(self, tile_idx: int, count: int) -> None:

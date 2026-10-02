@@ -12,15 +12,17 @@ from typing import Any
 
 from qgis.core import Qgis, QgsFeature, QgsGeometry, QgsSpatialIndex
 
+from .detection_policy_regularize import (
+    _REGULARIZE_FALLBACK_CIRCLES,
+    _REGULARIZE_FALLBACK_DIAGONAL,
+    _REGULARIZE_FALLBACK_MIN_KEEP_IOU,
+)
 from .polygon_masks import (
     polygonal_part_of,
 )
 from .qt_compat import PolygonGeometry
 from .shape_policy_dials import close_max_area_growth, smooth_area_keep, smooth_diet_fraction
 
-
-
-_ORTHO_FALLBACK_ANGLE_DEG = 15.0
 
 
 _RIGHT_ANGLE_FALLBACK_TOL_PX = 1.5
@@ -31,25 +33,39 @@ _RIGHT_ANGLE_FALLBACK_TOL_PX = 1.5
 _FALLBACK_CACHE: list = []
 
 
-def _shape_fallback_dials() -> tuple[float, float]:
+def _shape_fallback_dials() -> tuple[float | None, float]:
+
+
 
 
     try:
-        from .server_dials import _server_config, dial_in_range
+        from .server_dials import _server_config, dial_in_range, read_value
 
         token = _server_config()
         if _FALLBACK_CACHE and _FALLBACK_CACHE[0] is token:
             return _FALLBACK_CACHE[1]
         values = (
-            float(dial_in_range("tuning.review.ortho_fallback_angle_deg",
-                                _ORTHO_FALLBACK_ANGLE_DEG, 5.0, 30.0)),
+            _served_ortho_angle(read_value),
             float(dial_in_range("tuning.manual.right_angle_fallback_tol_px",
                                 _RIGHT_ANGLE_FALLBACK_TOL_PX, 0.5, 5.0)),
         )
         _FALLBACK_CACHE[:] = [token, values]
         return values
     except Exception:  # noqa: BLE001  # nosec B110
-        return _ORTHO_FALLBACK_ANGLE_DEG, _RIGHT_ANGLE_FALLBACK_TOL_PX
+        return None, _RIGHT_ANGLE_FALLBACK_TOL_PX
+
+
+def _served_ortho_angle(read_value) -> float | None:
+
+
+    try:
+        value = read_value("tuning.review.ortho_fallback_angle_deg")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        value = float(value)
+        return value if 5.0 <= value <= 30.0 else None
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _overlap_metrics(g1: QgsGeometry, g2: QgsGeometry) -> tuple[float, float]:
@@ -340,7 +356,7 @@ def apply_geometry_refinement(
     ortho_tol: float = 0.0,
     regularize: bool = False,
     regularize_tol: float = 0.0,
-    allow_diagonal: bool = True,
+    allow_diagonal: bool = _REGULARIZE_FALLBACK_DIAGONAL,
     allow_circles: bool = False,
     regularize_min_iou: float = 0.0,
     diagonal_reduction: float | None = None,
@@ -616,7 +632,9 @@ def apply_geometry_refinement(
 
 
         try:
-            r = g.orthogonalize(1.0e-8, 1000, _shape_fallback_dials()[0])
+            ortho_angle = _shape_fallback_dials()[0]
+            r = (g.orthogonalize(1.0e-8, 1000, ortho_angle)
+                 if ortho_angle is not None else None)
             if r is not None and not r.isEmpty():
                 g = r
         except Exception:  # noqa: BLE001  # nosec B110
@@ -668,9 +686,9 @@ def apply_right_angles(
     destair_tol: float = 0.0,
     *,
     tolerance_m: float = 0.0,
-    allow_diagonal: bool = True,
-    allow_circles: bool = False,
-    min_keep_iou: float = 0.7,
+    allow_diagonal: bool = _REGULARIZE_FALLBACK_DIAGONAL,
+    allow_circles: bool = _REGULARIZE_FALLBACK_CIRCLES,
+    min_keep_iou: float = _REGULARIZE_FALLBACK_MIN_KEEP_IOU,
     diagonal_reduction: float | None = None,
     circle_threshold: float | None = None,
     multi_direction: bool = False,
@@ -782,9 +800,9 @@ def shape_polygon_geometry(
     vertex_dial_max_cap_fraction: float | None = None,
     regularize_tol: float = 0.0,
     destair_tol: float = 0.0,
-    allow_diagonal: bool = True,
-    allow_circles: bool = False,
-    min_keep_iou: float = 0.7,
+    allow_diagonal: bool = _REGULARIZE_FALLBACK_DIAGONAL,
+    allow_circles: bool = _REGULARIZE_FALLBACK_CIRCLES,
+    min_keep_iou: float = _REGULARIZE_FALLBACK_MIN_KEEP_IOU,
     diagonal_reduction: float | None = None,
     circle_threshold: float | None = None,
     multi_direction: bool = False,
@@ -958,9 +976,9 @@ def shape_polygon_geometry(
 
 def suppress_redundant_hypotheses(
     items: list[tuple[QgsGeometry, float]],
-    ios_threshold: float = 0.5,
-    dup_ios_floor: float = 0.3,
-    dup_centroid_frac: float = 0.35,
+    ios_threshold: float,
+    dup_ios_floor: float,
+    dup_centroid_frac: float,
 ) -> list[tuple[QgsGeometry, float]]:
 
 
@@ -1030,13 +1048,6 @@ def suppress_redundant_hypotheses(
     return kept
 
 
-
-
-
-
-COVER_THRESHOLD_DEFAULT = 0.40
-
-
 def drop_covered_objects(
     items: list[tuple[int, QgsGeometry, float]],
     cover_threshold: float | None = None,
@@ -1092,17 +1103,13 @@ class CoverSweep:
         self._items = items
 
 
-        self._threshold = (
-            COVER_THRESHOLD_DEFAULT if cover_threshold is None
-            else float(cover_threshold)
-        )
-        if cover_threshold is None:
-            try:
-                from .detection_policy import merge_scalar
 
-                self._threshold = merge_scalar("cover_threshold", COVER_THRESHOLD_DEFAULT)
-            except Exception:  # noqa: BLE001  # nosec B110
-                pass
+
+        if cover_threshold is None:
+            from .detection_policy import merge_scalar
+
+            cover_threshold = merge_scalar("cover_threshold")
+        self._threshold = float(cover_threshold)
         self._n = len(items)
         self._i = 0
         self._keep = [True] * self._n

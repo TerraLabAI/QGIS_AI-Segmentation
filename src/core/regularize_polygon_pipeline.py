@@ -54,6 +54,11 @@ _unary_union: Any = None
 _affine_transform: Any = None
 
 
+
+
+_IMPORT_FAILURE: list = []
+
+
 def _ensure_deps() -> bool:
 
 
@@ -68,7 +73,10 @@ def _ensure_deps() -> bool:
         from shapely.geometry import MultiPolygon as _MultiPolygon
         from shapely.geometry import Polygon as _Polygon
         from shapely.ops import unary_union as _uu
-    except Exception:  # noqa: BLE001  # nosec B110
+    except Exception as exc:  # noqa: BLE001
+        lines = str(exc).strip().splitlines()
+        _IMPORT_FAILURE[:] = [
+            f"{type(exc).__name__}: {lines[0][:120]}" if lines else type(exc).__name__]
         return False
     MultiPolygon = _MultiPolygon
     LinearRing = _LinearRing
@@ -133,7 +141,8 @@ def _probe_regularizer() -> tuple[bool, str]:
     if _PROBE:
         return _PROBE[0]
     if not _ensure_deps():
-        return False, "numpy or shapely does not import"
+        cause = f": {_IMPORT_FAILURE[0]}" if _IMPORT_FAILURE else ""
+        return False, f"numpy or shapely does not import{cause}"
     try:
         import shapely
 
@@ -201,8 +210,8 @@ class RegularizePolicy(NamedTuple):
     max_holes: int = -1
 
     rectangle_enabled: bool = False
-    rectangle_area_fill: float = 0.95
-    rectangle_min_aspect: float = 1.2
+    rectangle_area_fill: float = 1.0
+    rectangle_min_aspect: float = 1.0
 
 
 _NEUTRAL_POLICY = RegularizePolicy()
@@ -551,6 +560,7 @@ def _tidy_polygon_corners(polygon: Any, tolerance_m: float,
 
     shift = dials.tidy_min_edge_mult * tolerance_m
     if (polygon is None or polygon.is_empty or tolerance_m <= 0
+            or dials.tidy is None
             or (min_edge <= 0 and chamfer <= 0)
             or not isinstance(polygon, Polygon)):
         return polygon
@@ -564,7 +574,7 @@ def _tidy_polygon_corners(polygon: Any, tolerance_m: float,
         holes = [
             tidy_squared_ring(
                 np.asarray(r.coords, dtype=float), min_edge, chamfer, shift,
-                tidy=dials.tidy)
+                None, dials.tidy)
             for r in polygon.interiors
         ]
         tidied = Polygon(shell, holes)

@@ -21,7 +21,8 @@ from __future__ import annotations
 from .shape_policy_dials import reach_min_steps, reach_work_budget, weld_gap_m, weld_radius_px_cap
 
 
-WELD_GAP_M = 0.5
+
+WELD_GAP_M = 0.0
 WELD_RADIUS_PX_CAP = 3
 
 

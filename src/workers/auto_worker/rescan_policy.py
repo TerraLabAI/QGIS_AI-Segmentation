@@ -17,8 +17,6 @@ from collections import deque
 
 __all__ = [
     "AutoRescanPolicyMixin",
-    "_RESPLIT_TIME_RATIO",
-    "_SUBDIV_MAX_DEPTH",
     "logger",
 ]
 
@@ -28,31 +26,6 @@ logger = logging.getLogger(__name__)
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-_SUBDIV_MAX_DEPTH = 0
-
-
-
-
-
-
-
-_RESPLIT_TIME_RATIO = 1.0
 
 
 class AutoRescanPolicyMixin:

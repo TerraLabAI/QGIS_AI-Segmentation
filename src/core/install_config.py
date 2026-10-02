@@ -216,14 +216,25 @@ def network_retry_attempts(shipped: int) -> int:
     return int(dial_in_range("install.retry.network_attempts", shipped, 1, 10))
 
 
+RETRY_WAIT_CEILING_S = 300
+
+
+def capped_backoff_s(base_s: int, attempt: int) -> int:
+
+
+
+
+
+    return min(RETRY_WAIT_CEILING_S, int(base_s) * (2 ** max(0, attempt - 1)))
+
+
 def network_retry_backoff_s(attempt: int, shipped_base: int) -> int:
 
 
 
 
-
     base = int(dial_in_range("install.retry.backoff_base_s", shipped_base, 1, 120))
-    return min(300, base * (2 ** max(0, attempt - 1)))
+    return capped_backoff_s(base, attempt)
 
 
 def install_logic_version(shipped: str) -> str:

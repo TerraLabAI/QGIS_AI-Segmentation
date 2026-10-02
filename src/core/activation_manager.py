@@ -84,9 +84,24 @@ def _forget_account_fingerprint() -> None:
         pass  # nosec B110
 
 
+def _drop_parked_telemetry() -> None:
+
+
+
+
+    try:
+        from . import telemetry_disk_queue
+
+        telemetry_disk_queue.clear()
+    except Exception:  # noqa: BLE001
+        pass  # nosec B110
+
+
 def save_auth_token(token: str, settings=None):
     global _auth_revision
     _auth_revision += 1
+    if (token or "").strip() != (get_auth_token(settings) or "").strip():
+        _drop_parked_telemetry()
     _auth_save_activation(token, settings)
     _forget_account_fingerprint()
     s = settings or QgsSettings()
@@ -96,6 +111,7 @@ def save_auth_token(token: str, settings=None):
 def clear_auth(settings=None):
     global _auth_revision
     _auth_revision += 1
+    _drop_parked_telemetry()
     _auth_clear_activation(settings)
     _forget_account_fingerprint()
     s = settings or QgsSettings()

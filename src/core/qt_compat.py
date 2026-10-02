@@ -378,6 +378,32 @@ HttpStatusCodeAttribute = resolve_qt_enum(
 )
 
 
+def reply_http_status(reply) -> int | None:
+
+
+
+
+
+
+
+
+
+    if reply is None or HttpStatusCodeAttribute is None:
+        return None
+    try:
+        attr = reply.attribute(HttpStatusCodeAttribute)
+        if attr is None:
+            return None
+        if isinstance(attr, bool):
+            return None
+        status = int(attr)
+        return status if 100 <= status <= 599 else None
+    except (TypeError, ValueError, OverflowError, RuntimeError):
+        return None
+
+
+
+
 
 
 RedirectPolicyAttribute = resolve_qt_enum(

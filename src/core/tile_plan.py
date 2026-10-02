@@ -24,15 +24,6 @@ from .tile_manager import OVERLAP_FRACTION, TILE_SIZE
 
 
 
-TILE_FIT_OBJECT_FRAC = 0.40
-
-
-
-
-
-
-TILE_STEP_HALF_COUNT = 8
-TILE_STEP_RATIO = 2.0 ** 0.25
 
 
 TILE_BAND_RATIO = 2.0
@@ -85,7 +76,7 @@ class TilePrior:
     source: str = REASON_PRIOR_DEFAULT
     band_m: tuple[float, float] | None = None
     size_m: float = 0.0
-    fit_frac: float = TILE_FIT_OBJECT_FRAC
+    fit_frac: float = 0.0
     route_floor_m: float = 0.0
     ceiling_m: float = 0.0
     default_tile_ground_m: float = 0.0
@@ -152,11 +143,6 @@ class TilePlan:
 
     uncapped_m: float = 0.0
     sound_max_m: float = 0.0
-
-    @property
-    def reason_text(self) -> str:
-
-        return ",".join(self.reasons)
 
 
 def tile_count_for_side(width_m: float, height_m: float, side_m: float) -> int:
@@ -372,7 +358,7 @@ TILE_WARNING_IMAGERY = "imagery"
 
 
 def tile_plan_warning(
-    tile_plan: TilePlan, rendered_m: float, ratio: float = TILE_STEP_RATIO,
+    tile_plan: TilePlan, rendered_m: float, ratio: float,
 ) -> str:
 
 
@@ -382,7 +368,7 @@ def tile_plan_warning(
 
 
 
-    ratio = ratio if _positive(ratio) > 1.0 else TILE_STEP_RATIO
+    ratio = ratio if _positive(ratio) > 1.0 else TILE_BAND_RATIO
     side = _positive(rendered_m) or tile_plan.tile_ground_m
     sound = _positive(tile_plan.sound_max_m)
     past_band = bool(sound) and side > sound * 1.0001
@@ -396,27 +382,22 @@ def tile_plan_warning(
     return TILE_WARNING_NONE
 
 
-def tile_step_count(half_steps: int = TILE_STEP_HALF_COUNT) -> int:
-
-    return 2 * max(1, int(half_steps)) + 1
-
-
 def tile_step_ground_m(
     tile_plan: TilePlan, step: int,
-    half_steps: int = TILE_STEP_HALF_COUNT, ratio: float = TILE_STEP_RATIO,
+    half_steps: int, ratio: float,
 ) -> float:
 
 
     half = max(1, int(half_steps))
-    ratio = ratio if _positive(ratio) > 1.0 else TILE_STEP_RATIO
+    ratio = ratio if _positive(ratio) > 1.0 else TILE_BAND_RATIO
     step = min(max(1, int(step)), 2 * half + 1)
     return tile_plan.tile_ground_m * ratio ** (half + 1 - step)
 
 
 def tile_step_window(
     tile_plan: TilePlan, machine_max_tiles: int,
-    count_tiles: Callable[[float], int] | None = None,
-    half_steps: int = TILE_STEP_HALF_COUNT, ratio: float = TILE_STEP_RATIO,
+    count_tiles: Callable[[float], int] | None,
+    half_steps: int, ratio: float,
 ) -> tuple[int, int, int]:
 
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+import threading
 
 from ..core import transport_dials as _td
 from ..core.server_dials import dial_in_range
@@ -29,6 +30,12 @@ from .terralab_client_retry import (
 
 
 _account_shape: dict = {"bundles_usage": None}
+
+
+
+
+
+_charge_retry_gate = threading.Lock()
 
 
 class TerraLabAccountMixin:
@@ -95,6 +102,63 @@ class TerraLabAccountMixin:
             "POST", "/api/ai-segmentation/save-polygon", auth=headers, body=body,
             timeout_ms=_td.interactive_timeout_ms(_TIMEOUT_INTERACTIVE), require_body=True,
         )
+
+    def charge_saved_object_retrying(self, auth: dict, session_id: str,
+                                     polygon_index: int,
+                                     area_m2: float | None = None,
+                                     polygon_wkt: str | None = None) -> dict:
+
+
+
+
+
+
+
+
+
+
+
+        import random  # noqa: PLC0415
+
+        from ..core.error_policy import LINK_OR_TIMEOUT_CODES
+        from ..core.streamed_download import sleep_unless_cancelled
+        from .terralab_client_retry import _worth_asking_again
+        from .terralab_client_transport import _request_cancelled
+
+
+        extra = _td.charge_retry_attempts(0)
+        ladder = _td.charge_retry_backoff_s((1.0,))
+        answer: dict = {}
+        holds_gate = False
+        try:
+            for attempt in range(extra + 1):
+                self._pending_retry_after_s = 0.0
+                answer = self.charge_saved_object(
+                    auth, session_id, polygon_index,
+                    area_m2=area_m2, polygon_wkt=polygon_wkt)
+                if not (isinstance(answer, dict) and "error" in answer):
+                    return answer
+                status = answer.get("http_status")
+                code = str(answer.get("code") or "").upper()
+                transient = (_worth_asking_again(answer, status)
+                             or (status is None and (
+                                 code in LINK_OR_TIMEOUT_CODES
+                                 or code == "SERVER_ERROR")))
+                if not transient or attempt >= extra or _request_cancelled():
+                    return answer
+                if not holds_gate:
+                    holds_gate = _charge_retry_gate.acquire(blocking=False)
+                    if not holds_gate:
+                        return answer
+                base = ladder[min(attempt, len(ladder) - 1)]
+                wait = (getattr(self, "_pending_retry_after_s", 0.0)
+                        or base * random.uniform(0.8, 1.25))  # nosec B311
+                if sleep_unless_cancelled(min(wait, 30.0), _request_cancelled, slice_s=0.1):
+                    return answer
+            return answer
+        finally:
+            if holds_gate:
+                _charge_retry_gate.release()
 
     def get_usage(self, auth: dict) -> dict:
         return self._request(
@@ -408,7 +472,10 @@ class TerraLabAccountMixin:
         auth: dict,
         run_id: str | None = None,
         group_key: str | None = None,
+        prompt: str | None = None,
     ) -> dict:
+
+
 
 
 
@@ -424,6 +491,8 @@ class TerraLabAccountMixin:
                 quote(str(group_key), safe=""))
         else:
             return {"error": "missing run identifier", "code": "CLIENT_ERROR"}
+        if prompt is not None:
+            path += "&prompt={}".format(quote(str(prompt), safe=""))
         return self._request(
             "GET", path, auth=auth, timeout_ms=_td.api_timeout_ms(_TIMEOUT_API), require_body=True)
 

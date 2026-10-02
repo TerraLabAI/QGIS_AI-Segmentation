@@ -18,7 +18,7 @@ from ...core.telemetry_errors import slot_guard
 from .auto_run_progress import (
     _WIND_DOWN_DETACH,
 )
-from .shared import park_orphaned_worker
+from .shared import park_orphaned_worker, release_worker_ref
 
 
 
@@ -112,6 +112,7 @@ class AutoRunCancelMixin:
         armed = self._take_auto_cancel_gesture()
         if not armed or dock is None or self._auto_headless_run:
             return True
+        run_id = getattr(self, "_auto_run_id", None)
         try:
             if not dock._confirm_auto_cancel():
                 return False
@@ -121,9 +122,34 @@ class AutoRunCancelMixin:
 
 
 
-        return (self._auto_worker is worker
-                and getattr(self, "_auto_finalize_state", None) is None
-                and self._auto_review is None)
+        if (getattr(self, "_auto_finalize_state", None) is not None
+                or self._auto_review is not None):
+            return False
+        if self._auto_worker is worker:
+            return True
+
+
+
+
+        restart_pending = isinstance(
+            getattr(self, "_auto_density_forced", None), dict)
+        if (run_id and getattr(self, "_auto_run_id", None) == run_id
+                and (self._auto_worker is not None or restart_pending)):
+            self._stop_auto_run_restarted_during_question()
+        return False
+
+    def _stop_auto_run_restarted_during_question(self) -> None:
+
+
+
+
+
+
+        if self._auto_worker is None:
+            self._density_clear_forced()
+            if getattr(self, "_auto_imagery_probe", None) is not None:
+                self._abandon_imagery_probe()
+        self._on_auto_cancel_clicked()
 
     @slot_guard(stage="segment")
     def _on_auto_cancel_clicked(self) -> None:
@@ -293,7 +319,6 @@ class AutoRunCancelMixin:
 
 
 
-
         self._stop_auto_stall_watchdog()
         self._pop_nothing_found_notice()
 
@@ -340,10 +365,30 @@ class AutoRunCancelMixin:
 
 
 
-
-
-
         self._auto_merger = None
+
+
+
+
+
+
+
+        slot = getattr(self, "_auto_cancelled_slot", None)
+        if slot is not None:
+            try:
+                worker.cancelled.disconnect(slot)
+            except (TypeError, RuntimeError, AttributeError):
+                pass
+        self._auto_cancelled_slot = None
+        release_worker_ref(worker)
+        self._auto_worker = None
+        self._drop_auto_tile_bridge()
+        if getattr(self, "_auto_review", None) is None:
+            try:
+                from ...core.detection_policy_core import release_run_policy
+                release_run_policy()
+            except Exception:  # noqa: BLE001  # nosec B110
+                pass
 
 
         self._reset_auto_live_pipeline()

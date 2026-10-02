@@ -11,6 +11,16 @@
 from __future__ import annotations
 
 
+def _log_zone_warning(message: str) -> None:
+    try:
+        from qgis.core import Qgis, QgsMessageLog
+
+        QgsMessageLog.logMessage(
+            message, "AI Segmentation", level=Qgis.MessageLevel.Warning)
+    except Exception:  # nosec B110
+        pass
+
+
 class HostEventsMixin:
 
 
@@ -38,6 +48,24 @@ class HostEventsMixin:
             QTimer.singleShot(0, _sweep)
         except Exception:  # nosec B110
             pass
+
+    def _on_project_read_zone(self, *_args):
+
+        try:
+            from ...core import zone_of_interest as zoi
+
+            zoi.restore_zone_layer()
+        except Exception as err:  # noqa: BLE001
+            _log_zone_warning(f"Shared zone not restored: {err}")
+
+    def _on_project_write_zone(self, *_args):
+
+        try:
+            from ...core import zone_of_interest as zoi
+
+            zoi.store_project_zone_shapes()
+        except Exception as err:  # noqa: BLE001
+            _log_zone_warning(f"Shared zone not stored: {err}")
 
     def _on_dock_visibility_changed(self, visible: bool):
         if not visible:

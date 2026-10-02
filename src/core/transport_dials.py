@@ -84,6 +84,22 @@ def xyz_timeout_s(fallback: float) -> float:
     return dial_in_range("network.xyz.timeout_s", fallback, 1, 60)
 
 
+def xyz_timeout_adapt_max_s(fallback: float) -> float:
+
+
+    return dial_in_range("network.xyz.timeout_adapt_max_s", fallback, 6, 60)
+
+
+def xyz_timeout_adapt_factor(fallback: float) -> float:
+
+    return dial_in_range("network.xyz.timeout_adapt_factor", fallback, 1, 10)
+
+
+def xyz_probe_samples(fallback: int) -> int:
+
+    return int(dial_in_range("network.xyz.probe_samples", fallback, 1, 64))
+
+
 def xyz_backoff_s(fallback: tuple[float, ...]) -> tuple[float, ...]:
 
     return _served_positive_numbers("network.xyz.backoff_s", fallback, 0.01, 60.0)
@@ -97,6 +113,11 @@ def xyz_backoff_spread(fallback: float) -> float:
 def xyz_deadline_cap_s(fallback: float) -> float:
 
     return dial_in_range("network.xyz.deadline_cap_s", fallback, 5, 300)
+
+
+def xyz_missing_retry_max_tiles(fallback: int) -> int:
+
+    return dial_in_range("network.xyz.missing_retry_max_tiles", fallback, 0, 64)
 
 
 def xyz_max_retry_after_s(fallback: float) -> float:
@@ -186,12 +207,31 @@ def retry_pause_window_s(fallback: tuple[float, float]) -> tuple[float, float]:
     return (low, high) if low <= high else fallback
 
 
+def charge_retry_attempts(fallback: int) -> int:
+
+
+    return dial_in_range("network.retry.charge_attempts", fallback, 0, 6)
+
+
+def charge_retry_backoff_s(fallback: tuple[float, ...]) -> tuple[float, ...]:
+
+    return _served_positive_numbers("network.retry.charge_backoff_s", fallback, 0.1, 30.0)
+
+
 def server_contact_ttl_s(fallback: float) -> float:
 
     return dial_in_range("network.retry.server_contact_ttl_s", fallback, 10, 3600)
 
 
-def window_hint_ceiling(fallback: int) -> int:
+
+
+
+WINDOW_HINT_FALLBACK = 6
+
+
+def window_hint_ceiling(fallback: int = WINDOW_HINT_FALLBACK) -> int:
+
+
 
 
 

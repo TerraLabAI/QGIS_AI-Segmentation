@@ -8,21 +8,22 @@
 
 from __future__ import annotations
 
-import time
-
 from qgis.core import QgsFeedback, QgsNetworkAccessManager
-from qgis.PyQt.QtCore import QByteArray, QUrl
+from qgis.PyQt.QtCore import QByteArray
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
 from ..core import transport_dials as _td
 from ..core.gil_safe_qobject import prime as _gil_safe
 from ..core.i18n import tr
+from ..core.streamed_download import sleep_unless_cancelled
+from .json_request import build_json_request
 from .request_compression import answer_refused_the_body, note_gzip_request_refused, packed_request_body
 from .request_feedback import current_request_feedback as _current_feedback
 from .terralab_client_errors import (
+    _answer_from_failed_transfer,
+    _answer_from_status_and_body,
     _classify_network_error,
     _classify_qt_error,
-    _error_shaped,
     _unreadable_answer,
 )
 from .terralab_client_nam_pool import (
@@ -30,11 +31,9 @@ from .terralab_client_nam_pool import (
 )
 from .terralab_client_primitives import (
     _TIMEOUT_API,
-    _apply_redirect_policy,
     _http_status_of,
     _log_warning,
     _NoError,
-    _parse_json_body,
     _reply_was_packed,
     _WallClockGuard,
     note_server_contact,
@@ -149,19 +148,7 @@ class TerraLabTransportMixin:
 
 
 
-        req = QNetworkRequest(QUrl(self._resolve_url(path)))
-        req.setRawHeader(b"Content-Type", b"application/json")
-        if packed:
-
-
-            req.setRawHeader(b"Content-Encoding", b"gzip")
-        if hasattr(req, "setTransferTimeout"):
-            req.setTransferTimeout(timeout_ms)
-        _apply_redirect_policy(req, bool(auth))
-        if auth:
-            for key, value in auth.items():
-                req.setRawHeader(key.encode("utf-8"), value.encode("utf-8"))
-        return req
+        return build_json_request(self._resolve_url(path), auth, timeout_ms, packed=packed)
 
     def _request(
         self,
@@ -239,12 +226,8 @@ class TerraLabTransportMixin:
                 and _worth_asking_again(answer, http_status)):
 
 
-            deadline = time.monotonic() + (self._pending_retry_after_s or _retry_pause_s())
-            while not _request_cancelled():
-                left = deadline - time.monotonic()
-                if left <= 0:
-                    break
-                time.sleep(min(left, 0.1))
+            sleep_unless_cancelled(
+                self._pending_retry_after_s or _retry_pause_s(), _request_cancelled, slice_s=0.1)
             if _request_cancelled():
                 return _cancelled_answer()
             answer, http_status, _ = self._request_once(
@@ -287,26 +270,9 @@ class TerraLabTransportMixin:
 
 
             return ({"error": str(err), "code": "CLIENT_ERROR"}, None, False)
-        req = QNetworkRequest(QUrl(url))
-        req.setRawHeader(b"Content-Type", b"application/json")
-        if packed:
 
 
-            req.setRawHeader(b"Content-Encoding", b"gzip")
-
-
-
-
-
-        if hasattr(req, "setTransferTimeout"):
-            req.setTransferTimeout(timeout_ms)
-        _apply_redirect_policy(req, bool(auth))
-        if auth:
-            for key, value in auth.items():
-                req.setRawHeader(key.encode("utf-8"), value.encode("utf-8"))
-        if extra_headers:
-            for key, value in extra_headers.items():
-                req.setRawHeader(key.encode("utf-8"), value.encode("utf-8"))
+        req = build_json_request(url, auth, timeout_ms, packed=packed, extra_headers=extra_headers)
 
         if method not in ("GET", "POST"):
             return ({"error": f"Unsupported method: {method}",
@@ -346,21 +312,14 @@ class TerraLabTransportMixin:
                 return {"not_modified": True}, http_status, False
             if http_status in _HANDOFF_STATUSES and reply is not None:
                 self._pending_retry_after_s = _retry_after_s(reply)
+            raw_body = ""
             if reply is not None and http_status is not None and http_status >= 400:
 
 
-                raw = bytes(reply.content()).decode("utf-8", "replace")
-                if raw:
-                    try:
-                        parsed = _parse_json_body(raw)
-                    except Exception:  # noqa: BLE001
-                        parsed = None
-                    if parsed is not None:
-                        code, msg = _classify_network_error(reply, detail)
-                        return (_error_shaped(parsed, code, msg),
-                                http_status, True)
-            code, msg = _classify_network_error(reply, detail)
-            return {"error": msg, "code": code}, http_status, False
+                raw_body = bytes(reply.content()).decode("utf-8", "replace")
+            answer, body_was_json = _answer_from_failed_transfer(
+                raw_body, http_status, lambda: _classify_network_error(reply, detail))
+            return answer, http_status, body_was_json
 
         if reply is None:
             return _unreadable_answer(), None, False
@@ -382,49 +341,18 @@ class TerraLabTransportMixin:
         if http_status in _HANDOFF_STATUSES:
             self._pending_retry_after_s = _retry_after_s(reply)
 
-        if http_status is not None and http_status >= 400:
-
-
-            _log_warning(f"HTTP {http_status} error response")
-            try:
-                error_body = _parse_json_body(raw_body)
-            except Exception:  # noqa: BLE001
-                error_body = None
-            if error_body is None:
-                return ({"error": f"Server error (HTTP {http_status})",
-                         "code": "SERVER_ERROR"}, http_status, False)
-            return (_error_shaped(
-                error_body, "SERVER_ERROR",
-                f"Server error (HTTP {http_status})"), http_status, True)
-
-        if not raw_body:
-            if require_body:
-                _log_warning("Empty body on a route that must carry one")
-                return _unreadable_answer(), http_status, False
-            return {}, http_status, False
-        try:
-
-
-
-            parsed = _parse_json_body(raw_body, allow_list=allow_list)
-        except (ValueError, RecursionError):
-            parsed = None
-        if parsed is None:
-            _log_warning(f"Invalid JSON response ({len(raw_body)} bytes)")
-            if require_body:
-                return _unreadable_answer(), http_status, False
-            return ({"error": "Invalid server response",
-                     "code": "SERVER_ERROR"}, http_status, False)
-        if isinstance(parsed, dict) and http_status == 200:
+        answer, body_was_json = _answer_from_status_and_body(
+            raw_body, http_status, require_body=require_body, allow_list=allow_list)
+        if body_was_json and isinstance(answer, dict) and http_status == 200:
 
 
 
 
             etag = _response_etag(reply)
             if etag:
-                parsed = dict(parsed)
-                parsed["etag"] = etag
-        return parsed, http_status, True
+                answer = dict(answer)
+                answer["etag"] = etag
+        return answer, http_status, body_was_json
 
     def _parse_reply(self, reply, require_body: bool = False) -> dict:
 
@@ -486,59 +414,13 @@ class TerraLabTransportMixin:
             note_server_contact()
 
         if qt_error != _NoError:
-
-
-            if http_status is not None and http_status >= 400 and raw_body:
-                try:
-                    parsed = _parse_json_body(raw_body)
-                except Exception:  # noqa: BLE001
-                    parsed = None
-                if parsed is not None:
-
-
-
-                    code, msg = _classify_qt_error(
-                        qt_error, reply.errorString(), http_status,
-                        service_reachable=server_reached_recently(),
-                    )
-                    return _error_shaped(parsed, code, msg), True
-            code, msg = _classify_qt_error(
-                qt_error, reply.errorString(), http_status,
-                service_reachable=server_reached_recently(),
-            )
-            return {"error": msg, "code": code}, False
-
-        if http_status is not None and http_status >= 400:
-
-
-            _log_warning(f"HTTP {http_status} error response")
-            try:
-                error_body = _parse_json_body(raw_body)
-            except Exception:  # noqa: BLE001
-                error_body = None
-            if error_body is None:
-                return ({"error": f"Server error (HTTP {http_status})",
-                         "code": "SERVER_ERROR"}, False)
-            return (_error_shaped(
-                error_body, "SERVER_ERROR",
-                f"Server error (HTTP {http_status})"), True)
-
-        if not raw_body:
-            if require_body:
-                _log_warning("Empty body on a route that must carry one")
-                return _unreadable_answer(), False
-            return {}, False
-        try:
-            parsed = _parse_json_body(raw_body)
-        except (ValueError, RecursionError):
-            parsed = None
-        if parsed is None:
-            _log_warning(f"Invalid JSON response ({len(raw_body)} bytes)")
-            if require_body:
-                return _unreadable_answer(), False
-            return ({"error": "Invalid server response",
-                     "code": "SERVER_ERROR"}, False)
-        return parsed, True
+            return _answer_from_failed_transfer(
+                raw_body, http_status,
+                lambda: _classify_qt_error(
+                    qt_error, reply.errorString(), http_status,
+                    service_reachable=server_reached_recently()))
+        return _answer_from_status_and_body(
+            raw_body, http_status, require_body=require_body)
 
     def parse_reply(self, reply) -> dict:
 
@@ -748,12 +630,9 @@ class TerraLabTransportMixin:
                      and _worth_asking_again(results[i], statuses[i])]
             if again:
                 delay = max(retry_delays.get(i, 0.0) for i in again) or _retry_pause_s()
-                deadline = time.monotonic() + delay
-                while not _already_aborting():
-                    left = deadline - time.monotonic()
-                    if left <= 0:
-                        break
-                    time.sleep(min(left, 0.1) if should_abort is not None else left)
+
+                sleep_unless_cancelled(
+                    delay, _already_aborting, slice_s=0.1 if should_abort is not None else max(delay, 0.001))
                 if not _already_aborting():
                     second = self.request_many(
                         [specs[i] for i in again], should_abort=should_abort,

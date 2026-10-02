@@ -8,52 +8,10 @@
 from __future__ import annotations
 
 from .detection_policy_core import (
-    _is_finite_policy_value,
+    policy_scope,
     review_policy,
 )
-
-
-def restore_partitions_for(prompt: str, policy: dict | None = None,
-                           exemplar_only: bool = False) -> bool:
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    if exemplar_only:
-        return bool(merge_policy(policy).get("restore_partition_exemplar_only"))
-    norm = (prompt or "").strip().lower().replace("_", " ")
-    if not norm:
-        return False
-    names = merge_policy(policy).get("restore_partition_prompts")
-    if not isinstance(names, list):
-        return False
-    wanted = frozenset(
-        str(v).strip().lower().replace("_", " ")
-        for v in names if isinstance(v, str) and str(v).strip())
-    return norm in wanted
+from .served_config import require_served_int, require_served_number
 
 
 def merge_policy(policy: dict | None = None) -> dict:
@@ -83,101 +41,63 @@ def map_likeness_min_share(policy: dict | None = None) -> float:
 
 
 
+    with policy_scope(policy):
+        return require_served_number(
+            "detection_policy.review.merge.map_likeness_min_share", 0.0, 1.0)
 
-
-    val = merge_policy(policy).get("map_likeness_min_share")
-    if _is_finite_policy_value(val):
-        return float(val)
-    return 0.15
-
-
-
-
-
-
-
-
-_MERGE_SCALAR_DEFAULTS: dict[str, float] = {
-    "merge_ios": 0.15,
-    "dedup_ios": 0.5,
-    "dup_ios_floor": 0.3,
-    "dup_centroid_frac": 0.35,
-    "seam_span_ios": 0.03,
-    "ios_threshold": 0.5,
-
-
-
-    "seam_span_tol": 0.85,
-
-
-
-    "jitter_area_frac": 0.02,
-
-
-
-
-    "jitter_erode_px": 1.0,
-
-
-
-    "cover_threshold": 0.40,
-
-
-    "score_floor_frac": 0.5,
-
-
-
-
-    "part_inside": 0.90,
-
-
-    "part_max_frac": 0.70,
-
-
-    "part_sibling_ios": 0.20,
-
-
-    "part_cover_frac": 0.60,
-
-    "part_min_children": 2,
-}
 
 
 
 _MERGE_INT_SCALARS: frozenset[str] = frozenset({"part_min_children"})
 
 
-def merge_scalar(key: str, fallback: float | None = None, policy: dict | None = None) -> float:
-
-
-
-
-
-    if fallback is None:
-        fallback = _MERGE_SCALAR_DEFAULTS.get(key, 0.0)
-    val = merge_policy(policy).get(key)
-
-
-
-
-
-    if _is_finite_policy_value(val) and float(val) >= 0.0:
-        resolved = float(val)
-    else:
-        resolved = float(fallback)
-    return int(resolved) if key in _MERGE_INT_SCALARS else resolved
-
-
 def merge_scalars(policy: dict | None = None) -> dict[str, float]:
 
-    return {k: merge_scalar(k, d, policy) for k, d in _MERGE_SCALAR_DEFAULTS.items()}
+
+
+
+    with policy_scope(policy):
+        return {
+            "merge_ios": require_served_number("detection_policy.review.merge.merge_ios", 0.0, 1.0),
+            "dedup_ios": require_served_number("detection_policy.review.merge.dedup_ios", 0.0, 1.0),
+            "dup_ios_floor": require_served_number("detection_policy.review.merge.dup_ios_floor", 0.0, 1.0),
+            "dup_centroid_frac": require_served_number(
+                "detection_policy.review.merge.dup_centroid_frac", 0.0, 1.0),
+            "seam_span_ios": require_served_number("detection_policy.review.merge.seam_span_ios", 0.0, 1.0),
+            "ios_threshold": require_served_number("detection_policy.review.merge.ios_threshold", 0.0, 1.0),
+            "seam_span_tol": require_served_number("detection_policy.review.merge.seam_span_tol", 0.0, 1.0),
+            "jitter_area_frac": require_served_number(
+                "detection_policy.review.merge.jitter_area_frac", 0.0, 1.0),
+            "jitter_erode_px": require_served_number(
+                "detection_policy.review.merge.jitter_erode_px", 0.0, 16.0),
+            "cover_threshold": require_served_number(
+                "detection_policy.review.merge.cover_threshold", 0.0, 1.0),
+            "score_floor_frac": require_served_number(
+                "detection_policy.review.merge.score_floor_frac", 0.0, 1.0),
+            "part_inside": require_served_number("detection_policy.review.merge.part_inside", 0.0, 1.0),
+            "part_max_frac": require_served_number("detection_policy.review.merge.part_max_frac", 0.0, 1.0),
+            "part_sibling_ios": require_served_number(
+                "detection_policy.review.merge.part_sibling_ios", 0.0, 1.0),
+            "part_cover_frac": require_served_number(
+                "detection_policy.review.merge.part_cover_frac", 0.0, 1.0),
+            "part_min_children": require_served_int(
+                "detection_policy.review.merge.part_min_children", 1, 64),
+        }
+
+
+def merge_scalar(key: str, fallback: object = None, policy: dict | None = None) -> float:
+
+
+    from .served_config import ServedConfigMissing
+
+    values = merge_scalars(policy)
+    if key not in values:
+        raise ServedConfigMissing("detection_policy.review.merge." + key)
+    return values[key]
 
 
 def merge_scalar_kwargs(target: object, scalars: dict | None = None,
                         policy: dict | None = None) -> dict[str, float]:
-
-
-
 
 
 

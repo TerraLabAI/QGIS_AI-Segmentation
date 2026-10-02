@@ -64,10 +64,6 @@ class LivePairingCodes:
                 del self._expiry_by_code[code]
             return list(self._expiry_by_code)
 
-    def last_expiry(self) -> float:
-        with self._lock:
-            return max(self._expiry_by_code.values(), default=0.0)
-
 
 class PairingPollTask(QgsTask):
 

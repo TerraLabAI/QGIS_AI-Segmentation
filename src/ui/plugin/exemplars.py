@@ -16,10 +16,10 @@ from qgis.core import (
     QgsRectangle,
 )
 from qgis.gui import QgsRubberBand
-from qgis.PyQt.QtCore import Qt
 
 from ...core.i18n import tr
 from ...core.qt_compat import PolygonGeometry
+from ...core.served_config import quiet_without_served_config
 from ..canvas_palette import (
     EXCLUDE_FILL,
     EXCLUDE_STROKE,
@@ -179,7 +179,13 @@ class ExemplarsMixin:
 
 
 
-            self._prebuild_exemplar_stamp(eid)
+
+
+            from ...core.served_config import ServedConfigMissing
+            try:
+                self._prebuild_exemplar_stamp(eid)
+            except ServedConfigMissing:
+                pass
             entry = self._auto_exemplar_store.get(eid)
             if entry is not None and (entry.thumbnail is None
                                       or entry.thumbnail.isNull()):
@@ -303,6 +309,7 @@ class ExemplarsMixin:
         except (RuntimeError, AttributeError):
             return True
 
+    @quiet_without_served_config
     def _refresh_exemplar_size_warning(self) -> None:
 
 
@@ -439,10 +446,10 @@ class ExemplarsMixin:
 
 
 
-            return crop.scaled(
-                side_px, side_px,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation)
+
+
+            from ...core.qimage_strips import smooth_scaled_in_python
+            return smooth_scaled_in_python(crop, side_px, side_px, keep_aspect=True)
         except Exception:  # noqa: BLE001
             return None
 

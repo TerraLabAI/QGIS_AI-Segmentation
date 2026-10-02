@@ -15,6 +15,7 @@ import sys
 
 from qgis.core import Qgis
 
+from .gui_thread import on_gui_thread
 from .logging_utils import log as _log
 
 
@@ -123,101 +124,6 @@ def windows_trust_store_bundle(cache_dir: str) -> tuple[str | None, int]:
         return None, 0
 
 
-def _host_without_scheme(host: str) -> str:
-
-    host = (host or "").strip()
-    if "://" in host:
-        host = host.split("://", 1)[1]
-    return host.strip("/").split("/", 1)[0]
-
-
-def _bracketed_host(host: str) -> str:
-
-
-
-
-
-    if host.startswith("[") or host.count(":") < 2:
-        return host
-    return f"[{host}]"
-
-
-def _host_carries_port(host: str) -> bool:
-
-
-
-
-    tail = host.rsplit("]", 1)[-1] if host.startswith("[") else host
-    return ":" in tail
-
-
-def _get_qgis_proxy_settings() -> str | None:
-
-
-
-
-
-    try:
-        from urllib.parse import quote as url_quote
-
-        from qgis.core import QgsSettings
-
-        settings = QgsSettings()
-        enabled = settings.value("proxy/proxyEnabled", False, type=bool)
-        if not enabled:
-            return None
-
-
-
-        proxy_type = settings.value("proxy/proxyType", "", type=str)
-        if proxy_type == "Socks5Proxy":
-            _log(
-                "QGIS is configured with a SOCKS5 proxy, which is not "
-                "supported for dependency installs. Trying a direct "
-                "connection instead.",
-                Qgis.MessageLevel.Warning
-            )
-            return None
-
-        host = settings.value("proxy/proxyHost", "", type=str)
-        if not host:
-            return None
-
-        port = settings.value("proxy/proxyPort", "", type=str)
-
-
-
-
-        from .proxy_credentials import qgis_proxy_credentials
-
-        user, password = qgis_proxy_credentials()
-
-
-
-
-
-        host = _bracketed_host(_host_without_scheme(host))
-        if not host:
-            return None
-
-        proxy_url = "http://"
-        if user:
-            proxy_url += url_quote(user, safe="")
-            if password:
-                proxy_url += ":" + url_quote(password, safe="")
-            proxy_url += "@"
-        proxy_url += host
-
-
-        if port and not _host_carries_port(host):
-            proxy_url += f":{port}"
-
-        return proxy_url
-    except Exception as e:
-        _log(f"Could not read QGIS proxy settings: {e}", Qgis.MessageLevel.Warning)
-        return None
-
-
 
 _auto_config_proxy: dict[str, tuple[str | None]] = {}
 
@@ -252,7 +158,9 @@ def _get_auto_config_proxy_settings() -> str | None:
     cached = _auto_config_proxy.get("answer")
     if cached is not None:
         return cached[0]
-    if _on_gui_thread():
+
+
+    if on_gui_thread():
         return None
     try:
         from urllib.parse import quote as url_quote
@@ -298,24 +206,6 @@ def _get_auto_config_proxy_settings() -> str | None:
     return None
 
 
-def _on_gui_thread() -> bool:
-
-
-
-
-
-
-    try:
-        from qgis.PyQt.QtCore import QCoreApplication, QThread
-
-        app = QCoreApplication.instance()
-        if app is None:
-            return False
-        return QThread.currentThread() is app.thread()
-    except Exception:  # noqa: BLE001
-        return False
-
-
 def _get_system_proxy_settings() -> str | None:
 
 
@@ -339,40 +229,35 @@ def _get_system_proxy_settings() -> str | None:
 
             proxy_url = plain
         if proxy_url and proxy_url.lower().startswith(("http://", "https://")):
-            return proxy_url
+            return _with_qgis_proxy_credentials(proxy_url)
     except Exception as e:
         _log(f"Could not read system proxy settings: {e}", Qgis.MessageLevel.Warning)
     return None
 
 
-def _get_qgis_no_proxy_hosts() -> str:
+def _with_qgis_proxy_credentials(proxy_url: str) -> str:
 
 
 
 
 
-    try:
-        from urllib.parse import urlparse
 
-        from qgis.core import QgsSettings
 
-        settings = QgsSettings()
-        raw = settings.value("proxy/noProxyUrls", [])
-        if isinstance(raw, str):
-            raw = [raw]
-        hosts = []
-        for entry in raw or []:
-            text = str(entry).strip()
-            if not text:
-                continue
-            host = urlparse(text).hostname if "://" in text else text.split("/")[0]
-            host = (host or "").strip()
-            if host and host not in hosts:
-                hosts.append(host)
-        return ",".join(hosts)
-    except Exception as e:  # noqa: BLE001
-        _log(f"Could not read the QGIS proxy exclusions: {e}", Qgis.MessageLevel.Warning)
-        return ""
+    from urllib.parse import quote as url_quote
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(proxy_url)
+    if "@" in parts.netloc:
+        return proxy_url
+    from .proxy_credentials import qgis_proxy_credentials
+
+    user, password = qgis_proxy_credentials()
+    if not user:
+        return proxy_url
+    prefix = url_quote(user, safe="")
+    if password:
+        prefix += ":" + url_quote(password, safe="")
+    return f"{parts.scheme}://{prefix}@{parts.netloc}{parts.path}"
 
 
 def _get_effective_proxy_url() -> str | None:
@@ -386,7 +271,10 @@ def _get_effective_proxy_url() -> str | None:
 
 
 
-    return _get_qgis_proxy_settings() or _get_system_proxy_settings() or _get_auto_config_proxy_settings()
+
+    from .qgis_proxy_reader import qgis_proxy_url
+
+    return qgis_proxy_url() or _get_system_proxy_settings() or _get_auto_config_proxy_settings()
 
 
 def _get_pip_proxy_args() -> list[str]:

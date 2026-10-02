@@ -74,7 +74,7 @@ class AutoReviewParamsMixin:
 
 
 
-        from ...core.review_presets import review_preset_for
+        from ...core.review_presets import neutral_review_preset
         prompt = str((self._auto_run_ctx or {}).get("prompt") or "")
 
 
@@ -95,15 +95,51 @@ class AutoReviewParamsMixin:
             return dict(memo[1])
 
 
+
+
+
         plan = self._active_run_plan(prompt)
         preset = None
         if plan is not None:
             preset = self._review_preset_from_plan(plan.get("review"), gsd_m)
+        else:
+            fallback = self._review_choices_fallback(prompt)
+            if fallback:
+                preset = self._review_preset_from_plan(fallback.get("review"), gsd_m)
         if preset is None:
-            preset = review_preset_for(prompt, gsd_m)
+            preset = neutral_review_preset(prompt, gsd_m)
         built = self._with_review_preset_overrides(preset)
         self._auto_review_preset_memo = (memo_key, dict(built))
         return built
+
+    def _auto_run_shape_class(self, prompt: str) -> str:
+
+
+
+        plan = self._active_run_plan(prompt)
+        review = plan.get("review") if isinstance(plan, dict) else None
+        cls = review.get("shape_class") if isinstance(review, dict) else None
+        if plan is None:
+            fallback = self._review_choices_fallback(prompt)
+            cls = fallback.get("shape_class") if fallback else None
+        return cls.strip() if isinstance(cls, str) and cls.strip() else "default"
+
+    def _review_choices_fallback(self, prompt: str) -> dict | None:
+
+
+
+
+
+
+        fallback = self._late_plan_fallback(prompt)
+        if fallback:
+            return fallback
+        try:
+            from ...core.run_decisions import fallback_choices
+
+            return fallback_choices(prompt)
+        except Exception:  # noqa: BLE001
+            return None
 
     def _with_review_preset_overrides(self, preset: dict) -> dict:
 
@@ -164,24 +200,32 @@ class AutoReviewParamsMixin:
 
 
 
-
-
+        del is_exemplar_only
         plan = self._active_run_plan(prompt)
         if plan is not None:
             c = plan.get("confidence_default")
             if isinstance(c, (int, float)) and not isinstance(c, bool):
                 return float(c)
-        from ...core.review_presets import review_start_confidence_default
+        else:
+            fallback = self._late_plan_fallback(prompt)
+            c = fallback.get("confidence_default") if fallback else None
+            if c is not None:
+                return float(c)
+        stored = getattr(self, "_auto_start_confidence_default", None)
+        if isinstance(stored, (int, float)) and not isinstance(stored, bool):
+            return float(stored)
+        from ...core.review_defaults import AUTO_DEFAULT_CONFIDENCE
 
-        return review_start_confidence_default(prompt, is_exemplar_only)
+        return AUTO_DEFAULT_CONFIDENCE
 
     def _effective_confidence_default(self) -> float:
 
 
 
 
-
-
+        stored = getattr(self, "_auto_start_confidence_default", None)
+        if isinstance(stored, (int, float)) and not isinstance(stored, bool):
+            return float(stored)
         return self._confidence_default_for(
             str((self._auto_run_ctx or {}).get("prompt") or ""),
             bool(getattr(self, "_auto_is_exemplar_only", False)))
@@ -329,11 +373,14 @@ class AutoReviewParamsMixin:
 
         if len(self._auto_objects) < 2:
             return True
+        from ...core.served_config import ServedConfigMissing, require_served_number
         try:
-            from ...core.server_dials import dial_in_range
-            tolerance = dial_in_range("tuning.review.flat_score_tolerance", 0.005, 0.001, 0.05)
-        except Exception:  # noqa: BLE001
-            tolerance = 0.005
+            tolerance = require_served_number(
+                "tuning.review.flat_score_tolerance", 0.001, 0.05)
+        except ServedConfigMissing:
+
+
+            return True
 
 
         lo = hi = None

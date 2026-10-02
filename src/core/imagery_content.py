@@ -194,16 +194,13 @@ def qimage_to_rgb_array(img) -> np.ndarray | None:
 
         if img is None or img.isNull():
             return None
-        conv = img.convertToFormat(QImage.Format.Format_RGB32)
-        w, h = conv.width(), conv.height()
-        if w <= 0 or h <= 0:
+
+
+        from .qimage_strips import qimage_array_in_strips
+
+        arr = qimage_array_in_strips(img, QImage.Format.Format_RGB888, 3)
+        if arr is None:
             return None
-
-
-        stride = conv.bytesPerLine()
-        raw = bytes(conv.constBits().asstring(stride * h))
-        arr = np.frombuffer(raw, dtype=np.uint8).reshape(h, stride // 4, 4)[:, :w, :]
-
-        return np.ascontiguousarray(arr[:, :, 2::-1])
+        return np.ascontiguousarray(arr)
     except Exception:  # noqa: BLE001
         return None

@@ -326,13 +326,31 @@ class ManualShapeMixin:
                     envelope=_envelope)
             except Exception:  # noqa: BLE001
                 pass  # nosec B110
-        destair3 = self._compute_simplification_tolerance(transform_info, 1.5)
+
+        try:
+            from ...core.detection_policy import regularize_settings
+            from ...core.server_dials import dial_in_range
+            fallback_px = dial_in_range(
+                "tuning.manual.right_angle_fallback_tol_px", 2.0, 0.5, 10.0)
+            s = regularize_settings()
+            shape_kwargs = {
+                "allow_diagonal": bool(s["allow_diagonal"]),
+                "allow_circles": bool(s["allow_circles"]),
+                "min_keep_iou": float(s["min_keep_iou"]),
+                "diagonal_reduction": float(s["diagonal_reduction"]),
+                "circle_threshold": float(s["circle_threshold"]),
+            }
+        except Exception:  # noqa: BLE001
+            fallback_px = 2.0
+            shape_kwargs = {}
+        destair3 = self._compute_simplification_tolerance(transform_info, fallback_px)
         return apply_right_angles(
             combined,
             destair_tol=max(0.0, destair3 - tolerance),
             tolerance_m=destair3,
             unit_aspect=aspect,
-            envelope=_envelope)
+            envelope=_envelope,
+            **shape_kwargs)
 
     def _manual_despike_distance(self, combined, transform_info) -> float:
 

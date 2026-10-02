@@ -18,11 +18,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 from .tile_convert_child import (
     _child_stderr_file,
-    child_creation_flags,
-    child_cwd,
     child_environment,
     child_python,
-    keep_child_off_power_throttling,
+    spawn_worker_child,
 )
 from .tile_convert_handshake import _await_ready, _init_all
 
@@ -131,7 +129,8 @@ class TileConvertLifecycleMixin:
 
         ok = False
         try:
-            answers = (self._await_children_ready() if sys.platform == "win32"
+            answers = (self._await_children_ready(patient=True)
+                       if sys.platform == "win32"
                        else self._await_children_in_turn())
             ok = self._finish_start(answers, wire=False)
         except Exception as exc:  # noqa: BLE001
@@ -191,7 +190,13 @@ class TileConvertLifecycleMixin:
         answers += [(False, "")] * (len(self._children) - len(answers))
         return answers
 
-    def _await_children_ready(self) -> list:
+    def _await_children_ready(self, patient: bool = False) -> list:
+
+
+
+
+
+
 
 
 
@@ -219,17 +224,18 @@ class TileConvertLifecycleMixin:
             helpers.append(helper)
         started = self._spawned_at or time.monotonic()
         deadline = time.monotonic() + self._ready_timeout
-        first_ready = None
+        quorum = 2 if patient else 1
+        quorum_after = None
         while time.monotonic() < deadline:
             done.wait(0.05)
             done.clear()
             if all(slot is not None for slot in slots):
                 break
             ready = sum(1 for slot in slots if slot is not None and slot[0])
-            if ready and first_ready is None:
-                first_ready = time.monotonic() - started
-            if (first_ready is not None
-                    and time.monotonic() - started >= 2 * first_ready + 1.0):
+            if ready >= quorum and quorum_after is None:
+                quorum_after = time.monotonic() - started
+            if (quorum_after is not None
+                    and time.monotonic() - started >= 2 * quorum_after + 1.0):
                 break
         else:
 
@@ -241,8 +247,6 @@ class TileConvertLifecycleMixin:
                 for slot in slots]
 
     def _launch_children(self) -> bool:
-        import subprocess  # nosec B404
-
         exe = child_python()
         if not exe:
             logger.info("TileConvertProcessPool: no child interpreter found")
@@ -252,24 +256,13 @@ class TileConvertLifecycleMixin:
 
         self._spawned_at = time.monotonic()
         env = child_environment()
-        boot = (
-            "from src.workers.tile_convert_child import child_main; child_main()"
-        )
         try:
             for _ in range(self._workers):
                 errfile = _child_stderr_file()
                 if errfile is not None:
                     self._stderr_files.append(errfile)
-
-
-                proc = subprocess.Popen(  # nosec B603
-                    [exe, "-s", "-c", boot],
-                    stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                    stderr=errfile if errfile is not None else subprocess.DEVNULL,
-                    env=env, cwd=child_cwd(), close_fds=True,
-                    creationflags=child_creation_flags())
-                keep_child_off_power_throttling(proc)
-                self._children.append(proc)
+                self._children.append(spawn_worker_child(
+                    exe, "src.workers.tile_convert_child", env, stderr=errfile))
         except Exception as exc:  # noqa: BLE001
             logger.info("TileConvertProcessPool: could not start a child",
                         exc_info=True)

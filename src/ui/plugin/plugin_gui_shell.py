@@ -152,6 +152,13 @@ class GuiShellMixin:
         except Exception:  # nosec B110
             pass
 
+
+
+
+        QgsProject.instance().writeProject.connect(self._on_project_write_zone)
+        QgsProject.instance().readProject.connect(self._on_project_read_zone)
+        self._on_project_read_zone()
+
         self.mask_rubber_band = QgsRubberBand(
             self.iface.mapCanvas(),
             PolygonGeometry

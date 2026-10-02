@@ -15,6 +15,7 @@ from __future__ import annotations
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtWidgets import QLabel
 
+from ...core.error_policy import LINK_OR_TIMEOUT_CODES
 from ...core.i18n import tr
 from ...core.server_dials import dial_copy, feature_enabled
 from ..account_settings_plan import _STATUS_DISPLAY, resolve_plan_credits
@@ -96,8 +97,6 @@ class AccountPageMixin:
 
     def _show_account_error(self, code: str, payload: dict) -> None:
 
-        from ..account_settings_session import _ACCOUNT_OFFLINE_CODES
-
         code = (code or "").strip().upper()
         retry, manage = False, False
         if code == "SUBSCRIPTION_INACTIVE":
@@ -113,7 +112,7 @@ class AccountPageMixin:
             if isinstance(used, int) and isinstance(cap, int) and cap > 0:
                 title = tr("{used} of {cap} computers in use.").format(used=used, cap=cap)
             note = tr("Close it on another computer.")
-        elif code in _ACCOUNT_OFFLINE_CODES:
+        elif code in LINK_OR_TIMEOUT_CODES:
             title = tr("Could not reach TerraLab")
             note = tr("Check your connection.")
             retry = True

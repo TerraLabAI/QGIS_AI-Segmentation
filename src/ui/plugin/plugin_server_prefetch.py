@@ -75,8 +75,59 @@ class ServerPrefetchMixin:
         config = client.get_config(product_id, auth=auth)
         if isinstance(config, dict) and "error" not in config:
             from ...core.activation_manager import set_cached_config
+            from ...core.config_cache import keep_account_sections
+            config = keep_account_sections(config, holds_key=bool(auth))
             set_cached_config(config)
         return config
+
+    def _prime_config_from_disk_async(self) -> None:
+
+
+
+
+
+
+        try:
+            from qgis.core import QgsApplication
+
+            from ...core.config_cache import prime_from_disk
+            from ...workers.generic_request_task import GenericRequestTask
+
+            task = GenericRequestTask(
+                tr("Loading AI Segmentation settings"),
+                prime_from_disk,
+                hidden=True,
+            )
+            self._config_prime_task = task
+            task.succeeded.connect(self._on_config_primed)
+            task.failed.connect(self._on_config_primed)
+            QgsApplication.taskManager().addTask(task)
+        except Exception:  # noqa: BLE001  # nosec B110
+            pass
+
+    def _on_config_primed(self, *_args: object) -> None:
+        self._config_prime_task = None
+        self._reapply_server_switches()
+
+    def ensure_served_config_requested(self) -> None:
+
+
+
+
+
+        try:
+            from ...core.config_cache import SOURCE_LIVE, config_source
+            from ...core.served_config import served_config_ready
+
+
+            if config_source() == SOURCE_LIVE and served_config_ready():
+                return
+            task = getattr(self, "_config_prefetch_task", None)
+            if task is not None and task.is_active():
+                return
+            self._prefetch_server_config()
+        except Exception:  # noqa: BLE001  # nosec B110
+            pass
 
     def _on_config_prefetched(self, _config: object) -> None:
 
@@ -246,14 +297,47 @@ class ServerPrefetchMixin:
             self.dock_widget.check_for_updates()
         except (RuntimeError, AttributeError):
             pass  # nosec B110
+        self._refresh_estimate_when_config_arrives()
 
-    def _prefetch_segment_catalog(self) -> None:
+    def _refresh_estimate_when_config_arrives(self) -> None:
+
+
+
+        from ...core.served_config import served_config_ready
+
+        try:
+            ready = served_config_ready()
+        except Exception:  # noqa: BLE001  # nosec B110
+            ready = False
+        was_ready = getattr(self, "_served_config_was_ready", False)
+        self._served_config_was_ready = ready
+        if not ready or was_ready:
+            return
+        if getattr(self, "_auto_zone", None) is None:
+            return
+        if (getattr(self, "_auto_worker", None) is not None
+                or getattr(self, "_auto_review", None) is not None):
+            return
+        try:
+            self._schedule_credit_estimate()
+        except (RuntimeError, AttributeError):
+            pass  # nosec B110
+
+    def _prefetch_segment_catalog(self, _waits: int = 0) -> None:
 
 
 
 
 
         if self._catalog_prefetch_task is not None and self._catalog_prefetch_task.is_active():
+            return
+
+
+
+        from ...core.network_busy import low_priority_slot_free
+        if _waits < 8 and not low_priority_slot_free():
+            from qgis.PyQt.QtCore import QTimer
+            QTimer.singleShot(4000, lambda: self._prefetch_segment_catalog(_waits + 1))
             return
         from qgis.core import QgsApplication
 

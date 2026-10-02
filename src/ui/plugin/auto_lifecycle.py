@@ -21,7 +21,7 @@ from qgis.core import (
 from ...core.i18n import tr
 from .shared import (
     _apply_fast_render,
-    park_orphaned_worker,
+    release_worker_ref,
 )
 
 
@@ -96,7 +96,8 @@ class AutoLifecycleMixin:
             except Exception:  # nosec B110
                 pass
 
-    def _discard_auto_review(self, exit_path: str = "other") -> None:
+    def _discard_auto_review(self, exit_path: str = "other",
+                             keep_run_policy: bool = False) -> None:
 
 
 
@@ -134,6 +135,10 @@ class AutoLifecycleMixin:
                 pass
         self._autosave_pending_auto_review(exit_path)
         self._auto_review = None
+
+
+        if not keep_run_policy:
+            _release_run_policy()
         self._clear_free_zone_review_outline()
 
 
@@ -330,6 +335,203 @@ class AutoLifecycleMixin:
                       "account that has your plan.")
         return tr("Session expired. Sign in again to continue.")
 
+
+
+
+
+    def _store_auto_resume_state(self, worker) -> bool:
+
+
+
+
+        try:
+            ctx = self._auto_run_ctx or {}
+            state = worker.resume_state()
+            if not state["missing"] or not ctx.get("layer_id"):
+                self._auto_resume_state = None
+                return False
+            state["layer_id"] = ctx.get("layer_id")
+            state["prompt"] = ctx.get("prompt")
+            self._auto_resume_state = state
+            if not getattr(self, "_auto_resume_wired", False):
+
+                QgsProject.instance().cleared.connect(self._clear_auto_resume_state)
+                self._auto_resume_wired = True
+            return True
+        except (RuntimeError, AttributeError, KeyError, TypeError):
+            self._auto_resume_state = None
+            return False
+
+    def _clear_auto_resume_state(self) -> None:
+        self._auto_resume_state = None
+        self._auto_resume_armed = False
+        self._auto_resume_backup = None
+        self._pop_auto_resume_item()
+
+    def _auto_resume_available(self) -> bool:
+
+        state = getattr(self, "_auto_resume_state", None)
+        if not state or getattr(self, "_auto_zone", None) is None:
+            return False
+        return QgsProject.instance().mapLayer(state.get("layer_id") or "") is not None
+
+    def _push_auto_resume_offer(self, banner: str) -> None:
+
+
+        from qgis.PyQt.QtWidgets import QPushButton
+
+        state = self._auto_resume_state
+        try:
+            from ...core import telemetry_run_events
+            telemetry_run_events.track_auto_resume(
+                True, state["run_id"], len(state["missing"]),
+                state["answers"] is not None)
+        except Exception:  # noqa: BLE001
+            pass  # nosec B110
+        try:
+            bar = self.iface.messageBar()
+            item = bar.createMessage("AI Segmentation", banner)
+            button = QPushButton(tr("Continue missing tiles"))
+            button.setAutoDefault(False)
+            button.clicked.connect(lambda _=False, it=item: self._on_auto_resume_clicked(it))
+            item.layout().addWidget(button)
+            bar.pushWidget(item, Qgis.MessageLevel.Warning)
+            self._auto_resume_item = item
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _on_auto_resume_clicked(self, item=None) -> None:
+
+
+
+
+        if (not self._auto_resume_available() or self.dock_widget is None
+                or getattr(self, "_auto_resume_busy", False)
+                or getattr(self, "_auto_start_in_progress", False)):
+
+
+            if not self._auto_resume_available():
+                self._clear_auto_resume_state()
+            return
+        if self._auto_worker is not None and self._auto_worker.isRunning():
+            return
+        state = self._auto_resume_state
+        try:
+            from ...core import telemetry_run_events
+            telemetry_run_events.track_auto_resume(
+                False, state["run_id"], len(state["missing"]),
+                state["answers"] is not None)
+        except Exception:  # noqa: BLE001
+            pass  # nosec B110
+        self._auto_resume_item = item
+        self._auto_resume_armed = True
+        self._auto_resume_busy = True
+        try:
+            self._start_auto_detection()
+        finally:
+            self._auto_resume_busy = False
+
+
+
+            if getattr(self, "_auto_imagery_probe", None) is None:
+                self._auto_resume_armed = False
+
+    def _commit_auto_resume(self, state: dict) -> None:
+
+
+
+
+
+        import time as _time
+        import types
+
+        self._pop_auto_resume_item()
+        self._auto_resume_backup = state
+        self._discard_review_without_autosave(exit_path="new_run", keep_run_policy=True)
+        try:
+            self.dock_widget.set_auto_review_active(False)
+            self._set_zone_band_fill_visible(True)
+            self.dock_widget.set_auto_zone_state("zone_set")
+            self._restore_tile_grid_after_run()
+            self.dock_widget.set_auto_status("idle")
+        except (RuntimeError, AttributeError):
+            pass
+
+
+
+        self._auto_density_forced = {
+            "run_id": state["run_id"],
+            "decision": types.SimpleNamespace(side_m=0.0),
+            "click": _time.monotonic(),
+            "from_m": 0.0,
+        }
+
+    def _pop_auto_resume_item(self) -> None:
+        item = getattr(self, "_auto_resume_item", None)
+        self._auto_resume_item = None
+        if item is None:
+            return
+        try:
+            self.iface.messageBar().popWidget(item)
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _restore_auto_resume_offer(self) -> None:
+
+
+
+        state = getattr(self, "_auto_resume_backup", None)
+        self._auto_resume_backup = None
+        if not state:
+            return
+        self._auto_resume_state = state
+        self._push_auto_resume_offer(
+            tr("The run did not start. Continue to try again."))
+
+    def _auto_resume_plan_ok(self, tiles, prompt, layer) -> bool:
+
+
+
+        if not getattr(self, "_auto_resume_armed", False):
+            return True
+        state = self._auto_resume_state
+        plan_len = int(state["plan_len"]) if state else -1
+        if (state is not None and layer.id() == state.get("layer_id")
+                and prompt == state.get("prompt")
+                and list(tiles) == list(state["tiles"][:plan_len])):
+            self._commit_auto_resume(state)
+            return True
+        self._clear_auto_resume_state()
+        try:
+            self.iface.messageBar().pushWarning(
+                "AI Segmentation",
+                tr("The zone or settings changed, so this run cannot be "
+                   "continued. Run Detect again."))
+        except (RuntimeError, AttributeError):
+            pass
+        return False
+
+    def _apply_pending_resume(self, worker) -> None:
+
+
+        armed = getattr(self, "_auto_resume_armed", False)
+        state = getattr(self, "_auto_resume_state", None)
+        self._auto_resume_armed = False
+        self._auto_resume_state = None
+        if not armed or not state:
+
+            self._pop_auto_resume_item()
+            self._auto_resume_backup = None
+            return
+        try:
+            worker.apply_resume(state)
+        except (ValueError, KeyError, TypeError):
+
+
+            import uuid
+            self._auto_run_id = str(uuid.uuid4())
+            worker._run_id = self._auto_run_id
+
     def _on_auto_error(self, msg: str) -> None:
         from ...core.error_policy import REPORTABLE_ERROR_CLASSES
         QgsMessageLog.logMessage(
@@ -442,12 +644,15 @@ class AutoLifecycleMixin:
 
 
 
-        if worker is not None and worker.isRunning():
-            park_orphaned_worker(worker)
+        release_worker_ref(worker)
         self._auto_worker = None
         self._drop_auto_tile_bridge()
         self._capture_auto_mask_gsd(worker)
         tiles_succeeded = getattr(worker, "tiles_succeeded", 0)
+        offer_resume = False
+        if (tiles_succeeded > 0 and getattr(worker, "stopped_offline", False)
+                and not self._auto_headless_run):
+            offer_resume = self._store_auto_resume_state(worker)
         if tiles_succeeded > 0:
 
 
@@ -461,7 +666,9 @@ class AutoLifecycleMixin:
 
 
 
-            if not is_auth:
+            if offer_resume and not is_auth:
+                self._push_auto_resume_offer(banner)
+            elif not is_auth:
                 try:
                     self.iface.messageBar().pushWarning("AI Segmentation", banner)
                 except (RuntimeError, AttributeError):
@@ -475,6 +682,8 @@ class AutoLifecycleMixin:
             self._reset_auto_live_pipeline()
             self._stop_auto_stall_watchdog()
             self._remove_auto_selection_layer()
+
+            _release_run_policy()
 
 
 
@@ -506,8 +715,18 @@ class AutoLifecycleMixin:
 
 
 
+        was_headless = self._auto_headless_run
         self._auto_headless_run = False
         self._auto_review_preset_overrides = None
+
+
+
+        if was_headless and getattr(self, "_auto_review", None) is None:
+            try:
+                from ...core.detection_policy_core import release_run_policy
+                release_run_policy()
+            except Exception:  # noqa: BLE001  # nosec B110
+                pass
 
     @staticmethod
     def _auto_quota_refusal(worker) -> dict:
@@ -569,8 +788,7 @@ class AutoLifecycleMixin:
 
 
 
-        if worker is not None and worker.isRunning():
-            park_orphaned_worker(worker)
+        release_worker_ref(worker)
         self._auto_worker = None
         self._drop_auto_tile_bridge()
         self._capture_auto_mask_gsd(worker)
@@ -685,18 +903,18 @@ class AutoLifecycleMixin:
 
 
 
-            if worker is not None and worker.isRunning():
-                park_orphaned_worker(worker)
+            release_worker_ref(worker)
             self._auto_worker = None
             self._drop_auto_tile_bridge()
+            if getattr(self, "_auto_review", None) is None:
+                _release_run_policy()
             return
 
 
 
         from .auto_client_profile import client_profile_props, snapshot_worker_profile
         snapshot_worker_profile(self, worker)
-        if worker is not None and worker.isRunning():
-            park_orphaned_worker(worker)
+        release_worker_ref(worker)
         self._auto_worker = None
         self._drop_auto_tile_bridge()
         self._capture_auto_mask_gsd(worker)
@@ -816,6 +1034,25 @@ class AutoLifecycleMixin:
             "AI Segmentation", level=Qgis.MessageLevel.Info,
         )
 
+    def _notice_auto_raster_removed(self, worker) -> None:
+
+
+
+
+
+        try:
+            kept = (self._auto_worker is worker
+                    or self._auto_review is not None
+                    or getattr(self, "_auto_finalize_state", None) is not None)
+            if kept:
+                msg = tr("The selected raster was removed. "
+                         "Keeping what was already found.")
+            else:
+                msg = tr("The selected raster was removed.")
+            self.iface.messageBar().pushInfo("AI Segmentation", msg)
+        except (RuntimeError, AttributeError):
+            pass
+
     def _on_layers_will_be_removed(self, layer_ids) -> None:
 
 
@@ -864,13 +1101,16 @@ class AutoLifecycleMixin:
         dock_mid_flow = dock is not None and getattr(dock, "_auto_started", False)
         no_active_auto_run = self._auto_worker is None and self._auto_review is None
         if self._auto_worker is not None and run_layer_id in ids:
+            worker = self._auto_worker
             self._on_auto_cancel_clicked()
-            msg = tr("The selected raster was removed. "
-                     "Keeping what was already found.")
-            try:
-                self.iface.messageBar().pushInfo("AI Segmentation", msg)
-            except (RuntimeError, AttributeError):
-                pass
+
+
+
+
+
+            from qgis.PyQt.QtCore import QTimer
+            QTimer.singleShot(
+                0, lambda w=worker: self._notice_auto_raster_removed(w))
         elif dock_mid_flow and no_active_auto_run and not self._refine_handoff_active:
 
 
@@ -1363,3 +1603,13 @@ class AutoLifecycleMixin:
             job.cancel()
         except (RuntimeError, AttributeError):
             pass
+
+
+def _release_run_policy() -> None:
+
+    try:
+        from ...core.detection_policy_core import release_run_policy
+
+        release_run_policy()
+    except Exception:  # noqa: BLE001  # nosec B110
+        pass

@@ -159,6 +159,7 @@ class AutoZoneDrawMixin:
 
         self._auto_run_ctx = None
         self._auto_review = None
+        _release_run_policy()
 
 
 
@@ -602,6 +603,7 @@ class AutoZoneDrawMixin:
 
         self._autosave_pending_auto_review()
         self._auto_review = None
+        _release_run_policy()
 
 
         self._set_review_busy(False)
@@ -640,3 +642,13 @@ class AutoZoneDrawMixin:
             "Project closed: automatic run stopped.",
             "AI Segmentation", level=Qgis.MessageLevel.Info,
         )
+
+
+def _release_run_policy() -> None:
+
+    try:
+        from ...core.detection_policy_core import release_run_policy
+
+        release_run_policy()
+    except Exception:  # noqa: BLE001  # nosec B110
+        pass

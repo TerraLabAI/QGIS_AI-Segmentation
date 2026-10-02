@@ -41,10 +41,8 @@ if TYPE_CHECKING:
 
 
 
-
-
 _TILE_IMAGE_FORMAT: str = "JPEG"
-_TILE_JPEG_QUALITY: int = 90
+_TILE_JPEG_QUALITY: int = 95
 
 
 _ARCHIVE_JPEG_QUALITY: int = 80
@@ -1125,7 +1123,7 @@ def encode_tile_archive_copy(
 
 
 
-    from qgis.PyQt.QtCore import QBuffer, QRect, Qt
+    from qgis.PyQt.QtCore import QBuffer, QRect
 
     from .qt_compat import WriteOnly
 
@@ -1135,11 +1133,10 @@ def encode_tile_archive_copy(
         return None
     sub = (img if tx == ty == 0 and cw == img.width() and ch == img.height()
            else img.copy(QRect(tx, ty, cw, ch)))
-    small = sub.scaled(
-        max(1, cw // 2), max(1, ch // 2),
-        Qt.AspectRatioMode.IgnoreAspectRatio,
-        Qt.TransformationMode.SmoothTransformation,
-    )
+
+
+    from .qimage_strips import smooth_scaled_in_python
+    small = smooth_scaled_in_python(sub, max(1, cw // 2), max(1, ch // 2))
     buf = QBuffer()
     buf.open(WriteOnly)
     _save_jpeg(small, buf, archive_jpeg_quality(_ARCHIVE_JPEG_QUALITY))

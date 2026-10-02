@@ -54,6 +54,7 @@ class AutoFinalizeStepsMixin:
             return
         labels = {
             "drain": tr("Finishing the last tiles"),
+            "plan": tr("Loading run settings"),
             "remerge": tr("Joining the detected parts"),
             "sweep": tr("Removing duplicate fragments"),
             "align": tr("Aligning neighbouring outlines"),
@@ -318,6 +319,13 @@ class AutoFinalizeStepsMixin:
 
 
 
+        if state.get("phase") == "plan":
+            if self._late_plan_still_waiting(state):
+                QTimer.singleShot(self._auto_offgui_poll_ms(),
+                                  self._step_auto_finalize_refine)
+                return
+            self._finalize_drain_done(state)
+            return
         if state.get("phase") == "drain":
 
 

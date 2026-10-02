@@ -141,16 +141,12 @@ class ReviewRefineProcessPool:
 
 
 
-        import subprocess  # nosec B404
-
         try:
             from ..core.config_cache import get_config
             from .tile_convert_pool import (
-                child_creation_flags,
-                child_cwd,
                 child_environment,
                 child_python,
-                keep_child_off_power_throttling,
+                spawn_worker_child,
             )
         except Exception:  # noqa: BLE001
             logger.info("ReviewRefineProcessPool: child plumbing unavailable",
@@ -161,20 +157,10 @@ class ReviewRefineProcessPool:
             logger.info("ReviewRefineProcessPool: no child interpreter found")
             return False
         env = child_environment()
-        boot = "from src.workers.review_refine_pool import child_main; child_main()"
         try:
             for _ in range(self._workers):
-
-
-                proc = subprocess.Popen(  # nosec B603
-                    [exe, "-s", "-c", boot],
-                    stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL, env=env, cwd=child_cwd(),
-                    close_fds=True,
-
-                    creationflags=child_creation_flags())
-                keep_child_off_power_throttling(proc)
-                self._children.append(proc)
+                self._children.append(spawn_worker_child(
+                    exe, "src.workers.review_refine_pool", env))
         except Exception:  # noqa: BLE001
             logger.info("ReviewRefineProcessPool: could not start a child",
                         exc_info=True)

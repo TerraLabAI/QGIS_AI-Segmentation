@@ -38,7 +38,6 @@ from .account_settings_plan import (
 from .account_settings_privacy import AccountPrivacyMixin
 from .account_settings_removal import _DIR_SIZE_CACHE, _REMOVAL_WATCHDOG_MS, AccountRemovalMixin
 from .account_settings_session import (
-    _ACCOUNT_OFFLINE_CODES,
     AccountSessionMixin,
     _load_account_and_usage,
 )
@@ -204,7 +203,6 @@ __all__ = [
     "_REMOVAL_WATCHDOG_MS",
     "_DELETE_ACCOUNT_WATCHDOG_MS",
     "_SCREEN_MARGIN_PX",
-    "_ACCOUNT_OFFLINE_CODES",
     "_STATUS_DISPLAY",
     "_format_purge_date",
     "_PRO_MONTHLY_CREDITS_FALLBACK",

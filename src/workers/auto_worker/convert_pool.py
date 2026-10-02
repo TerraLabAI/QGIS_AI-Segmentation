@@ -22,6 +22,7 @@ from ..tile_convert_pool import (
     PROCESS_POOL_MIN_TILES,
     TileConvertPool,
     TileConvertProcessPool,
+    available_memory_mb,
     process_workers,
     usable_cores,
 )
@@ -41,6 +42,9 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+_SNAPSHOT_SKIPPED = frozenset(("_answer_cache", "_replay_answers"))
 
 
 
@@ -178,7 +182,9 @@ class AutoConvertPoolMixin:
 
 
             self._drop_early_children(pool)
-            self._log_convert_pool("threads", f"{usable_cores()} usable core(s)")
+            self._log_convert_pool(
+                "threads",
+                f"{usable_cores()} usable core(s), {available_memory_mb()} MB free")
             return TileConvertPool(self._convert_completed, workers=workers)
         if pool is not None:
             pool.set_snapshot(snapshot)
@@ -412,6 +418,11 @@ class AutoConvertPoolMixin:
         try:
             out = {}
             for name, value in list(self.__dict__.items()):
+
+
+
+                if name in _SNAPSHOT_SKIPPED:
+                    continue
                 try:
                     blob = pickle.dumps(value, protocol=4)
                 except Exception:  # noqa: BLE001  # nosec B112
@@ -429,6 +440,12 @@ class AutoConvertPoolMixin:
 
             if "_score_threshold" not in out or "_gsd" not in out:
                 return None
+
+
+
+            from ...core.polygon_packing import pack_max_side
+
+            out["_pack_max_side"] = pack_max_side()
             return out
         except Exception:  # noqa: BLE001
             logger.info("AutoDetectionWorker: could not snapshot the run",

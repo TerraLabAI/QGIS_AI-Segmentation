@@ -21,27 +21,14 @@ MAX_TILES = 20000
 
 
 
-
-
-
-MAX_TILES_PER_KM2 = 420
+MAX_TILES_PER_KM2 = 500
 
 
 MAX_TILES_FLOOR = 16
 
 
-SWEET_SPOT_MAX_MUPP_M = 0.45
 
-
-
-
-DEFAULT_SEED_MUPP_M = 0.142
-
-
-QUALITY_FLOOR_MUPP_M = 0.5
-
-
-DEFAULT_TARGET_MUPP_M = 0.4
+QUALITY_FLOOR_MUPP_M = 0.0
 
 
 
@@ -64,47 +51,13 @@ AUTO_SEED_TILE_CAP = 20000
 
 
 
-AUTO_SEED_HEADROOM_LEVELS = 1
+AUTO_SEED_HEADROOM_LEVELS = 0
 
 
 
 
 
 NATIVE_OVERSAMPLE_MAX = 2.0
-
-
-AUTO_OBJECT_MIN_PX = 20
-
-
-
-
-
-
-SPLIT_RISK_TILE_FRAC = 0.5
-
-
-
-
-
-
-
-
-
-DETAIL_COARSE_TRAVEL_RATIO = 2.0
-DETAIL_FINE_TRAVEL_RATIO = 2.0
-
-
-
-
-
-
-
-DRAWN_OBJECT_TILE_FRAC = 0.25
-
-
-
-
-MASK_SCALE_MIN_WIDTH_PX = 12.0
 
 
 
@@ -128,34 +81,13 @@ MAX_DETAIL_LEVEL = 240
 HARD_GRID_LIMIT = 200_000
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-SUBDIVIDE_OVERLAP_FRACTION = 0.20
-
-
-SUBDIVIDE_MIN_PARENT_PX = 256
-
-
 def subdivide_quadrants(
     x: int, y: int, w: int, h: int,
-    overlap_fraction: float = SUBDIVIDE_OVERLAP_FRACTION,
-    min_parent_px: int = SUBDIVIDE_MIN_PARENT_PX,
+    overlap_fraction: float,
+    min_parent_px: int,
 ) -> list[tuple[int, int, int, int]]:
+
+
 
 
 
@@ -315,17 +247,3 @@ class TileManager:
 
         count = self.count_grid(image_width, image_height)
         return -1 if count > HARD_GRID_LIMIT else count
-
-    def extract_tile_crop(self, image, x: int, y: int, w: int, h: int):
-
-
-
-
-
-
-
-
-
-
-
-        return image[y : y + h, x : x + w].copy()  # noqa: E203

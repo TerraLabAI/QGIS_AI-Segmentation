@@ -38,15 +38,19 @@
 
 from __future__ import annotations
 
+import functools
 import threading
+import uuid
 
 from qgis.core import QgsNetworkAccessManager
-from qgis.PyQt.QtCore import QByteArray, QEvent, QEventLoop, QObject, QTimer, QUrl
+from qgis.PyQt.QtCore import QByteArray, QCoreApplication, QEvent, QEventLoop, QObject, QThread, QTimer, QUrl
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
 from ..core.click_phase_clock import active_click_clock, click_clock_now
-from ..core.qt_compat import resolve_qt_enum
+from ..core.network_busy import network_busy
+from ..core.qt_compat import reply_http_status, resolve_qt_enum
 from ..core.server_dials import dial_in_range
+from .json_request import build_json_request
 
 
 
@@ -184,7 +188,37 @@ _CONNECTION_WARM_TIMEOUT_MS = 20_000
 
 
 
-_warming_replies = set()
+
+
+
+
+_warming_replies: dict = {}
+
+
+def _finish_warming_reply(token: str) -> None:
+
+    reply = _warming_replies.pop(token, None)
+    if reply is None:
+        return
+    try:
+        reply.deleteLater()
+    except RuntimeError:
+        pass  # nosec B110
+
+
+def _prune_dead_warming_replies() -> None:
+
+    try:
+        from qgis.PyQt import sip
+    except Exception:  # noqa: BLE001
+        return
+    for key, held in list(_warming_replies.items()):
+        try:
+            dead = sip.isdeleted(held)
+        except Exception:  # noqa: BLE001
+            dead = True
+        if dead:
+            _warming_replies.pop(key, None)
 
 
 def warm_click_connection(url: str) -> bool:
@@ -222,26 +256,20 @@ def warm_click_connection(url: str) -> bool:
         if reply is None:
             return False
 
-        def _done() -> None:
-            _warming_replies.discard(reply)
-            try:
-                reply.deleteLater()
-            except RuntimeError:
-                pass  # nosec B110
+        token = uuid.uuid4().hex
+        _prune_dead_warming_replies()
 
 
-
-
-
-        reply.finished.connect(_done)
-        reply.destroyed.connect(lambda *_args: _warming_replies.discard(reply))
-        _warming_replies.add(reply)
+        reply.finished.connect(functools.partial(_finish_warming_reply, token))
+        _warming_replies[token] = reply
         if reply.isFinished():
-            _done()
+            _finish_warming_reply(token)
         return True
     except Exception:  # noqa: BLE001
         if reply is not None:
-            _warming_replies.discard(reply)
+            for key, held in list(_warming_replies.items()):
+                if held is reply:
+                    _warming_replies.pop(key, None)
             try:
                 reply.abort()
                 reply.deleteLater()
@@ -339,7 +367,91 @@ class ClickPostAbandoned(Exception):
         self.cancelled = cancelled
 
 
-def post_and_keep_painting(
+def wait_until_done(is_done, timeout_ms: int, cancel_check=None,
+                    hold_input_ms: int | None = None) -> bool:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    import time as _time
+
+    wait_ms = max(0, min(int(timeout_ms), click_wait_max_ms()))
+    if is_done():
+        return True
+    started_generation = _click_wait_generation()
+    app = QCoreApplication.instance()
+    if app is None or QThread.currentThread() is not app.thread():
+        deadline = _time.monotonic() + wait_ms / 1000.0
+        while _time.monotonic() < deadline:
+            if is_done():
+                return True
+            if _click_wait_generation() != started_generation:
+                return False
+            try:
+                if cancel_check is not None and cancel_check():
+                    return False
+            except Exception:  # noqa: BLE001  # nosec B110
+                pass
+            _time.sleep(0.05)
+        return is_done()
+    loop = QEventLoop()
+    guard = QTimer()
+    guard.setSingleShot(True)
+    guard.setInterval(wait_ms)
+    hold = QTimer()
+    hold.setSingleShot(True)
+    hold_ms = click_input_hold_ms() if hold_input_ms is None else max(0, int(hold_input_ms))
+    hold.setInterval(min(hold_ms, wait_ms))
+    watch = QTimer()
+    watch.setInterval(_CANCEL_POLL_MS)
+    state = {"cancelled": False}
+
+    def _poll() -> None:
+        try:
+            if _click_wait_generation() != started_generation or (
+                    cancel_check is not None and cancel_check()):
+                state["cancelled"] = True
+                loop.quit()
+            elif is_done():
+                loop.quit()
+        except Exception:  # noqa: BLE001  # nosec B110
+            pass
+
+    held_input = False
+    try:
+        guard.timeout.connect(loop.quit)
+        hold.timeout.connect(loop.quit)
+        watch.timeout.connect(_poll)
+        guard.start()
+        watch.start()
+        if not is_done() and hold_ms <= 0:
+            _wait_with_the_window_free(loop)
+        elif not is_done():
+            held_input = True
+            hold.start()
+            loop.exec(_KEEP_PAINTING)
+            hold.stop()
+            if (not is_done() and not state["cancelled"] and guard.isActive()):
+                _wait_with_the_window_free(loop)
+    finally:
+        for timer in (guard, hold, watch):
+            _stop_timer(timer)
+        if held_input:
+            _drop_held_clicks()
+    return (not state["cancelled"]) and is_done()
+
+
+def _post_and_keep_painting_inner(
     url: str,
     body: bytes,
     auth: dict | None,
@@ -385,18 +497,7 @@ def post_and_keep_painting(
         manager = QgsNetworkAccessManager.instance()
         if manager is None:
             return None
-        request = QNetworkRequest(QUrl(url))
-        request.setRawHeader(b"Content-Type", b"application/json")
-        if packed:
-
-
-            request.setRawHeader(b"Content-Encoding", b"gzip")
-
-        if hasattr(request, "setTransferTimeout"):
-            request.setTransferTimeout(wait_ms)
-        apply_redirect_policy(request, bool(auth))
-        for key, value in (auth or {}).items():
-            request.setRawHeader(key.encode("utf-8"), value.encode("utf-8"))
+        request = build_json_request(url, auth, wait_ms, packed=packed, redirect_policy=apply_redirect_policy)
 
         payload = QByteArray(body)
     except Exception:  # noqa: BLE001
@@ -474,19 +575,12 @@ def post_and_keep_painting(
         try:
             raw = bytes(reply.readAll())
             error = reply.error()
-            status = reply.attribute(
-                resolve_qt_enum(QNetworkRequest, "Attribute",
-                                "HttpStatusCodeAttribute"))
         except Exception:  # noqa: BLE001
             _end(reply, guard, watch)
             raise ClickPostAbandoned() from None
-        try:
-            status = int(status) if status is not None else None
-        except (TypeError, ValueError):
 
 
-
-            status = None
+        status = reply_http_status(reply)
         _end(reply, guard, watch)
         clock = active_click_clock()
         if clock is not None:
@@ -529,3 +623,15 @@ def _end(reply, guard, watch=None) -> None:
         reply.deleteLater()
     except Exception:  # noqa: BLE001  # nosec B110
         pass
+
+
+def post_and_keep_painting(*args, **kwargs):
+
+
+
+    with network_busy("click"):
+        return _post_and_keep_painting_inner(*args, **kwargs)
+
+
+post_and_keep_painting.__doc__ = (post_and_keep_painting.__doc__ or "") + (
+    "\n\n" + (_post_and_keep_painting_inner.__doc__ or ""))

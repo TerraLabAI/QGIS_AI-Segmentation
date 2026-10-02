@@ -33,6 +33,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import http.client
 import math
 import ssl
@@ -48,6 +49,8 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from . import transport_dials as _td
+from .qgis_proxy_reader import qgis_urllib_proxies
+from .streamed_download import sleep_unless_cancelled
 
 
 
@@ -74,6 +77,15 @@ _TILE_TIMEOUT_S = 6.0
 
 
 
+
+_TILE_TIMEOUT_ADAPT_MAX_S = 0.0
+_TILE_TIMEOUT_ADAPT_FACTOR = 1.0
+_PROBE_SAMPLES = 1
+
+
+
+
+
 _MAX_TILE_BYTES = 2 * 1024 * 1024
 
 
@@ -82,6 +94,13 @@ _MAX_TILE_BYTES = 2 * 1024 * 1024
 
 
 _TILE_DEADLINE_CAP_S = 30.0
+
+
+
+
+
+
+_MISSING_RETRY_MAX_TILES = 0
 
 
 
@@ -145,6 +164,12 @@ class XyzCropRequest:
     source_key: str
     headers: dict[str, str] = field(default_factory=dict)
     proxies: dict[str, str] = field(default_factory=dict)
+
+
+    retry_outcome: dict = field(default_factory=dict, compare=False)
+
+
+    tile_payload: dict = field(default_factory=dict, compare=False)
 
     def tile_count(self) -> int:
 
@@ -364,7 +389,7 @@ def xyz_crop_request(layer, extent, out_px: int) -> XyzCropRequest | None:
     return XyzCropRequest(
         template=template, zoom=zoom, tile_range=tile_range, window=window,
         tile_px=tile_px, out_px=out_px, source_key=layer.source(),
-        headers=headers, proxies=_qgis_proxy_settings(),
+        headers=headers, proxies=qgis_urllib_proxies(),
     )
 
 
@@ -469,7 +494,122 @@ def fetch_xyz_crop(request: XyzCropRequest, cancel_check=None):
     mosaic = _paste_tiles(request, tiles)
     if mosaic is None:
         return None, "crop_error_online_fetch_failed"
-    return _crop_and_resize(mosaic, request), None
+    image = _crop_and_resize(mosaic, request)
+    _attach_crop_tiles(request, tiles, image)
+    return image, None
+
+
+
+
+CROP_TILES_MAX_TILE_BYTES = 0
+CROP_TILES_MAX_TILES = 0
+
+_CROP_TILES_MEMORY = 0
+_crop_tiles_by_token: OrderedDict = OrderedDict()
+_crop_tiles_lock = threading.Lock()
+
+
+def crop_content_token(image: np.ndarray) -> str:
+
+
+    pixels = np.ascontiguousarray(image)
+    digest = hashlib.sha256(f"{pixels.shape}{pixels.dtype.str}|".encode())
+    digest.update(pixels)
+    return digest.hexdigest()
+
+
+def crop_cut_window(request: XyzCropRequest) -> list[int]:
+
+    x, y, width, height = request.window
+    return [max(0, int(round(x))), max(0, int(round(y))),
+            max(1, int(round(width))), max(1, int(round(height)))]
+
+
+def _attach_crop_tiles(request: XyzCropRequest, payloads, image) -> None:
+
+
+
+
+
+    try:
+        request.tile_payload.clear()
+        from .server_dials import dial_in_range
+
+        max_tiles = int(dial_in_range("tuning.click.crop_tiles_max_tiles",
+                                      CROP_TILES_MAX_TILES, 0, 256))
+        max_bytes = int(dial_in_range("tuning.click.crop_tiles_max_tile_bytes",
+                                      CROP_TILES_MAX_TILE_BYTES, 0, 4 * 1024 * 1024))
+        if not payloads or len(payloads) > max_tiles:
+            return
+        if request.tile_px not in (256, 512):
+            return
+        if any(not isinstance(p, (bytes, bytearray)) or not p
+               or len(p) > max_bytes for p in payloads):
+            return
+        left, top, right, bottom = request.tile_range
+        cols = right - left + 1
+        rows = bottom - top + 1
+        if cols * rows != len(payloads):
+            return
+        coordinates = [(x, y) for y in range(top, bottom + 1)
+                       for x in range(left, right + 1)]
+        request.tile_payload.update({
+            "tile_px": int(request.tile_px),
+            "cols": int(cols),
+            "rows": int(rows),
+            "tiles": [(int(request.zoom), int(x), int(y), bytes(p))
+                      for (x, y), p in zip(coordinates, payloads)],
+            "cut": crop_cut_window(request),
+            "out": [int(image.shape[0]), int(image.shape[1])],
+            "expect_token": crop_content_token(image),
+        })
+    except Exception:  # noqa: BLE001  # nosec B110
+        request.tile_payload.clear()
+
+
+def keep_crop_tiles(request) -> None:
+
+
+    try:
+        held = dict(getattr(request, "tile_payload", None) or {})
+        token = held.get("expect_token")
+        if not token:
+            return
+        from .server_dials import dial_in_range
+
+        memory = int(dial_in_range("tuning.click.crop_tiles_memory",
+                                   _CROP_TILES_MEMORY, 0, 64))
+        with _crop_tiles_lock:
+            _crop_tiles_by_token[token] = held
+            _crop_tiles_by_token.move_to_end(token)
+            while len(_crop_tiles_by_token) > memory:
+                _crop_tiles_by_token.popitem(last=False)
+    except Exception:  # noqa: BLE001  # nosec B110
+        pass
+
+
+def crop_tiles_for_token(token: str):
+
+    with _crop_tiles_lock:
+        return _crop_tiles_by_token.get(token)
+
+
+def crop_tiles_wire_body(held: dict) -> dict:
+
+    import base64
+
+    return {
+        "v": 1,
+        "tile_px": held["tile_px"],
+        "cols": held["cols"],
+        "rows": held["rows"],
+        "tiles": [{"z": z, "x": x, "y": y,
+                   "b64": base64.b64encode(raw).decode("ascii")}
+                  for z, x, y, raw in held["tiles"]],
+        "cut": list(held["cut"]),
+        "out": list(held["out"]),
+        "expect_token": held["expect_token"],
+    }
 
 
 
@@ -525,120 +665,6 @@ def _headers_from_uri(uri) -> dict[str, str]:
     return headers
 
 
-def _qgis_proxy_settings() -> dict[str, str]:
-
-
-
-
-
-
-
-    try:
-        from qgis.core import QgsSettings
-
-        settings = QgsSettings()
-        if settings.value("proxy/proxyEnabled", False, type=bool) is not True:
-            return {}
-
-
-
-
-        proxies: dict[str, str] = {}
-        skipped = _proxy_exclusions(settings)
-        if skipped:
-            proxies["no"] = skipped
-        proxy_type = settings.value("proxy/proxyType", "", type=str) or ""
-        if proxy_type not in _URLLIB_PROXY_TYPES:
-            return proxies
-
-
-
-
-        if proxy_type == "DefaultProxy":
-            return proxies
-        host = settings.value("proxy/proxyHost", "", type=str)
-        port = settings.value("proxy/proxyPort", "", type=str)
-        if not host or not port:
-            return proxies
-        target = (f"http://{_proxy_credentials_prefix()}"
-                  f"{_proxy_authority(host)}:{port}")
-        proxies["http"] = target
-        proxies["https"] = target
-        return proxies
-    except Exception:  # noqa: BLE001
-        return {}
-
-
-
-
-
-
-_URLLIB_PROXY_TYPES = ("", "DefaultProxy", "HttpProxy", "HttpCachingProxy")
-
-
-def _proxy_credentials_prefix() -> str:
-
-
-
-
-
-
-
-    from .proxy_credentials import qgis_proxy_credentials
-
-    user, password = qgis_proxy_credentials()
-    if not user:
-        return ""
-    return (f"{urllib.parse.quote(user, safe='')}:"
-            f"{urllib.parse.quote(password, safe='')}@")
-
-
-def _proxy_authority(host: str) -> str:
-
-
-
-
-
-    text = str(host).strip()
-    if text.startswith("["):
-        return text
-    if ":" in text:
-        return f"[{text}]"
-    return text
-
-
-def _proxy_exclusions(settings=None) -> str:
-
-
-
-
-
-
-
-    try:
-        from qgis.core import QgsSettings
-
-        store = QgsSettings() if settings is None else settings
-        raw = store.value("proxy/noProxyUrls", [])
-        if isinstance(raw, str):
-            raw = [raw]
-        hosts: list[str] = []
-        for entry in raw or []:
-            text = str(entry).strip()
-            if not text:
-                continue
-            if "://" in text:
-                host = urllib.parse.urlparse(text).hostname or ""
-            else:
-                host = text.split("/")[0]
-            host = host.strip()
-            if host and host not in hosts:
-                hosts.append(host)
-        return ",".join(hosts)
-    except Exception:  # noqa: BLE001
-        return ""
-
-
 def _os_proxies() -> dict[str, str]:
 
 
@@ -661,6 +687,32 @@ def _os_proxies() -> dict[str, str]:
         if scheme in ("http", "https"):
             usable[str(protocol).lower()] = text
     return usable
+
+
+class _LinkProbe:
+
+
+
+
+
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._seen: list[float] = []
+
+    def note(self, seconds: float) -> None:
+        with self._lock:
+            self._seen.append(max(0.0, float(seconds)))
+            del self._seen[:-_td.xyz_probe_samples(_PROBE_SAMPLES)]
+
+    def attempt_timeout(self) -> float:
+
+        base = _td.xyz_timeout_s(_TILE_TIMEOUT_S)
+        with self._lock:
+            slowest = max(self._seen) if self._seen else 0.0
+        wanted = slowest * _td.xyz_timeout_adapt_factor(_TILE_TIMEOUT_ADAPT_FACTOR)
+        ceiling = max(base, _td.xyz_timeout_adapt_max_s(_TILE_TIMEOUT_ADAPT_MAX_S))
+        return min(max(base, wanted), ceiling)
 
 
 def _download_tiles(request: XyzCropRequest, cancel_check=None):
@@ -692,13 +744,21 @@ def _download_tiles(request: XyzCropRequest, cancel_check=None):
     pool, kept = _crop_pool()
     connections = None if proxied else kept
     waves = max(1, math.ceil(len(coordinates) / _shared_pool_width))
-    deadline = time.monotonic() + min(
-        _td.xyz_deadline_cap_s(_TILE_DEADLINE_CAP_S),
-        _td.xyz_timeout_s(_TILE_TIMEOUT_S) * _td.xyz_attempts(_TILE_ATTEMPTS) * waves)
     header_key = tuple(sorted((str(k).lower(), str(v))
                               for k, v in request.headers.items()))
+    probe = _LinkProbe()
+    started = time.monotonic()
+    attempts = _td.xyz_attempts(_TILE_ATTEMPTS)
 
-    def fetch(coordinate):
+    def crop_deadline() -> float:
+
+
+
+
+        return started + min(_td.xyz_deadline_cap_s(_TILE_DEADLINE_CAP_S),
+                             probe.attempt_timeout() * attempts * waves)
+
+    def fetch(coordinate, deadline=crop_deadline, tries=None):
 
 
         if _gave_up(cancel_check):
@@ -714,10 +774,10 @@ def _download_tiles(request: XyzCropRequest, cancel_check=None):
             return cached
         if connections is not None and _split_tile_url(url) is not None:
             outcome = _fetch_one_tile_kept(connections, url, request.headers,
-                                           deadline, cancel_check)
+                                           deadline, cancel_check, probe, tries)
         else:
             outcome = _fetch_one_tile(opener, url, request.headers, deadline,
-                                      cancel_check)
+                                      cancel_check, probe, tries)
         if outcome[0] in ("ok", "blank"):
             _tile_cache_put(cache_key, outcome[0], outcome[1])
         return outcome
@@ -725,6 +785,8 @@ def _download_tiles(request: XyzCropRequest, cancel_check=None):
 
 
     results = list(pool.map(fetch, coordinates))
+    _retry_missing_tiles(request, results, coordinates, fetch, probe,
+                         pool, cancel_check, crop_deadline)
 
     payloads = [payload for _outcome, payload in results]
     missing = sum(1 for outcome, _p in results
@@ -733,6 +795,48 @@ def _download_tiles(request: XyzCropRequest, cancel_check=None):
     blank = sum(1 for outcome, _p in results if outcome == "blank")
     cancelled = any(outcome == "cancelled" for outcome, _p in results)
     return payloads, missing, blank, cancelled, throttled
+
+
+def _retry_missing_tiles(request, results, coordinates, fetch, probe,
+                         pool, cancel_check, crop_deadline) -> None:
+
+
+
+
+
+
+
+
+
+
+    lost = [i for i, (outcome, _p) in enumerate(results) if outcome == "missing"]
+    if not lost or _gave_up(cancel_check):
+        return
+    if any(outcome in ("throttled", "cancelled") for outcome, _p in results):
+        return
+    if not any(outcome == "ok" for outcome, _p in results):
+        return
+    if len(lost) > _td.xyz_missing_retry_max_tiles(_MISSING_RETRY_MAX_TILES):
+        return
+    timeout_s = probe.attempt_timeout()
+    left = _deadline_at(crop_deadline) - time.monotonic()
+    if left < timeout_s:
+        request.retry_outcome["missing_retried"] = 0
+        request.retry_outcome["missing_retry_skipped"] = True
+        return
+    deadline = time.monotonic() + min(timeout_s, left)
+    again = list(pool.map(lambda i: fetch(coordinates[i], deadline, 1), lost))
+    for index, outcome in zip(lost, again):
+        results[index] = outcome
+    request.retry_outcome["missing_retried"] = len(lost)
+    request.retry_outcome["missing_recovered"] = all(
+        outcome[0] == "ok" for outcome in again)
+
+
+def _deadline_at(deadline) -> float:
+
+
+    return float(deadline()) if callable(deadline) else float(deadline)
 
 
 def _gave_up(cancel_check) -> bool:
@@ -828,18 +932,24 @@ def _tls_context() -> ssl.SSLContext:
         return _shared_tls_context
 
 
-def _fetch_one_tile(opener, url: str, headers: dict[str, str], deadline: float,
-                    cancel_check=None):
+def _fetch_one_tile(opener, url: str, headers: dict[str, str], deadline,
+                    cancel_check=None, probe: _LinkProbe | None = None,
+                    attempts: int | None = None):
+
+
 
 
     throttled = False
-    attempts = _td.xyz_attempts(_TILE_ATTEMPTS)
-    timeout_s = _td.xyz_timeout_s(_TILE_TIMEOUT_S)
+    if attempts is None:
+        attempts = _td.xyz_attempts(_TILE_ATTEMPTS)
     max_bytes = _td.xyz_max_tile_bytes(_MAX_TILE_BYTES)
     for attempt in range(attempts):
+        timeout_s = (probe.attempt_timeout() if probe is not None
+                     else _td.xyz_timeout_s(_TILE_TIMEOUT_S))
+        started = time.monotonic()
         if _gave_up(cancel_check):
             return ("cancelled", None)
-        remaining = deadline - time.monotonic()
+        remaining = _deadline_at(deadline) - time.monotonic()
         if remaining <= 0:
             return _lost_tile_outcome(cancel_check, throttled)
         retry_after = None
@@ -852,6 +962,8 @@ def _fetch_one_tile(opener, url: str, headers: dict[str, str], deadline: float,
                 payload = reply.read(max_bytes + 1)
             if len(payload) > max_bytes:
                 return ("missing", None)
+            if probe is not None:
+                probe.note(time.monotonic() - started)
             return ("ok", payload)
         except Exception as err:  # noqa: BLE001
             if isinstance(err, urllib.error.HTTPError):
@@ -863,7 +975,8 @@ def _fetch_one_tile(opener, url: str, headers: dict[str, str], deadline: float,
                     throttled = True
                     retry_after = _retry_after_seconds(
                         _header_of(err, "Retry-After"))
-        if not _pause_before_retry(attempt, retry_after, deadline, cancel_check):
+        if not _pause_before_retry(attempt, retry_after, deadline,
+                                   cancel_check, attempts):
             break
     return _lost_tile_outcome(cancel_check, throttled)
 
@@ -876,8 +989,8 @@ def _lost_tile_outcome(cancel_check, throttled: bool):
     return ("throttled", None) if throttled else ("missing", None)
 
 
-def _pause_before_retry(attempt: int, retry_after, deadline: float,
-                        cancel_check=None) -> bool:
+def _pause_before_retry(attempt: int, retry_after, deadline,
+                        cancel_check=None, attempts: int | None = None) -> bool:
 
 
 
@@ -885,21 +998,16 @@ def _pause_before_retry(attempt: int, retry_after, deadline: float,
 
 
 
-    if attempt + 1 >= _td.xyz_attempts(_TILE_ATTEMPTS):
+    if attempts is None:
+        attempts = _td.xyz_attempts(_TILE_ATTEMPTS)
+    if attempt + 1 >= attempts:
         return False
-    left = deadline - time.monotonic()
+    left = _deadline_at(deadline) - time.monotonic()
     if left <= 0:
         return False
     pause = min(_tile_backoff_pause(attempt, retry_after), left)
 
-    end = time.monotonic() + pause
-    while True:
-        still_to_wait = end - time.monotonic()
-        if still_to_wait <= 0:
-            return True
-        if _gave_up(cancel_check):
-            return False
-        time.sleep(min(0.1, still_to_wait))
+    return not sleep_unless_cancelled(pause, lambda: _gave_up(cancel_check), slice_s=0.1)
 
 
 def _header_of(error, name: str) -> str:
@@ -1022,25 +1130,33 @@ def _split_tile_url(url: str):
 
 
 def _fetch_one_tile_kept(connections: _TileConnections, url: str,
-                         headers: dict[str, str], deadline: float,
-                         cancel_check=None):
+                         headers: dict[str, str], deadline,
+                         cancel_check=None, probe: _LinkProbe | None = None,
+                         attempts: int | None = None):
 
 
     throttled = False
-    timeout_s = _td.xyz_timeout_s(_TILE_TIMEOUT_S)
-    for attempt in range(_td.xyz_attempts(_TILE_ATTEMPTS)):
+    if attempts is None:
+        attempts = _td.xyz_attempts(_TILE_ATTEMPTS)
+    for attempt in range(attempts):
         if _gave_up(cancel_check):
             return ("cancelled", None)
-        remaining = deadline - time.monotonic()
+        remaining = _deadline_at(deadline) - time.monotonic()
         if remaining <= 0:
             return _lost_tile_outcome(cancel_check, throttled)
+        timeout_s = (probe.attempt_timeout() if probe is not None
+                     else _td.xyz_timeout_s(_TILE_TIMEOUT_S))
+        started = time.monotonic()
         outcome, retry_after = _tile_over_connection(
             connections, url, headers, min(timeout_s, remaining))
         if outcome is not None:
+            if probe is not None and outcome[0] == "ok":
+                probe.note(time.monotonic() - started)
             return outcome
         if retry_after is not None:
             throttled = True
-        if not _pause_before_retry(attempt, retry_after, deadline, cancel_check):
+        if not _pause_before_retry(attempt, retry_after, deadline,
+                                   cancel_check, attempts):
             break
     return _lost_tile_outcome(cancel_check, throttled)
 

@@ -26,6 +26,8 @@ from itertools import islice
 
 from qgis.PyQt.QtCore import QSettings
 
+from .bounded_setting_json import read_bounded_json_setting
+
 
 
 
@@ -88,13 +90,7 @@ def get_runs() -> list[dict]:
     account = account_fingerprint()
     if not account:
         return []
-    raw = QSettings().value(_RUN_CACHE_KEY, "")
-    if not raw or not isinstance(raw, str) or len(raw.encode("utf-8")) > _MAX_RUN_CACHE_BYTES:
-        return []
-    try:
-        data = json.loads(raw)
-    except (ValueError, TypeError):
-        return []
+    data = read_bounded_json_setting(_RUN_CACHE_KEY, _MAX_RUN_CACHE_BYTES)
     if not isinstance(data, dict) or data.get("account") != account:
         return []
     runs = data.get("runs")

@@ -10,23 +10,17 @@ from __future__ import annotations
 
 from .detection_policy_core import (
     _is_finite_policy_value,
+    policy_scope,
     seed_policy,
 )
-from .prompt_taxonomy import first_entry_match, iter_keywords, keyword_matches, normalize_prompt
+from .prompt_taxonomy import first_entry_match, normalize_prompt
+from .served_config import require_served_int, require_served_number
 from .tile_manager import (
-    AUTO_OBJECT_MIN_PX,
     AUTO_SEED_HEADROOM_LEVELS,
     AUTO_SEED_TILE_CAP,
     DEFAULT_AUTO_TILE_BUDGET,
-    DEFAULT_SEED_MUPP_M,
-    DETAIL_COARSE_TRAVEL_RATIO,
-    DETAIL_FINE_TRAVEL_RATIO,
-    DRAWN_OBJECT_TILE_FRAC,
-    MASK_SCALE_MIN_WIDTH_PX,
     NATIVE_OVERSAMPLE_MAX,
     QUALITY_FLOOR_MUPP_M,
-    SPLIT_RISK_TILE_FRAC,
-    SWEET_SPOT_MAX_MUPP_M,
 )
 
 
@@ -55,16 +49,20 @@ def object_profile(prompt: str, policy: dict | None = None) -> tuple[float, floa
 
 
 
-    generic = (10.0, DEFAULT_SEED_MUPP_M)
+
     seed = seed_policy(policy)
     tiers = seed.get("object_tiers")
-    if not isinstance(tiers, list):
+    generic = (10.0, zone_seed_mupp(policy)) if not isinstance(tiers, list) else None
+    if generic is not None:
         return generic
     text = normalize_prompt(prompt)
     tier = first_entry_match(text, tiers)
+    fallback_pair = (10.0, 0.0)
     if tier is not None:
-        return _profile_pair(tier, generic)
-    return _profile_pair(seed.get("default_object"), generic)
+        pair = _profile_pair(tier, fallback_pair)
+    else:
+        pair = _profile_pair(seed.get("default_object"), fallback_pair)
+    return pair if pair[1] > 0 else (pair[0], zone_seed_mupp(policy))
 
 
 def _profile_pair(entry: object, fallback: tuple[float, float]) -> tuple[float, float]:
@@ -138,155 +136,6 @@ def object_tile_ceiling_m(prompt: str, policy: dict | None = None) -> float:
     return 0.0
 
 
-def mask_scale_policy(policy: dict | None = None) -> dict:
-
-
-
-
-
-    val = seed_policy(policy).get("mask_scale")
-    return val if isinstance(val, dict) else {}
-
-
-def mask_scale_min_width_px(policy: dict | None = None) -> float:
-
-
-
-
-    val = mask_scale_policy(policy).get("min_width_px")
-    if _is_finite_policy_value(val) and val > 0:
-        return float(val)
-    return MASK_SCALE_MIN_WIDTH_PX
-
-
-def _matched_tiers(text: str, policy: dict | None) -> list[dict]:
-
-
-
-
-
-
-    tiers = seed_policy(policy).get("object_tiers")
-    if not isinstance(tiers, list):
-        return []
-    return [
-        tier
-        for tier in tiers
-        if isinstance(tier, dict) and any(keyword_matches(text, kw) for kw in iter_keywords(tier))
-    ]
-
-
-def _entry_min_width_m(entry: dict) -> float | None:
-
-
-
-
-
-
-
-
-    val = entry.get("min_width_m")
-    if _is_finite_policy_value(val) and val > 0:
-        return float(val)
-    return None
-
-
-def _entry_max_mupp(entry: dict) -> float | None:
-
-
-
-    val = entry.get("max_mupp")
-    if _is_finite_policy_value(val) and val > 0:
-        return float(val)
-    return None
-
-
-def _prompt_names_an_unlisted_object(
-    text: str, classes: list, policy: dict | None
-) -> bool:
-
-
-
-
-
-
-
-    class_keywords = [
-        ckw for entry in classes if isinstance(entry, dict) for ckw in iter_keywords(entry)
-    ]
-    for tier in _matched_tiers(text, policy):
-        for tier_kw in iter_keywords(tier):
-            if not keyword_matches(text, tier_kw):
-                continue
-
-
-
-            if not any(keyword_matches(tier_kw, ckw) for ckw in class_keywords):
-                return True
-    return False
-
-
-def mask_scale_for_run(
-    prompt: str, run_mupp: float, policy: dict | None = None
-) -> int:
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    if not _is_finite_policy_value(run_mupp):
-        return 1
-    if run_mupp <= 0:
-        return 1
-    text = normalize_prompt(prompt)
-    if not text:
-        return 1
-    classes = mask_scale_policy(policy).get("classes")
-    if not isinstance(classes, list):
-        return 1
-
-
-
-
-
-    usable = [
-        item
-        for item in classes
-        if isinstance(item, dict) and (_entry_min_width_m(item) is not None or _entry_max_mupp(item) is not None)
-    ]
-    entry = first_entry_match(text, usable)
-    if entry is None:
-        return 1
-    if _prompt_names_an_unlisted_object(text, classes, policy):
-        return 1
-
-    width = _entry_min_width_m(entry)
-    cap = _entry_max_mupp(entry)
-    if width is not None and width / float(run_mupp) < mask_scale_min_width_px(policy):
-        return 1
-    if cap is not None and float(run_mupp) > cap:
-        return 1
-    return 2
-
-
 def _seed_float(key: str, fallback: float, policy: dict | None) -> float:
 
     val = seed_policy(policy).get(key)
@@ -298,8 +147,8 @@ def _seed_float(key: str, fallback: float, policy: dict | None) -> float:
 def zone_seed_mupp(policy: dict | None = None) -> float:
 
 
-    val = _seed_float("zone_seed_mupp", DEFAULT_SEED_MUPP_M, policy)
-    return val if val > 0 else DEFAULT_SEED_MUPP_M
+    with policy_scope(policy):
+        return require_served_number("detection_policy.seed.zone_seed_mupp", 0.01, 10.0)
 
 
 def soft_tile_budget(policy: dict | None = None) -> int:
@@ -395,13 +244,8 @@ def tile_jpeg_quality(fallback: int, policy: dict | None = None) -> int:
 def object_min_px(policy: dict | None = None) -> int:
 
 
-    val = int(_seed_float("object_min_px", AUTO_OBJECT_MIN_PX, policy))
-    return val if val > 0 else AUTO_OBJECT_MIN_PX
-
-
-def _travel_ratio(key: str, fallback: float, policy: dict | None) -> float:
-    val = _seed_float(key, fallback, policy)
-    return val if 1.0 <= val <= 8.0 else fallback
+    with policy_scope(policy):
+        return require_served_int("detection_policy.seed.object_min_px", 1, 1000)
 
 
 def detail_coarse_travel_ratio(policy: dict | None = None) -> float:
@@ -409,8 +253,8 @@ def detail_coarse_travel_ratio(policy: dict | None = None) -> float:
 
 
 
-    return _travel_ratio("detail_coarse_travel_ratio",
-                         DETAIL_COARSE_TRAVEL_RATIO, policy)
+    with policy_scope(policy):
+        return require_served_number("detection_policy.seed.detail_coarse_travel_ratio", 1.0, 8.0)
 
 
 def detail_fine_travel_ratio(policy: dict | None = None) -> float:
@@ -418,8 +262,8 @@ def detail_fine_travel_ratio(policy: dict | None = None) -> float:
 
 
 
-    return _travel_ratio("detail_fine_travel_ratio",
-                         DETAIL_FINE_TRAVEL_RATIO, policy)
+    with policy_scope(policy):
+        return require_served_number("detection_policy.seed.detail_fine_travel_ratio", 1.0, 8.0)
 
 
 def drawn_object_tile_frac(policy: dict | None = None) -> float:
@@ -436,8 +280,8 @@ def drawn_object_tile_frac(policy: dict | None = None) -> float:
 
 
 
-    val = _seed_float("drawn_object_tile_frac", DRAWN_OBJECT_TILE_FRAC, policy)
-    return val if 0 < val <= 1 else DRAWN_OBJECT_TILE_FRAC
+    with policy_scope(policy):
+        return require_served_number("detection_policy.seed.drawn_object_tile_frac", 0.01, 1.0)
 
 
 def exemplar_size_ladder(policy: dict | None = None) -> list[tuple[float, float]]:
@@ -500,7 +344,8 @@ def sweet_spot_max_mupp(policy: dict | None = None) -> float:
 
 
 
-    return _seed_float("sweet_spot_max_mupp", SWEET_SPOT_MAX_MUPP_M, policy)
+    with policy_scope(policy):
+        return require_served_number("detection_policy.seed.sweet_spot_max_mupp", 0.01, 10.0)
 
 
 def quality_floor_mupp(policy: dict | None = None) -> float:
@@ -519,13 +364,13 @@ def detail_over_ratio(policy: dict | None = None) -> float:
 
 
 
-    return _seed_float("detail_over_ratio", 0.4, policy)
+    return _seed_float("detail_over_ratio", 0.0, policy)
 
 
 def detail_over_ratio_free(policy: dict | None = None) -> float:
 
 
-    return _seed_float("detail_over_ratio_free", 0.5, policy)
+    return _seed_float("detail_over_ratio_free", 0.0, policy)
 
 
 def split_risk_tile_frac(policy: dict | None = None) -> float:
@@ -534,22 +379,24 @@ def split_risk_tile_frac(policy: dict | None = None) -> float:
 
 
 
-    val = _seed_float("split_risk_tile_frac", SPLIT_RISK_TILE_FRAC, policy)
-    return val if 0.0 < val <= 1.0 else SPLIT_RISK_TILE_FRAC
+    with policy_scope(policy):
+        return require_served_number("detection_policy.seed.split_risk_tile_frac", 0.01, 1.0)
 
 
-def recall_floor(fallback: float, policy: dict | None = None) -> float:
+def recall_floor(policy: dict | None = None) -> float:
 
 
 
-
-    return _seed_float("recall_floor", fallback, policy)
-
-
-def recall_floor_exemplar_only(fallback: float, policy: dict | None = None) -> float:
+    with policy_scope(policy):
+        return require_served_number("detection_policy.seed.recall_floor", 0.0, 1.0)
 
 
-    return _seed_float("recall_floor_exemplar_only", fallback, policy)
+def recall_floor_exemplar_only(policy: dict | None = None) -> float:
+
+
+    with policy_scope(policy):
+        return require_served_number(
+            "detection_policy.seed.recall_floor_exemplar_only", 0.0, 1.0)
 
 
 def confidence_default(policy: dict | None = None) -> float:
@@ -568,11 +415,11 @@ def confidence_default_exemplar_only(policy: dict | None = None) -> float:
 
 
 
-    from .review_defaults import AUTO_DEFAULT_CONFIDENCE_EXEMPLAR_ONLY
+    from .review_defaults import AUTO_DEFAULT_CONFIDENCE
 
-    return _seed_float(
-        "confidence_default_exemplar_only",
-        AUTO_DEFAULT_CONFIDENCE_EXEMPLAR_ONLY, policy)
+    val = _seed_float(
+        "confidence_default_exemplar_only", AUTO_DEFAULT_CONFIDENCE, policy)
+    return val if 0.0 <= val <= 1.0 else AUTO_DEFAULT_CONFIDENCE
 
 
 def gsd_warn_max_mupp(fallback: float, policy: dict | None = None) -> float:

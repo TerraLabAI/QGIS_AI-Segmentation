@@ -35,71 +35,15 @@ logger = logging.getLogger(__name__)
 
 
 
-_MAX_MASKS_PER_TILE = 200
 
-
-
-
-
-
-
-
-
-
-
-_MASK_CAP_TRIGGER_FRAC = 0.95
-
-
-
-
-
-
-
-
-
-_MAX_TILE_COVERAGE = 0.55
-
-
-
-
-
-_HARD_TILE_COVERAGE = 0.80
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-_HARD_COVER_SHAPE_ESCAPE = True
-
-
-
-
-
-_COMPACT_MIN_FILL = 0.85
-
-
-
-
-
-
-
-
-_TILE_SPAN_FRACTION = 0.95
-
-
-
-
-
-_MIN_KEEP_PX = 1.5
+_MAX_MASKS_PER_TILE = None
+_MASK_CAP_TRIGGER_FRAC = None
+_MAX_TILE_COVERAGE = None
+_HARD_TILE_COVERAGE = None
+_HARD_COVER_SHAPE_ESCAPE = None
+_COMPACT_MIN_FILL = None
+_TILE_SPAN_FRACTION = None
+_MIN_KEEP_PX = None
 
 
 class AutoMaskGeometryMixin:
@@ -697,6 +641,9 @@ class AutoMaskGeometryMixin:
 
                 skip_below_area=min_keep_area,
                 path_counts=path_counts,
+
+
+                max_side=getattr(self, "_pack_max_side", None),
             )
             for (score, blob_check), geoms in zip(pending_meta[key], polygon_lists):
                 for geom in geoms:
@@ -823,25 +770,21 @@ class AutoMaskGeometryMixin:
 
         if len(out) < 2:
             return out
+        from ...core.detection_policy import merge_scalar_kwargs
         from ...core.polygon_exporter import IncrementalMerger
 
-        ms = self._merge_scalars
-        merge_kwargs = {k: ms[k] for k in (
-            "merge_ios", "dedup_ios", "dup_ios_floor", "dup_centroid_frac",
-            "seam_span_ios", "seam_span_tol", "jitter_area_frac",
-            "score_floor_frac") if k in ms}
         merger = IncrementalMerger(
             seam_min_dim=self._seam_min_dim,
             select_duplicates=False,
             gsd=self._gsd,
-            **merge_kwargs,
+            **merge_scalar_kwargs(IncrementalMerger, self._merge_scalars),
         )
         for geom, score in out:
             merger.add(geom, float(score))
         return merger.result_scored()
 
     @staticmethod
-    def _is_compact_shape(geom, min_fill: float = _COMPACT_MIN_FILL) -> bool:
+    def _is_compact_shape(geom, min_fill: float) -> bool:
 
 
 

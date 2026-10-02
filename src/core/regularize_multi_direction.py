@@ -324,7 +324,7 @@ def regularize_coordinate_array_multi(
     diagonal_threshold_reduction: float,
     max_groups: int,
     min_separation_deg: float,
-    angle_enforcement_tolerance: float = 0.1,
+    angle_enforcement_tolerance: float = 0.5,
     dials: RegularizeDials | None = None,
 ) -> tuple[Any, float]:
 

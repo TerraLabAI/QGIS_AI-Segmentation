@@ -37,8 +37,8 @@ Outline the object under a point. One point in, one polygon out.
 
 | | |
 |---|---|
-| Inputs | `INPUT` raster layer, `POINT` in the project CRS, `OUTPUT` vector destination |
-| Outputs | `OUTPUT`, `INSTANCE_COUNT`, `SCORE`, `STATUS`, `SAVED_FILE` |
+| Inputs | `INPUT` raster layer, `POINT` in the project CRS, `DISCARD_UNSAVED` optional (allow restarting on another imagery layer, dropping outlines not yet exported) |
+| Outputs | `OUTPUT_LAYER` (id of the layer added to the project), `LAYER_NAME`, `INSTANCE_COUNT`, `SCORE`, `STATUS`, `SAVED_FILE`, `POLYGON_WKT`, `POLYGON_CRS` |
 
 ### terralab:segmentzone
 
@@ -46,8 +46,8 @@ Find every object of one kind inside a rectangle.
 
 | | |
 |---|---|
-| Inputs | `INPUT` raster layer, `EXTENT`, `CLASS` (a word such as `building`), `DETAIL` optional, `INSTANCE_COLORS` optional (one colour per object, so objects that touch read apart), `OUTPUT` vector destination |
-| Outputs | `OUTPUT`, `INSTANCE_COUNT`, `TILES_PROCESSED`, `STATUS`, `LAYER_NAME` |
+| Inputs | `INPUT` raster layer, `EXTENT`, `CLASS` (a word such as `building`), `DETAIL` optional, `INSTANCE_COLORS` optional (one colour per object, so objects that touch read apart) |
+| Outputs | `OUTPUT_LAYER` (id of the layer added to the project), `LAYER_NAME`, `INSTANCE_COUNT`, `TILES_PROCESSED`, `STATUS`, `SAVED_FILE` |
 
 `TILES_PROCESSED` counts the imagery tiles the AI answered. It is not the cost:
 an Automatic run is charged for the surface of the zone it covers, whatever it
@@ -97,8 +97,10 @@ calls. `last_result` then holds the outcome and the same `run_id`. The default
 for a small zone.
 
 `set_auto_zone` costs nothing and returns the zone's billed surface (`km2`), a
-rough duration (`estimate`) and what the account has left this month
-(`allowance`), so the cost can be confirmed with the user before the run.
+rough duration (`estimate`) and, once the account's usage is known, what it
+has left this month (`allowance`), so the cost can be confirmed with the user
+before the run. When `allowance` is missing, read the balance from the status
+algorithm instead.
 
 Before a zone run, ask which words work instead of guessing one:
 

@@ -40,8 +40,18 @@ __all__ = [
     "_MIN_POLL_BACKOFF_S",
     "_QUEUE_RETRY_BUDGET_S",
     "_REFUSAL_WINDOW",
+    "_CachedReply",
     "_UPLOAD_SLOW_S",
-    "_WINDOW_HINT_MAX",
+    "_UPLOAD_STALL_S",
+    "_DEAD_LINK_QUIET_S",
+    "_ANSWER_QUIET_S",
+    "_OUTAGE_PROBE_S",
+    "_OUTAGE_MAX_S",
+    "_OUTAGE_RESUME_MIN",
+    "_OUTAGE_RESUME_FRACTION",
+    "_ANSWER_QUIET_P90_FACTOR",
+    "_SWEEP_ANSWER_P90_FACTOR",
+    "_ABORT_REQUEUE_BASE_S",
     "logger",
 ]
 
@@ -192,7 +202,53 @@ _AIMD_MIN = 1
 
 
 
-_WINDOW_HINT_MAX = 12
+
+_UPLOAD_STALL_S = 0.0
+
+
+
+
+
+
+
+_DEAD_LINK_QUIET_S = 0.0
+
+
+
+
+
+
+
+_ANSWER_QUIET_S = 0.0
+_ANSWER_QUIET_P90_FACTOR = 0.0
+
+
+
+
+
+_SWEEP_ANSWER_P90_FACTOR = 0.0
+
+
+
+
+
+
+
+
+
+
+
+_OUTAGE_PROBE_S = 0.0
+_OUTAGE_MAX_S = 0.0
+
+
+_OUTAGE_RESUME_MIN = 1
+_OUTAGE_RESUME_FRACTION = 1.0
+
+
+
+
+_ABORT_REQUEUE_BASE_S = 1.0
 
 
 
@@ -204,6 +260,28 @@ _WINDOW_HINT_MAX = 12
 
 
 _MIDRUN_OFFLINE_STREAK = 30
+
+
+class _CachedReply:
+
+
+
+
+    def __init__(self, answer_json: str) -> None:
+        self._answer_json = answer_json
+
+    def isFinished(self) -> bool:  # noqa: N802
+        return True
+
+    def abort(self) -> None:
+        return None
+
+    def deleteLater(self) -> None:  # noqa: N802
+        return None
+
+    def answer(self) -> dict:
+        import json
+        return json.loads(self._answer_json)
 
 
 class AutoRetryPolicyMixin:
@@ -426,6 +504,11 @@ class AutoRetryPolicyMixin:
 
 
 
+        if isinstance(reply, _CachedReply):
+
+
+
+            return reply.answer()
         try:
             response = self._client.parse_reply(reply)
         except RuntimeError as err:
@@ -456,7 +539,17 @@ class AutoRetryPolicyMixin:
         self._note_tile_balance(response)
         return response
 
-    def _expire_stalled_replies(self, in_flight: dict) -> int:
+    def _expire_stalled_replies(self, in_flight: dict, requeue=None) -> int:
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -475,23 +568,369 @@ class AutoRetryPolicyMixin:
 
 
         now = time.monotonic()
-        expired = [
-            reply for reply, entry in in_flight.items()
-            if now > self._reply_deadline(entry) and not self._reply_is_finished(reply)
-        ]
+        stall_s = float(getattr(self, "_upload_stall_s", 0.0) or 0.0)
+        expired = []
+        stalled = set()
+        silent_probes = set()
+        for reply, entry in in_flight.items():
+            if self._reply_is_finished(reply):
+                continue
+            tile_idx = entry[0]
+            if now > self._reply_deadline(entry):
+                expired.append(reply)
+            elif requeue is not None and self._outage_probe_silent(tile_idx, now):
+                expired.append(reply)
+                silent_probes.add(reply)
+            elif (requeue is not None and stall_s > 0
+                  and tile_idx not in self._uploaded_at):
+                last = self._upload_progress_at.get(tile_idx)
+                if last is not None and now - last > stall_s:
+                    expired.append(reply)
+                    stalled.add(reply)
+        settled = 0
         for reply in expired:
-            tile_idx = in_flight.pop(reply)[0]
+            entry = in_flight.pop(reply)
+            tile_idx = entry[0]
             try:
                 reply.abort()
             except (RuntimeError, AttributeError):
                 pass
+            if tile_idx not in self._uploaded_at and requeue is not None:
+                if reply in silent_probes:
+                    self.outage_probe_cuts += 1
+                    self._emit_warning(
+                        f"Connection lost: probe tile {tile_idx} got nothing "
+                        f"through in {self._outage_probe_allowance():.0f}s; probing again")
+                if reply in stalled:
+                    self.upload_stalls += 1
+                    self._emit_warning(
+                        f"Tile {tile_idx}: upload made no progress for "
+                        f"{int(stall_s)}s; re-queued")
+                if requeue(tile_idx, entry, "TIMEOUT"):
+                    continue
+                settled += 1
+                continue
+            if tile_idx in self._uploaded_at and requeue is not None:
+                reposted = self._repost_uploaded_aborted(
+                    tile_idx, entry, requeue)
+                if reposted is True:
+                    continue
+                if reposted is False:
+                    settled += 1
+                    continue
             self._release_tile_clean_image(tile_idx)
             self.tiles_timed_out += 1
+            settled += 1
             self._emit_warning(
                 f"Tile {tile_idx} timed out after "
                 f"{int(self._stream_reply_budget_s)}s")
         self._free_read_replies(expired)
-        return len(expired)
+        if silent_probes:
+            self._drop_wedged_connections()
+        return settled
+
+    def _drop_wedged_connections(self) -> None:
+
+
+
+
+
+        for nam in getattr(self, "_run_nam", None) or ():
+            if nam is None:
+                continue
+            try:
+                nam.clearConnectionCache()
+            except (RuntimeError, AttributeError):
+                pass
+
+    def _repost_uploaded_aborted(self, tile_idx: int, entry, requeue):
+
+
+
+
+
+
+
+
+        self.uploaded_aborts_reposted += 1
+        return requeue(tile_idx, entry, "TIMEOUT")
+
+    def _requeue_unuploaded(
+        self, tile_idx: int, entry, code: str, resubmit: list,
+        busy_since: dict, submit_attempts: dict,
+    ) -> bool:
+
+
+
+
+
+
+
+        give_up, delay, setback = self._retry_decision(
+            tile_idx, ("retry", self._abort_requeue_base_s_value(), False, code),
+            busy_since, submit_attempts)
+        self._uploaded_at.pop(tile_idx, None)
+        self._upload_progress_at.pop(tile_idx, None)
+        if give_up:
+            self._skip_network_tile(tile_idx)
+            return False
+        if setback:
+            self._aimd.on_setback()
+        self.uploads_requeued += 1
+        resubmit.append((tile_idx, entry[1], entry[3], time.monotonic() + delay))
+        return True
+
+    @staticmethod
+    def _reply_link_dropped(reply, outcome: tuple) -> bool:
+
+
+
+
+
+
+
+
+
+        from ..adaptive_concurrency import OfflineFastFail
+        code = outcome[3] if len(outcome) > 3 else ""
+        if code in OfflineFastFail.HARD_CODES:
+            return True
+        try:
+            from qgis.PyQt.QtNetwork import QNetworkReply
+
+            from ...core.qt_compat import reply_http_status
+            ne = getattr(QNetworkReply, "NetworkError", QNetworkReply)
+            closed = getattr(ne, "RemoteHostClosedError",
+                             getattr(QNetworkReply, "RemoteHostClosedError", None))
+            if closed is not None and reply.error() == closed:
+                return True
+            hard = set(filter(None, (
+                getattr(ne, name, getattr(QNetworkReply, name, None))
+                for name in ("RemoteHostClosedError", "ConnectionRefusedError",
+                             "HostNotFoundError", "NetworkSessionFailedError",
+                             "TemporaryNetworkFailureError"))))
+            return (reply.error() in hard
+                    and reply_http_status(reply) is None)
+        except (RuntimeError, AttributeError, TypeError, ImportError):
+            return False
+
+    def _quiet_since(self, tile_idx: int) -> float:
+
+
+        posted = self._submit_at.get(tile_idx, 0.0)
+        return max(posted, self._reply_byte_at.get(tile_idx, 0.0))
+
+    def _requeue_link_victim(
+        self, tile_idx: int, entry, resubmit: list, submit_attempts: dict,
+    ) -> bool:
+
+
+
+
+
+
+
+        n = submit_attempts.get(tile_idx, 0) + 1
+        submit_attempts[tile_idx] = n
+        self._uploaded_at.pop(tile_idx, None)
+        self._upload_progress_at.pop(tile_idx, None)
+        self._reply_byte_at.pop(tile_idx, None)
+        if n > self._max_rate_limit_retries:
+            self._skip_network_tile(tile_idx)
+            return False
+        self.uploads_requeued += 1
+        delay = self._abort_requeue_base_s_value() * random.uniform(0.5, 1.0)  # nosec B311
+        resubmit.append((tile_idx, entry[1], entry[3], time.monotonic() + delay))
+        return True
+
+    def _abort_link_victims(self, in_flight: dict, victims: list, requeue) -> int:
+
+
+
+
+        settled = 0
+        for reply in victims:
+            entry = in_flight.pop(reply)
+            tile_idx = entry[0]
+            try:
+                reply.abort()
+            except (RuntimeError, AttributeError):
+                pass
+            if tile_idx in self._uploaded_at:
+                ok = self._repost_uploaded_aborted(tile_idx, entry, requeue)
+            else:
+                ok = requeue(tile_idx, entry, "TIMEOUT")
+            if not ok:
+                settled += 1
+        self._free_read_replies(victims)
+        return settled
+
+    def _sweep_dead_link(self, in_flight: dict, requeue) -> int:
+
+
+
+
+
+
+
+
+        quiet_s = float(getattr(self, "_dead_link_quiet_s", 0.0) or 0.0)
+        if quiet_s <= 0:
+            return 0
+        factor = float(getattr(self, "_sweep_p90_factor", _SWEEP_ANSWER_P90_FACTOR))
+        answer_s = max(quiet_s, factor * self._answer_p90())
+        now = time.monotonic()
+        victims = [
+            reply for reply, entry in in_flight.items()
+            if not isinstance(reply, _CachedReply)
+            and not self._reply_is_finished(reply)
+            and now - self._quiet_since(entry[0]) > (
+                answer_s if entry[0] in self._uploaded_at else quiet_s)]
+        if not victims:
+            return 0
+        self.dead_link_sweeps += 1
+        self._emit_warning(
+            f"Connection dropped: re-sending {len(victims)} silent tile(s)")
+        return self._abort_link_victims(in_flight, victims, requeue)
+
+    def _answer_p90(self) -> float:
+
+        times = sorted(self._answer_times)
+        if not times:
+            return 0.0
+        return times[min(len(times) - 1, int(0.9 * len(times)))]
+
+    def _answer_quiet_limit(self) -> float:
+
+
+        floor = float(getattr(self, "_answer_quiet_s", 0.0) or 0.0)
+        if floor <= 0:
+            return 0.0
+        factor = float(getattr(self, "_answer_quiet_p90_factor", _ANSWER_QUIET_P90_FACTOR))
+        return max(floor, factor * self._answer_p90())
+
+    def _guard_silent_drops(self, in_flight: dict, requeue) -> tuple[int, int]:
+
+
+
+
+        if self.tiles_succeeded <= 0:
+            return 0, 0
+        limit = self._answer_quiet_limit()
+        if limit <= 0:
+            return 0, 0
+        now = time.monotonic()
+        victims = [
+            reply for reply, entry in in_flight.items()
+            if not isinstance(reply, _CachedReply)
+            and entry[0] in self._uploaded_at
+            and not self._reply_is_finished(reply)
+            and now - self._quiet_since(entry[0]) > limit]
+        if not victims:
+            return 0, 0
+        self.answer_quiet_reposts += len(victims)
+        self._emit_warning(
+            f"{len(victims)} tile(s) got no answer for {int(limit)}s; re-sending")
+        return self._abort_link_victims(in_flight, victims, requeue), len(victims)
+
+    def _abort_requeue_base_s_value(self) -> float:
+        return float(getattr(self, "_abort_requeue_base_s", _ABORT_REQUEUE_BASE_S))
+
+    def _outage_active(self) -> bool:
+        return self._outage_since is not None
+
+    def _window_has_room(self, in_flight: dict) -> bool:
+
+
+
+
+        since = self._outage_since
+        if since is None:
+            return len(in_flight) < self._aimd.cap
+        return not any(
+            self._submit_at.get(entry[0], 0.0) >= since
+            for entry in in_flight.values())
+
+    def _enter_outage(self) -> None:
+
+
+
+        if self._outage_since is not None or self.tiles_succeeded <= 0:
+            return
+        if float(getattr(self, "_outage_max_s", 0.0) or 0.0) <= 0:
+            return
+        self._outage_since = time.monotonic()
+        self._outage_cap_before = self._aimd.cap
+        self.outages += 1
+        self._emit_warning("Connection lost: probing until it answers")
+
+    def _leave_outage(self) -> None:
+
+
+        if self._outage_since is None:
+            return
+        self._outage_s_total += time.monotonic() - self._outage_since
+        self._outage_since = None
+        least = int(getattr(self, "_outage_resume_min", _OUTAGE_RESUME_MIN))
+        fraction = float(getattr(self, "_outage_resume_fraction", _OUTAGE_RESUME_FRACTION))
+        self._aimd.restore(max(least, int(self._outage_cap_before * fraction)))
+
+    def _outage_expired(self) -> bool:
+        return (self._outage_since is not None
+                and time.monotonic() - self._outage_since > self._outage_max_s)
+
+    def _outage_probe_allowance(self) -> float:
+
+
+
+        return float(self._outage_probe_s) + float(self._link_setup_max_s)
+
+    def _outage_probe_silent(self, tile_idx: int, now: float) -> bool:
+
+
+
+
+
+
+        since = self._outage_since
+        if since is None:
+            return False
+        posted = self._submit_at.get(tile_idx)
+        if posted is None or posted < since or tile_idx in self._uploaded_at:
+            return False
+        if self._reply_byte_at.get(tile_idx, 0.0) >= posted:
+            return False
+        return now - posted > self._outage_probe_allowance()
+
+    def _note_link_setup(self, tile_idx: int, now: float) -> None:
+
+
+
+        posted = self._submit_at.get(tile_idx)
+        if posted is None:
+            return
+        last = self._upload_progress_at.get(tile_idx)
+        if last is not None and last >= posted:
+            return
+        self._link_setup_max_s = max(self._link_setup_max_s, now - posted)
+
+    def _outage_ms_total(self) -> int:
+
+        total = self._outage_s_total
+        if self._outage_since is not None:
+            total += time.monotonic() - self._outage_since
+        return int(total * 1000)
+
+    def _requeue_probe(self, tile_idx: int, tile_spec, png_bytes, resubmit: list) -> None:
+
+
+
+        self._uploaded_at.pop(tile_idx, None)
+        self._upload_progress_at.pop(tile_idx, None)
+        self._upload_last_sent.pop(tile_idx, None)
+        self._reply_byte_at.pop(tile_idx, None)
+        delay = self._outage_probe_s * random.uniform(0.8, 1.2)  # nosec B311
+        resubmit.appendleft((tile_idx, tile_spec, png_bytes, time.monotonic() + delay))
 
     def _reply_deadline(self, entry) -> float:
 
@@ -515,12 +954,25 @@ class AutoRetryPolicyMixin:
 
 
         def _on_upload(sent: int, total: int, _idx: int = tile_idx) -> None:
+
+
+            if total > 0 and sent != self._upload_last_sent.get(_idx):
+                self._note_link_setup(_idx, time.monotonic())
+                self._upload_last_sent[_idx] = sent
+                self._upload_progress_at[_idx] = time.monotonic()
+                self._reply_byte_at[_idx] = self._upload_progress_at[_idx]
             if total > 0 and sent >= total and _idx not in self._uploaded_at:
                 now = time.monotonic()
                 self._uploaded_at[_idx] = now
                 self._grow_window_on_fast_upload(_idx, now)
+
+        def _on_download(received: int, _total: int, _idx: int = tile_idx) -> None:
+
+            if received > 0:
+                self._reply_byte_at[_idx] = time.monotonic()
         try:
             reply.uploadProgress.connect(_on_upload)
+            reply.downloadProgress.connect(_on_download)
         except (RuntimeError, AttributeError, TypeError):
             pass
 
@@ -548,6 +1000,7 @@ class AutoRetryPolicyMixin:
     def _drain_polled_on_stop(
         self, in_flight: dict, completed: int, total: int
     ) -> int:
+
 
 
 
@@ -645,5 +1098,6 @@ class AutoRetryPolicyMixin:
         if (
             self.tiles_succeeded == 0 or self._fastfail.streak >= self._midrun_offline_streak
         ):
+            self.stopped_offline = True
             return ("fatal", OFFLINE_STOP_CODE)
         return stop_payload

@@ -47,11 +47,6 @@ _BODY_REFUSED_STATUS = 400
 _gzip_refused = False
 
 
-def gzip_request_refused() -> bool:
-
-    return _gzip_refused
-
-
 def note_gzip_request_refused() -> None:
 
     global _gzip_refused

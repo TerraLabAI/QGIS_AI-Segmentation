@@ -30,46 +30,7 @@ from .shared import _debounce_timer
 
 
 
-
-
-
-_MERGE_SETS_CACHE: dict[str, object] = {"id": None, "sets": None, "merge": None}
-
-
-
 _RESLICE_SCREEN_FIRST_MIN_OBJECTS = 400
-
-
-def _merge_token_sets(merge: dict) -> tuple[frozenset, frozenset, frozenset]:
-
-
-
-
-
-
-    key = id(merge)
-    if _MERGE_SETS_CACHE["id"] == key and _MERGE_SETS_CACHE["sets"] is not None:
-        return _MERGE_SETS_CACHE["sets"]  # type: ignore[return-value]
-
-    def _tokens(vals: object) -> frozenset:
-        return frozenset(
-            str(v).strip().lower().replace("_", " ")
-            for v in (vals or []) if isinstance(v, str)) if isinstance(vals, list) else frozenset()
-
-    def _cats(vals: object) -> frozenset:
-        return frozenset(
-            str(v).strip().lower()
-            for v in (vals or []) if isinstance(v, str)) if isinstance(vals, list) else frozenset()
-
-    result = (
-        _tokens(merge.get("continuous_tokens")),
-        _tokens(merge.get("discrete_tokens")),
-        _cats(merge.get("continuous_categories")),
-    )
-    _MERGE_SETS_CACHE["id"] = key
-    _MERGE_SETS_CACHE["sets"] = result
-    _MERGE_SETS_CACHE["merge"] = merge
-    return result
 
 
 def _union_review_sets(geoms: list, scores: list | None, ids: object,
@@ -137,48 +98,6 @@ class AutoReviewMixin:
         if self._auto_gsd <= 0:
             return float("inf") if self._auto_merge_separate else 0.0
         return OVERLAP_FRACTION * TILE_SIZE * self._auto_gsd
-
-    def _default_merge_separate(self, prompt: str) -> bool:
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        token = (prompt or "").strip().lower()
-        if not token:
-            return True
-
-        norm = token.replace("_", " ")
-        from ...core.detection_policy import merge_policy
-        continuous_tokens, discrete_tokens, continuous_categories = _merge_token_sets(
-            merge_policy())
-
-        if norm in discrete_tokens or token in discrete_tokens:
-            return True
-        if norm in continuous_tokens or token in continuous_tokens:
-            return False
-        try:
-            from ...core.review_presets import live_catalog_categories
-            for category in live_catalog_categories():
-                for preset in category.get("presets") or []:
-                    if str(preset.get("prompt", "")).strip().lower().replace("_", " ") != norm:
-                        continue
-                    if preset.get("weak"):
-                        return False
-                    cat = str(preset.get("category") or category.get("key") or "").lower()
-                    return cat not in continuous_categories
-        except Exception:  # noqa: BLE001  # nosec B110
-            pass
-        return True
 
     def _on_auto_review_refine_debounced(self) -> None:
 
@@ -693,6 +612,46 @@ class AutoReviewMixin:
             params, pixel_size, with_scores=True,
             refine_budget_s=rescue_refine_budget(), with_ids=True)
 
+    def _flush_pending_review_refilter(self) -> None:
+
+
+
+
+
+
+
+
+        d = self.dock_widget
+        if d is None:
+            return
+        try:
+            d._auto_conf_preview_timer.stop()
+            if d._auto_conf_debounce_timer.isActive():
+                d._auto_conf_debounce_timer.stop()
+                pct = int(d.auto_review_confidence_spin.value())
+                self._auto_confidence = max(0.0, min(1.0, pct / 100.0))
+                self._review_geoms_stale = True
+            if d._auto_review_debounce_timer.isActive():
+                d._auto_review_debounce_timer.stop()
+                self._review_tel_refined = True
+                self._review_geoms_stale = True
+        except (RuntimeError, AttributeError):
+            pass
+
+
+
+        if getattr(self, "_auto_shape_only_pending_idx", None) is not None:
+            timer = getattr(self, "_shape_only_apply_timer", None)
+            try:
+                if timer is not None:
+                    timer.stop()
+            except (RuntimeError, AttributeError):
+                pass
+            apply_now = getattr(self, "_apply_shape_only_pending", None)
+            if apply_now is not None:
+                apply_now()
+                self._review_geoms_stale = True
+
     def _settle_review_geoms_for_export(self) -> None:
 
 
@@ -716,6 +675,7 @@ class AutoReviewMixin:
 
         if not self._auto_review:
             return
+        self._flush_pending_review_refilter()
         if not getattr(self, "_review_geoms_stale", False):
             return
 
@@ -951,6 +911,7 @@ class AutoReviewMixin:
         except Exception:
             pass  # nosec B110
         self._auto_review = None
+        _release_run_policy()
 
 
 
@@ -1099,6 +1060,7 @@ class AutoReviewMixin:
         self._auto_run_plan = None
         self._auto_attribute_filters = []
         self._drop_detect_plan_wait()
+        self._late_plan_clear()
         self._cancel_task("_auto_run_plan_task")
         self._cancel_task("_auto_token_task")
         self._auto_zone = None
@@ -1141,7 +1103,8 @@ class AutoReviewMixin:
         except Exception:
             pass  # nosec B110
 
-    def _discard_review_without_autosave(self, exit_path: str = "other") -> None:
+    def _discard_review_without_autosave(self, exit_path: str = "other",
+                                         keep_run_policy: bool = False) -> None:
 
 
 
@@ -1164,6 +1127,9 @@ class AutoReviewMixin:
         except Exception:  # nosec B110
             pass
         self._auto_review = None
+
+        if not keep_run_policy:
+            _release_run_policy()
         self._clear_free_zone_review_outline()
         self._auto_objects = []
         self._auto_object_fids = []
@@ -1211,6 +1177,9 @@ class AutoReviewMixin:
             self._disarm_shape_tool()
         except (RuntimeError, AttributeError):  # nosec B110
             pass
+
+
+        self._settle_review_geoms_for_export()
         visible = self._current_visible_review_count()
 
 
@@ -1336,23 +1305,9 @@ class AutoReviewMixin:
 
 
 
-        try:
-            from ...core import telemetry_run_events
-            from_step = None
-            try:
-                from_step = int(self.dock_widget.auto_steps.currentIndex())
-            except (RuntimeError, AttributeError):
-                pass
-            autosaved = len((self._auto_review or {}).get("geoms", []))
-            telemetry_run_events.track_auto_exit_clicked(
-                from_step=from_step if from_step is not None else -1,
-                autosaved_count=autosaved,
-            )
-        except Exception:
-            pass  # nosec B110
 
         self._restore_maptool_after_zone()
-        self._discard_auto_review()
+        self._discard_auto_review(exit_path="exit_button")
 
 
         self._set_review_busy(False)
@@ -1365,3 +1320,13 @@ class AutoReviewMixin:
             except (RuntimeError, AttributeError):
                 pass
         self._signal_gpu_session_end("auto_exit")
+
+
+def _release_run_policy() -> None:
+
+    try:
+        from ...core.detection_policy_core import release_run_policy
+
+        release_run_policy()
+    except Exception:  # noqa: BLE001  # nosec B110
+        pass

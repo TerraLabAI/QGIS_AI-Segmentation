@@ -169,7 +169,7 @@ class AutoDensityProbeMixin:
             self._on_auto_cancelled(worker=worker)
             return
         from .auto_run_progress import _WIND_DOWN_DETACH
-        from .shared import park_orphaned_worker
+        from .shared import release_worker_ref
 
         from_m = TILE_SIZE * float(getattr(self, "_auto_gsd_m", 0.0) or 0.0)
         self._stop_auto_stall_watchdog()
@@ -188,8 +188,7 @@ class AutoDensityProbeMixin:
                 getattr(worker, sig_name).disconnect(slot)
             except (TypeError, RuntimeError, AttributeError):
                 pass
-        if worker.isRunning():
-            park_orphaned_worker(worker)
+        release_worker_ref(worker)
         self._auto_worker = None
         self._auto_cancelled_slot = None
         self._auto_replan_slot = None

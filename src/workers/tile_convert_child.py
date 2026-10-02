@@ -157,6 +157,25 @@ def skip_unused_child_imports() -> None:
             sys.modules[name] = None  # type: ignore[assignment]
 
 
+def _boot_note(since: float, step: str) -> None:
+
+
+
+
+
+
+
+
+    import sys
+    import time
+
+    try:
+        sys.stderr.write(f"boot {step} {time.monotonic() - since:.1f}s\n")
+        sys.stderr.flush()
+    except Exception:  # noqa: BLE001  # nosec B110
+        pass
+
+
 def child_main() -> None:
 
 
@@ -172,6 +191,8 @@ def child_main() -> None:
 
 
     sys.stdout = sys.stderr
+    booted = time.monotonic()
+    _boot_note(booted, "start")
     skip_unused_child_imports()
 
 
@@ -185,9 +206,13 @@ def child_main() -> None:
     try:
         from qgis.core import QgsApplication
 
+        _boot_note(booted, "qgis.core")
         app = QgsApplication([], False)
         app.initQgis()
+        _boot_note(booted, "initQgis")
         from .auto_detection_worker import AutoDetectionWorker
+
+        _boot_note(booted, "plugin")
     except _ANY_FAILURE as exc:
         try:
             _send(stdout, ("no", repr(exc)))
@@ -420,6 +445,29 @@ def child_cwd() -> str:
 
     return os.path.dirname(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__))))
+
+
+def spawn_worker_child(exe: str, boot_module: str, env: dict, stderr=None):
+
+
+
+
+
+
+
+    import subprocess  # nosec B404
+
+
+
+    proc = subprocess.Popen(  # nosec B603
+        [exe, "-s", "-c", f"from {boot_module} import child_main; child_main()"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=stderr if stderr is not None else subprocess.DEVNULL,
+        env=env, cwd=child_cwd(), close_fds=True,
+
+        creationflags=child_creation_flags())
+    keep_child_off_power_throttling(proc)
+    return proc
 
 
 def child_environment() -> dict:

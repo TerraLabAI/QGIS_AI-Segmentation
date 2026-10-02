@@ -24,9 +24,10 @@ from .polygon_exporter import suppress_redundant_hypotheses
 
 def select_tile_hypotheses(
     items: list,
-    ios_threshold: float = 0.5,
-    dup_ios_floor: float = 0.3,
-    dup_centroid_frac: float = 0.35,
+    *,
+    ios_threshold: float,
+    dup_ios_floor: float,
+    dup_centroid_frac: float,
 ) -> list:
 
 

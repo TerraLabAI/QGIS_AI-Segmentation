@@ -16,13 +16,13 @@ from qgis.core import Qgis, QgsMessageLog
 from qgis.PyQt.QtNetwork import QNetworkReply, QNetworkRequest
 
 from ..core import transport_dials as _td
+from ..core.qt_compat import reply_http_status as _http_status_of
 
 __all__ = [
     "_Attr",
     "_AuthRequired",
     "_ConnRefused",
     "_ContentDenied",
-    "_HTTP_STATUS_ATTR",
     "_HostNotFound",
     "_NE",
     "_NO_LESS_SAFE_REDIRECT",
@@ -59,6 +59,7 @@ _TIMEOUT_API = 30_000
 _TIMEOUT_INTERACTIVE = 10_000
 
 _TIMEOUT_SUBMIT_DETECTION = 45_000
+
 
 
 
@@ -107,7 +108,6 @@ _NoError = getattr(_NE, "NoError", getattr(QNetworkReply, "NoError", 0))
 
 
 _Attr = getattr(QNetworkRequest, "Attribute", QNetworkRequest)
-_HTTP_STATUS_ATTR = getattr(_Attr, "HttpStatusCodeAttribute", getattr(QNetworkRequest, "HttpStatusCodeAttribute", None))
 
 
 
@@ -261,30 +261,6 @@ def _parse_json_body(raw_body: str, allow_list: bool = False):
     if allow_list and isinstance(parsed, list):
         return parsed
     return None
-
-
-def _http_status_of(reply) -> int | None:
-
-
-
-
-
-
-
-
-
-    if reply is None or _HTTP_STATUS_ATTR is None:
-        return None
-    try:
-        attr = reply.attribute(_HTTP_STATUS_ATTR)
-        if attr is None:
-            return None
-        if isinstance(attr, bool):
-            return None
-        status = int(attr)
-        return status if 100 <= status <= 599 else None
-    except (TypeError, ValueError, OverflowError, RuntimeError):
-        return None
 
 
 def _reply_was_packed(reply) -> bool:

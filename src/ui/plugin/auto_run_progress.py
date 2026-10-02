@@ -154,6 +154,11 @@ class AutoRunProgressMixin:
 
 
 
+        try:
+            from ...core.telemetry_run_context import note_run_phase
+            note_run_phase(name)
+        except Exception:  # noqa: BLE001
+            pass  # nosec B110
         if self.dock_widget is None:
             return
         try:

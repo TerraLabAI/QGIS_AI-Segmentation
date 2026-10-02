@@ -128,8 +128,16 @@ def _begin_snap_only(plugin, geoms: list, params: dict) -> tuple:
     if not isinstance(geoms, list) or len(geoms) < 2:
         return geoms, None
     from ...core.boundary_snap import boundary_snap_max_objects
+    from ...core.served_config import ServedConfigMissing
 
-    cap = boundary_snap_max_objects()
+
+
+    try:
+        cap = boundary_snap_max_objects()
+        tolerance = boundary_snap_tolerance_in_units(plugin, geoms)
+    except ServedConfigMissing:
+        set_boundary_snap_skip_reason(plugin, "")
+        return geoms, None
     if cap > 0 and len(geoms) > cap:
 
 
@@ -142,7 +150,6 @@ def _begin_snap_only(plugin, geoms: list, params: dict) -> tuple:
             "Shared borders is off above {cap} shapes. This result has "
             "{count}.").format(cap=cap, count=len(geoms)))
         return geoms, None
-    tolerance = boundary_snap_tolerance_in_units(plugin, geoms)
     if tolerance <= 0:
         set_boundary_snap_skip_reason(plugin, tr(
             "Shared borders needs a position for the shapes and this result "

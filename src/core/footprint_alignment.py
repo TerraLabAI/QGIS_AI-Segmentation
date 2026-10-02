@@ -58,12 +58,9 @@ from .footprint_ring_math import (
 from .shape_policy_dials import (
     circle_segments,
     consensus_neighbour_cap,
-    min_angle_split_deg,
     save_neighbour_cap,
 )
 
-
-_MIN_ANGLE_SPLIT_DEG = 1.0
 
 
 
@@ -103,6 +100,24 @@ class AlignmentParams:
     revert_to_simplified: bool = False
 
 
+    min_angle_split_deg: float = 0.0
+
+
+def _served_angle_split(settings: dict) -> float:
+
+
+
+    val = settings.get("min_angle_split_deg") if isinstance(settings, dict) else None
+    if isinstance(val, (int, float)) and not isinstance(val, bool) and 0.1 <= val <= 45.0:
+        return float(val)
+    from .served_config import ServedConfigMissing, require_served_number
+    try:
+        return require_served_number(
+            "detection_policy.auto_regularize.min_angle_split_deg", 0.1, 45.0)
+    except ServedConfigMissing:
+        return 0.0
+
+
 def compile_alignment_params(settings: dict, gsd_m: float) -> AlignmentParams:
 
 
@@ -113,6 +128,7 @@ def compile_alignment_params(settings: dict, gsd_m: float) -> AlignmentParams:
     pixel = float(gsd_m) if gsd_m and gsd_m > 0 else 0.0
     tol = min(hi, max(lo, factor * pixel)) if pixel > 0 else lo
     return AlignmentParams(
+        min_angle_split_deg=_served_angle_split(settings),
         simplify_tolerance=tol,
         ortho_window_deg=float(settings["ortho_window_deg"]),
         diag_window_deg=float(settings["diag_window_deg"]),
@@ -753,7 +769,7 @@ class FootprintAlignSweep:
             if kept is not None:
                 candidates.append((kept, iou, is_consensus))
 
-        split_deg = min_angle_split_deg(_MIN_ANGLE_SPLIT_DEG)
+        split_deg = params.min_angle_split_deg
         _try_angle(own_angle, False)
         if top_fraction < params.mrr_when_top_below:
             mrr = _mrr_angle_mod90(raw)

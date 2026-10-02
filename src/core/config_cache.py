@@ -33,7 +33,6 @@
 
 
 
-
 from __future__ import annotations
 
 import copy
@@ -46,6 +45,7 @@ import time
 from typing import NamedTuple
 
 from .cache_paths import PLUGIN_CACHE_DIR
+from .file_replace_retry import replace_file_with_retry
 
 CONFIG_FILENAME = "server_config.json"
 
@@ -56,11 +56,6 @@ _MAX_BYTES = 2 * 1024 * 1024
 
 
 _FILE_SOURCE = "live_fetch"
-
-
-
-
-_MAX_DISK_AGE_S = 21 * 24 * 60 * 60
 
 
 
@@ -80,6 +75,14 @@ class _Snapshot(NamedTuple):
 
 
     etag: str | None = None
+
+
+
+
+    lossless: bool = False
+
+
+    raw: dict | None = None
 
 
 _EMPTY = _Snapshot({}, None, SOURCE_NONE)
@@ -119,30 +122,6 @@ def config_cache_path() -> str:
     return os.path.join(PLUGIN_CACHE_DIR, CONFIG_FILENAME)
 
 
-
-
-
-
-_REPLACE_ATTEMPTS = 5
-_REPLACE_DELAY_S = 0.2
-
-
-def _move_config_into_place(tmp_path: str, path: str) -> None:
-
-
-
-
-
-    for attempt in range(1, _REPLACE_ATTEMPTS + 1):
-        try:
-            os.replace(tmp_path, path)
-            return
-        except PermissionError:
-            if attempt == _REPLACE_ATTEMPTS:
-                raise
-            time.sleep(_REPLACE_DELAY_S)
-
-
 def save_config(config: dict, etag: str | None = None) -> bool:
 
 
@@ -172,7 +151,9 @@ def save_config(config: dict, etag: str | None = None) -> bool:
         )
         with os.fdopen(handle, "w", encoding="utf-8") as fh:
             fh.write(payload)
-        _move_config_into_place(tmp_path, path)
+
+
+        replace_file_with_retry(tmp_path, path)
     except Exception:  # noqa: BLE001  # nosec B110
         if tmp_path:
             try:
@@ -253,10 +234,7 @@ def _without_code_execution_dials(config: dict) -> dict:
     return out
 
 
-def load_config() -> tuple[dict, float | None, str | None]:
-
-
-
+def _load_parsed() -> tuple[dict, float | None, str | None]:
 
 
 
@@ -290,10 +268,28 @@ def load_config() -> tuple[dict, float | None, str | None]:
     if (not isinstance(fetched_at, (int, float)) or isinstance(fetched_at, bool)
             or not math.isfinite(fetched_at) or fetched_at > time.time()):
         fetched_at = None
-    elif time.time() - float(fetched_at) > _MAX_DISK_AGE_S:
-        return {}, None, None
     etag = _sanitize_etag(data.get("etag"))
-    return _without_code_execution_dials(_without_kill_switches(config)), fetched_at, etag
+    return config, fetched_at, etag
+
+
+def _strip_read_back(config: dict) -> dict:
+    return _without_code_execution_dials(_without_kill_switches(config))
+
+
+def load_config() -> tuple[dict, float | None, str | None]:
+
+
+
+
+
+
+
+
+
+    config, fetched_at, etag = _load_parsed()
+    if not config:
+        return {}, None, None
+    return _strip_read_back(config), fetched_at, etag
 
 
 def clear_config() -> None:
@@ -392,7 +388,11 @@ def prime_from_disk() -> bool:
     if initial.source != SOURCE_NONE:
         return False
     try:
+        raw, _fetched, _tag = _load_parsed()
         config, fetched_at, etag = load_config()
+
+
+        lossless = bool(raw) and config == raw
         resolved = _resolve_with_override(config)
     except Exception:  # noqa: BLE001  # nosec B110
         return False
@@ -401,11 +401,42 @@ def prime_from_disk() -> bool:
     with _publish_lock:
         if _state is not initial:
             return False
-        _state = _Snapshot(resolved, fetched_at, SOURCE_DISK, etag)
+        _state = _Snapshot(resolved, fetched_at, SOURCE_DISK, etag, lossless, config)
         return True
 
 
+def _loses_required_values(candidate: dict) -> bool:
+
+
+
+
+
+    try:
+        from .served_config import missing_served_values
+
+        gaps = missing_served_values(candidate)
+        if not gaps or missing_served_values(_state.config):
+            return False
+    except Exception:  # noqa: BLE001
+        return False
+    shown = ", ".join(gaps[:3]) + (f" and {len(gaps) - 3} more" if len(gaps) > 3 else "")
+    try:
+        from qgis.core import Qgis, QgsMessageLog
+
+        QgsMessageLog.logMessage(
+            f"Server settings answer lacks required values ({shown}); "
+            "keeping the last complete settings", "AI Segmentation",
+            level=Qgis.MessageLevel.Warning)
+    except Exception:  # noqa: BLE001  # nosec B110
+        pass
+    return True
+
+
 def set_config(config: dict, etag: str | None = None) -> None:
+
+
+
+
 
 
 
@@ -433,8 +464,14 @@ def set_config(config: dict, etag: str | None = None) -> None:
             resolved = _resolve_with_override(owned)
         except Exception:  # noqa: BLE001
             resolved = owned
+        if _loses_required_values(resolved):
+
+
+
+            _state = _state._replace(etag=None)
+            return
         resolved_etag = _sanitize_etag(etag) if etag is not None else _state.etag
-        _state = _Snapshot(resolved, time.time(), SOURCE_LIVE, resolved_etag)
+        _state = _Snapshot(resolved, time.time(), SOURCE_LIVE, resolved_etag, False, owned)
         try:
             save_config(owned, resolved_etag)
         except TypeError:
@@ -443,6 +480,51 @@ def set_config(config: dict, etag: str | None = None) -> None:
 
 
             save_config(owned)
+
+
+
+_DOWNGRADED_SCOPES = frozenset({"public"})
+_DOWNGRADED_AUTH_STATES = frozenset({"public", "degraded"})
+
+
+def _is_account_answer(config: dict) -> bool:
+    return config.get("policy_scope") == "account" or config.get("auth_state") == "account"
+
+
+def _is_downgraded_answer(config: dict) -> bool:
+    return (config.get("policy_scope") in _DOWNGRADED_SCOPES
+            or config.get("auth_state") in _DOWNGRADED_AUTH_STATES)
+
+
+def keep_account_sections(config: dict, holds_key: bool) -> dict:
+
+
+
+
+
+
+
+
+
+    try:
+        if not holds_key or not isinstance(config, dict) or not _is_downgraded_answer(config):
+            return config
+        cached = _state.raw
+        if not isinstance(cached, dict) or not _is_account_answer(cached):
+            return config
+        merged = dict(config)
+        if isinstance(cached.get("detection_policy"), dict):
+            merged["detection_policy"] = copy.deepcopy(cached["detection_policy"])
+        for key, value in cached.items():
+            if key not in merged:
+                merged[key] = copy.deepcopy(value)
+
+        merged["policy_scope"] = cached.get("policy_scope", "account")
+        if "auth_state" in cached:
+            merged["auth_state"] = cached["auth_state"]
+        return merged
+    except Exception:  # noqa: BLE001
+        return config
 
 
 def config_etag() -> str | None:
@@ -459,8 +541,15 @@ def config_etag() -> str | None:
 
 
 
+
+
+
+
+
     state = _state
-    return state.etag if state.source == SOURCE_LIVE else None
+    if state.source == SOURCE_LIVE or (state.source == SOURCE_DISK and state.lossless):
+        return state.etag
+    return None
 
 
 def remember_etag(etag: str | None) -> None:
@@ -508,13 +597,6 @@ def config_source() -> str:
     return _state.source
 
 
-def config_age_s() -> float | None:
+def config_fetched_at() -> float | None:
 
-
-
-
-
-    fetched_at = _state.fetched_at
-    if fetched_at is None:
-        return None
-    return max(0.0, time.time() - fetched_at)
+    return _state.fetched_at

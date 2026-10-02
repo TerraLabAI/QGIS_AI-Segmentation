@@ -49,15 +49,6 @@ def _load_account_and_usage(client, auth) -> dict:
     return {"account": account, "usage": usage}
 
 
-
-
-
-_ACCOUNT_OFFLINE_CODES = frozenset({
-    "NO_INTERNET", "DNS_ERROR", "CONNECTION_REFUSED", "PROXY_ERROR",
-    "TIMEOUT", "SSL_ERROR",
-})
-
-
 class AccountSessionMixin:
 
 

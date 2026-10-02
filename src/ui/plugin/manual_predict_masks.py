@@ -750,6 +750,17 @@ class ManualMaskMixin:
 
 
 
+
+        if self._manual_cloud_predictor_active():
+            try:
+                from ...api.click_transport import cancel_click_wait
+
+                cancel_click_wait()
+            except Exception:  # noqa: BLE001
+                pass  # nosec B110
+
+
+
         try:
             saves = getattr(self, "_manual_saves_session", 0)
             if saves >= 1 and not self._refine_handoff_active:

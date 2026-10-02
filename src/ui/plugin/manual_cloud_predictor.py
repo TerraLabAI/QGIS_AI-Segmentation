@@ -51,6 +51,44 @@ class ManualCloudPredictorMixin:
         except Exception:  # noqa: BLE001
             return False
 
+    def _cloud_click_waits_for_config(self) -> bool:
+
+
+
+
+
+
+
+
+        try:
+            if not self._manual_cloud_predictor_active():
+                return False
+            from ...core.served_config import served_config_ready
+
+            if served_config_ready():
+                return False
+
+
+
+
+            on_device = self.predictor.has_on_device_fallback()
+        except Exception:  # noqa: BLE001
+            return False
+        if not on_device:
+            try:
+                self.iface.messageBar().pushMessage(
+                    "AI Segmentation", tr("Connecting to load settings"),
+                    Qgis.MessageLevel.Info, 3)
+            except (RuntimeError, AttributeError):  # nosec B110
+                pass
+        try:
+            self._prefetch_server_config()
+        except Exception as err:  # noqa: BLE001
+            QgsMessageLog.logMessage(
+                f"Semi-Auto: could not ask for the settings: {err}",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+        return not on_device
+
     def _manual_cloud_predictor_active(self) -> bool:
 
 

@@ -111,8 +111,6 @@ class AutoTileRenderMixin:
         self._stamps = []
         self._stamp_full_boxes = []
         self._stamp_regions = []
-        from qgis.PyQt.QtCore import Qt as _Qt
-
         from ...core.cloud_detection import stamp_size_cap
 
         if not self._exemplar_stamps_in:
@@ -159,10 +157,10 @@ class AutoTileRenderMixin:
         for crop, label, obj_box, full_box, region in valid:
             if crop is not None and max(crop.width(), crop.height()) > cap:
                 prev_w = crop.width()
-                crop = crop.scaled(
-                    cap, cap,
-                    _Qt.AspectRatioMode.KeepAspectRatio,
-                    _Qt.TransformationMode.SmoothTransformation)
+
+
+                from ...core.qimage_strips import smooth_scaled_in_python
+                crop = smooth_scaled_in_python(crop, cap, cap, keep_aspect=True)
 
                 if obj_box is not None and prev_w > 0:
                     s = crop.width() / prev_w
@@ -347,7 +345,8 @@ class AutoTileRenderMixin:
             self._prefetched[tile_idx] = seq
             ahead = self._encode_ahead_for_run()
             if ahead is not None and not (out_w and out_h):
-                ahead.expect(seq, tile_idx, tw, th, self._render_ready)
+                ahead.expect(seq, tile_idx, tw, th, self._render_ready,
+                             self._stamp_encoder(tx, ty, tw, th, tile_idx))
 
     def _open_render_ramp(self) -> None:
 
@@ -440,6 +439,7 @@ class AutoTileRenderMixin:
 
 
 
+
         if self._encode_ahead is not None:
             return self._encode_ahead
 
@@ -451,7 +451,7 @@ class AutoTileRenderMixin:
             self._encode_ahead_enabled = enabled
         if not enabled:
             return None
-        if self._render_bridge is None or self._stamps or self._stop_requested:
+        if self._render_bridge is None or self._stop_requested:
             return None
         try:
             from ...core.cloud_detection import encode_tile_png
@@ -466,6 +466,38 @@ class AutoTileRenderMixin:
             return None
         self._encode_ahead = ahead
         return ahead
+
+    def _stamp_bottom_for(self, ty: int) -> bool:
+
+
+
+        return bool(self._stamp_bottom_top_row and ty == self._top_stamp_ty)
+
+    def _stamp_encoder(self, tx: int, ty: int, tw: int, th: int,
+                       tile_idx: int | None = None):
+
+
+
+
+
+
+        if not self._stamps:
+            return None
+        from ...core.cloud_detection import composite_tile_with_stamps
+        bottom = self._stamp_bottom_for(ty)
+        paste, _insitu = self._split_stamps_for_tile(tx, ty, tw, th, bottom)
+
+        archive = self._client_meta is not None and tile_idx is not None
+
+        def compose(img):
+            out = composite_tile_with_stamps(
+                img, 0, 0, tw, th, paste, bottom=bottom)
+
+
+            if archive and out is not None and out[3]:
+                self._queue_tile_clean_image(tile_idx, img, 0, 0, tw, th)
+            return out
+        return compose
 
     def _close_encode_ahead(self) -> None:
         ahead, self._encode_ahead = self._encode_ahead, None
@@ -596,12 +628,10 @@ class AutoTileRenderMixin:
 
         from ...core.cloud_detection import (
             composite_tile_with_stamps,
-            encode_tile_archive_copy,
             encode_tile_png,
             tile_is_blank,
             tile_is_degenerate,
             tile_is_unavailable,
-            tile_png_to_base64,
         )
 
         try:
@@ -717,15 +747,18 @@ class AutoTileRenderMixin:
 
 
 
-                bottom = bool(
-                    self._stamp_bottom_top_row and ty == self._top_stamp_ty)
+                bottom = self._stamp_bottom_for(ty)
 
 
 
                 paste, insitu_boxes = self._split_stamps_for_tile(
                     tx, ty, tw, th, bottom)
-                out = composite_tile_with_stamps(
-                    tile_img, src_x, src_y, tw, th, paste, bottom=bottom)
+
+
+                out = ahead_encoded
+                if out is None:
+                    out = composite_tile_with_stamps(
+                        tile_img, src_x, src_y, tw, th, paste, bottom=bottom)
                 if out is None:
                     return ("skip", None)
                 (_sx, _sy, cw, ch), data, ex_boxes, stamp_norm = out
@@ -748,12 +781,10 @@ class AutoTileRenderMixin:
 
 
 
+
                     if self._client_meta is not None:
-                        clean = encode_tile_archive_copy(
-                            tile_img, src_x, src_y, tw, th)
-                        if clean is not None:
-                            self._tile_clean_image[tile_idx] = (
-                                tile_png_to_base64(clean))
+                        self._queue_tile_clean_image(
+                            tile_idx, tile_img, src_x, src_y, tw, th)
                 return ("ok", ((tx, ty, cw, ch), data))
             encoded = ahead_encoded
             if encoded is None:

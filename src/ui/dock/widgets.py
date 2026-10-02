@@ -1019,11 +1019,3 @@ def set_key_chip(button: QPushButton, key: str, on_fill: bool = False) -> None:
             button, lambda w, k=key, f=on_fill: set_key_chip(w, k, f))
     except Exception:  # noqa: BLE001
         return
-
-
-def strip_key_suffix(label: str, key: str) -> str:
-
-
-    import re
-
-    return re.sub(r"\s*\(\s*" + re.escape(key) + r"\s*\)\s*$", "", label or "") or label

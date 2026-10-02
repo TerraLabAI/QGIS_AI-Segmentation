@@ -14,6 +14,7 @@ from qgis.core import (
     QgsMessageLog,
 )
 
+from ...core.error_policy import LINK_OR_TIMEOUT_CODES
 from ...core.i18n import tr
 from ...core.qt_compat import safe_disconnect
 from .env_setup_account import _drop_untagged_account_history
@@ -211,7 +212,7 @@ class EnvSetupActivationMixin:
 
 
 
-        if (code or "").strip().upper() in self._CONNECTIVITY_CODES:
+        if (code or "").strip().upper() in LINK_OR_TIMEOUT_CODES:
             self._notify_connection_issue(code, message)
             return
         import time
@@ -228,10 +229,17 @@ class EnvSetupActivationMixin:
             f"Key revalidation failed ({code or 'unknown'})",
             "AI Segmentation", level=Qgis.MessageLevel.Warning)
         try:
+
+
+            if (code or "").strip().upper() in ("SERVER_ERROR", "SERVICE_WARMING"):
+                line = tr("Could not check your account. Your connection may "
+                          "be slow or lost.")
+            else:
+                line = tr("Could not check your AI Segmentation account. If this "
+                          "lasts, sign out and sign in again.")
             self.iface.messageBar().pushMessage(
                 "AI Segmentation",
-                tr("Could not check your AI Segmentation account. If this "
-                   "lasts, sign out and sign in again."),
+                line,
                 level=Qgis.MessageLevel.Warning,
                 duration=dial_in_range("tuning.network.connection_issue_notice_s", 8, 4, 10),
             )
@@ -651,13 +659,6 @@ class EnvSetupActivationMixin:
             pass
         setattr(self, attr, None)
 
-
-
-    _CONNECTIVITY_CODES = frozenset({
-        "DNS_ERROR", "CONNECTION_REFUSED", "TIMEOUT",
-        "SSL_ERROR", "PROXY_ERROR", "NO_INTERNET",
-    })
-
     _CONN_NOTICE_MIN_GAP_S = 60.0
 
     def _notify_connection_issue(self, code: str, message: str):
@@ -669,7 +670,7 @@ class EnvSetupActivationMixin:
 
         from ...core.server_dials import dial_in_range
 
-        if (code or "").strip().upper() not in self._CONNECTIVITY_CODES:
+        if (code or "").strip().upper() not in LINK_OR_TIMEOUT_CODES:
             return
         now = time.monotonic()
         min_gap_s = dial_in_range(

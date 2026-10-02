@@ -46,6 +46,8 @@ USE_SAM2 = (sys.version_info >= (3, 10) or IS_ROSETTA) and not _IS_MACOS_X86
 
 
 
+
+
 MACOS_X86_NO_LOCAL_INFERENCE = _IS_MACOS_X86 and sys.version_info >= (3, 13)
 
 if USE_SAM2:
@@ -78,21 +80,6 @@ else:
     CHECKPOINT_FILENAME = "sam_vit_b_01ec64.pth"
 
     CHECKPOINT_SHA256 = "ec2df62732614e57411cdcf32a23ffdf28910380d03139ee0f4fcbe91eb8c912"  # noqa: S105, E501  # pragma: allowlist secret
-
-
-def macos_intel_unsupported_python() -> bool:
-
-
-
-
-
-
-
-
-
-
-
-    return _IS_MACOS_X86 and sys.version_info >= (3, 13)
 
 
 

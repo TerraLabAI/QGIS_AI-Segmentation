@@ -27,8 +27,9 @@ from __future__ import annotations
 
 import json
 import math
+import time
 
-from qgis.core import QgsApplication, QgsTask
+from qgis.core import QgsApplication, QgsFeedback, QgsTask
 
 from ...core.qt_compat import geometry_op_succeeded, silent_task_flags
 from .run_zone_clip import ZONE_WKT_CRS_AUTHID
@@ -66,6 +67,8 @@ def cancel_inflight_uploads() -> None:
 
 
 
+    _stop_pump()
+    del _pending[:]
     tasks = list(_inflight)
     del _inflight[:]
     for task in tasks:
@@ -78,8 +81,10 @@ def cancel_inflight_uploads() -> None:
 class _RunExportUploadTask(QgsTask):
 
 
+
     def __init__(self, summary: dict, geometry_rows: list, precision: int, auth: dict,
-                 max_geojson_bytes: int = _MAX_GEOJSON_BYTES):
+                 max_geojson_bytes: int = _MAX_GEOJSON_BYTES,
+                 body: bytes | None = None, attempt: int = 0):
         super().__init__("AI Segmentation run summary", silent_task_flags())
         self._summary = summary
         self._geometry_rows = geometry_rows
@@ -89,17 +94,45 @@ class _RunExportUploadTask(QgsTask):
 
         self._max_geojson_bytes = max_geojson_bytes
 
+        self.body = body
+        self.attempt = attempt
+        self.retry = False
+        self.sent = False
+        self.preempted = False
+
+        self._feedback = QgsFeedback()
+
+    def cancel(self) -> None:
+        try:
+            self._feedback.cancel()
+        except Exception:  # noqa: BLE001
+            pass  # nosec B110
+        super().cancel()
+
+    def preempt(self) -> None:
+
+        self.preempted = True
+        self.cancel()
+
     def run(self) -> bool:  # noqa: D102
         if self.isCanceled():
             return False
         try:
-            body = encode_run_export_body(
-                self._summary, self._geometry_rows, self._precision,
-                self._max_geojson_bytes)
-            self._geometry_rows = []
+            if self.body is None:
+                self.body = encode_run_export_body(
+                    self._summary, self._geometry_rows, self._precision,
+                    self._max_geojson_bytes)
+                self._geometry_rows = []
+            from ...api.request_feedback import request_feedback
             from ...api.terralab_client import TerraLabClient
 
-            TerraLabClient().post_run_export_body(body, self._auth)
+            with request_feedback(self._feedback):
+                answer = TerraLabClient().post_run_export_body(self.body, self._auth)
+            self.sent = not (isinstance(answer, dict) and "error" in answer)
+            if isinstance(answer, dict) and "error" in answer:
+                from ...core.error_policy import TRANSIENT_CODES
+
+                self.retry = str(answer.get("code", "")).upper() in TRANSIENT_CODES
         except Exception:  # noqa: BLE001
             pass  # nosec B110
         return True
@@ -109,6 +142,160 @@ class _RunExportUploadTask(QgsTask):
             _inflight.remove(self)
         except ValueError:
             pass
+        try:
+            _after_attempt(self)
+        except Exception:  # noqa: BLE001
+            pass  # nosec B110
+
+
+
+
+
+
+
+
+
+
+
+_MAX_PENDING = 2
+_QUIET_S = 15.0
+_MAX_ATTEMPTS = 3
+_BACKOFF_S = 30.0
+_MAX_AGE_S = 1800.0
+_PUMP_MS = 2000
+
+
+class _Pending:
+    def __init__(self, plugin, summary, rows, precision, auth, cap, body=None, attempt=0,
+                 queued_at=None, not_before=0.0):
+        self.plugin = plugin
+        self.summary = summary
+        self.rows = rows
+        self.precision = precision
+        self.auth = auth
+        self.cap = cap
+        self.body = body
+        self.attempt = attempt
+        self.queued_at = time.monotonic() if queued_at is None else queued_at
+        self.not_before = not_before
+
+
+_pending: list[_Pending] = []
+_pump_timer = None
+
+
+def _dial(path: str, fallback, low, high):
+    try:
+        from ...core.server_dials import dial_in_range
+
+        return dial_in_range(path, fallback, low, high)
+    except Exception:  # noqa: BLE001
+        return fallback
+
+
+def _stop_pump() -> None:
+    global _pump_timer
+    timer, _pump_timer = _pump_timer, None
+    if timer is not None:
+        try:
+            timer.stop()
+            timer.deleteLater()
+        except Exception:  # noqa: BLE001
+            pass  # nosec B110
+
+
+def _start_pump() -> None:
+
+    global _pump_timer
+    if _pump_timer is not None:
+        return
+    from qgis.PyQt.QtCore import QTimer
+
+    timer = QTimer()
+    timer.setInterval(_PUMP_MS)
+    timer.timeout.connect(_pump)
+    timer.start()
+    _pump_timer = timer
+
+
+def _foreground_active(plugin) -> bool:
+    from ...core.network_busy import idle_for
+
+    if not idle_for(_dial("tuning.export.idle_quiet_s", _QUIET_S, 1, 300)):
+        return True
+    return getattr(plugin, "_auto_worker", None) is not None
+
+
+def _pump() -> None:
+    try:
+        _pump_once()
+    except Exception:  # noqa: BLE001
+        pass  # nosec B110
+
+
+def _pump_once() -> None:
+    now = time.monotonic()
+    max_age = _dial("tuning.export.max_age_s", _MAX_AGE_S, 60, 86400)
+    _pending[:] = [p for p in _pending if now - p.queued_at <= max_age]
+    running = list(_inflight)
+    if running:
+
+        from ...core.network_busy import is_busy
+
+        for task in running:
+            plugin = getattr(task, "_plugin", None)
+            if not task.preempted and (
+                    is_busy() or getattr(plugin, "_auto_worker", None) is not None):
+                task.preempt()
+        return
+    if not _pending:
+        _stop_pump()
+        return
+    entry = _pending[0]
+    if now < entry.not_before or _foreground_active(entry.plugin):
+        return
+    from ...core.network_busy import low_priority_slot_free
+
+    if not low_priority_slot_free():
+        return
+    _pending.pop(0)
+    task = _RunExportUploadTask(
+        entry.summary, entry.rows, entry.precision, entry.auth, entry.cap,
+        body=entry.body, attempt=entry.attempt)
+    task._queued_at = entry.queued_at
+    task._plugin = entry.plugin
+    task._entry = entry
+    _inflight.append(task)
+    QgsApplication.taskManager().addTask(task)
+
+
+def _after_attempt(task: _RunExportUploadTask) -> None:
+
+    entry = getattr(task, "_entry", None)
+    if entry is None or task.body is None or task.sent:
+        return
+    if task.preempted:
+
+        retry_attempt = task.attempt
+        delay = _dial("tuning.export.idle_quiet_s", _QUIET_S, 1, 300)
+    elif task.retry and not task.isCanceled():
+        retry_attempt = task.attempt + 1
+        if retry_attempt >= _dial("tuning.export.max_attempts", _MAX_ATTEMPTS, 1, 10):
+            return
+        delay = _dial("tuning.export.backoff_s", _BACKOFF_S, 1, 600) * (2 ** (retry_attempt - 1))
+    else:
+        return
+    _enqueue(_Pending(
+        entry.plugin, entry.summary, [], entry.precision, entry.auth, entry.cap,
+        body=task.body, attempt=retry_attempt, queued_at=entry.queued_at,
+        not_before=time.monotonic() + delay))
+
+
+def _enqueue(entry: _Pending) -> None:
+    _pending.append(entry)
+    while len(_pending) > _MAX_PENDING:
+        _pending.pop(0)
+    _start_pump()
 
 
 def json_precision(crs) -> int:
@@ -589,10 +776,14 @@ def queue_run_export_upload(
 
             _log_geometry_omitted(len(refined), "WKB", wkb_ceiling)
             summary = _summary_without_geometry(summary, len(refined), "wkb")
-        task = _RunExportUploadTask(
-            summary, rows, json_precision(review.get("crs")), auth,
-            max_geojson_bytes(_MAX_GEOJSON_BYTES))
-        _inflight.append(task)
-        QgsApplication.taskManager().addTask(task)
+
+
+        cap = min(max_geojson_bytes(_MAX_GEOJSON_BYTES),
+                  _dial("tuning.export.deferred_max_bytes", _MAX_GEOJSON_BYTES,
+                        100_000, 100_000_000))
+
+
+
+        _enqueue(_Pending(plugin, summary, rows, json_precision(review.get("crs")), auth, cap))
     except Exception:  # noqa: BLE001
         pass  # nosec B110

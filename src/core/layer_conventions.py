@@ -17,6 +17,7 @@ from qgis.core import (
     QgsCategorizedSymbolRenderer,
     QgsCoordinateReferenceSystem,
     QgsDistanceArea,
+    QgsFeature,
     QgsField,
     QgsFillSymbol,
     QgsGeometry,
@@ -32,6 +33,7 @@ from qgis.core import (
 from qgis.PyQt.QtGui import QColor
 
 from . import class_symbology
+from .gui_thread import on_gui_thread
 from .i18n import tr
 from .qt_compat import (
     DistanceMeters,
@@ -39,6 +41,7 @@ from .qt_compat import (
     WkbMultiPolygon,
     WkbPolygon,
     field_type_double,
+    geometry_op_succeeded,
 )
 
 
@@ -1033,6 +1036,72 @@ def to_multipolygon(geom: QgsGeometry) -> QgsGeometry | None:
     return combined
 
 
+def reproject_polygon(geom: QgsGeometry, transform) -> QgsGeometry | None:
+
+
+
+
+
+
+
+
+
+
+
+
+    if geom is None or geom.isEmpty():
+        return None
+    moved = QgsGeometry(geom.constGet().clone())
+    try:
+        if not geometry_op_succeeded(moved.transform(transform)):
+            return None
+    except Exception:  # noqa: BLE001
+        return None
+    return to_multipolygon(repair_polygon(moved) or moved)
+
+
+def reprojected_valid_copy(layer, transform) -> QgsVectorLayer | None:
+
+
+
+
+
+
+
+
+
+
+    try:
+        copy = QgsVectorLayer("MultiPolygon", layer.name() or "reprojected", "memory")
+        if not copy.isValid():
+            return None
+        copy.setCrs(transform.destinationCrs())
+        provider = copy.dataProvider()
+        if not provider.addAttributes(layer.fields().toList()):
+            return None
+        copy.updateFields()
+        fields = copy.fields()
+        features = []
+        for feature in layer.getFeatures():
+            geom = reproject_polygon(feature.geometry(), transform)
+            if geom is None or geom.isEmpty():
+                return None
+            moved = QgsFeature(fields)
+            moved.setGeometry(geom)
+            moved.setAttributes(feature.attributes())
+            features.append(moved)
+        if features:
+            added = provider.addFeatures(features)
+            if isinstance(added, tuple):
+                added = bool(added[0]) if added else False
+            if not added:
+                return None
+        copy.updateExtents()
+        return copy
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _log_convention_failure(step: str, err: Exception) -> None:
 
 
@@ -1162,15 +1231,7 @@ def persist_layer_to_file_later(layer, *, metadata: bool = False,
         _write_conventions_into_the_file(layer, want_metadata, want_style)
         _reread_file_after_write(layer)
 
-    try:
-        from qgis.core import QgsApplication
-        from qgis.PyQt.QtCore import QThread
-
-        app = QgsApplication.instance()
-        on_gui_thread = app is None or QThread.currentThread() == app.thread()
-    except (RuntimeError, AttributeError):
-        on_gui_thread = True
-    if not on_gui_thread:
+    if not on_gui_thread(unknown=True):
         _write()
         return
     try:

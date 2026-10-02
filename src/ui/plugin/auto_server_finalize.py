@@ -74,9 +74,8 @@ class AutoServerFinalizeMixin:
         align = None
         try:
             from ...core.detection_policy import auto_regularize_settings
-            from ...core.review_presets import shape_class_for
 
-            settings = auto_regularize_settings(shape_class_for(prompt))
+            settings = auto_regularize_settings(self._auto_run_shape_class(prompt))
             if settings is not None:
                 from qgis.core import QgsProject
 
@@ -106,11 +105,9 @@ class AutoServerFinalizeMixin:
         from ...core import merger as _merger
         from ...core import transport_dials as _td
         from ...core.detection_policy import merge_scalar
-        from ...core.polygon_geometry import COVER_THRESHOLD_DEFAULT
 
         return {
-            "cover_threshold": float(merge_scalar(
-                "cover_threshold", COVER_THRESHOLD_DEFAULT)),
+            "cover_threshold": float(merge_scalar("cover_threshold")),
             "compact_min_live": int(_td.merge_compact_min_live(
                 _merger._COMPACT_MIN_LIVE)),
             "absorbed_pool_mult": int(_td.merge_absorbed_pool_mult(
@@ -125,14 +122,12 @@ class AutoServerFinalizeMixin:
         from ...core.shape_policy_dials import (
             circle_segments,
             consensus_neighbour_cap,
-            min_angle_split_deg,
         )
 
         return {
             "consensus_neighbour_cap": int(consensus_neighbour_cap(
                 _fa._CONSENSUS_NEIGHBOUR_CAP)),
-            "min_angle_split_deg": float(min_angle_split_deg(
-                _fa._MIN_ANGLE_SPLIT_DEG)),
+            "min_angle_split_deg": float(_fa._served_angle_split({})),
             "circle_segments": int(circle_segments(_fa._CIRCLE_SEGMENTS)),
         }
 

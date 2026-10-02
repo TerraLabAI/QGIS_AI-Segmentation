@@ -73,6 +73,12 @@ REFINE_IN_MANUAL_ENTERED = "refine_in_manual_entered"
 REFINE_IN_MANUAL_BACK = "refine_in_manual_back"
 AUTO_EXPORT_DONE = "auto_export_done"
 AUTO_RETRY_CLICKED = "auto_retry_clicked"
+
+AUTO_RESUME_OFFERED = "auto_resume_offered"
+AUTO_RESUME_CLICKED = "auto_resume_clicked"
+
+
+AUTO_RUN_LOST = "auto_run_lost"
 AUTO_EXIT_CLICKED = "auto_exit_clicked"
 
 ZERO_ASSIST_CLICKED = "zero_assist_clicked"
@@ -102,6 +108,11 @@ MANUAL_CLOUD_CONSENT = "manual_cloud_consent"
 
 
 MANUAL_CLICK_ANSWERED = "manual_click_answered"
+
+MANUAL_CLICK_WARMING_WAIT = "manual_click_warming_wait"
+
+
+MANUAL_CROP_REGISTERED = "manual_crop_registered"
 
 MANUAL_OBJECT_CHARGED = "manual_object_charged"
 
@@ -220,6 +231,9 @@ ALL_EVENTS = frozenset({
     REFINE_IN_MANUAL_BACK,
     AUTO_EXPORT_DONE,
     AUTO_RETRY_CLICKED,
+    AUTO_RESUME_OFFERED,
+    AUTO_RESUME_CLICKED,
+    AUTO_RUN_LOST,
     AUTO_EXIT_CLICKED,
     ZERO_ASSIST_CLICKED,
     EXEMPLAR_NUDGE_SHOWN,
@@ -236,6 +250,8 @@ ALL_EVENTS = frozenset({
     MANUAL_ENGINE_CHOSEN,
     MANUAL_CLOUD_CONSENT,
     MANUAL_CLICK_ANSWERED,
+    MANUAL_CLICK_WARMING_WAIT,
+    MANUAL_CROP_REGISTERED,
     MANUAL_OBJECT_CHARGED,
     MANUAL_OBJECTS_WALL_HIT,
     PRO_UPSELL_VIEWED,
@@ -318,6 +334,9 @@ REQUIRED_PROPS: dict[str, tuple[str, ...]] = {
     REFINE_IN_MANUAL_BACK: ("run_id",),
     AUTO_EXPORT_DONE: ("run_id",),
     AUTO_RETRY_CLICKED: ("run_id",),
+    AUTO_RESUME_OFFERED: ("run_id",),
+    AUTO_RESUME_CLICKED: ("run_id",),
+    AUTO_RUN_LOST: ("run_id",),
     AUTO_EXIT_CLICKED: (),
     ZERO_ASSIST_CLICKED: (),
     EXEMPLAR_NUDGE_SHOWN: (),
@@ -338,6 +357,8 @@ REQUIRED_PROPS: dict[str, tuple[str, ...]] = {
     MANUAL_CLOUD_CONSENT: ("accepted",),
 
     MANUAL_CLICK_ANSWERED: ("engine", "sample_rate"),
+    MANUAL_CLICK_WARMING_WAIT: ("waited_ms", "outcome"),
+    MANUAL_CROP_REGISTERED: ("crop_tiles_outcome",),
     MANUAL_OBJECT_CHARGED: ("outcome",),
     MANUAL_OBJECTS_WALL_HIT: ("is_subscriber", "in_session"),
 

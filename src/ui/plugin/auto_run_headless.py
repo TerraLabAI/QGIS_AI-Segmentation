@@ -339,6 +339,13 @@ class AutoRunHeadlessMixin:
             }
 
 
+
+        from ...mcp_api_guard import refuse_without_served_config
+        refused = refuse_without_served_config(self)
+        if refused is not None:
+            return refused
+
+
         self._ensure_dock_widget()
         if self._tile_manager is None:
             self._setup_auto_mode()
@@ -667,6 +674,7 @@ class AutoRunHeadlessMixin:
 
 
             self._headless_error = None
+            self._headless_error_code = None
             worker_before = self._auto_worker
             self._start_auto_detection()
 
@@ -681,6 +689,9 @@ class AutoRunHeadlessMixin:
                         "missing raster, not signed in, zone too large, or feature disabled."
                     )
                 }
+                code = getattr(self, "_headless_error_code", None)
+                if code:
+                    refused["code"] = code
                 if worker_before is not None and self._auto_worker is worker_before:
                     refused["busy"] = True
                 return refused
@@ -865,6 +876,15 @@ class AutoRunHeadlessMixin:
             if hard_stopped or live is None or not live.isRunning():
                 self._auto_headless_run = False
                 self._auto_review_preset_overrides = None
+
+
+
+                if getattr(self, "_auto_review", None) is None:
+                    try:
+                        from ...core.detection_policy_core import release_run_policy
+                        release_run_policy()
+                    except Exception:  # noqa: BLE001  # nosec B110
+                        pass
             self._restore_dock_after_headless(mode_before, shown_layer_id)
 
 

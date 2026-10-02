@@ -54,7 +54,14 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+from .detection_policy_core import policy_scope
 from .prompt_taxonomy import keyword_matches, normalize_prompt
+from .served_config import (
+    ServedConfigMissing,
+    require_served_int,
+    require_served_list,
+    require_served_number,
+)
 
 if TYPE_CHECKING:
     from qgis.core import QgsGeometry
@@ -71,25 +78,10 @@ SNAP_DEFAULT_ENABLED = False
 
 
 
-_FALLBACK_TOLERANCE_M = 0.5
-_FALLBACK_MAX_AREA_CHANGE = 0.02
-_FALLBACK_MIN_KEEP_SHARE = 0.5
 
 
-
-_FALLBACK_MAX_OBJECTS = 2000
-
-
-
-_FALLBACK_KEYWORDS: tuple[str, ...] = (
-    "land cover",
-    "landcover",
-    "land use",
-    "landuse",
-    "parcel",
-    "field",
-    "crop",
-)
+_FALLBACK_MAX_AREA_CHANGE = 0.0
+_FALLBACK_MIN_KEEP_SHARE = 1.0
 
 
 
@@ -152,27 +144,16 @@ def boundary_snap_tolerance_m(policy: dict | None = None) -> float:
 
 
 
-
-
-
-    val = boundary_snap_policy(policy).get("tolerance_m")
-    if isinstance(val, (int, float)) and not isinstance(val, bool):
-        f = float(val)
-        if 0.0 < f <= 100.0:
-            return f
-    return _FALLBACK_TOLERANCE_M
+    with policy_scope(policy):
+        return require_served_number("detection_policy.review.boundary_snap.tolerance_m", 0.001, 100.0)
 
 
 def boundary_snap_max_area_change(policy: dict | None = None) -> float:
 
 
 
-    val = boundary_snap_policy(policy).get("max_area_change")
-    if isinstance(val, (int, float)) and not isinstance(val, bool):
-        f = float(val)
-        if 0.0 < f <= 1.0:
-            return f
-    return _FALLBACK_MAX_AREA_CHANGE
+    with policy_scope(policy):
+        return require_served_number("detection_policy.review.boundary_snap.max_area_change", 0.0001, 1.0)
 
 
 def boundary_snap_min_keep_share(policy: dict | None = None) -> float:
@@ -181,12 +162,8 @@ def boundary_snap_min_keep_share(policy: dict | None = None) -> float:
 
 
 
-    val = boundary_snap_policy(policy).get("min_keep_share")
-    if isinstance(val, (int, float)) and not isinstance(val, bool):
-        f = float(val)
-        if 0.0 < f <= 1.0:
-            return f
-    return _FALLBACK_MIN_KEEP_SHARE
+    with policy_scope(policy):
+        return require_served_number("detection_policy.review.boundary_snap.min_keep_share", 0.0001, 1.0)
 
 
 def boundary_snap_max_objects(policy: dict | None = None) -> int:
@@ -196,12 +173,8 @@ def boundary_snap_max_objects(policy: dict | None = None) -> int:
 
 
 
-    val = boundary_snap_policy(policy).get("max_objects")
-    if isinstance(val, (int, float)) and not isinstance(val, bool):
-        n = int(val)
-        if n >= 0:
-            return n
-    return _FALLBACK_MAX_OBJECTS
+    with policy_scope(policy):
+        return require_served_int("detection_policy.review.boundary_snap.max_objects", 0, 10_000_000)
 
 
 def boundary_snap_tolerance_units(metres_per_unit: float,
@@ -244,7 +217,10 @@ def boundary_snap_offered(prompt: str, object_count: int,
         return False
     if n < 2:
         return False
-    cap = boundary_snap_max_objects(policy)
+    try:
+        cap = boundary_snap_max_objects(policy)
+    except ServedConfigMissing:
+        return False
     if cap > 0 and n > cap:
         return False
     return boundary_snap_offered_for(prompt, policy)
@@ -266,13 +242,12 @@ def boundary_snap_offered_for(prompt: str, policy: dict | None = None) -> bool:
     text = normalize_prompt(prompt)
     if not text:
         return False
-    kws = boundary_snap_policy(policy).get("keywords")
-    if isinstance(kws, list):
-        keywords = tuple(k.lower() for k in kws if isinstance(k, str) and k.strip())
-    else:
-        keywords = ()
-    if not keywords:
-        keywords = _FALLBACK_KEYWORDS
+    try:
+        with policy_scope(policy):
+            keywords = require_served_list("detection_policy.review.boundary_snap.keywords")
+    except ServedConfigMissing:
+        return False
+    keywords = tuple(k.lower() for k in keywords)
     return any(keyword_matches(text, kw) for kw in keywords)
 
 

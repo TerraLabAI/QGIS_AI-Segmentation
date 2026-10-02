@@ -23,7 +23,20 @@ except ImportError:  # pragma: no cover
 
 from typing import Any, NamedTuple
 
-from .regularize_ring_tidy import DEFAULT_TIDY_DIALS, TidyDials, resolve_tidy_dials
+from .detection_policy_regularize import (
+    _REGULARIZE_FALLBACK_CIRCLE_THRESHOLD,
+    _REGULARIZE_FALLBACK_DIAGONAL_REDUCTION,
+    _REGULARIZE_FALLBACK_MIN_KEEP_IOU,
+    _REGULARIZE_FALLBACK_MULTI_DIRECTION,
+    _REGULARIZE_FALLBACK_MULTI_MAX_GROUPS,
+    _REGULARIZE_FALLBACK_MULTI_MIN_GROUP_WEIGHT,
+    _REGULARIZE_FALLBACK_MULTI_MIN_SEPARATION_DEG,
+    _REGULARIZE_FALLBACK_MULTI_PARALLEL_EPS_DEG,
+    _REGULARIZE_FALLBACK_RING_MIN_IOU,
+    _REGULARIZE_FALLBACK_TIDY_CHAMFER_MULT,
+    _REGULARIZE_FALLBACK_TIDY_MIN_EDGE_MULT,
+)
+from .regularize_ring_tidy import TidyDials, resolve_tidy_dials
 
 __all__ = [
     "RegularizeDials",
@@ -67,21 +80,15 @@ __all__ = [
 
 
 
-
-_DEFAULT_MIN_KEEP_IOU = 0.70
-_DEFAULT_DIAGONAL_REDUCTION = 15.0
-
-
-
-
-_DEFAULT_CIRCLE_THRESHOLD = 0.94
+_DEFAULT_MIN_KEEP_IOU = _REGULARIZE_FALLBACK_MIN_KEEP_IOU
+_DEFAULT_DIAGONAL_REDUCTION = _REGULARIZE_FALLBACK_DIAGONAL_REDUCTION
+_DEFAULT_CIRCLE_THRESHOLD = _REGULARIZE_FALLBACK_CIRCLE_THRESHOLD
 
 
 _CHANGED_MIN_FRACTION = 1.0e-3
 
 
-
-_RING_MIN_IOU = 0.1
+_RING_MIN_IOU = _REGULARIZE_FALLBACK_RING_MIN_IOU
 
 
 
@@ -96,20 +103,20 @@ _ASPECT_IDENTITY_EPSILON = 0.01
 
 
 
-_DEFAULT_MULTI_DIRECTION = False
-_DEFAULT_MULTI_MAX_GROUPS = 3
-_DEFAULT_MULTI_MIN_SEPARATION_DEG = 10.0
+_DEFAULT_MULTI_DIRECTION = _REGULARIZE_FALLBACK_MULTI_DIRECTION
+_DEFAULT_MULTI_MAX_GROUPS = _REGULARIZE_FALLBACK_MULTI_MAX_GROUPS
+_DEFAULT_MULTI_MIN_SEPARATION_DEG = _REGULARIZE_FALLBACK_MULTI_MIN_SEPARATION_DEG
 
 
-_MULTI_PARALLEL_ANGLE_EPS = 1.5
-
-
-
+_MULTI_PARALLEL_ANGLE_EPS = _REGULARIZE_FALLBACK_MULTI_PARALLEL_EPS_DEG
 
 
 
 
-_MULTI_MIN_GROUP_WEIGHT_FRACTION = 0.20
+
+
+
+_MULTI_MIN_GROUP_WEIGHT_FRACTION = _REGULARIZE_FALLBACK_MULTI_MIN_GROUP_WEIGHT
 
 
 
@@ -118,14 +125,15 @@ _DESTAIRCASE_NOOP_FRACTION = 1.0e-9
 
 
 
-
-_TIDY_MIN_EDGE_MULT = 2.0
-_TIDY_CHAMFER_MULT = 3.0
-
-_TIDY_AREA_NOOP_FRACTION = 0.01
+_TIDY_MIN_EDGE_MULT = _REGULARIZE_FALLBACK_TIDY_MIN_EDGE_MULT
+_TIDY_CHAMFER_MULT = _REGULARIZE_FALLBACK_TIDY_CHAMFER_MULT
 
 
-_ENFORCE_ANGLE_TOL_DEG = 0.1
+
+_TIDY_AREA_NOOP_FRACTION = 0.0
+
+
+_ENFORCE_ANGLE_TOL_DEG = 0.5
 
 
 
@@ -583,7 +591,7 @@ def regularize_coordinate_array(
     parallel_threshold: float,
     allow_45_degree: bool,
     diagonal_threshold_reduction: float,
-    angle_enforcement_tolerance: float = 0.1,
+    angle_enforcement_tolerance: float = _ENFORCE_ANGLE_TOL_DEG,
 ) -> tuple[Any, float]:
 
 
@@ -658,7 +666,7 @@ class RegularizeDials(NamedTuple):
     multi_min_group_weight: float = _MULTI_MIN_GROUP_WEIGHT_FRACTION
     tidy_min_edge_mult: float = _TIDY_MIN_EDGE_MULT
     tidy_chamfer_mult: float = _TIDY_CHAMFER_MULT
-    tidy: TidyDials = DEFAULT_TIDY_DIALS
+    tidy: TidyDials | None = None
     tidy_area_noop_frac: float = _TIDY_AREA_NOOP_FRACTION
     enforce_angle_tol_deg: float = _ENFORCE_ANGLE_TOL_DEG
 
@@ -671,7 +679,8 @@ _DEFAULT_DIALS = RegularizeDials()
 _TUNING_CACHE: list = []
 
 
-def _resolve_tuning_dials() -> tuple[TidyDials, float, float]:
+def _resolve_tuning_dials() -> tuple[TidyDials | None, float, float]:
+
 
 
     try:
@@ -680,17 +689,20 @@ def _resolve_tuning_dials() -> tuple[TidyDials, float, float]:
         token = _server_config()
         if _TUNING_CACHE and _TUNING_CACHE[0] is token:
             return _TUNING_CACHE[1]
+        tidy = resolve_tidy_dials()
+        noop = dial_in_range("tuning.review.tidy_area_noop_frac", -1.0, 0.0, 0.05)
+        if noop < 0.0:
+            tidy, noop = None, _TIDY_AREA_NOOP_FRACTION
         values = (
-            resolve_tidy_dials(),
-            dial_in_range("tuning.review.tidy_area_noop_frac",
-                          _TIDY_AREA_NOOP_FRACTION, 0.0, 0.05),
+            tidy,
+            noop,
             dial_in_range("tuning.review.enforce_angle_tol_deg",
                           _ENFORCE_ANGLE_TOL_DEG, 0.01, 1.0),
         )
         _TUNING_CACHE[:] = [token, values]
         return values
     except Exception:  # noqa: BLE001  # nosec B110
-        return DEFAULT_TIDY_DIALS, _TIDY_AREA_NOOP_FRACTION, _ENFORCE_ANGLE_TOL_DEG
+        return None, _TIDY_AREA_NOOP_FRACTION, _ENFORCE_ANGLE_TOL_DEG
 
 
 def _resolve_regularize_dials() -> RegularizeDials:

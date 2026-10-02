@@ -29,6 +29,7 @@ from .archive_utils import safe_extract_tar as _safe_extract_tar
 from .archive_utils import safe_extract_zip as _safe_extract_zip
 from .cache_paths import PLUGIN_CACHE_DIR, plugin_cache_tmp_dir, remove_tree_quietly
 from .gil_safe_qobject import prime as gil_safe
+from .install_config import capped_backoff_s
 from .logging_utils import log as _log
 from .model_config import IS_ROSETTA
 from .streamed_download import sleep_unless_cancelled
@@ -336,10 +337,11 @@ def _apply_resolved_proxy() -> Callable[[], None] | None:
         from qgis.core import QgsNetworkAccessManager
         from qgis.PyQt.QtNetwork import QNetworkProxy
 
+        from .gui_thread import on_gui_thread
         from .qt_compat import resolve_qt_enum
-        from .venv_network import _get_effective_proxy_url, _on_gui_thread
+        from .venv_network import _get_effective_proxy_url
 
-        if _on_gui_thread():
+        if on_gui_thread():
             return None
         proxy_url = _get_effective_proxy_url()
         if not proxy_url:
@@ -469,7 +471,7 @@ def download_uv(
             if aborted == "stalled":
                 error_msg = "the download stalled, no data was received"
             if attempt < max_retries - 1:
-                wait = backoff_base_s * (2 ** attempt)
+                wait = capped_backoff_s(backoff_base_s, attempt + 1)
                 _log(
                     f"uv download failed (attempt {attempt + 1}/{max_retries}): {error_msg}. "
                     f"Retrying in {wait}s...",

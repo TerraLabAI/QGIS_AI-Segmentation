@@ -206,6 +206,11 @@ class AutoFlowRunPlanMixin:
 
         self._auto_run_plan_task = None
         self._auto_run_plan_task_prompt = ""
+        from ...core.run_decisions import remember_plan
+        remember_plan(prompt, plan)
+
+        if self._late_plan_on_ready(prompt, plan, exemplar_size_m):
+            return
         try:
             self._store_auto_run_plan(
                 prompt, plan, exemplar_size_m, rewritten_from=rewritten_from)
@@ -321,6 +326,8 @@ class AutoFlowRunPlanMixin:
 
         self._auto_run_plan_task = None
         self._auto_run_plan_task_prompt = ""
+        if self._late_plan_on_failed(prompt):
+            return
         self._resume_detect_after_plan(prompt)
 
     def _headless_prompt_rewrite(self, object_class: str, plan: dict) -> str:
@@ -367,6 +374,7 @@ class AutoFlowRunPlanMixin:
 
 
 
+
         resumed = bool(getattr(self, "_auto_plan_detect_resumed", False))
         wait = getattr(self, "_auto_plan_detect_wait", None)
         if wait is not None and not resumed:
@@ -375,15 +383,17 @@ class AutoFlowRunPlanMixin:
             self._drop_detect_plan_wait()
         dock = self.dock_widget
         prompt = self._current_auto_object_class()
-        if dock is None or not prompt:
+        if dock is None:
             return True
-        token = self._resolve_object_token(prompt)
+
+        token = self._resolve_object_token(prompt) if prompt else ""
         plan = self._active_run_plan(token)
         if plan is not None:
-            try:
-                self._apply_prompt_rewrite(token, plan)
-            except Exception:  # noqa: BLE001
-                pass  # nosec B110
+            if token:
+                try:
+                    self._apply_prompt_rewrite(token, plan)
+                except Exception:  # noqa: BLE001
+                    pass  # nosec B110
             return True
         if resumed:
             return True

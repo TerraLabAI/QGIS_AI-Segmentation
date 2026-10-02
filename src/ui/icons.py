@@ -108,19 +108,6 @@ def ink_of(widget) -> QColor:
     return colour
 
 
-def paper_of(widget) -> QColor:
-
-
-    try:
-        return widget.palette().color(QPalette.ColorRole.Base)
-    except (AttributeError, RuntimeError):
-        from qgis.PyQt.QtWidgets import QApplication
-
-        app = QApplication.instance()
-        palette = app.palette() if app is not None else QPalette()
-        return palette.color(QPalette.ColorRole.Base)
-
-
 def _pen(color: QColor, width: float = 1.8) -> QPen:
     pen = QPen(color)
     pen.setWidthF(width)
@@ -1752,48 +1739,10 @@ def icon_for(widget, name: str, size: int = 20, color: QColor | None = None,
     return make_icon(name, QColor(ink), size, widget_pixel_ratio(widget), disabled_color)
 
 
-def icon_factory(name: str, size: int = 20, color: QColor | None = None):
-
-    return lambda widget: icon_for(widget, name, size, color)
-
-
 def pixmap_for(widget, name: str, size: int = 16, color: QColor | None = None) -> QPixmap:
 
     ink = color if color is not None else ink_of(widget)
     return render_pixmap(name, QColor(ink), size, widget_pixel_ratio(widget))
-
-
-
-
-
-_THEME_CACHE: dict = {}
-
-
-def theme_pixmap(widget, name: str, size: int = 18) -> QPixmap | None:
-
-
-
-
-
-    ratio = widget_pixel_ratio(widget)
-    key = (str(name), int(size), round(float(ratio), 2))
-    if key in _THEME_CACHE:
-        return _THEME_CACHE[key]
-    pixmap = None
-    try:
-        from qgis.core import QgsApplication
-
-        icon = QgsApplication.getThemeIcon(str(name))
-        if icon is not None and not icon.isNull():
-            physical = max(1, int(round(size * ratio)))
-            candidate = icon.pixmap(physical, physical)
-            if not candidate.isNull():
-                candidate.setDevicePixelRatio(ratio)
-                pixmap = candidate
-    except Exception:  # noqa: BLE001
-        pixmap = None
-    _THEME_CACHE[key] = pixmap
-    return pixmap
 
 
 def logo_pixmap(widget, size: int = 18) -> QPixmap:
@@ -1834,31 +1783,3 @@ def logo_size(height: int) -> QSize:
 
 def logo_icon(widget, size: int = 18) -> QIcon:
     return QIcon(logo_pixmap(widget, size))
-
-
-def spinner_frames(color: QColor, size: int = 14, count: int = 12, ratio: float = 1.0) -> list:
-
-    frames = []
-    for i in range(count):
-        physical = max(1, int(round(size * ratio)))
-        pixmap = QPixmap(physical, physical)
-        pixmap.setDevicePixelRatio(ratio)
-        pixmap.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(pixmap)
-        try:
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            pen = _pen(color, max(1.5, size / 7.0))
-            painter.setPen(pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            margin = pen.widthF()
-            rect = QRectF(margin, margin, size - 2 * margin, size - 2 * margin)
-            angle = int(-(360 / count) * i * 16)
-            painter.drawArc(rect, angle, 270 * 16)
-        finally:
-            painter.end()
-        frames.append(pixmap)
-    return frames
-
-
-def icon_size(size: int = 20) -> QSize:
-    return QSize(size, size)

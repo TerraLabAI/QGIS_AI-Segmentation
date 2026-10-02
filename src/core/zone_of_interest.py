@@ -26,12 +26,21 @@
 
 
 
+
+
+
+
+
+
+
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
 from qgis.core import (
+    QgsApplication,
     QgsCoordinateReferenceSystem,
     QgsCoordinateTransform,
     QgsDistanceArea,
@@ -54,7 +63,37 @@ ZONE_LABEL_ENTRY = "/ZoneOfInterestLabel"
 
 
 
-ZONE_LAYER_NAME = "Zone of interest"
+ZONE_SHAPES_PROPERTY = ZONE_PROPERTY + "/shapes_wkt"
+
+
+
+
+ZONE_LAYER_NAME = "Area of interest"
+
+
+
+
+
+
+
+ZONE_LAYER_NAMES = {
+    "de": "Interessengebiet",
+    "es": "Área de interés",
+    "fr": "Zone d’intérêt",
+    "id": "Area of interest",
+    "it": "Area di interesse",
+    "ja": "関心域",
+    "nl": "Interessegebied",
+    "pl": "Obszar zainteresowania",
+    "pt": "Área de interesse",
+    "zh_CN": "关注区域",
+    "zh_TW": "關注區域",
+}
+
+
+
+
+LEGACY_ZONE_LAYER_NAMES = ("Zone of interest",)
 
 
 
@@ -66,6 +105,28 @@ ZONE_OUTLINE_WIDTH_MM = 0.8
 
 
 MAX_UNION_FEATURES = 5000
+
+
+def zone_layer_name() -> str:
+
+    try:
+        locale = str(QgsApplication.locale() or "")
+    except Exception:  # noqa: BLE001
+        locale = ""
+    locale = locale.replace("-", "_")
+    lang = locale.split("_")[0].lower()
+    if lang == "zh":
+        hant = any(tag in locale.upper() for tag in ("TW", "HK", "MO", "HANT"))
+        return ZONE_LAYER_NAMES["zh_TW" if hant else "zh_CN"]
+    return ZONE_LAYER_NAMES.get(lang, ZONE_LAYER_NAME)
+
+
+def is_default_zone_name(name: str) -> bool:
+
+
+    text = str(name or "").strip().casefold()
+    defaults = (ZONE_LAYER_NAME, *ZONE_LAYER_NAMES.values(), *LEGACY_ZONE_LAYER_NAMES)
+    return bool(text) and any(text == d.casefold() for d in defaults)
 
 
 def polygon_geometry_type() -> Any:
@@ -169,11 +230,10 @@ def read_zone(project: Any = None) -> Zone | None:
     layer = zone_layer(project)
     if layer is None:
         return None
-    parts = []
-    for feature in layer.getFeatures():
-        geom = feature.geometry()
-        if geom is not None and not geom.isEmpty():
-            parts.append(QgsGeometry(geom))
+    parts = _zone_parts(layer)
+    if not parts and _refill_zone_layer(layer):
+
+        parts = _zone_parts(layer)
     if not parts:
         return None
     geom = parts[0] if len(parts) == 1 else union(parts)
@@ -186,6 +246,108 @@ def read_zone(project: Any = None) -> Zone | None:
         label = ""
     return Zone(geometry=geom, crs=layer.crs(), label=str(label or ""),
                 layer_id=layer.id())
+
+
+def _zone_parts(layer: QgsVectorLayer) -> list[QgsGeometry]:
+    parts = []
+    for feature in layer.getFeatures():
+        geom = feature.geometry()
+        if geom is not None and not geom.isEmpty():
+            parts.append(QgsGeometry(geom))
+    return parts
+
+
+
+
+
+def store_zone_shapes(layer: QgsVectorLayer) -> None:
+
+
+
+    if layer is None:
+        return
+    shapes = []
+    try:
+        for feature in layer.dataProvider().getFeatures():
+            geom = feature.geometry()
+            if geom is not None and not geom.isEmpty():
+                shapes.append(geom.asWkt())
+        layer.setCustomProperty(ZONE_SHAPES_PROPERTY, json.dumps(shapes))
+    except Exception:  # noqa: BLE001
+        return
+
+
+def stored_zone_shapes(layer: QgsVectorLayer) -> list[QgsGeometry] | None:
+
+
+    try:
+        raw = layer.customProperty(ZONE_SHAPES_PROPERTY, "")
+        items = json.loads(str(raw)) if raw else None
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(items, list):
+        return None
+    shapes = []
+    for wkt in items:
+        geom = QgsGeometry.fromWkt(str(wkt))
+        if geom is not None and not geom.isEmpty():
+            shapes.append(geom)
+    return shapes
+
+
+def store_project_zone_shapes(project: Any = None) -> None:
+
+
+
+
+
+
+
+    layer = zone_layer(project)
+    if layer is not None:
+        store_zone_shapes(layer)
+
+
+def _refill_zone_layer(layer: QgsVectorLayer) -> bool:
+
+
+
+    try:
+        provider = layer.dataProvider()
+        if provider is None or provider.name() != "memory" or layer.isEditable():
+            return False
+        if provider.featureCount() > 0:
+            return False
+    except Exception:  # noqa: BLE001
+        return False
+    shapes = stored_zone_shapes(layer)
+    if not shapes:
+        return False
+    features = []
+    for geom in shapes:
+        feature = QgsFeature(layer.fields())
+        feature.setGeometry(geom)
+        features.append(feature)
+    try:
+        provider.addFeatures(features)
+        layer.updateExtents()
+        layer.triggerRepaint()
+    except Exception:  # noqa: BLE001
+        return False
+    return provider.featureCount() > 0
+
+
+def restore_zone_layer(project: Any = None) -> bool:
+
+
+
+
+
+
+    layer = zone_layer(project)
+    if layer is None:
+        return False
+    return _refill_zone_layer(layer)
 
 
 
@@ -242,10 +404,14 @@ def write_zone(geometry: QgsGeometry, crs: QgsCoordinateReferenceSystem,
     fresh = layer is None
     if fresh:
         layer = QgsVectorLayer(f"Polygon?crs={crs.authid() or crs.toWkt()}",
-                               ZONE_LAYER_NAME, "memory")
+                               zone_layer_name(), "memory")
         if not layer.isValid():
             return None
         style_zone_layer(layer)
+    elif is_default_zone_name(layer.name()) and layer.name() != zone_layer_name():
+
+
+        layer.setName(zone_layer_name())
     provider = layer.dataProvider()
     existing = [f.id() for f in layer.getFeatures()]
     if existing:
@@ -255,6 +421,7 @@ def write_zone(geometry: QgsGeometry, crs: QgsCoordinateReferenceSystem,
     provider.addFeatures([feature])
     layer.updateExtents()
     layer.setCustomProperty(ZONE_PROPERTY, "1")
+    store_zone_shapes(layer)
     if approximate:
         layer.setCustomProperty(ZONE_PROPERTY + "/approximate", "1")
     else:
@@ -374,7 +541,7 @@ def zone_sources(project: Any = None, limit: int = 30) -> list[ZoneSource]:
     held = read_zone(proj)
     zone_id = held.layer_id if held is not None else ""
     if held is not None:
-        out.append(ZoneSource(kind="zone", label=held.label or ZONE_LAYER_NAME,
+        out.append(ZoneSource(kind="zone", label=held.label or zone_layer_name(),
                               layer_id=held.layer_id, feature_count=1,
                               area_km2=held.area_km2()))
     layers = [layer for layer in proj.mapLayers().values()
