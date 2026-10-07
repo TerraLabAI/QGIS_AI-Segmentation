@@ -1,0 +1,258 @@
+[general]
+name=AI Segmentation by TerraLab
+description=AI segmentation for QGIS: detect and extract building footprints, trees, vegetation or any object from your raster, then refine & export as vector polygons
+qgisMinimumVersion=3.22
+qgisMaximumVersion=4.99
+supportsQt6=True
+version=3.3.1
+author=Yvann and Lilien from TerraLab
+email=yvann.barbot@terra-lab.ai
+license=GPLv2
+
+
+about=
+    Draw a zone on your imagery, type what you want ("buildings", "trees", "solar panels") and get every match back as vector polygons. Or click one object and get its outline. It replaces tracing by hand.
+
+    • Automatic: every building, tree or other object inside the zone you draw, in one run, with a live preview. It runs on TerraLab servers, so no graphics card is needed
+
+    • Semi-Auto: click an object, add positive and negative points, get a clean outline. Pick "My computer" and it runs locally and offline, or "Cloud AI" and nothing needs downloading
+
+    • Works on the imagery you already have: orthophotos, drone and satellite images as GeoTIFF, JPG or PNG, and online basemaps (WMS, XYZ tiles)
+
+    • Review before you keep: right angles for buildings, expand, contract, simplify, round corners, fill holes, then export to GeoPackage, Shapefile or GeoJSON
+
+    • Installs itself: the model and its dependencies set up on first run, with no Python setup
+
+    • Free tier with no card. Plans and limits: https://terra-lab.ai/pricing
+
+    • Privacy: Semi-Auto on "My computer" sends nothing. "Cloud AI" sends a small image crop around each click to our servers. Automatic sends the imagery inside the zone you draw to our detection service
+
+    • Windows, macOS and Linux, QGIS 3.22 to QGIS 4
+
+    • 12 languages: English, French, Portuguese, Spanish, German, Italian, Dutch, Polish, Indonesian, Japanese, Chinese (simplified and traditional)
+
+changelog=
+    3.3.1
+    - Automatic: new Land cover mode maps your whole zone into classes, with their areas in hectares, a Minimum area setting and a styled export
+    - Examples library: browse examples by category and try one on its own image in one click
+    - Faster Automatic runs: shapes are built sooner and QGIS stays responsive during the run
+    - Semi-Auto: quicker first clicks, and Tab cycles through the other outlines
+    - Settings: choose how long your run history is kept
+    - Stability and reliability improvements, especially on Windows
+
+    3.3.0
+    - Automatic: a run cut by a lost connection carries on once the link is back, and its missing tiles can be continued instead of starting over
+    - Semi-Auto: faster first click on a slow connection, and Esc stops a click still waiting for the service
+    - Library: a run reopened from the history comes back with the same objects, colours and size filter
+    - Setup and online basemaps follow the proxy set in QGIS, including QGIS 4.2, Default Proxy and a host typed as a URL
+    - Exported shapes open cleanly in any GIS tool, and the shared area of interest is saved with the project
+    - Stability and reliability improvements, especially on macOS and on slow networks
+
+    3.2.0
+    - Review: right-drag a rectangle to delete every detection inside it, and show the detections hidden only by confidence in one press
+    - Semi-Auto: an object cut by the edge of the view is asked again on a wider area
+    - Sharper results on online basemaps: detection tiles and clicks use the finest zoom the basemap serves
+    - Update installs the new version straight from the plugin
+    - QGIS stays responsive while imagery is prepared, and the progress bar only moves forward
+    - Stability and reliability improvements
+
+    3.1.0
+    - Automatic: draw an example without a word and the tile size follows the object you drew; the Precision slider now goes further in both directions
+    - Automatic: a single example is put to better use, and a word typed in another language is understood
+    - Faster Automatic runs: Detect starts at once, shapes are built up to 1.5x faster while QGIS stays responsive, and the review opens about a fifth sooner
+    - Semi-Auto: faster clicks, and a smooth outline that Simplify reshapes live
+    - Right angles squares buildings more cleanly, and your zone of interest can be shared with AI Agent and AI Edit
+    - Many reliability improvements, especially on Windows and QGIS 4
+
+    3.0.1
+    - Smaller download: the same plugin, without the developer notes in its source
+
+    3.0.0
+    - Automatic: draw a zone, describe what to find, and every matching object comes back in one run, with a live tile preview and a confidence display
+    - A full interface redesign across Automatic, Semi-Auto, Review and Settings, matching AI Agent and AI Edit's look
+    - Library: past runs grouped by day with map previews, restore, export or run again from one card
+    - Segment Library: a gallery of ready prompts and presets to start a run faster
+    - Clearer account: credits gauge, plan status, and a simpler one-click activation
+    - Review: right angles for man-made shapes, and settings that adjust themselves to your prompt
+    - Steadier setup and display on Windows and QGIS 4
+    - Anonymous usage statistics, which you can turn off
+    - Stability and reliability improvements throughout
+    2.5.6
+    - Automatic: a zone too large to run can be resized straight from the Precision card
+    - Review: one press reveals the objects a filter is hiding
+    - Semi-Auto: switching layer keeps the shapes you already drew
+    - The update notice names the new version and installs it for you
+    - Stability and reliability improvements
+    2.5.5
+    - Automatic: large runs build their shapes several times faster, and the time estimate matches
+    - Automatic: a run's Detect button now carries the zone surface and the wait
+    - Farm field runs open the review at a cleaner cutoff
+    - Stability and reliability improvements
+    2.5.4
+    - Large zones run faster, and the progress bar now speaks in area done and time left
+    - The Library shows your past runs grouped by day, with restore, run again and export on every card
+    - Semi-Auto: the preview and the click now read the same picture, so what you see is what you get
+    - A steadier setup on Windows and macOS
+    - Interface polish and clearer messages throughout
+    - Stability and reliability improvements
+    2.5.3
+    - Minor maintenance and improvements
+    2.5.2
+    - Smoother, more reliable setup on Windows
+    - Clearer guidance when your machine or your network needs something from you
+    - Stability and reliability improvements
+    2.5.1
+    - A steadier install, and a smoother exit when you close QGIS mid-run
+    - Stability and reliability improvements
+    2.5.0
+    - Sharper results on wide zones: a big run reads as crisply as a small one
+    - See how long a run takes before you start it
+    - Faster shaping and export, so a long session keeps its pace
+    - Clearer run history, layer styling and attribute names
+    - Stability and interface refinements
+    2.4.4
+    - Instant answer when you click an object already outlined under your cursor
+    - Faster export, and quicker reopening of a past run
+    - Interface polish and refreshed translations
+    2.4.3
+    - Semi-Auto previews the shape under your cursor before you click
+    - The Outline settings and the map always agree, and your settings come back next session
+    - Type what you are looking for in your own language, and pick from the suggestions
+    - Every object in a run gets its own colour, so neighbours read apart
+    - A steadier install and a smoother run history
+    2.4.2
+    - A quicker, simpler first click in Semi-Auto
+    2.4.1
+    - Faster first click of a session
+    - Correct runs the same AI as the run itself, and reshaping stays free
+    - Take back your last point with the Undo button or Ctrl+Z
+    - The panel follows the map and the raster you are looking at
+    - Stability and interface refinements
+    2.4.0
+    - Manual mode is now Semi-automatic, and can answer every click on TerraLab's servers: nothing to download, results in seconds
+    - Faster cloud clicks, including the first of a session
+    - Clear pricing: saving an object costs one credit, correcting it costs nothing
+    - Cleaner outlines with fewer points, straight from the default settings
+    - Stability and reliability improvements
+    2.3.1
+    - Pick where the segmentation runs with one click: on your computer, or on TerraLab's servers
+    - Work straight away with no download, and clicking costs nothing
+    - The offline AI gets its own install window, with the size and the time up front
+    - Outlines keep their corners, with fewer points and a closer fit
+    - Stability and interface refinements
+    2.3.0
+    - The panel follows the text size you set in QGIS
+    - Installs behind a company network, proxy password included
+    - Fix a polygon by drawing the gesture you want, with the AI and by-hand methods side by side
+    - Every run measured and drawn in real ground metres
+    - Detections appear sooner, dense runs draw faster, shaping and export are quicker
+    - Clearer review wording at every step
+    - Stability and reliability improvements
+    2.2.1
+    - Every button, hint and message translated again in all 11 languages
+    2.2.0
+    - Fix a detection by hand: click it, then drag its corners or point at what the AI missed
+    - Draw a polygon the AI missed, delete one with a right-click, merge two into one, or split one in two
+    - Right angles follows the building's real edges instead of a box
+    - Every outline carries the number of points a person would draw
+    - Fill holes by size, and snap neighbours to a shared border, on the Keep step
+    - Reopen a past run, restore its polygons, and go back to its zone
+    - Detections appear while the run is still going, without slowing the map
+    - Faster review and export
+    - Runs on QGIS 4
+    2.1.10
+    - Prompts naming several objects now run the first object with a tip, instead of being blocked
+    - A detection that finds nothing now offers one-click example drawing, the best way to find unusual objects
+    - The panel now picks up already-loaded imagery reliably
+    - Smoother setup on machines with unusual disk configurations
+    2.1.9
+    - Steadier on the newest QGIS builds
+    - Clearer wording for your monthly free detections
+    2.1.8
+    - Compatibility fixes for the upcoming QGIS 4
+    2.1.7
+    - Manual export can now add polygons to an existing layer, not just a new one
+    - Refining a detection in Manual mode opens with your exact review settings and recovers if interrupted
+    - A cancelled Automatic run closes cleanly
+    - Improved stability when cancelling runs or switching modes
+    - Interface polish and refreshed translations in all 11 languages
+    2.1.6
+    - Undo stays dependable while the AI prepares your image in Manual mode
+    - Cleaner, consistent button styling on the review page
+    2.1.5
+    - Reference-image detection is more accurate: your example now matches your objects at the right scale, and the tile containing it points at the real object instead of a pasted copy
+    - Reference-image runs use at least two examples for far better results, with an optional example to exclude look-alikes once you have two
+    - Reference-image runs start stricter, so you see fewer weak look-alikes
+    - The detail level now sets itself correctly even when you describe your object in your own language
+    - Smoother editing on an online basemap
+    - Clearer guidance when an example is too small for the current detail level
+    - Smoother review after hand-refining detections
+    - More resilient installation, with clearer help if disk space runs out
+    2.1.4
+    - Automatic detection starts faster: the AI service begins warming up as soon as you describe what to segment
+    2.1.3
+    - Detections appear on the map faster during large runs
+    - A cancelled or exited run keeps everything already found
+    - One-click rescue actions when a run finds nothing
+    2.1.2
+    - Stop now cancels an in-progress detection instantly, even mid-request
+    - Cleaner polygons for large objects, with holes filled during the run
+    - More focused example drawing, with a streamlined set of examples per run
+    2.1.1
+    - Clearer feedback while the detection service is starting up, with a more reliable Cancel
+    - Smarter suggestions when a description doesn't match anything found in view
+    - Steadier tiles on online basemaps
+    - Fuller coverage when you give five or more examples
+    - Segment library labels and prompt recognition improved across supported languages
+    2.1.0
+    - Improved Automatic detection quality and recall, especially in dense scenes
+    - Default detail level is now tuned to the object you are detecting
+    - Cleaner, more consistent detections and merged polygons
+    - Stability and interface refinements
+    2.0.1
+    - Minor maintenance and stability improvements
+    2.0.0
+    - New Automatic mode: draw a zone, name what to find, and detect every instance in one run
+    - Draw an example directly on your own imagery to guide detection (show one, find the rest)
+    - Cloud-powered, no local install needed for Automatic mode
+    - Live credit estimate and progress, with instant cancel
+    - Review before you keep: tune confidence, simplify, expand or shrink, and fill holes with no re-run
+    - Hand-refine detections in Manual mode, then finish
+    - Detections deduplicated, smoothed, and saved as clean GeoPackage polygons
+    1.5.1
+    - Minor maintenance and stability improvements
+    1.5.0
+    - You can now read a version-by-version changelog right here in the Plugin Manager
+    1.4.9
+    - Stability and reliability improvements
+    1.4.8
+    - Connect with one-click browser sign-in (the manual key field is gone)
+    - New "Copy connection link" button to finish signing in from another browser
+    - Clearer sign-in wording and more readable Account settings text
+    1.4.7
+    - Plays nicely alongside AI Edit when both plugins are installed
+    1.4.6
+    - A steadier install, with more room for antivirus scanning to finish
+    - Install messages name the real cause
+    1.4.5
+    - Works behind authenticated corporate proxies, with guidance to enter your proxy credentials
+    - Clearer messages for rasters that cannot be read
+    1.4.4
+    - Export works from read-only and cloud-synced folders, and always tells you where the result landed
+    1.4.3
+    - A calmer install cancel
+    - A half-finished install is resumed cleanly when you retry
+
+tracker=https://github.com/TerraLabAI/QGIS_AI-Segmentation/issues
+repository=https://github.com/TerraLabAI/QGIS_AI-Segmentation
+homepage=https://terra-lab.ai/ai-segmentation
+
+hasProcessingProvider=yes
+
+tags=segmentation, segment anything, instance segmentation, image segmentation, ai, artificial intelligence, machine learning, deep learning, neural network, computer vision, object detection, feature extraction, classification, building detection, raster, satellite, satellite imagery, satellite images, remote sensing, remote-sensing, aerial, orthophoto, ortofoto, drone, uav, sentinel, sentinel-2, landsat, geotiff, multispectral, buildings, vegetation, vectorization, vector, vetor, vector layer, polygon, polygons, digitizing, gpkg, geopackage, georeferencing, georreferenciamento, urban planning, agriculture, forestry, ia
+
+category=Raster
+icon=resources/icons/icon.png
+
+experimental=False
+deprecated=False
