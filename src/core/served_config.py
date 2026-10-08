@@ -78,7 +78,6 @@ REQUIRED_SERVED_KEYS: dict[str, str] = {
     "detection_policy.review.merge.score_floor_frac": "number",
     "detection_policy.review.merge.seam_span_ios": "number",
     "detection_policy.review.merge.seam_span_tol": "number",
-    "detection_policy.review.semantic_rescue.coverage_floor": "number",
     "detection_policy.seed.detail_coarse_travel_ratio": "number",
     "detection_policy.seed.detail_fine_travel_ratio": "number",
     "detection_policy.seed.drawn_object_tile_frac": "number",
@@ -86,25 +85,45 @@ REQUIRED_SERVED_KEYS: dict[str, str] = {
     "detection_policy.seed.object_min_px": "number",
     "detection_policy.seed.recall_floor": "number",
     "detection_policy.seed.recall_floor_exemplar_only": "number",
-    "detection_policy.seed.saturation.cap_trigger_frac": "number",
     "detection_policy.seed.saturation.compact_min_fill": "number",
-    "detection_policy.seed.saturation.hard_cover_shape_escape": "bool",
     "detection_policy.seed.saturation.hard_tile_coverage": "number",
     "detection_policy.seed.saturation.max_masks_per_tile": "number",
     "detection_policy.seed.saturation.max_tile_coverage": "number",
-    "detection_policy.seed.saturation.min_keep_floor_m2": "number",
-    "detection_policy.seed.saturation.min_keep_px": "number",
     "detection_policy.seed.saturation.resplit_time_ratio": "number",
     "detection_policy.seed.saturation.subdiv_max_depth": "number",
     "detection_policy.seed.saturation.subdivide_min_parent_px": "number",
     "detection_policy.seed.saturation.subdivide_overlap_fraction": "number",
-    "detection_policy.seed.saturation.tile_span_fraction": "number",
     "detection_policy.seed.split_risk_tile_frac": "number",
     "detection_policy.seed.sweet_spot_max_mupp": "number",
     "detection_policy.seed.tile_plan.slider_half_steps": "number",
     "detection_policy.seed.tile_plan.slider_step_ratio": "number",
     "detection_policy.seed.zone_seed_mupp": "number",
     "tuning.review.flat_score_tolerance": "number",
+}
+
+
+
+
+_RUN_ONLY_PREFIXES = (
+    "detection_policy.auto_regularize.",
+    "detection_policy.gate.",
+    "detection_policy.review.boundary_snap.",
+    "detection_policy.review.closed_canopy_advice.",
+    "detection_policy.review.merge.",
+    "detection_policy.seed.recall_floor",
+    "detection_policy.seed.saturation.",
+)
+
+
+REQUIRED_CONFIG_KEYS: dict[str, str] = {
+    key: kind for key, kind in REQUIRED_SERVED_KEYS.items()
+    if not key.startswith(_RUN_ONLY_PREFIXES)
+}
+
+
+REQUIRED_RUN_KEYS: dict[str, str] = {
+    key: kind for key, kind in REQUIRED_SERVED_KEYS.items()
+    if key.startswith(_RUN_ONLY_PREFIXES)
 }
 
 
@@ -270,25 +289,44 @@ def _served_kind_matches(kind: str, value: Any) -> bool:
     return value is not None
 
 
+def _missing_keys(root: Any, keys: dict[str, str], strip: str = "") -> list[str]:
+    gaps: list[str] = []
+    for key, kind in keys.items():
+        value: Any = root
+        for part in key[len(strip):].split("."):
+            value = value.get(part) if isinstance(value, dict) else None
+        if not _served_kind_matches(kind, value):
+            gaps.append(key)
+    return gaps
+
+
 def missing_served_values(config: Any) -> tuple[str, ...]:
 
 
 
 
+
     if not isinstance(config, dict):
-        return ("config_schema", *REQUIRED_SERVED_KEYS)
+        return ("config_schema", *REQUIRED_CONFIG_KEYS)
     gaps: list[str] = []
     schema = config.get("config_schema")
     if (not _is_finite_served_number(schema) or schema < REQUIRED_CONFIG_SCHEMA
             or float(schema) != int(schema)):
         gaps.append("config_schema")
-    for key, kind in REQUIRED_SERVED_KEYS.items():
-        value: Any = config
-        for part in key.split("."):
-            value = value.get(part) if isinstance(value, dict) else None
-        if not _served_kind_matches(kind, value):
-            gaps.append(key)
+    gaps.extend(_missing_keys(config, REQUIRED_CONFIG_KEYS))
     return tuple(gaps)
+
+
+def missing_run_policy_values(policy: Any) -> tuple[str, ...]:
+
+
+
+
+    keys = {key: kind for key, kind in REQUIRED_SERVED_KEYS.items()
+            if key.startswith(_POLICY_PREFIX)}
+    if not isinstance(policy, dict):
+        return tuple(keys)
+    return tuple(_missing_keys(policy, keys, _POLICY_PREFIX))
 
 
 

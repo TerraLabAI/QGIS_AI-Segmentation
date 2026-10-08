@@ -84,6 +84,7 @@ class AutoTilePlanMixin:
         default_m = zone_seed_mupp() * TILE_SIZE
         frac = tile_fit_object_frac()
         size_m, floor_m = self._detail_window_profile(token, layer, zone_in_layer)
+
         ceiling_m = object_tile_ceiling_m(token) if token else 0.0
 
 
@@ -109,7 +110,8 @@ class AutoTilePlanMixin:
                     band_pair = (_positive_number(band[0]), _positive_number(band[1]))
                 route = _positive_number(block.get("route_floor_m")) or floor_m
                 size = _positive_number(block.get("size_m")) or size_m
-                ceiling = _positive_number(block.get("ceiling_m")) or ceiling_m
+
+                ceiling = _positive_number(block.get("ceiling_m"))
                 return TilePrior(
                     tile_ground_m=tile_m, source=REASON_PRIOR_PLAN,
                     band_m=band_pair, size_m=size, fit_frac=frac,

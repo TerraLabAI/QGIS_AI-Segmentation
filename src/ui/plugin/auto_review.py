@@ -471,10 +471,11 @@ class AutoReviewMixin:
                 or not self._auto_review):
             return 0, 0
         from ...core.server_dials import dial_in_range
+
         max_shown = int(dial_in_range(
-            "tuning.review.hidden_hint_max_shown", 5, 0, 50))
+            "tuning.review.hidden_hint_max_shown", 0, 0, 50))
         min_share = float(dial_in_range(
-            "tuning.review.hidden_hint_min_share", 0.7, 0.3, 1.0))
+            "tuning.review.hidden_hint_min_share", 1.0, 0.3, 1.0))
 
         if visible < 1 or visible > max_shown:
             return 0, 0
@@ -741,6 +742,8 @@ class AutoReviewMixin:
         review = self._auto_review
         if not review:
             return None
+        import time as _time
+        started_at = _time.monotonic()
         if not autosave:
 
 
@@ -793,7 +796,8 @@ class AutoReviewMixin:
         return {"review": review, "refined": refined,
                 "refined_scores": refined_scores, "conf_applied": conf_applied,
                 "include_hidden": include_hidden, "autosave": autosave,
-                "run_id": str(getattr(self, "_auto_run_id", "") or "")}
+                "run_id": str(getattr(self, "_auto_run_id", "") or ""),
+                "started_at": started_at}
 
     def _conclude_auto_review_export(self, collected: dict,
                                      name: str | None) -> tuple[str | None, int]:
@@ -909,6 +913,8 @@ class AutoReviewMixin:
         except Exception:  # noqa: BLE001  # nosec B110
             pass
         try:
+            import time as _time
+
             from ...core import telemetry_run_events, telemetry_session_events
             from .auto_client_profile import review_pass_profile
             found = len(self._auto_objects)
@@ -924,6 +930,7 @@ class AutoReviewMixin:
                 refined_in_manual=getattr(self, "_auto_refined_in_manual", False),
                 autosave=autosave,
                 pass_profile=pass_profile,
+                export_ms=int((_time.monotonic() - collected["started_at"]) * 1000),
             )
             if refined:
                 telemetry_session_events.track_first_generation_milestone(mode="auto")
@@ -1263,14 +1270,14 @@ class AutoReviewMixin:
 
                     return
                 self._reset_auto_for_new_run()
-                self._signal_gpu_session_end("review_exit")
+                self._signal_cloud_session_end("review_exit")
                 return
             if clicked != "discard":
                 return
         self._discard_review_without_autosave(
             exit_path="exit_button")
         self._reset_auto_for_new_run()
-        self._signal_gpu_session_end("review_exit")
+        self._signal_cloud_session_end("review_exit")
 
     def _on_auto_retry_clicked(self) -> bool:
 
@@ -1361,7 +1368,7 @@ class AutoReviewMixin:
                 self.dock_widget.reset_auto_to_start()
             except (RuntimeError, AttributeError):
                 pass
-        self._signal_gpu_session_end("auto_exit")
+        self._signal_cloud_session_end("auto_exit")
 
 
 def _release_run_policy() -> None:

@@ -256,6 +256,23 @@ class EnvSetupActivationMixin:
 
 
 
+        if self._pairing_v2_reopen(code):
+            return
+        state = self._pairing_v2
+        if state is not None and state.legacy and not state.ended and state.attempt_id == code:
+            self._start_legacy_pairing(code)
+            return
+        self._pairing_v2_begin(code)
+
+    def _start_legacy_pairing(self, code: str):
+
+
+
+
+
+
+
+
 
 
 
@@ -343,7 +360,8 @@ class EnvSetupActivationMixin:
         except RuntimeError:
             pass  # nosec B110
 
-    def _start_pairing_poll(self, client, code: str) -> None:
+    def _start_pairing_poll(self, client, code: str, status_only: bool = False,
+                            total_timeout_s: float | None = None) -> None:
 
 
 
@@ -369,8 +387,11 @@ class EnvSetupActivationMixin:
         from qgis.core import QgsApplication
 
         from ...workers.pairing_poll_task import PairingPollTask
+        if total_timeout_s is None:
+            total_timeout_s = PairingPollTask.CODE_TTL_S
         self._pairing_worker = PairingPollTask(
-            client, code, live_codes=self._pairing_live_codes())
+            client, code, total_timeout_s=total_timeout_s,
+            live_codes=self._pairing_live_codes(), status_only=status_only)
         self._pairing_worker.pairing_succeeded.connect(self._on_pairing_succeeded)
         self._pairing_worker.pairing_failed.connect(self._on_pairing_failed)
         self._pairing_worker.pairing_timeout.connect(self._on_pairing_timeout)
@@ -379,6 +400,10 @@ class EnvSetupActivationMixin:
 
         self._pairing_worker.pairing_stalled.connect(self._on_pairing_stalled)
         QgsApplication.taskManager().addTask(self._pairing_worker)
+
+    def _announce_pairing_started(self) -> None:
+
+
         import time as _time
         self._pairing_t0 = _time.monotonic()
         try:
@@ -487,6 +512,19 @@ class EnvSetupActivationMixin:
             self._reset_credits_backoff()
             self._refresh_auto_credits()
 
+
+
+
+
+
+
+        try:
+            from ...core.server_dials import feature_enabled
+            if feature_enabled("activation_wake"):
+                self._maybe_warmup_auto()
+        except Exception:  # noqa: BLE001  # nosec B110
+            pass
+
     def _start_sibling_sign_in(self) -> None:
         from ...core.server_dials import feature_enabled
         if not feature_enabled("sibling_sign_in"):
@@ -512,7 +550,7 @@ class EnvSetupActivationMixin:
         if not result.get("ok") or not self.dock_widget or is_plugin_activated():
             return
         worker = self._pairing_worker
-        if worker is not None and worker.is_active():
+        if (worker is not None and worker.is_active()) or self._pairing_v2_active():
             return
         key = str(result.get("key") or "")
         if not ACTIVATION_KEY_RE.match(key):
@@ -538,6 +576,8 @@ class EnvSetupActivationMixin:
 
     def _on_pairing_succeeded(self, key: str):
 
+
+        self._pairing_v2_end()
         self._pairing_live_codes().clear_codes()
         self._cancel_pairing_quiet_worker()
         self._adopt_signed_in_key(key)
@@ -581,6 +621,7 @@ class EnvSetupActivationMixin:
             pass
 
     def _on_pairing_failed(self, message: str, code: str):
+        self._pairing_v2_end()
         if self.dock_widget:
             self.dock_widget.show_pairing_idle()
             self.dock_widget.set_activation_message(message, is_error=True)
@@ -635,6 +676,7 @@ class EnvSetupActivationMixin:
         self.dock_widget.set_activation_message(message, is_error=False, kind="info")
 
     def _on_pairing_timeout(self):
+        self._pairing_v2_end()
         if self.dock_widget:
             self.dock_widget.show_pairing_idle()
             self.dock_widget.set_activation_message(
@@ -655,6 +697,8 @@ class EnvSetupActivationMixin:
 
     def _cancel_pairing_worker(self):
 
+
+        self._pairing_v2_end()
         self._cancel_pairing_quiet_worker()
         if self._pairing_worker is not None and self._pairing_worker.is_active():
             try:
@@ -715,6 +759,11 @@ class EnvSetupActivationMixin:
             pass
 
     def _on_cancel_pairing(self, code: str = ""):
+
+        server_code = self._pairing_v2_server_code()
+        v2_attempt = self._pairing_v2 is not None and not self._pairing_v2.legacy
+        if v2_attempt:
+            code = ""
         self._cancel_pairing_worker()
 
         self._clear_pairing_address()
@@ -728,6 +777,8 @@ class EnvSetupActivationMixin:
 
         live = self._pairing_live_codes()
         codes = [c for c in live.live_codes() if c != code] + ([code] if code else [])
+        if server_code:
+            codes.append(server_code)
         live.clear_codes()
         if codes:
 

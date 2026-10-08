@@ -106,6 +106,22 @@ def end_windows_worker_process(handle, wait_s: float = 2.0) -> None:
         pass  # nosec B110
 
 
+def worker_start_timings(ready: dict, spawned_at: float | None) -> dict | None:
+
+
+
+
+
+
+    init_read_at, load_ms = ready.get("init_read_at"), ready.get("load_ms")
+    numbers = (int, float)
+    if (spawned_at is None or isinstance(init_read_at, bool) or isinstance(load_ms, bool)
+            or not isinstance(init_read_at, numbers) or not isinstance(load_ms, numbers)):
+        return None
+    return {"worker_boot_ms": max(0, int(round((init_read_at - spawned_at) * 1000.0))),
+            "model_load_ms": max(0, int(load_ms))}
+
+
 class SamPredictor:
 
 
@@ -161,6 +177,11 @@ class SamPredictor:
 
 
         self.last_answer_was_remote = False
+
+
+
+        self._spawned_at: float | None = None
+        self._start_timings: dict | None = None
 
         QgsMessageLog.logMessage(
             "SAM Predictor initialized (subprocess mode)",
@@ -409,6 +430,10 @@ class SamPredictor:
             except Exception:
                 self._stderr_file = None
 
+
+
+            self._spawned_at = time.time()
+            self._start_timings = None
             self.process = subprocess.Popen(  # nosec B603
                 cmd,
                 stdin=subprocess.PIPE,
@@ -515,8 +540,12 @@ class SamPredictor:
                     if sys.platform == "win32" and self._worker_handle is None:
                         self._worker_handle = open_windows_worker_handle(
                             response.get("pid"))
+                    self._start_timings = worker_start_timings(response, self._spawned_at)
+                    started = self._start_timings
                     QgsMessageLog.logMessage(
-                        "Prediction worker ready",
+                        "Prediction worker ready" + (
+                            f" (boot {started['worker_boot_ms']} ms, model load "
+                            f"{started['model_load_ms']} ms)" if started else ""),
                         "AI Segmentation",
                         level=Qgis.MessageLevel.Success
                     )
@@ -652,6 +681,12 @@ class SamPredictor:
                 job["done"].set()
                 return False
             return True
+
+    def take_start_timings(self) -> dict | None:
+
+
+        timings, self._start_timings = self._start_timings, None
+        return timings
 
     def cleanup(self) -> None:
         pending = self._cancel_pending_launch()

@@ -405,10 +405,95 @@ class AutoRunLifecycleMixin:
             "window_setbacks": setbacks,
             "tiles_timed_out": int(self.tiles_timed_out),
             "tiles_answered": int(self.tiles_succeeded),
+
+
+            "tile_filters_missing": int(getattr(self, "tiles_filters_missing", 0)),
             "http_429": int(self.http_429),
             "http_503": int(self.http_503),
+            **self._answer_time_profile(),
+            **self._server_time_profile(),
+            "tiles_rejected": int(self.tiles_rejected),
+            "masks_received": int(self.masks_received),
+            "tiles_answered_empty": int(self.tiles_answered_empty),
+            "raw_detections_total": int(self.raw_detections_total),
+            "tiles_skipped_network": int(self.tiles_skipped_network),
+            "tiles_unavailable": int(self.tiles_unavailable),
+            "tile_misses": self.tile_miss_summary(),
             "loop": loop,
         }
+
+    def _answer_time_profile(self) -> dict:
+
+
+        times = sorted(self._answer_times)
+        if not times:
+            return {}
+
+        def _at(q: float) -> int:
+            return int(round(times[min(len(times) - 1, int(q * len(times)))] * 1000))
+        return {"answer_p50_ms": _at(0.5), "answer_p95_ms": _at(0.95)}
+
+    def _record_server_timing(self, response, answer_s: float | None,
+                              keep: bool = True) -> None:
+
+
+
+
+
+
+
+        if not isinstance(response, dict):
+            return
+        timing = response.pop("server_timing", None)
+        if not keep or not isinstance(timing, dict):
+            return
+        total = timing.get("total")
+        queue = timing.get("queue")
+        if isinstance(queue, float):
+            self._server_queue_ms.append(queue)
+        if not isinstance(total, float):
+            return
+        self._server_total_ms.append(total)
+        if answer_s is not None:
+            self._wire_ms.append(max(0.0, answer_s * 1000.0 - total))
+
+    def _server_time_profile(self) -> dict:
+
+
+
+        if not self._server_total_ms:
+            return {}
+
+        def _at(values: list[float], q: float) -> int:
+            ordered = sorted(values)
+            return int(round(ordered[min(len(ordered) - 1, int(q * len(ordered)))]))
+        out = {"server_p50_ms": _at(self._server_total_ms, 0.5),
+               "server_p95_ms": _at(self._server_total_ms, 0.95),
+               "server_timed_tiles": len(self._server_total_ms)}
+        if self._server_queue_ms:
+            out["server_queue_p50_ms"] = _at(self._server_queue_ms, 0.5)
+        if self._wire_ms:
+            out["wire_p50_ms"] = _at(self._wire_ms, 0.5)
+        return out
+
+    def tile_miss_summary(self) -> str:
+
+
+
+
+
+
+
+        counts = dict(self.tiles_skipped_by_reason)
+        for reason, n in (("rejected", self.tiles_rejected),
+                          ("failed_server", self.tiles_failed_server),
+                          ("timeout", self.tiles_timed_out),
+                          ("unavailable", self.tiles_unavailable),
+                          ("answered_empty", self.tiles_answered_empty)):
+            if n:
+                counts[reason] = counts.get(reason, 0) + int(n)
+        ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        return ",".join(f"{reason}:{n}" for reason, n in ranked if n)
 
     def _emit_run_phase(self, name: str) -> None:
 
@@ -703,6 +788,8 @@ class AutoRunLifecycleMixin:
 
 
         self.tiles_skipped_network += 1
+        reason = self._tile_last_error.pop(tile_idx, "skipped_network")
+        self.tiles_skipped_by_reason[reason] = self.tiles_skipped_by_reason.get(reason, 0) + 1
         self._release_run_fields(tile_idx)
         self._release_tile_clean_image(tile_idx)
         self._emit_warning(f"Tile {tile_idx}: submit retries exhausted; skipping")

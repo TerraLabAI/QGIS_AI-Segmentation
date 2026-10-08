@@ -22,6 +22,7 @@ from ....core.surface_dials import (
     library_mask_budget_max_s,
     library_mask_budget_per_tile_s,
 )
+from ....core.tile_filter_answer import stored_model_mask_count
 from .common import _history_error
 
 
@@ -287,11 +288,29 @@ class _RunFetchWorker(QThread):
 
 
 
+
+
         for key in ("threshold", "mask_threshold", "crs_authid", "pixel_size_m", "decisions",
-                    "zone_keep_margin_m"):
+                    "zone_keep_margin_m", "run_policy", "resolved"):
             if self._run.get(key) is None and detail.get(key) is not None:
                 self._run[key] = detail.get(key)
+        self._fetch_restore_plan()
         return tiles
+
+    def _fetch_restore_plan(self) -> None:
+
+
+
+
+        prompt = str(self._run.get("prompt") or "").strip()
+        if self._export is not None or not prompt or self._run.get("restore_plan") is not None:
+            return
+        try:
+            plan = self._client.get_seg_run_plan(prompt, None, None, auth=self._auth)
+        except Exception:  # noqa: BLE001
+            return
+        if isinstance(plan, dict) and not plan.get("error"):
+            self._run["restore_plan"] = plan
 
     def _fetch_masks(self, tiles: list) -> tuple:
 
@@ -331,7 +350,16 @@ class _RunFetchWorker(QThread):
                 masks = self._validated_masks(resp, tiles_by_id[rid])
                 if masks is not None:
                     masks_per_tile[rid] = masks
-                    if self._mask_count_complete(len(masks), tiles_by_id[rid]):
+
+
+                    record = resp.get("tile_filters") if isinstance(resp, dict) else None
+                    if isinstance(record, dict) and not isinstance(
+                            tiles_by_id[rid].get("tile_filters"), dict):
+                        tiles_by_id[rid]["tile_filters"] = record
+
+
+                    if self._mask_count_complete(
+                            stored_model_mask_count(masks), tiles_by_id[rid]):
                         complete_tiles.add(rid)
             if self._fetch_cancelled():
                 self.cancelled.emit()
@@ -348,7 +376,8 @@ class _RunFetchWorker(QThread):
                     resp = self._client.get_detection_status(rid, self._auth)
                     masks = self._validated_masks(resp, tiles_by_id[rid])
                     if masks is not None:
-                        complete = self._mask_count_complete(len(masks), tiles_by_id[rid])
+                        complete = self._mask_count_complete(
+                            stored_model_mask_count(masks), tiles_by_id[rid])
                         if (complete or rid not in masks_per_tile
                                 or len(masks) > len(masks_per_tile[rid])):
                             masks_per_tile[rid] = masks
@@ -418,13 +447,17 @@ class _RunFetchWorker(QThread):
         if self._fetch_cancelled():
             self.cancelled.emit()
             return None
+        from ....core.detection_policy_core import policy_scope
+        from ...plugin.run_restore import restore_run_policy
+
         total = len(tiles)
         try:
-            decoded = decode_run_masks(
-                self._run, tiles, masks_per_tile, self._merge_separate,
-                on_tile=lambda done, _total: self.progress.emit(
-                    "decode", done, total),
-                is_cancelled=self._fetch_cancelled)
+            with policy_scope(restore_run_policy(self._run)[0]):
+                decoded = decode_run_masks(
+                    self._run, tiles, masks_per_tile, self._merge_separate,
+                    on_tile=lambda done, _total: self.progress.emit(
+                        "decode", done, total),
+                    is_cancelled=self._fetch_cancelled)
         except Exception as err:  # noqa: BLE001
             if self._fetch_cancelled():
                 self.cancelled.emit()

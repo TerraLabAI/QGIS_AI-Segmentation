@@ -26,6 +26,8 @@
 
 
 
+
+
 from __future__ import annotations
 
 import time
@@ -114,6 +116,8 @@ def reset_run_profile(plugin) -> None:
     plugin._auto_client_profile = {}
     plugin._auto_longest_silence_s = 0.0
     plugin._auto_detect_done_mono = None
+    plugin._auto_first_tile_mono = None
+    plugin._auto_first_polygon_mono = None
     plugin._auto_finalize_s = 0.0
     plugin._auto_finalize_phase_s = {}
     plugin._auto_align_runner = ""
@@ -163,6 +167,8 @@ def snapshot_worker_profile(plugin, worker) -> None:
         note_run_stage("finalize")
     except Exception:  # noqa: BLE001  # nosec B110
         pass
+    if getattr(plugin, "_auto_first_tile_mono", None) is None:
+        plugin._auto_first_tile_mono = getattr(worker, "first_answer_mono", None)
     profile = dict(getattr(plugin, "_auto_client_profile", None) or {})
     if worker is not None and not profile:
         try:
@@ -206,6 +212,11 @@ def client_profile_props(plugin) -> dict:
             if done is not None:
                 profile["detect_wall_s"] = max(0.0, done - started)
             profile["end_to_end_s"] = max(0.0, now - started)
+            for key, attr in (("t_first_tile_s", "_auto_first_tile_mono"),
+                              ("t_first_polygon_s", "_auto_first_polygon_mono")):
+                at = getattr(plugin, attr, None)
+                if at is not None:
+                    profile[key] = max(0.0, at - started)
         finalize_s = float(getattr(plugin, "_auto_finalize_s", 0.0) or 0.0)
         if finalize_s:
             profile["finalize_s"] = finalize_s

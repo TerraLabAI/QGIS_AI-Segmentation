@@ -455,6 +455,7 @@ class AutoRunLoopsMixin:
                                     else self._submit_at.pop(tile_idx, None))
                     uploaded_at = (None if second_pass
                                    else self._uploaded_at.pop(tile_idx, None))
+                    answer_s = None
                     if submitted_at is not None:
 
 
@@ -463,11 +464,15 @@ class AutoRunLoopsMixin:
 
                         left = uploaded_at if uploaded_at is not None else submitted_at
                         self.phase_upload_s += left - submitted_at
-                        self.phase_predict_s += time.monotonic() - left
-                        self._answer_times.append(time.monotonic() - left)
+                        answer_s = time.monotonic() - left
+                        self.phase_predict_s += answer_s
+                        self._answer_times.append(answer_s)
                         if left - submitted_at > self._upload_slow_s:
                             self.uploads_slow += 1
                             cycle_setback = True
+
+
+                    self._record_server_timing(resp, answer_s, keep=not second_pass)
 
 
 
@@ -544,6 +549,7 @@ class AutoRunLoopsMixin:
 
                     bad_code = outcome[1] or "UNKNOWN"
                     fatal_streak += 1
+                    self.tiles_rejected += 1
                     self._emit_warning(
                         f"Tile {tile_idx}: rejected ({bad_code}); skipping")
                     self._release_tile_clean_image(tile_idx)
@@ -661,6 +667,7 @@ class AutoRunLoopsMixin:
                     if outcome[0] == "completed_inline":
                         _, resp, ttf = outcome
                         _, _, tile_w, tile_h = tile_spec
+                        self._record_server_timing(resp, None, keep=not second_pass)
                         self._self_ex_take_answer(tile_idx, resp)
                         if self._emit_completed(resp, tile_idx, tile_w, tile_h, ttf):
                             self.tiles_succeeded += 1
@@ -828,6 +835,8 @@ class AutoRunLoopsMixin:
 
                         _, response, tile_transform = outcome
                         _, _, tile_w, tile_h = tile_spec
+
+                        self._record_server_timing(response, None)
                         self._cache_answer(tile_idx, response)
                         if self._emit_completed(
                             response, tile_idx, tile_w, tile_h, tile_transform
@@ -860,6 +869,7 @@ class AutoRunLoopsMixin:
 
                         bad_code = outcome[1] or "UNKNOWN"
                         fatal_streak += 1
+                        self.tiles_rejected += 1
                         self._emit_warning(
                             f"Tile {tile_idx}: rejected ({bad_code}); skipping")
                         self._release_tile_clean_image(tile_idx)

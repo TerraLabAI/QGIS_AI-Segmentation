@@ -90,16 +90,10 @@ def _zone_mask(zone_px, r0: int, r1: int, c0: int, c1: int):
 
     if zone_px is None:
         return None
-    import json
+    from .polygon_masks import rasterize_touched_mask
 
-    import numpy as np
-    from rasterio.features import rasterize
-    from rasterio.transform import Affine
-
-    return rasterize([(json.loads(zone_px.asJson()), 1)],
-                     out_shape=(r1 - r0, c1 - c0),
-                     transform=Affine(1.0, 0.0, c0, 0.0, 1.0, r0),
-                     fill=0, all_touched=True, dtype="uint8").astype(np.bool_)
+    return rasterize_touched_mask(bytes(zone_px.asWkb()), r1 - r0, c1 - c0,
+                                  (float(c0), 1.0, 0.0, float(r0), 0.0, 1.0))
 
 
 def _merge_slivers(pieces: list, min_area: float = 1.0) -> list:
@@ -149,15 +143,10 @@ def build_partition_blocked(grid, geo: dict, zone_wkb: bytes | None,
 
 
     import numpy as np
-    from qgis.core import QgsGeometry, QgsPointXY
+    from qgis.core import QgsGeometry
     from qgis.PyQt.QtGui import QTransform
 
-    from .land_cover import smooth_class_edges
-    from .venv_manager import ensure_venv_packages_available
-
-    ensure_venv_packages_available()
-    from rasterio.features import shapes
-    from rasterio.transform import Affine
+    from .land_cover import class_patches_wkb, smooth_class_edges
 
     smooth = smooth or smooth_class_edges
     minx, miny, maxx, maxy = geo["bbox"]
@@ -203,13 +192,10 @@ def build_partition_blocked(grid, geo: dict, zone_wkb: bytes | None,
             del folded
             present.update(int(c) for c in np.unique(core) if c != NODATA)
             pieces = []
-            for shape, value in shapes(core, mask=core != NODATA, connectivity=4,
-                                       transform=Affine(1.0, 0.0, bc0, 0.0, 1.0, br0)):
-                rings = [[QgsPointXY(x, y) for x, y in ring]
-                         for ring in shape.get("coordinates", [])]
-                if not rings:
-                    continue
-                geom = QgsGeometry.fromPolygonXY(rings)
+            for value, wkb in class_patches_wkb(
+                    core, (float(bc0), 1.0, 0.0, float(br0), 0.0, 1.0)):
+                geom = QgsGeometry()
+                geom.fromWkb(wkb)
                 if engine is not None and not engine.contains(geom.constGet()):
                     if not engine.intersects(geom.constGet()):
                         continue

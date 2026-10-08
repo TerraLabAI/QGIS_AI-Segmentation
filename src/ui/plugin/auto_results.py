@@ -680,6 +680,8 @@ class AutoResultsMixin:
                         pfid = out.id()
                         if pfid is not None and pfid >= 0:
                             fid_map[fid] = (pfid, latest[fid][2])
+                if ok and getattr(self, "_auto_first_polygon_mono", None) is None:
+                    self._auto_first_polygon_mono = _time.monotonic()
                 changed = True
             if geom_changes:
                 pr.changeGeometryValues(geom_changes)

@@ -30,6 +30,7 @@
 from __future__ import annotations
 
 import math
+import struct
 
 import numpy as np
 
@@ -135,69 +136,208 @@ def smooth_mask(mask, sigma_px: float, size_fraction: float = 0.0):
     return out.astype(m.dtype, copy=False)
 
 
-def _cut_ring(pts: list, cut: float) -> list:
-
-    n = len(pts)
-    if n < 4:
-        return pts
-    out = []
-    for i in range(n):
-        ax, ay = pts[i]
-        bx, by = pts[(i + 1) % n]
-        dx, dy = bx - ax, by - ay
-        length = math.hypot(dx, dy)
-        if length <= 0:
-            continue
-        d = min(cut, 0.5 * length)
-        ux, uy = dx / length, dy / length
-        p = (ax + ux * d, ay + uy * d)
-        q = (bx - ux * d, by - uy * d)
-        if not out or out[-1] != p:
-            out.append(p)
-        if q != p:
-            out.append(q)
-    if len(out) > 1 and out[0] == out[-1]:
-        out.pop()
-    return out if len(out) >= 3 else pts
-
-
-def cut_corners(geom, cut: float):
+def _cut_ring_corners(xy: np.ndarray, counts: np.ndarray, cut: float):
 
 
 
-    if geom is None or cut <= 0:
-        return geom
+
+
+
+
+
+
+
+
+
+    n_rings = len(counts)
+    end = np.cumsum(counts)
+    start = end - counts
+    last = end - 1
+    closed = (counts > 1) & (xy[start, 0] == xy[last, 0]) & (xy[start, 1] == xy[last, 1])
+    body = np.ones(len(xy), dtype=bool)
+    body[last[closed]] = False
+    x, y = xy[body, 0], xy[body, 1]
+    m = counts - closed
+    m_start = np.cumsum(m) - m
+    ring_of = np.repeat(np.arange(n_rings), m)
+    nxt = np.arange(1, len(x) + 1)
+    nxt[m_start + m - 1] = m_start
+    bx, by = x[nxt], y[nxt]
+    dx, dy = bx - x, by - y
+    length = np.hypot(dx, dy)
+
+
+    slanted = np.flatnonzero((dx != 0) & (dy != 0))
+    if slanted.size:
+        length[slanted] = np.fromiter(
+            map(math.hypot, dx[slanted].tolist(), dy[slanted].tolist()),
+            dtype=np.float64, count=slanted.size)
+    edge = (m >= 4)[ring_of] & ~(length <= 0)
+    ax, ay, bx, by, dx, dy, length, er = (
+        v[edge] for v in (x, y, bx, by, dx, dy, length, ring_of))
+    step = np.minimum(cut, 0.5 * length)
+    ux, uy = dx / length, dy / length
+    px, py = ax + ux * step, ay + uy * step
+    qx, qy = bx - ux * step, by - uy * step
+
+
+    emit = np.empty(2 * len(er), dtype=bool)
+    emit[:1] = True
+    emit[2::2] = (er[1:] != er[:-1]) | (px[1:] != qx[:-1]) | (py[1:] != qy[:-1])
+    emit[1::2] = (qx != px) | (qy != py)
+    sx = np.empty(2 * len(er))
+    sx[0::2], sx[1::2] = px, qx
+    sy = np.empty(2 * len(er))
+    sy[0::2], sy[1::2] = py, qy
+    ox, oy, out_ring = sx[emit], sy[emit], np.repeat(er, 2)[emit]
+    got = np.bincount(out_ring, minlength=n_rings)
+    got_end = np.cumsum(got)
+    got_start = got_end - got
+    two = np.flatnonzero(got > 1)
+    first, final_pt = got_start[two], got_end[two] - 1
+    drop = np.zeros(n_rings, dtype=bool)
+    drop[two] = (ox[first] == ox[final_pt]) & (oy[first] == oy[final_pt])
+    got -= drop
+    cut_ok = (m >= 4) & (got >= 3)
+
+    final_n = np.where(cut_ok, got, m) + 1
+    final_end = np.cumsum(final_n)
+    final_start = final_end - final_n
+    fx = np.empty(int(final_end[-1]))
+    fy = np.empty(len(fx))
+    at = np.arange(len(ox)) - got_start[out_ring]
+    take = np.flatnonzero(cut_ok[out_ring] & (at < got[out_ring]))
+    dest = final_start[out_ring[take]] + at[take]
+    fx[dest], fy[dest] = ox[take], oy[take]
+    kept = np.flatnonzero(~cut_ok[ring_of])
+    if kept.size:
+        ring = ring_of[kept]
+        dest = final_start[ring] + kept - m_start[ring]
+        fx[dest], fy[dest] = x[kept], y[kept]
+    fx[final_end - 1], fy[final_end - 1] = fx[final_start], fy[final_start]
+    return np.column_stack((fx, fy)), final_n
+
+
+_WKB_POLYGON_2D = b"\x01\x03\x00\x00\x00"
+_WKB_MULTIPOLYGON_2D = b"\x01\x06\x00\x00\x00"
+
+
+def _plain_polygon_wkb(geom) -> bytes | None:
+
+
+
+
+    from qgis.core import QgsGeometry
+
+    if geom is None or geom.isEmpty():
+        return None
+    wkb = bytes(geom.asWkb())
+    if wkb[:5] in (_WKB_POLYGON_2D, _WKB_MULTIPOLYGON_2D):
+        return wkb
+    plain = (QgsGeometry.fromMultiPolygonXY(geom.asMultiPolygon())
+             if geom.isMultipart()
+             else QgsGeometry.fromPolygonXY(geom.asPolygon()))
+    if plain is None or plain.isEmpty():
+        return None
+    return bytes(plain.asWkb())
+
+
+def _polygon_wkb_rings(wkb: bytes):
+
+
+    view = memoryview(wkb)
+    multi = wkb[1] == 6
+    off, n_parts = (9, struct.unpack_from("<I", wkb, 5)[0]) if multi else (0, 1)
+    headers, ring_counts, rings = [], [], []
+    for _ in range(n_parts):
+        if wkb[off:off + 5] != _WKB_POLYGON_2D:
+            return None
+        n_rings = struct.unpack_from("<I", wkb, off + 5)[0]
+        headers.append(wkb[off:off + 9])
+        ring_counts.append(n_rings)
+        off += 9
+        for _ in range(n_rings):
+            n = struct.unpack_from("<I", wkb, off)[0]
+            if n == 0:
+                return None
+            rings.append(view[off + 4:off + 4 + 16 * n])
+            off += 4 + 16 * n
+    return headers, ring_counts, rings
+
+
+def cut_corners(geometries: list, cut: float) -> list:
+
+
+
+
+
+
+
+
+
+    out = list(geometries)
+    if cut <= 0 or not out:
+        return out
     try:
-        from qgis.core import QgsGeometry, QgsPointXY
+        layouts, rings = [], []
+        for geom in out:
+            try:
+                wkb = _plain_polygon_wkb(geom)
+                layout = _polygon_wkb_rings(wkb) if wkb is not None else None
+            except Exception:  # noqa: BLE001
+                layout = None
+            if layout is None:
+                layouts.append(None)
+                continue
 
-        if geom.isEmpty():
-            return geom
-        multi = bool(geom.isMultipart())
-        polys = geom.asMultiPolygon() if multi else [geom.asPolygon()]
-        out_polys = []
-        for poly in polys:
-            rings = []
-            for ring in poly:
-                pts = [(p.x(), p.y()) for p in ring]
-                if len(pts) > 1 and pts[0] == pts[-1]:
-                    pts = pts[:-1]
-                cut_pts = _cut_ring(pts, cut)
-                ring_out = [QgsPointXY(x, y) for x, y in cut_pts]
-                ring_out.append(QgsPointXY(cut_pts[0][0], cut_pts[0][1]))
-                rings.append(ring_out)
-            out_polys.append(rings)
-        result = (QgsGeometry.fromMultiPolygonXY(out_polys) if multi
-                  else QgsGeometry.fromPolygonXY(out_polys[0]))
-        if result is None or result.isEmpty():
-            return geom
+            layouts.append((wkb[:9] if wkb[1] == 6 else b"", layout))
+            rings += layout[2]
+        if not rings:
+            return out
+        xy = np.frombuffer(b"".join(rings), dtype="<f8").reshape(-1, 2)
+        counts = np.fromiter(map(len, rings), dtype=np.int64, count=len(rings)) // 16
+        final, final_n = _cut_ring_corners(xy, counts, cut)
+        coords = memoryview(final.astype("<f8", copy=False).tobytes())
+        count_bytes = final_n.astype("<u4").tobytes()
+        sizes = final_n.tolist()
+    except Exception:  # noqa: BLE001
+        return out
+    ring = pos = 0
+    for index, plan in enumerate(layouts):
+        if plan is None:
+            continue
+        head, (headers, ring_counts, _rings) = plan
+        pieces = [head]
+        for header, n_rings in zip(headers, ring_counts):
+            pieces.append(header)
+            for _ in range(n_rings):
+                size = sizes[ring]
+                pieces += (count_bytes[4 * ring:4 * ring + 4], coords[16 * pos:16 * (pos + size)])
+                ring += 1
+                pos += size
+        result = _outline_from_wkb(b"".join(pieces))
+        if result is not None:
+            out[index] = result
+    return out
+
+
+def _outline_from_wkb(wkb: bytes):
+
+    try:
+        from qgis.core import QgsGeometry
+
+        result = QgsGeometry()
+        result.fromWkb(wkb)
+        if result.isEmpty():
+            return None
         if not result.isGeosValid():
             fixed = result.makeValid()
             if fixed is None or fixed.isEmpty() or not fixed.isGeosValid():
-                return geom
+                return None
             result = fixed
         return result
     except Exception:  # noqa: BLE001
-        return geom
+        return None
 
 
 def simplify_outline(geom, tolerance: float):

@@ -517,6 +517,8 @@ class DockBuildMixin:
         self._pairing_status.setStyleSheet(_MUTED_LINE_QSS)
         wait_layout.addWidget(self._pairing_status)
 
+        self._build_pairing_code_entry(wait_layout)
+
         btn_row = QHBoxLayout()
         btn_row.setSpacing(SPACE_CARD)
         self._pairing_reopen_btn = QPushButton(tr("Open again"))
@@ -586,6 +588,7 @@ class DockBuildMixin:
 
         self._connect_section.setVisible(False)
         self.activation_message_label.setVisible(False)
+        self._set_pairing_code_entry_visible(False)
         self._pairing_wait_section.setVisible(True)
         self._pairing_anim_timer.start()
 

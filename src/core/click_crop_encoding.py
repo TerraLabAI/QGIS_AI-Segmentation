@@ -83,12 +83,12 @@ _UPLINK_FLOOR_MAX = 1_000_000.0
 
 
 
-_UPLINK_HYSTERESIS = 0.25
+
+_UPLINK_HYSTERESIS = 0.0
 
 
 
-
-_UPLINK_SMOOTHING = 0.4
+_UPLINK_SMOOTHING = 1.0
 
 
 
@@ -128,7 +128,7 @@ _pack_cost: dict[str, tuple[float, float]] = {}
 
 
 
-_PACK_HYSTERESIS = 0.10
+_PACK_HYSTERESIS = 0.0
 
 
 
@@ -139,9 +139,7 @@ _PROFILE_SETTING = "TerraLab/click_crop_profile"
 
 
 
-
-
-_REMEMBERED_UPLINK_DISCOUNT = 0.5
+_REMEMBERED_UPLINK_DISCOUNT = 1.0
 
 
 def _uplink_hysteresis() -> float:

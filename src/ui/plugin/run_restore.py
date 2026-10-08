@@ -279,7 +279,6 @@ def _run_stored_float(run: dict, tiles: list, key: str) -> float:
 
 
 
-
     sources = [run]
     sources.extend(t for t in tiles if isinstance(t, dict))
     for src in sources:
@@ -291,12 +290,24 @@ def _run_stored_float(run: dict, tiles: list, key: str) -> float:
 
 def _run_simplify_mult(run: dict, tiles: list) -> float:
 
-    return _run_stored_float(run, tiles, "tile_simplify_mult")
+
+    stored = _run_stored_float(run, tiles, "tile_simplify_mult")
+    if stored > 0:
+        return stored
+    from ...core.detection_policy import tile_simplify_mult
+
+    return tile_simplify_mult(0.0)
 
 
 def _run_pinhole_m(run: dict, tiles: list) -> float:
 
-    return _run_stored_float(run, tiles, "pinhole_m")
+
+    stored = _run_stored_float(run, tiles, "pinhole_m")
+    if stored > 0:
+        return stored
+    from ...core.detection_policy import pinhole_fill_m
+
+    return pinhole_fill_m(0.0)
 
 
 def _run_ground_unit_metres(crs, tiles: list) -> tuple[float, float]:
@@ -400,6 +411,20 @@ def run_merge_separate(plugin, run: dict) -> bool:
     del plugin, run
     capture_project_export_context()
     return True
+
+
+def restore_run_policy(run: dict) -> tuple[dict | None, dict | None]:
+
+
+
+    from ...core.detection_policy_core import plan_run_policy
+
+    for source in (run.get("restore_plan"), run):
+        policy = plan_run_policy(source)
+        if policy is not None:
+            resolved = source.get("resolved")
+            return policy, resolved if isinstance(resolved, dict) else None
+    return None, None
 
 
 def _run_decisions(run: dict) -> dict | None:
@@ -560,11 +585,6 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
         if not tile_crs.isValid() or tile_crs != run_crs:
             raise ValueError("Archived tiles use inconsistent coordinate reference systems")
 
-
-
-
-    max_tile_coverage = detection_policy.max_tile_coverage()
-
     gsd = _run_gsd(tiles)
     simplify_mult = _run_simplify_mult(run, tiles)
     pinhole_m = _run_pinhole_m(run, tiles)
@@ -611,12 +631,9 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
 
 
 
-
-
-    min_keep_px = detection_policy.min_keep_px()
+    min_keep_px, min_keep_floor_m2 = detection_policy.sliver_floor()
     min_keep_area = (
-        max((min_keep_px * gsd) ** 2,
-            detection_policy.min_keep_floor_m2(0.0) / area_scale)
+        max((min_keep_px * gsd) ** 2, min_keep_floor_m2 / area_scale)
         if gsd > 0 else 0.0
     )
 
@@ -649,13 +666,21 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
     exemplar_only = not (run.get("prompt") or "").strip()
     from ...core.hypothesis_nms import select_tile_hypotheses
     from ...core.server_dials import dial_bool
-    from ...workers.auto_detection_worker import AutoDetectionWorker
+    from ...core.tile_filter_answer import (
+        fills_oriented_box,
+        mask_spans_tile,
+        read_tile_filters,
+    )
 
     nms_kwargs = {k: merge_scalars[k] for k in (
         "ios_threshold", "dup_ios_floor", "dup_centroid_frac") if k in merge_scalars}
-    frag_hard_cov = detection_policy.hard_tile_coverage()
-    frag_min_fill = detection_policy.compact_min_fill()
     if exemplar_only:
+
+
+
+        max_tile_coverage = detection_policy.max_tile_coverage()
+        frag_hard_cov = detection_policy.hard_tile_coverage()
+        frag_min_fill = detection_policy.compact_min_fill()
         frag_tile_area = (TILE_SIZE * gsd) ** 2 if gsd > 0 else 0.0
 
 
@@ -664,11 +689,7 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
 
 
 
-
     text_nms = merge_separate or dial_bool("features.map_hypothesis_nms", False)
-    shape_escape = detection_policy.hard_cover_shape_escape()
-    span_fraction = detection_policy.tile_span_fraction()
-    map_cover_floor = detection_policy.map_cover_score_floor(0.0)
 
     decoded_tiles = 0
     total = len(tiles)
@@ -690,6 +711,11 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
             "width": tile.get("output_width"),
             "height": tile.get("output_height"),
         }
+
+
+
+        if isinstance(tile.get("tile_filters"), dict):
+            response["tile_filters"] = tile["tile_filters"]
         tile_transform = {
 
             "bbox": (xmin, xmax, ymin, ymax),
@@ -701,6 +727,8 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
             tile, tile.get("output_width"), tile.get("output_height"))
         tile_had_masks = False
         tile_frags: list = []
+        span_test = (merge_separate and not exemplar_only
+                     and not read_tile_filters(response).filtered)
 
 
 
@@ -730,18 +758,9 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
             if set_pixels == 0:
                 continue
             row0, col0 = mask.row0, mask.col0
-            blob_check = False
-            if not exemplar_only and set_pixels > max_tile_coverage * float(full_h * full_w):
-                coverage = set_pixels / float(full_h * full_w)
-                if merge_separate:
-                    if coverage > frag_hard_cov and not shape_escape:
-                        continue
-                    if (mask.col1 - col0 + 1 >= span_fraction * full_w
-                            and mask.row1 - row0 + 1 >= span_fraction * full_h):
-                        continue
-                    blob_check = True
-                elif map_cover_floor > 0.0 and float(score) < map_cover_floor:
-                    continue
+            if span_test and mask_spans_tile(
+                    col0, mask.col1, row0, mask.row1, full_w, full_h):
+                continue
 
             sub = mask.padded()
 
@@ -790,9 +809,6 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
 
                 if min_keep_area > 0.0 and geom.area() < min_keep_area:
                     continue
-                if blob_check and not AutoDetectionWorker._is_compact_shape(
-                        geom, frag_min_fill):
-                    continue
                 tile_frags.append((geom, float(score)))
         if not exemplar_only and tile_frags:
             if text_nms:
@@ -805,7 +821,7 @@ def decode_run_masks(run: dict, tiles: list, masks_per_tile: dict,
                     cov = geom.area() / frag_tile_area
                     if cov > frag_hard_cov:
                         continue
-                    if cov > max_tile_coverage and not AutoDetectionWorker._is_compact_shape(
+                    if cov > max_tile_coverage and not fills_oriented_box(
                             geom, frag_min_fill):
                         continue
                 merger.add(geom, score)
@@ -1223,6 +1239,14 @@ def restore_run(plugin, run: dict, tiles: list, decoded: dict) -> bool:
     plugin._reset_auto_live_pipeline()
     plugin._auto_merger = None
     plugin._auto_worker = None
+
+
+    from ...core.detection_policy_core import pin_run_policy
+    restore_policy, restore_resolved = restore_run_policy(run)
+    pin_run_policy(restore_policy, restore_resolved)
+    if isinstance(run.get("restore_plan"), dict) and prompt:
+        from ...core.run_decisions import remember_plan
+        remember_plan(prompt, run["restore_plan"])
     plugin._auto_headless_run = False
 
 
@@ -1288,6 +1312,7 @@ def restore_run(plugin, run: dict, tiles: list, decoded: dict) -> bool:
     merged_scored = _align_restore_footprints(plugin, merged_scored)
     plugin._auto_objects = plugin._build_auto_objects(merged_scored)
     if not plugin._auto_objects:
+        pin_run_policy(None)
         return False
 
 

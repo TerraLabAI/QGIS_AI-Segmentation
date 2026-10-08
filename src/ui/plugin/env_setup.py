@@ -24,6 +24,7 @@ from .env_setup_install import (
     _bump_install_attempt,
     _clear_install_attempts,
 )
+from .env_setup_pairing_v2 import EnvSetupPairingV2Mixin
 from .env_setup_startup import (
     _VCREDIST_URL,
     EnvSetupStartupMixin,
@@ -34,6 +35,7 @@ class EnvSetupMixin(
     EnvSetupStartupMixin,
     EnvSetupInstallMixin,
     EnvSetupActivationMixin,
+    EnvSetupPairingV2Mixin,
     EnvSetupAccountMixin,
 ):
     pass

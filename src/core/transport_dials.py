@@ -167,6 +167,13 @@ def api_timeout_ms(fallback: int) -> int:
     return dial_in_range("network.timeouts.api_ms", fallback, 2000, 120_000)
 
 
+def restore_masks_timeout_ms(fallback: int) -> int:
+
+
+
+    return dial_in_range("network.timeouts.restore_masks_ms", api_timeout_ms(fallback), 2000, 120_000)
+
+
 def interactive_timeout_ms(fallback: int) -> int:
 
     return dial_in_range("network.timeouts.interactive_ms", fallback, 2000, 60_000)
@@ -204,6 +211,14 @@ def retry_pause_window_s(fallback: tuple[float, float]) -> tuple[float, float]:
 
     low = dial_in_range("network.retry.pause_min_s", fallback[0], 0, 10)
     high = dial_in_range("network.retry.pause_max_s", fallback[1], 0, 30)
+    return (low, high) if low <= high else fallback
+
+
+def unavailable_retry_pause_window_s(fallback: tuple[float, float]) -> tuple[float, float]:
+
+
+    low = dial_in_range("network.retry.unavailable_pause_min_s", fallback[0], 0, 10)
+    high = dial_in_range("network.retry.unavailable_pause_max_s", fallback[1], 0, 30)
     return (low, high) if low <= high else fallback
 
 

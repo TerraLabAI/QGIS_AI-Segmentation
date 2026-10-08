@@ -104,6 +104,10 @@ def config_context() -> dict:
     return {name: value for name, value in values if value}
 
 
+
+SESSION_POLICY_PARAM = "session"
+
+
 def config_query(product: str) -> str:
 
 
@@ -116,4 +120,7 @@ def config_query(product: str) -> str:
         params.update(config_context())
     except Exception:  # noqa: BLE001  # nosec B110
         pass
+
+
+    params["policy"] = SESSION_POLICY_PARAM
     return f"/api/plugin/config?{urlencode(params)}"

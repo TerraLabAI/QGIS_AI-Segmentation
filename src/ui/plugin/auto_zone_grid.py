@@ -270,10 +270,7 @@ class AutoZoneGridMixin:
 
 
 
-                    from ...core.detection_policy import (
-                        gsd_warn_max_mupp,
-                        object_tile_ceiling_m,
-                    )
+                    from ...core.detection_policy import gsd_warn_max_mupp
                     from ...core.tile_manager import TILE_SIZE
                     object_class = self._resolved_auto_object_class()
                     floor_m = self._detail_window_profile(object_class)[1]
@@ -286,8 +283,7 @@ class AutoZoneGridMixin:
 
 
 
-                    ceiling_m = (object_tile_ceiling_m(object_class)
-                                 if object_class else 0.0)
+                    ceiling_m = self._detail_window_ceiling_m(object_class)
                     too_coarse = (tile_ground_m > ceiling_m if ceiling_m > 0
                                   else ground_mupp >= gsd_warn_max_mupp(math.inf))
                     self.dock_widget.set_auto_detail_gsd_warning(

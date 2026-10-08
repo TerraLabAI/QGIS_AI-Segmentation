@@ -45,7 +45,8 @@ _TILE_IMAGE_FORMAT: str = "JPEG"
 _TILE_JPEG_QUALITY: int = 95
 
 
-_ARCHIVE_JPEG_QUALITY: int = 80
+
+_ARCHIVE_JPEG_QUALITY: int = _TILE_JPEG_QUALITY
 
 
 def _save_jpeg(image, buf, quality: int) -> None:
@@ -91,12 +92,13 @@ def _tile_jpeg_quality() -> int:
 
 
 
-_STAMP_PAD: int = 3
 
 
 
 
-_STAMP_MAX: int = 195
+
+_STAMP_PAD: int = 2
+_STAMP_MAX: int = 1 << 16
 
 
 def should_paste_stamp(

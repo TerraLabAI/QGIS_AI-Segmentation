@@ -4988,8 +4988,8 @@ blokkeert de lokale AI-omgeving van de plugin.</translation>
         <translation>2. Naar support sturen</translation>
     </message>
     <message>
-        <source>200 km² of Automatic a month, on zones of any size.</source>
-        <translation>200 km² per maand in de Automatische modus, op zones van elke grootte.</translation>
+        <source>{km2} km² of Automatic a month, on zones of any size.</source>
+        <translation>{km2} km² per maand in de Automatische modus, op zones van elke grootte.</translation>
     </message>
     <message>
         <source>200 km² of Automatic every month, on zones of any size</source>
@@ -5296,8 +5296,8 @@ blokkeert de lokale AI-omgeving van de plugin.</translation>
         <translation>Pro geeft u 500 cloudobjecten per maand in Semi-Auto.</translation>
     </message>
     <message>
-        <source>Pro raises the month to 200 km² of Automatic.</source>
-        <translation>Pro verhoogt je maandtegoed voor de Automatische modus naar 200 km².</translation>
+        <source>Pro raises the month to {km2} km² of Automatic.</source>
+        <translation>Pro verhoogt je maandtegoed voor de Automatische modus naar {km2} km².</translation>
     </message>
     <message>
         <source>Pro: 500 cloud objects a month in Semi-Auto with Cloud AI, and 200 km² of Automatic. Same AI, same free clicks and corrections, every machine you work on.</source>

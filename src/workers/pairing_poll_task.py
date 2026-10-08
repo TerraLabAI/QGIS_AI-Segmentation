@@ -18,6 +18,7 @@ from ..core.i18n import tr
 from ..core.logging_utils import log
 from ..core.server_dials import dial_in_range
 from .adaptive_concurrency import OfflineFastFail
+from .pairing_v2 import pairing_cancelled_message, pairing_no_plan_message
 
 
 class LivePairingCodes:
@@ -88,6 +89,10 @@ class PairingPollTask(QgsTask):
     pairing_stalled = pyqtSignal(str)
 
 
+
+    pairing_confirmed = pyqtSignal()
+
+
     STALL_BROWSER_NOT_SEEN = "browser_not_seen"
 
     STALL_CODE_EXPIRED = "code_expired"
@@ -129,6 +134,8 @@ class PairingPollTask(QgsTask):
         total_timeout_s: float = CODE_TTL_S,
         live_codes: LivePairingCodes | None = None,
         quiet: bool = False,
+        *,
+        status_only: bool = False,
     ):
         super().__init__(tr("Connecting AI Segmentation"), QgsTask.Flag.CanCancel)
         self._client = client
@@ -139,6 +146,9 @@ class PairingPollTask(QgsTask):
 
 
         self._quiet = quiet
+
+
+        self._status_only = status_only
         self._key: str | None = None
         self._failure: tuple[str, str] | None = None
         self._timed_out = False
@@ -180,7 +190,7 @@ class PairingPollTask(QgsTask):
             if not isinstance(result, dict):
                 continue
             status = result.get("status")
-            if status == "ready":
+            if status == "ready" and not self._status_only:
                 raw_key = result.get("activation_key")
                 key = raw_key.strip() if isinstance(raw_key, str) else ""
                 if ACTIVATION_KEY_RE.match(key):
@@ -203,6 +213,21 @@ class PairingPollTask(QgsTask):
             self._sleep_cancellable(interval_s)
         return False
 
+    def _page_opened(self, status, result) -> bool:
+
+
+
+
+
+
+
+
+
+        if not self._status_only or status == "confirmed":
+            return True
+        page_opened = result.get("page_opened") if isinstance(result, dict) else None
+        return page_opened is not False
+
     def _retire_own_code(self) -> None:
         if self._live_codes is not None:
             self._live_codes.discard_code(self._code)
@@ -218,6 +243,7 @@ class PairingPollTask(QgsTask):
         last_logged_detail = ""
         offline_streak = 0
         rounds = 0
+        confirmed_seen = False
         while not self.isCanceled() and time.monotonic() < deadline:
             rounds += 1
             try:
@@ -267,24 +293,14 @@ class PairingPollTask(QgsTask):
 
 
                 self._retire_own_code()
-                self._failure = (
-                    tr(
-                        "This account has no active AI Segmentation plan. "
-                        "Reactivate it on terra-lab.ai, then click Sign in again."
-                    ),
-                    "NO_PLAN",
-                )
+                self._failure = (pairing_no_plan_message(), "NO_PLAN")
                 return False
 
             if status == "cancelled":
 
 
                 self._retire_own_code()
-                self._failure = (
-                    tr("Sign-in was cancelled in the browser. Click Sign in to "
-                       "try again."),
-                    "CANCELLED",
-                )
+                self._failure = (pairing_cancelled_message(), "CANCELLED")
                 return False
 
 
@@ -303,7 +319,11 @@ class PairingPollTask(QgsTask):
             code_ttl_s = self._total_timeout_s
             expiry_hint_lead_s = dial_in_range(
                 "tuning.pairing.expiry_hint_lead_s", self.EXPIRY_HINT_LEAD_S, 5.0, 120.0)
-            if status == "pending" and not error_code and not browser_seen:
+            if status == "confirmed" and not confirmed_seen:
+                confirmed_seen = True
+                self.pairing_confirmed.emit()
+            if (status in ("pending", "confirmed") and not error_code and not browser_seen
+                    and self._page_opened(status, result)):
                 browser_seen = True
                 self.pairing_browser_seen.emit()
             elif not browser_seen and not stall_hinted and waited_s >= stall_after_s:

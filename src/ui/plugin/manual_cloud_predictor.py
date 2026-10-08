@@ -167,8 +167,8 @@ class ManualCloudPredictorMixin:
             return True
         try:
             from ...core.activation_manager import get_auth_header
+            from ...core.cloud_click_predictor import CloudClickPredictor
             from ...core.cloud_first_predictor import CloudFirstPredictor
-            from ...core.cloud_sam_predictor import CloudSamPredictor
 
             if not self._cloud_correct_predictor_active():
 
@@ -184,7 +184,7 @@ class ManualCloudPredictorMixin:
 
             ledger = getattr(self, "_manual_credit_ledger", None)
             self.predictor = CloudFirstPredictor(
-                CloudSamPredictor(
+                CloudClickPredictor(
                     auth=get_auth_header(),
                     session_id=getattr(ledger, "session_id", None)),
                 local_source=lambda: getattr(self, "_local_predictor_held", None),
@@ -286,6 +286,15 @@ class ManualCloudPredictorMixin:
         try:
             from ...core import telemetry_session_events
 
+            on_cloud = (self._manual_cloud_predictor_active()
+                        or self._cloud_correct_predictor_active())
+            if clock is not None and not on_cloud:
+
+
+                take_start = getattr(getattr(self, "predictor", None),
+                                     "take_start_timings", None)
+                if take_start is not None:
+                    clock.note_worker_start(take_start())
             phases = clock.phase_properties() if clock is not None else {}
             if clock is not None:
                 line = clock.summary_line()
@@ -294,8 +303,6 @@ class ManualCloudPredictorMixin:
                     line += f", score {float(score):.3f}"
                 QgsMessageLog.logMessage(line, "AI Segmentation",
                                          level=Qgis.MessageLevel.Info)
-            on_cloud = (self._manual_cloud_predictor_active()
-                        or self._cloud_correct_predictor_active())
             wider_crop = getattr(self, "_wider_crop_outcome", None)
             wider_trigger = getattr(self, "_wider_crop_trigger", None)
             self._wider_crop_outcome = None

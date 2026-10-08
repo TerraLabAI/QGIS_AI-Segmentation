@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import difflib
+import math
 import re
 import time
 import unicodedata
@@ -36,8 +37,8 @@ from ...core.surface_dials import multi_object_pattern
 
 
 
-_PROMPT_MAX_WORDS_FALLBACK = 2
-_PROMPT_MAX_CHARS_FALLBACK = 30
+_PROMPT_MAX_WORDS_FALLBACK = 4
+_PROMPT_MAX_CHARS_FALLBACK = 60
 
 
 
@@ -77,6 +78,34 @@ _PROMPT_REFERENTIAL_FALLBACK = {"near", "between", "behind"}
 
 
 _PROMPT_PLURAL_KEEP_FALLBACK = {"species", "series", "lens"}
+
+
+
+
+_PROMPT_MODIFIER_FALLBACK = {
+    "red", "green", "blue", "white", "black", "yellow", "orange", "grey",
+    "gray", "brown", "pink", "purple", "dark", "light", "large", "small",
+    "big", "little", "tall", "long", "short", "wide", "narrow", "new", "old",
+}
+
+
+
+
+_PROMPT_VAGUE_FALLBACK = {
+    "area", "zone", "region", "part", "section", "surface", "block", "border",
+    "boundary", "edge", "center", "centre", "corner", "middle", "square",
+    "rectangle", "circle", "row", "line", "patch", "district", "polygon",
+    "shape", "place", "location", "spot",
+}
+
+
+
+
+
+_TYPO_MAX_EDITS_FALLBACK = ((5, 1), (9, 2))
+
+
+_TYPO_FOREIGN_MIN_LEN_FALLBACK = 8
 
 
 
@@ -127,7 +156,7 @@ def _build_prompt_tables(policy: dict) -> dict:
 
     def _as_int(key: str, fallback: int) -> int:
         v = policy.get(key)
-        if isinstance(v, (int, float)) and not isinstance(v, bool):
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
             return int(v)
         return fallback
 
@@ -155,6 +184,22 @@ def _build_prompt_tables(policy: dict) -> dict:
                 if isinstance(kw, str) and kw:
                     out[kw.lower()] = suggest
         return out
+
+    def _as_edit_steps(key: str) -> tuple[tuple[int, int], ...]:
+
+
+
+        v = policy.get(key)
+        if not isinstance(v, list) or not v:
+            return _TYPO_MAX_EDITS_FALLBACK
+        steps: list[tuple[int, int]] = []
+        for pair in v:
+            if (not isinstance(pair, (list, tuple)) or len(pair) != 2
+                    or not all(isinstance(x, int) and not isinstance(x, bool) for x in pair)
+                    or pair[0] < 4 or not 0 <= pair[1] <= 2):
+                return _TYPO_MAX_EDITS_FALLBACK
+            steps.append((pair[0], pair[1]))
+        return tuple(sorted(steps))
 
     return {
         "strip": _as_set_with("strip_words", _PROMPT_STRIP_WORDS_FALLBACK),
@@ -187,6 +232,14 @@ def _build_prompt_tables(policy: dict) -> dict:
         "typo_cutoff": _as_ratio("typo_cutoff"),
         "typo_cutoff_foreign": _as_ratio("typo_cutoff_foreign"),
         "suggest_cutoff": _as_ratio("suggest_cutoff"),
+
+        "modifier_words": _as_set_with("modifier_words", _PROMPT_MODIFIER_FALLBACK),
+
+
+        "vague_words": _as_set_with("vague_words", _PROMPT_VAGUE_FALLBACK),
+        "typo_max_edits": _as_edit_steps("typo_max_edits"),
+        "typo_foreign_min_len": max(
+            5, _as_int("typo_foreign_min_len", _TYPO_FOREIGN_MIN_LEN_FALLBACK)),
     }
 
 
@@ -472,7 +525,62 @@ def prompt_vocabulary_is_loaded() -> bool:
     return bool(_prompt_tables()["english_object_words"])
 
 
-def _typo_correction(words: list[str]) -> str | None:
+def _edit_distance(a: str, b: str, cap: int) -> int:
+
+
+    if abs(len(a) - len(b)) > cap:
+        return cap + 1
+    prev2: list[int] = []
+    prev = list(range(len(b) + 1))
+    for i in range(1, len(a) + 1):
+        cur = [i] + [0] * len(b)
+        for j in range(1, len(b) + 1):
+            cost = 0 if a[i - 1] == b[j - 1] else 1
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
+            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                cur[j] = min(cur[j], prev2[j - 2] + 1)
+        prev2, prev = prev, cur
+        if min(cur) > cap:
+            return cap + 1
+    return prev[-1]
+
+
+def _edit_budget(word: str, steps: tuple[tuple[int, int], ...]) -> int:
+    budget = 0
+    for min_len, edits in steps:
+        if len(word) >= min_len:
+            budget = edits
+    return budget
+
+
+def _closest(word: str, pool: list[str], budget: int,
+             mapping: dict[str, str] | None = None) -> str | None:
+
+
+
+    if budget <= 0:
+        return None
+    best, cands = budget + 1, []
+    for cand in pool:
+        if abs(len(cand) - len(word)) > budget:
+            continue
+        d = _edit_distance(word, cand, budget)
+        if d < best:
+            best, cands = d, [cand]
+        elif d == best:
+            cands.append(cand)
+    if best > budget or not cands:
+        return None
+    answers = {mapping[c] for c in cands} if mapping is not None else set(cands)
+    return cands[0] if len(answers) == 1 else None
+
+
+_POOLS_CACHE: dict = {"pools": None, "key": None}
+
+
+def _corrector_pools() -> dict:
+
+
 
 
 
@@ -480,32 +588,284 @@ def _typo_correction(words: list[str]) -> str | None:
 
 
     tables = _prompt_tables()
+    tokens = _prompt_known_tokens()
+    key = (id(tables), len(tokens))
+    cached = _POOLS_CACHE["pools"]
+    if cached is not None and key == _POOLS_CACHE["key"]:
+        return cached
+    skip = tables["vague_words"] | tables["modifier_words"]
+    phrases = set(tokens) | tables["english_object_words"] | set(tables["aliases"].values())
+    phrases = {p for p in phrases if p not in skip}
+    words = {w for p in phrases for w in p.split(" ") if len(w) >= 3 and w not in skip}
     foreign = tables["foreign_to_english"]
+    never = (tables["command"] | tables["abstract"] | tables["subjective"]
+             | tables["referential"] | set(tables["steer"]) | tables["modifier_words"]
+             | tables["vague_words"] | tables["foreign_stopwords"])
+    pools = {
+        "phrases": phrases,
+        "tokens": sorted(t for t in tokens if t not in skip),
+        "multi": sorted(p for p in phrases | set(tables["aliases"]) if " " in p),
+        "words": sorted(words),
+
+
+
+        "spell": sorted(words | {w for p in set(tokens) | tables["english_object_words"]
+                                 for w in p.split(" ") if len(w) >= 3}
+                        | {w for w in skip if len(w) >= 3 and " " not in w}),
+        "foreign": sorted(k for k in foreign if " " not in k and len(k) >= 4),
+        "never": never,
+    }
+    if tokens:
+        _POOLS_CACHE["pools"] = pools
+        _POOLS_CACHE["key"] = key
+    return pools
+
+
+_COMMON_ENGLISH: dict = {"words": None}
+
+
+def _common_english() -> frozenset[str]:
+
+
+
+    words = _COMMON_ENGLISH["words"]
+    if words is None:
+        import os
+        path = os.path.join(os.path.dirname(__file__), "..", "..", "..",
+                            "resources", "common_english.txt")
+        try:
+            with open(path, encoding="utf-8") as fh:
+                words = frozenset(w.strip().lower() for w in fh if w.strip())
+        except OSError:
+            words = frozenset()
+        _COMMON_ENGLISH["words"] = words
+    return words
+
+
+_INFLECTIONS = ("ing", "ed", "es", "s", "er", "ers", "est", "ly", "ness", "ment", "ments")
+
+
+def _is_common_english(word: str) -> bool:
+
+
+    common = _common_english()
+    if word in common:
+        return True
+    for suf in _INFLECTIONS:
+        if word.endswith(suf) and len(word) - len(suf) >= 3:
+            stem = word[: -len(suf)]
+            if stem in common or stem + "e" in common:
+                return True
+            if len(stem) >= 4 and stem[-1] == stem[-2] and stem[:-1] in common:
+                return True
+            if stem.endswith("i") and stem[:-1] + "y" in common:
+                return True
+    return False
+
+
+def _respell_word(word: str, vocab: set[str], in_phrase: bool = False) -> str | None:
+
+
+
+
+
+
+
+
+
+
+    tables = _prompt_tables()
+    pools = _corrector_pools()
+    if _word_is_known(word, vocab) or word in pools["never"]:
+        return word
+    foreign = tables["foreign_to_english"]
+    for probe in _lookup_variants(word):
+        if probe in foreign:
+            return foreign[probe]
+    if _is_common_english(word) or any(_is_common_english(c) for c in _singular_candidates(word)):
+        return word
+    for obj in pools["words"]:
+        rest = word[len(obj):]
+        if len(obj) >= 4 and word.startswith(obj) and 0 < len(rest) <= 4 and obj.startswith(rest):
+            return obj
+    steps = tables["typo_max_edits"]
+
+
+
+    found: dict[str, int] = {}
+    for probe in [word] + _singular_candidates(word):
+        budget = _edit_budget(probe, steps)
+        if len(probe) == 4 and budget == 0:
+
+            for w in pools["spell"]:
+                if (len(w) == 4 and sorted(w) == sorted(probe)
+                        and _edit_distance(probe, w, 1) == 1):
+                    found[w] = min(found.get(w, 9), 1)
+            continue
+        if budget <= 0:
+            continue
+        for w in pools["spell"]:
+            if abs(len(w) - len(probe)) <= budget:
+                d = _edit_distance(probe, w, budget)
+                if d <= budget:
+                    found[w] = min(found.get(w, 9), d)
+    if found:
+        best = min(found.values())
+        winners = [w for w, d in found.items() if d == best]
+        if len(winners) > 1:
+
+
+            winners = [w for w in winners if w[0] == word[0]]
+        if len(winners) != 1:
+            return None
+        if in_phrase and len(word) <= 5 and winners[0][0] != word[0]:
+
+
+
+            return None
+
+
+
+        if best > 1 and any(abs(len(k) - len(word)) < best
+                            and _edit_distance(word, k, best - 1) < best
+                            for k in pools["foreign"]):
+            return None
+        return winners[0]
+    return None
+
+
+def _typo_correction(words: list[str]) -> str | None:
+
+
+
+
+
+
+
+
+    tables = _prompt_tables()
     vocab = _known_vocabulary()
     core = [w for w in words if w not in tables["strip"]] or words
-    if len(core) > tables["max_words"]:
+    if len(core) > tables["max_words"] + 2:
         return None
     if all(_word_is_known(w, vocab) for w in core):
         return None
+    pools = _corrector_pools()
     candidate = " ".join(core)
-    pool = sorted(set(_prompt_known_tokens()) | set(foreign.values()))
-    if not pool:
-        return None
-    if len(candidate) >= 3:
-        prefixed = [t for t in pool if t.startswith(candidate)]
-        if len(prefixed) == 1:
+    if len(candidate) >= 4:
+        prefixed = [t for t in pools["tokens"] if t.startswith(candidate)]
+        if len(prefixed) == 1 and len(core) == 1 and candidate not in pools["never"]:
             return prefixed[0]
-    if tables["typo_cutoff"] is not None:
-        close = difflib.get_close_matches(
-            candidate, pool, n=1, cutoff=tables["typo_cutoff"])
-        if close:
-            return close[0]
-    close = (difflib.get_close_matches(
-        candidate, list(foreign), n=1, cutoff=tables["typo_cutoff_foreign"])
-        if tables["typo_cutoff_foreign"] is not None else [])
-    if close:
-        return foreign[close[0]]
+
+    if len(candidate) >= 7:
+        budget = _edit_budget(candidate.replace(" ", ""), tables["typo_max_edits"])
+        hit = _closest(candidate, pools["multi"], budget)
+        if hit and hit != candidate:
+            return hit
+    fixed = []
+    for w in core:
+        hit = _respell_word(w, vocab, in_phrase=len(core) > 1)
+        if not hit:
+
+
+
+
+            return None
+        fixed.append(hit)
+    if len(core) > 1 and all(f != w for f, w in zip(fixed, core)):
+
+
+
+        return None
+    out = " ".join(fixed)
+    return out if out != candidate else None
+
+
+def _head_noun(words: list[str]) -> str | None:
+
+
+
+
+
+
+
+    if len(words) < 2:
+        return None
+    tables = _prompt_tables()
+    pools = _corrector_pools()
+    phrase = " ".join(words)
+    probes = _lookup_variants(phrase) + [_singular_token(phrase)]
+    if any(p in pools["phrases"] or p in tables["aliases"] for p in probes):
+        return None
+    vocab = _known_vocabulary()
+
+
+
+    over = len(words) > tables["max_words"]
+    for size in (2, 1):
+        if len(words) <= size:
+            continue
+        head = " ".join(words[-size:])
+        heads = {head, _singular_token(head)}
+        if size == 1:
+            ok = any(h in pools["words"] and h in pools["phrases"] for h in heads)
+        else:
+            ok = any(h in pools["phrases"] for h in heads)
+        lead = words[:-size]
+        if not ok or not all(w in tables["modifier_words"] for w in lead):
+            continue
+
+
+        for joined in (lead[-1] + words[-size], lead[-1] + "-" + words[-size]):
+            if size == 1 and any(j in vocab or _is_common_english(j)
+                                 for j in (joined, _singular_token(joined))):
+                return " ".join(lead[:-1] + [joined]) if over else joined
+        if over:
+            return head
+        return None
     return None
+
+
+def _repair_result(phrase: str, norm: str) -> tuple[bool, str, str] | None:
+
+
+    if not phrase or phrase == norm:
+        return None
+    ok, reason, sugg = validate_prompt(phrase)
+    if ok and reason in ("translated", "plural", "alias") and sugg:
+        if sugg == norm:
+            return None
+        return (True, "alias" if reason == "alias" else "translated", sugg)
+    if ok and reason is None:
+        return (True, "translated", phrase)
+    return None
+
+
+def _translate_mixed(words: list[str]) -> str | None:
+
+
+
+
+
+
+
+
+    if len(words) < 2:
+        return None
+    tables = _prompt_tables()
+    foreign = tables["foreign_to_english"]
+    vocab = _known_vocabulary()
+    out, english = [], 0
+    for w in words:
+        if _word_is_known(w, vocab):
+            out.append(w)
+            english += 1
+            continue
+        hit = next((foreign[p] for p in _lookup_variants(w) if p in foreign), None)
+        if not hit or " " in hit or _edit_distance(w, hit.lower(), 2) > 2:
+            return None
+        out.append(hit)
+    return " ".join(out) if english and english < len(words) else None
 
 
 def _looks_foreign(raw_norm: str, folded: str, folded_words: list[str]) -> bool:
@@ -840,6 +1200,13 @@ def validate_prompt(text: str) -> tuple[bool, str | None, str | None]:
 
 
     if _looks_foreign(norm, folded, folded_words):
+
+
+        mixed = _translate_mixed(folded_words)
+        if mixed and mixed != norm:
+            repaired = _repair_result(mixed, norm)
+            if repaired:
+                return repaired
         suggestion = _english_suggestion(folded, folded_words)
         if suggestion:
 
@@ -886,15 +1253,23 @@ def validate_prompt(text: str) -> tuple[bool, str | None, str | None]:
         return (False, "abstract", _prompt_suggestion(norm, words))
 
     core_words = [w for w in words if w not in strip] or words
-    if len(core_words) > tables["max_words"] or len(norm) > tables["max_chars"]:
-        return (False, "too_long", _prompt_suggestion(norm, words))
+
+
 
 
 
 
     correction = _typo_correction(folded_words)
-    if correction and correction != norm:
-        return _swap_result(correction, "translated")
+    work = correction.split(" ") if correction else [
+        w for w in folded_words if w not in strip] or folded_words
+    head = _head_noun(work)
+    repaired = _repair_result(head or correction or "", norm)
+    if len(core_words) > tables["max_words"] or len(norm) > tables["max_chars"]:
+        if head and repaired:
+            return repaired
+        return (False, "too_long", _prompt_suggestion(norm, words))
+    if repaired:
+        return repaired
 
 
 

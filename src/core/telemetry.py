@@ -42,6 +42,7 @@
 from __future__ import annotations
 
 import json
+import os
 import platform
 import sys
 import threading
@@ -65,6 +66,7 @@ from .gui_thread import on_gui_thread
 from .qt_compat import reply_http_status, silent_task_flags
 from .telemetry_events import FLUSH_NOW, NO_CONSENT_EVENTS, REGISTRY_VERSION
 from .telemetry_payload import _scrub_telemetry_properties, scrub_payload_value  # noqa: F401
+from .worker_child_env import WORKER_CHILD_ENV
 
 _TIMEOUT_MS = 5_000
 _BATCH_MAX = 10
@@ -77,6 +79,12 @@ _PENDING_PRE_AUTH_MAX = 50
 
 _RELAY_MAX_EVENTS = 50
 _TELEMETRY_ENABLED_KEY = "TerraLab/telemetry_enabled"
+
+
+
+
+
+_IN_WORKER_CHILD = os.environ.get(WORKER_CHILD_ENV) == "1"
 
 
 
@@ -179,6 +187,12 @@ _pending_pre_auth: list[dict] = []
 _inflight: list = []
 _session_id = uuid.uuid4().hex
 
+
+
+
+_drop_lock = threading.Lock()
+_dropped = {"events": 0}
+
 _flush_timer = None
 
 
@@ -277,6 +291,23 @@ def new_session() -> None:
 
     global _session_id
     _session_id = uuid.uuid4().hex
+    with _drop_lock:
+        _dropped["events"] = 0
+
+
+def _note_dropped(count: int) -> None:
+
+    if count > 0:
+        with _drop_lock:
+            _dropped["events"] += int(count)
+
+
+def dropped_event_count() -> int:
+
+
+
+    with _drop_lock:
+        return int(_dropped["events"])
 
 
 def current_session_id() -> str:
@@ -525,7 +556,10 @@ class _TelemetryFlushTask(QgsTask):
             status = reply_http_status(reply)
             if status is None or status < 400:
                 return True
-            return not (status >= 500 or status == 429)
+            if status >= 500 or status == 429:
+                return False
+            _note_dropped(len(events))
+            return True
         except Exception:
             return False  # nosec B110
 
@@ -563,7 +597,7 @@ def track(event: str, properties: dict | None = None, flush_now: bool = False) -
 
 
 
-    if not is_telemetry_enabled():
+    if _IN_WORKER_CHILD or not is_telemetry_enabled():
         return
     if not isinstance(event, str) or not event or len(event) > 128:
         return
@@ -607,6 +641,7 @@ def _trim_batch_locked() -> None:
     drop = len(_batch) - _td.telemetry_batch_hard_max(_BATCH_HARD_MAX)
     if drop <= 0:
         return
+    _note_dropped(drop)
     kept: list[dict] = []
     for evt in _batch:
         if drop > 0 and evt.get("event") not in FLUSH_NOW:
@@ -688,8 +723,10 @@ def _split_for_post(events: list[dict]) -> list[list[dict]]:
             evt_bytes = len(json.dumps(evt).encode("utf-8"))
         except (TypeError, ValueError, OverflowError, RecursionError):
 
+            _note_dropped(1)
             continue
         if envelope_bytes + evt_bytes > post_max:
+            _note_dropped(1)
             continue
         separator_bytes = 2 if current else 0
         if current and (size + separator_bytes + evt_bytes > post_max
@@ -825,5 +862,7 @@ def flush(_overflow_to_batch: bool = False) -> None:
             accepted = QgsApplication.taskManager().addTask(task)
             if accepted is False:
                 _drop_inflight(task)
+                _note_dropped(len(task._events))
         except Exception:  # noqa: BLE001
             _drop_inflight(task)
+            _note_dropped(len(task._events))

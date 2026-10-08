@@ -126,39 +126,25 @@ class AutoRunPreflightMixin:
 
 
 
-
     _DRAWN_MAP_BASEMAPS = ("OSM", "Carto")
 
-    def _warn_drawn_map_basemap(self, layer) -> None:
+    def _drawn_map_basemap_copy(self, layer) -> tuple[str, str] | None:
 
-
-
-
-
-
-
-
-        if getattr(self, "_auto_imagery_resume", None) is not None:
-            return
         try:
             from ...core.basemap_label import detect_basemap_label
             label = detect_basemap_label(layer)
         except Exception:  # noqa: BLE001
-            return
+            return None
         if label not in self._DRAWN_MAP_BASEMAPS:
-            return
-        try:
-            self.iface.messageBar().pushWarning(
-                "AI Segmentation",
+            return None
+        return (tr("This looks like a drawn map, not a photo"),
                 tr("{basemap} is a drawn map, not aerial imagery, so detection "
-                   "usually finds nothing on it and the tiles are still "
-                   "charged. Switch the layer to a satellite basemap "
-                   "(Google, Esri, Bing) or to your own raster first."
-                   ).format(basemap=label))
-        except (RuntimeError, AttributeError):
-            pass
+                   "usually finds nothing on it and the tiles are still charged. "
+                   "Switch the layer to a satellite basemap (Google, Esri, Bing) "
+                   "or to your own raster first.").format(basemap=label))
 
     def _auto_imagery_notice_passes(self, layer, grid, mupp_floor: float = 0.0) -> bool:
+
 
 
 
@@ -188,7 +174,14 @@ class AutoRunPreflightMixin:
         notice_kind = ""
         gsd_m = 0.0
         try:
-            kind = self._imagery_content_kind(layer, grid)
+            from ...core.imagery_content import DRAWN_MAP
+
+            kind = None
+            copy = self._drawn_map_basemap_copy(layer)
+            if copy is not None:
+                notice_kind = DRAWN_MAP
+            else:
+                kind = self._imagery_content_kind(layer, grid)
             if kind is not None:
                 copy = self._imagery_content_copy(kind)
                 notice_kind = kind
@@ -388,11 +381,20 @@ class AutoRunPreflightMixin:
         object_class = self._resolved_auto_object_class()
         if not object_class:
             return None
-        tiers = seed_policy().get("object_tiers")
-        if not isinstance(tiers, list):
-            return None
-        obj_m = self._largest_matching_object_m(normalize_prompt(object_class), tiers)
-        max_obj_m = dial_in_range("tuning.preflight.coarse_object_max_m", 30.0, 1.0, 500.0)
+
+
+        plan = self._active_run_plan(object_class)
+        plan_size = plan.get("object_size_m") if isinstance(plan, dict) else None
+        if (isinstance(plan_size, (int, float)) and not isinstance(plan_size, bool)
+                and math.isfinite(plan_size) and plan_size > 0):
+            obj_m = float(plan_size)
+        else:
+            tiers = seed_policy().get("object_tiers")
+            if not isinstance(tiers, list):
+                return None
+            obj_m = self._largest_matching_object_m(normalize_prompt(object_class), tiers)
+
+        max_obj_m = dial_in_range("tuning.preflight.coarse_object_max_m", 0.0, 1.0, 500.0)
         if obj_m <= 0 or obj_m > max_obj_m:
             return None
         if self._needs_canvas_render(layer):
@@ -404,7 +406,7 @@ class AutoRunPreflightMixin:
             gsd = self._native_ground_mupp(layer)
         if gsd <= 0:
             return None
-        min_px = dial_in_range("tuning.preflight.coarse_min_object_px", 3.0, 0.5, 20.0)
+        min_px = dial_in_range("tuning.preflight.coarse_min_object_px", 0.0, 0.5, 20.0)
         px = obj_m / gsd
         if px >= min_px:
             return None

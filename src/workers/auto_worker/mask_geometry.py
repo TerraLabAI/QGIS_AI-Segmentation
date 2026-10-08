@@ -18,14 +18,7 @@ from .convert_pool import _convert_failure_reason
 
 __all__ = [
     "AutoMaskGeometryMixin",
-    "_COMPACT_MIN_FILL",
-    "_HARD_COVER_SHAPE_ESCAPE",
-    "_HARD_TILE_COVERAGE",
-    "_MASK_CAP_TRIGGER_FRAC",
     "_MAX_MASKS_PER_TILE",
-    "_MAX_TILE_COVERAGE",
-    "_MIN_KEEP_PX",
-    "_TILE_SPAN_FRACTION",
     "logger",
 ]
 
@@ -37,13 +30,6 @@ logger = logging.getLogger(__name__)
 
 
 _MAX_MASKS_PER_TILE = None
-_MASK_CAP_TRIGGER_FRAC = None
-_MAX_TILE_COVERAGE = None
-_HARD_TILE_COVERAGE = None
-_HARD_COVER_SHAPE_ESCAPE = None
-_COMPACT_MIN_FILL = None
-_TILE_SPAN_FRACTION = None
-_MIN_KEEP_PX = None
 
 
 class AutoMaskGeometryMixin:
@@ -98,6 +84,11 @@ class AutoMaskGeometryMixin:
 
 
         from ...core.cloud_detection import detection_mask_count
+        from ...core.tile_filter_answer import (
+            STEP_WHOLE_TILE,
+            read_tile_filters,
+            tile_saturated,
+        )
 
 
 
@@ -112,9 +103,25 @@ class AutoMaskGeometryMixin:
 
         self._note_flowing()
 
+        land_cover = bool(getattr(self, "_land_cover", False))
 
 
-        decoded_count = detection_mask_count(response, self._score_threshold)
+        verdict = read_tile_filters(response)
+        if verdict.raw_count is not None:
+            decoded_count = verdict.raw_count
+        else:
+
+
+            decoded_count = detection_mask_count(response, self._score_threshold)
+        self.masks_received += int(decoded_count or 0)
+        if not decoded_count:
+            self.tiles_answered_empty += 1
+        if self.first_answer_mono is None:
+            self.first_answer_mono = time.monotonic()
+        if not verdict.filtered and not land_cover:
+            self.tiles_filters_missing += 1
+        if verdict.filtered:
+            self._fold_tile_verdict(verdict)
 
         self._density_note_count(tile_idx, decoded_count)
 
@@ -131,7 +138,7 @@ class AutoMaskGeometryMixin:
 
         resplit = False
 
-        if decoded_count >= self._mask_cap_trigger and not getattr(self, "_land_cover", False):
+        if not land_cover and tile_saturated(verdict, decoded_count, self._max_masks):
             self._hit_mask_cap = True
             self.tiles_mask_capped += 1
 
@@ -151,6 +158,9 @@ class AutoMaskGeometryMixin:
             "transform": tile_transform,
             "count": decoded_count,
             "resplit": resplit,
+
+
+            "whole_tile_done": STEP_WHOLE_TILE in verdict.applied,
 
 
 
@@ -186,11 +196,9 @@ class AutoMaskGeometryMixin:
         )
         convert_t0 = time.monotonic()
         out = self._detections_to_geoms(
-            self._iter_kept_masks(
-                mask_iter, job["response"], job.get("stamp"),
-                job["tile_w"], job["tile_h"], job["count"],
-            ),
+            self._iter_kept_masks(mask_iter, job.get("stamp")),
             job["transform"],
+            whole_tile_done=bool(job.get("whole_tile_done")),
         )
         with self._stat_lock:
             self.phase_convert_s += time.monotonic() - convert_t0
@@ -292,11 +300,7 @@ class AutoMaskGeometryMixin:
             pass  # nosec B110
         return True
 
-    def _iter_kept_masks(
-        self, mask_iter, response: dict, stamp, tile_w: int, tile_h: int,
-        instance_count: int,
-    ):
-
+    def _iter_kept_masks(self, mask_iter, stamp):
 
 
 
@@ -318,51 +322,22 @@ class AutoMaskGeometryMixin:
                 continue
             yield (mask, score)
 
+    def _fold_tile_verdict(self, verdict) -> None:
 
 
-
-
-
-        yield from self._semantic_rescue_masks(
-            response, instance_count, tile_w, tile_h)
-
-    def _semantic_rescue_masks(
-        self, response: dict, instance_count: int, tile_w: int, tile_h: int,
-    ) -> list:
-
-
-
-
-
-
-
-
-
-        if not self._return_semantic:
-            return []
-        from ...core.cloud_detection import (
-            decode_rle_to_mask,
-            parse_semantic_fields,
-            should_rescue_with_semantic,
-        )
-
-        rle, coverage, _presence = parse_semantic_fields(response)
-        if not should_rescue_with_semantic(
-            instance_count, coverage, rle is not None,
-            self._return_semantic, self._semantic_coverage_floor,
-        ):
-            return []
-
-
-
-        srv_w = response.get("width")
-        srv_h = response.get("height")
-        decode_w = int(srv_w) if srv_w is not None else tile_w
-        decode_h = int(srv_h) if srv_h is not None else tile_h
-        mask = decode_rle_to_mask(rle, decode_h, decode_w)
-        if not mask.any():
-            return []
-        return [(mask, float(coverage))]
+        dropped = verdict.dropped
+        hard = dropped.get("hard_cover", 0)
+        span = dropped.get("tile_span", 0)
+        shape = dropped.get("not_compact", 0)
+        with self._stat_lock:
+            self.masks_dropped_whole_tile += hard + span + shape
+            self.masks_whole_tile_armed += verdict.armed
+            self.masks_dropped_hard_cover += hard
+            self.masks_dropped_tile_span += span
+            self.masks_dropped_not_compact += shape
+            self.masks_whole_tile_kept_map += verdict.kept_map
+            self.masks_dropped_map_lowscore += dropped.get("map_lowscore", 0)
+            self.map_cover_scores.extend(verdict.map_cover_scores)
 
     def _make_clip_pair(self):
 
@@ -418,7 +393,11 @@ class AutoMaskGeometryMixin:
             self._clip_local.pair = pair
         return pair
 
-    def _detections_to_geoms(self, kept, tile_transform) -> list:
+    def _detections_to_geoms(self, kept, tile_transform,
+                             whole_tile_done: bool = False) -> list:
+
+
+
 
 
 
@@ -443,6 +422,7 @@ class AutoMaskGeometryMixin:
             masks_to_polygons_packed,
         )
         from ...core.polygon_trace import trace_crops_rings
+        from ...core.tile_filter_answer import mask_spans_tile
 
 
 
@@ -460,13 +440,10 @@ class AutoMaskGeometryMixin:
 
 
 
-
-
-        area_scale = self._ground_area_scale()
         length_scale = self._ground_length_scale()
         min_keep_area = (
-            max((self._min_keep_px * self._gsd) ** 2,
-                self._min_keep_floor_m2 / area_scale)
+            max((getattr(self, "_min_keep_px", 1.0) * self._gsd) ** 2,
+                getattr(self, "_min_keep_floor_m2", 0.0) / self._ground_area_scale())
             if self._gsd > 0 else 0.0
         )
 
@@ -488,18 +465,11 @@ class AutoMaskGeometryMixin:
 
 
 
-
-
-
-        n_blob_armed = 0
-        n_blob_hard = 0
         n_blob_span = 0
-        n_blob_shape = 0
-        n_blob_kept_map = 0
-        n_blob_map_lowscore = 0
 
 
-        map_cover_scores: list[float] = []
+        span_test = (self._merge_separate and not self._collect_raw
+                     and not whole_tile_done)
         out = []
 
 
@@ -545,62 +515,9 @@ class AutoMaskGeometryMixin:
 
 
 
-
-
-
-
-
-            coverage = set_pixels / float(full_h * full_w)
-            blob_check = False
-
-
-            if self._merge_separate and not self._collect_raw and coverage > self._max_tile_coverage:
-
-
-
-                n_blob_armed += 1
-                if (coverage > self._hard_tile_coverage
-                        and not self._hard_cover_shape_escape):
-                    n_blob_hard += 1
-                    continue
-
-
-
-
-
-
-                span = self._tile_span_fraction
-                if (col1 - col0 + 1 >= span * full_w and row1 - row0 + 1 >= span * full_h):
-                    n_blob_span += 1
-                    continue
-                blob_check = True
-            elif coverage > self._max_tile_coverage and not self._collect_raw and (
-                    self._map_cover_score_floor > 0.0
-                    and float(score) < self._map_cover_score_floor):
-
-
-
-
-
-
-
-
-                n_blob_map_lowscore += 1
-                map_cover_scores.append(float(score))
+            if span_test and mask_spans_tile(col0, col1, row0, row1, full_w, full_h):
+                n_blob_span += 1
                 continue
-            elif coverage > self._max_tile_coverage:
-
-
-
-
-
-
-
-
-
-
-                n_blob_kept_map += 1
-                map_cover_scores.append(float(score))
 
 
 
@@ -632,7 +549,7 @@ class AutoMaskGeometryMixin:
                 tile_simplify_tolerance(
                     self._gsd, cell, self._tile_simplify_mult),
             )
-            queued.append((sub, row0, col0, key, float(score), blob_check, fill_limit))
+            queued.append((sub, row0, col0, key, float(score), fill_limit))
 
 
 
@@ -646,7 +563,7 @@ class AutoMaskGeometryMixin:
 
 
         outlines = trace_crops_rings([q[0] for q in queued], saddles=False)
-        for (sub, row0, col0, key, score, blob_check, fill_limit), outline in zip(
+        for (sub, row0, col0, key, score, fill_limit), outline in zip(
                 queued, outlines):
             if outline is not None and outline.has_holes:
                 outline = outline.after_pinhole_fill(
@@ -660,7 +577,7 @@ class AutoMaskGeometryMixin:
             else:
                 sub = fill_small_holes(sub, fill_limit)
             pending_crops.setdefault(key, []).append((sub, (row0 - 1, col0 - 1)))
-            pending_meta.setdefault(key, []).append((score, blob_check))
+            pending_meta.setdefault(key, []).append(score)
             pending_outlines.setdefault(key, []).append(outline)
 
 
@@ -680,7 +597,7 @@ class AutoMaskGeometryMixin:
 
                 max_side=getattr(self, "_pack_max_side", None),
             )
-            for (score, blob_check), geoms in zip(pending_meta[key], polygon_lists):
+            for score, geoms in zip(pending_meta[key], polygon_lists):
                 for geom in geoms:
                     if geom is None or geom.isEmpty():
                         continue
@@ -735,13 +652,6 @@ class AutoMaskGeometryMixin:
 
                     if min_keep_area > 0.0 and geom.area() < min_keep_area:
                         continue
-
-
-
-                    if blob_check and not self._is_compact_shape(
-                            geom, self._compact_min_fill):
-                        n_blob_shape += 1
-                        continue
                     out.append((geom, score))
 
 
@@ -751,15 +661,8 @@ class AutoMaskGeometryMixin:
 
         with self._stat_lock:
             self.raw_detections_total += len(out)
-            self.masks_dropped_whole_tile += (
-                n_blob_hard + n_blob_span + n_blob_shape)
-            self.masks_whole_tile_armed += n_blob_armed
-            self.masks_dropped_hard_cover += n_blob_hard
+            self.masks_dropped_whole_tile += n_blob_span
             self.masks_dropped_tile_span += n_blob_span
-            self.masks_dropped_not_compact += n_blob_shape
-            self.masks_whole_tile_kept_map += n_blob_kept_map
-            self.masks_dropped_map_lowscore += n_blob_map_lowscore
-            self.map_cover_scores.extend(map_cover_scores)
             if observed_cell > self.observed_mask_gsd:
                 self.observed_mask_gsd = observed_cell
             if path_counts:
@@ -830,24 +733,6 @@ class AutoMaskGeometryMixin:
         return merger.result_scored()
 
     @staticmethod
-    def _is_compact_shape(geom, min_fill: float) -> bool:
-
-
-
-
-
-
-
-
-        try:
-            _obb, obb_area, _angle, _w, _h = geom.orientedMinimumBoundingBox()
-            if obb_area and obb_area > 0.0:
-                return geom.area() / obb_area >= min_fill
-        except Exception:  # noqa: BLE001  # nosec B110
-            pass
-        return False
-
-    @staticmethod
     def _centroid_in_stamp(box, mask, stamp) -> bool:
 
 
@@ -887,25 +772,13 @@ def _land_cover_preview(labels, tile_transform: dict, step: int = 4) -> list:
 
 
     try:
-        from ...core.land_cover import NODATA
-        from ...core.venv_manager import ensure_venv_packages_available
-
-        ensure_venv_packages_available()
-        from qgis.core import QgsGeometry, QgsPointXY
-        from rasterio.features import shapes
-        from rasterio.transform import Affine
+        from ...core.land_cover import class_patches_wkb
 
         minx, maxx, miny, maxy = tile_transform["bbox"]
         h, w = labels.shape
-        small = labels[::step, ::step]
         px_w = (maxx - minx) / max(1, w) * step
         px_h = (maxy - miny) / max(1, h) * step
-        out = []
-        for shape, value in shapes(small, mask=small != NODATA, connectivity=4,
-                                   transform=Affine(px_w, 0.0, minx, 0.0, -px_h, maxy)):
-            rings = [[QgsPointXY(x, y) for x, y in ring] for ring in shape.get("coordinates", [])]
-            if rings:
-                out.append((int(value), bytes(QgsGeometry.fromPolygonXY(rings).asWkb())))
-        return out
+        return class_patches_wkb(labels[::step, ::step],
+                                 (minx, px_w, 0.0, maxy, 0.0, -px_h))
     except Exception:  # noqa: BLE001
         return []

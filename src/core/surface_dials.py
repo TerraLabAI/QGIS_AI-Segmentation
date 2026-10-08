@@ -162,6 +162,16 @@ def pro_monthly_credits_fallback(fallback: int) -> int:
     return dial_in_range("gate.pro_monthly_credits", fallback, 1, 1_000_000)
 
 
+def pro_monthly_km2_text(fallback: float = 100) -> str:
+
+
+
+
+
+    value = float(dial_in_range("gate.pro_monthly_km2", fallback, 1, 1_000_000))
+    return str(int(value)) if value.is_integer() else f"{value:g}"
+
+
 __all__ = [
     "cross_promo_url",
     "cross_sell_ai_edit_enabled",
@@ -180,5 +190,6 @@ __all__ = [
     "prompt_suggest_synonym_min_chars",
     "prompt_suggest_visible_rows",
     "pro_monthly_credits_fallback",
+    "pro_monthly_km2_text",
     "removal_watchdog_ms",
 ]

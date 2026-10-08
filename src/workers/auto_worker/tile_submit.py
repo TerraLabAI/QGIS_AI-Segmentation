@@ -398,6 +398,30 @@ class AutoTileSubmitMixin:
         except Exception:  # noqa: BLE001
             pass  # nosec B110
 
+    def _ask_tile_filters(self, submission: dict) -> None:
+
+        from ...core.tile_filter_answer import TILE_FILTERS_VERSION
+
+        submission["tile_filters"] = TILE_FILTERS_VERSION
+        if self._collect_raw:
+            submission["collect_raw"] = True
+
+
+
+        run_px = self._run_pixel_size_m()
+        if run_px is not None:
+            submission["run_pixel_size_m"] = run_px
+
+    def _run_pixel_size_m(self) -> float | None:
+
+        try:
+            value = float(self._gsd) * self._ground_length_scale()
+        except (AttributeError, TypeError, ValueError):
+            return None
+        if not math.isfinite(value) or value <= 0:
+            return None
+        return round(value, 4)
+
     def _build_submission(self, tile_idx: int, tile_spec, png_bytes) -> tuple[dict, dict]:
 
 
@@ -439,6 +463,11 @@ class AutoTileSubmitMixin:
 
         if getattr(self, "_land_cover", False):
             submission["land_cover"] = True
+        else:
+
+
+
+            self._ask_tile_filters(submission)
 
 
 
@@ -543,6 +572,13 @@ class AutoTileSubmitMixin:
         elif status == 503:
             self.http_503 = getattr(self, "http_503", 0) + 1
         if "error" in response:
+
+
+            self._tile_last_error[tile_idx] = (
+                f"http_{status}" if isinstance(status, int) and 400 <= status <= 599
+                else "conn_error" if code in LINK_FAILURE_CODES
+                else "timeout" if code == "TIMEOUT"
+                else "skipped_network")
 
 
 

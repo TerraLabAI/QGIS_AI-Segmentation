@@ -141,6 +141,22 @@ class AutoDetailWindowMixin:
             obj_m = max(obj_m, self._exemplar_object_size_m(layer, zone_in_layer))
         return obj_m, floor_m
 
+    def _detail_window_ceiling_m(self, object_class: str) -> float:
+
+
+
+
+        plan = self._active_run_plan(object_class) if object_class else None
+        if plan is not None:
+            from ...core.detection_policy import run_plan_tile_block
+
+            return _positive_number(run_plan_tile_block(plan).get("ceiling_m"))
+        if not object_class:
+            return 0.0
+        from ...core.detection_policy import object_tile_ceiling_m
+
+        return object_tile_ceiling_m(object_class)
+
     def _exemplar_object_size_m(self, layer, zone_in_layer) -> float:
 
 
@@ -241,7 +257,6 @@ class AutoDetailWindowMixin:
             detail_coarse_travel_ratio,
             detail_fine_travel_ratio,
             object_min_px,
-            object_tile_ceiling_m,
             seed_headroom_levels,
         )
         from ...core.tile_manager import TILE_SIZE
@@ -266,7 +281,7 @@ class AutoDetailWindowMixin:
 
 
 
-        ceiling_m = object_tile_ceiling_m(object_class) if object_class else 0.0
+        ceiling_m = self._detail_window_ceiling_m(object_class)
         free_cap = self._free_run_tile_cap()
 
         finest = 0

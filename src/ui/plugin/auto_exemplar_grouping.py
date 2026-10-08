@@ -38,7 +38,7 @@ class RawFragmentRemerge:
 
         from qgis.core import QgsGeometry
 
-        from ...workers.auto_detection_worker import AutoDetectionWorker
+        from ...core.tile_filter_answer import fills_oriented_box
 
         end = min(self._cursor + max(1, int(count)), self.total)
         while self._cursor < end:
@@ -53,8 +53,7 @@ class RawFragmentRemerge:
                 if cov > self._hard_cov:
                     self.gated += 1
                     continue
-                if cov > self._max_cov and not AutoDetectionWorker._is_compact_shape(
-                        geom, self._min_fill):
+                if cov > self._max_cov and not fills_oriented_box(geom, self._min_fill):
                     self.gated += 1
                     continue
             self._merger.add(geom, float(score))

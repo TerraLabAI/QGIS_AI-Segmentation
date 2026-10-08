@@ -190,6 +190,10 @@ class TerraLabClient(
 
         self._pending_retry_after_s = 0.0
 
+
+        self._predict_sends_run: str | None = None
+        self._predict_sends: dict[tuple, int] = {}
+
     @staticmethod
     def _direct_detection_allowed() -> bool:
 

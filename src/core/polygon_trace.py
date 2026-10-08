@@ -37,8 +37,6 @@
 
 
 
-
-
 from __future__ import annotations
 
 import struct
@@ -93,7 +91,7 @@ class CropRings:
 
 
 
-    __slots__ = ("rings", "outer", "bottom", "mask", "pixels", "boxes", "saddle_free")
+    __slots__ = ("rings", "outer", "bottom", "mask", "pixels", "boxes")
 
     def __init__(self, rings: list, outer: list, bottom: list,
                  mask: np.ndarray | None = None, boxes: list | None = None) -> None:
@@ -101,8 +99,6 @@ class CropRings:
         self.outer = outer
         self.bottom = bottom
         self.mask = mask
-
-        self.saddle_free = True
 
         if boxes is None:
             boxes = [(int(r.min()), int(r.max()), int(c.min()), int(c.max()))
@@ -154,7 +150,6 @@ class CropRings:
                         [o for o, k in zip(self.outer, keep) if k],
                         [b for b, k in zip(self.bottom, keep) if k],
                         boxes=[b for b, k in zip(self.boxes, keep) if k])
-        out.saddle_free = self.saddle_free
         mask = self.mask
         out.pixels = lambda: fill(mask)
         return out
@@ -601,246 +596,8 @@ def trace_crops_rings(masks: list, saddles: bool = True) -> list:
             outer[lo_k:hi_k], bottom[lo_k:hi_k], part[1],
             [(top_row[k], low_row[k], left_col[k], right_col[k])
              for k in range(lo_k, hi_k)])
-        rings.saddle_free = not part[5]
         results[part[0]] = rings
     return results
-
-
-def fallback_contours(outline: CropRings) -> list | None:
-
-
-
-
-
-
-
-
-
-
-
-
-
-    if not outline.saddle_free:
-        return None
-    found = []
-    for k, (rows, cols) in enumerate(outline.rings):
-
-        r = np.concatenate((rows[:1], rows[:0:-1]))
-        c = np.concatenate((cols[:1], cols[:0:-1]))
-        r_next = np.roll(r, -1)
-        c_next = np.roll(c, -1)
-        dr = r_next - r
-        dc = c_next - c
-        lengths = np.abs(dr) + np.abs(dc)
-        total = int(lengths.sum())
-        seg = np.repeat(np.arange(r.size), lengths)
-        step = np.arange(total) - np.repeat(np.cumsum(lengths) - lengths, lengths)
-        pr = r[seg] + np.sign(dr)[seg] * step
-        pc = c[seg] + np.sign(dc)[seg] * step
-        east = np.flatnonzero(np.sign(dc)[seg] > 0)
-        first = east[np.lexsort((pc[east], pr[east]))[0]]
-        pr = np.roll(pr, -first)
-        pc = np.roll(pc, -first)
-        found.append((int(pr[0]), int(pc[0]), pr, pc, k))
-    found.sort(key=lambda item: (item[0], item[1]))
-    return [(pr, pc, k) for _r0, _c0, pr, pc, k in found]
-
-
-
-
-
-
-_SADDLE_OUT = {9: (0, 2), 6: (1, 3)}
-
-
-def _walk_points(rings: list) -> tuple:
-
-
-
-
-    sizes = np.array([r.size for r, _c in rings], dtype=np.intp)
-    first = np.concatenate(([0], np.cumsum(sizes)[:-1]))
-    total = int(sizes.sum())
-    ring_of = np.repeat(np.arange(sizes.size), sizes)
-    local = np.arange(total) - first[ring_of]
-    size_of = sizes[ring_of]
-    all_r = np.concatenate([r for r, _c in rings]).astype(np.intp)
-    all_c = np.concatenate([c for _r, c in rings]).astype(np.intp)
-
-    back = first[ring_of] + (size_of - local) % size_of
-    r = all_r[back]
-    c = all_c[back]
-    ahead = np.where(local == size_of - 1, first[ring_of], np.arange(total) + 1)
-    dr = r[ahead] - r
-    dc = c[ahead] - c
-    lengths = np.abs(dr) + np.abs(dc)
-    seg = np.repeat(np.arange(total), lengths)
-    step = np.arange(int(lengths.sum())) - np.repeat(np.cumsum(lengths) - lengths, lengths)
-    sr = np.sign(dr)[seg]
-    sc = np.sign(dc)[seg]
-    heading = np.where(sc > 0, 0, np.where(sr > 0, 1, np.where(sc < 0, 2, 3)))
-    starts = np.concatenate(([0], np.cumsum(np.add.reduceat(lengths, first))))
-    return r[seg] + sr * step, c[seg] + sc * step, heading, starts
-
-
-def walked_contours(outline: CropRings) -> list | None:
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    import heapq
-
-    mask = outline.mask
-    if mask is None:
-        return None
-    s = np.asarray(mask)
-    if s.dtype != np.bool_:
-        s = s != 0
-    h, w = s.shape
-    if h < 3 or w < 3:
-        return None
-    w1 = w + 1
-    plane = (h + 1) * w1
-    above_left, above = s[:-1, :-1], s[:-1, 1:]
-    left, here = s[1:, :-1], s[1:, 1:]
-    kind = np.zeros((h + 1, w + 1), dtype=np.int8)
-    kind[1:h, 1:w][above_left & here & ~above & ~left] = 9
-    kind[1:h, 1:w][above & left & ~above_left & ~here] = 6
-
-    arcs = []
-    out_of: dict = {}
-    heap = []
-    all_r, all_c, all_head, starts = _walk_points(outline.rings)
-    all_key = all_head * plane + all_r * w1 + all_c
-    all_sk = kind[all_r, all_c]
-    lo = starts[:-1]
-    passes = np.add.reduceat(all_sk != 0, lo)
-
-    lens = np.diff(starts)
-    smallest = np.minimum.reduceat(all_key, lo)
-    at = np.flatnonzero(all_key == np.repeat(smallest, lens))
-    if at.size != lens.size:
-        return None
-    for k in np.flatnonzero(passes == 0).tolist():
-        heap.append((int(smallest[k]), 2, k, int(at[k] - lo[k])))
-    bounds_all = starts.tolist()
-    for k in np.flatnonzero(passes).tolist():
-        sl = slice(bounds_all[k], bounds_all[k + 1])
-        pr, pc, head, key, sk = all_r[sl], all_c[sl], all_head[sl], all_key[sl], all_sk[sl]
-        cut = np.flatnonzero(sk)
-        first = int(cut[0])
-        if first:
-            pr, pc, head, key, sk = (np.roll(a, -first) for a in (pr, pc, head, key, sk))
-            cut = cut - first
-        n = int(pr.size)
-        vert = (pr * w1 + pc).tolist()
-        heads = head.tolist()
-        kinds = sk.tolist()
-        bounds = cut.tolist() + [n]
-        for a, b in zip(bounds[:-1], bounds[1:]):
-            v, out_h, sad = vert[a], heads[a], kinds[a]
-            if out_h not in _SADDLE_OUT[sad]:
-                return None
-            slot = out_of.get(v)
-            if slot is None:
-                slot = out_of[v] = {}
-                heap.append((_SADDLE_OUT[sad][0] * plane + v, 0, v, 0))
-            if out_h in slot:
-                return None
-            slot[out_h] = len(arcs)
-            if b - a > 1:
-                j = a + 1 + int(np.argmin(key[a + 1:b]))
-                heap.append((int(key[j]), 1, len(arcs), j - a))
-            arcs.append((pr[a:b], pc[a:b], vert[b % n], heads[b - 1]))
-    heapq.heapify(heap)
-    if len(out_of) != int(np.count_nonzero(kind)) or any(len(v) != 2 for v in out_of.values()):
-        return None
-
-    def leave(vertex: int, heading_in: int):
-
-        slot = out_of.get(vertex)
-        if not slot:
-            return None
-        right = (heading_in + 1) & 3
-        if right in slot:
-            return slot.pop(right)
-        return slot.pop((heading_in + 3) & 3, None)
-
-    done = [False] * len(arcs)
-    contours = []
-    while heap:
-        _key, what, which, where = heapq.heappop(heap)
-        if what == 2:
-            o, e = bounds_all[which], bounds_all[which + 1]
-            j = o + where
-            contours.append((np.concatenate((all_r[j:e], all_r[o:j])),
-                             np.concatenate((all_c[j:e], all_c[o:j]))))
-            continue
-        if what == 0:
-            slot = out_of[which]
-            if not slot:
-                continue
-            arc = slot.pop(min(slot))
-            stop, head_arc = which, None
-            pieces = [arc]
-        else:
-            if done[which]:
-                continue
-            arc = which
-            stop, head_arc = None, which
-            pieces = []
-        done[arc] = True
-        cur = arc
-        for _ in range(len(arcs) + 1):
-            end, heading_in = arcs[cur][2], arcs[cur][3]
-            if end == stop:
-                break
-            nxt = leave(end, heading_in)
-            if nxt is None:
-                return None
-            if nxt == head_arc:
-                break
-            if done[nxt]:
-                return None
-            done[nxt] = True
-            pieces.append(nxt)
-            cur = nxt
-        else:
-            return None
-        if what == 0 and out_of[which]:
-
-            heapq.heappush(heap, (_key, 0, which, 0))
-        if head_arc is None:
-            rows = np.concatenate([arcs[k][0] for k in pieces])
-            cols = np.concatenate([arcs[k][1] for k in pieces])
-        else:
-
-            tail_r, tail_c = arcs[head_arc][0], arcs[head_arc][1]
-            rows = np.concatenate([tail_r[where:]] + [arcs[k][0] for k in pieces]
-                                  + [tail_r[:where]])
-            cols = np.concatenate([tail_c[where:]] + [arcs[k][1] for k in pieces]
-                                  + [tail_c[:where]])
-        contours.append((rows, cols))
-    if not all(done) or any(out_of.values()):
-        return None
-    return contours
 
 
 def exact_vertex_axis(origin, step, index: np.ndarray,
@@ -898,6 +655,13 @@ def exact_vertex_axis(origin, step, index: np.ndarray,
             out[pos] = float(Fraction(float(a_all[pos]))
                              + int(k[pos]) * Fraction(float(b_all[pos])))
     return out
+
+
+def north_up_geotransform(west: float, south: float, east: float, north: float,
+                          width: int, height: int) -> tuple:
+
+
+    return (west, (east - west) / width, 0.0, north, 0.0, (south - north) / height)
 
 
 def vertex_tables(gt: tuple, height: int, width: int, rule: tuple) -> tuple:
@@ -994,7 +758,6 @@ def gdal_vertex_rule() -> tuple | None:
 
 
 
-
     if _RULE:
         return _RULE[0]
     rule = None
@@ -1007,37 +770,28 @@ def gdal_vertex_rule() -> tuple | None:
 
 
 def _calibrate() -> tuple | None:
-    from rasterio.features import shapes
-    from rasterio.transform import from_bounds
+    from .polygon_masks import polygonize_label_raster
 
     masks = _probe_masks()
     traced_probes = [trace_crop_rings(m) for m in masks]
     if any(t is None for t in traced_probes):
         return None
-    px = _discriminating_pixel(masks[0], traced_probes[0], from_bounds)
+    px = _discriminating_pixel(masks[0], traced_probes[0])
     if px is None:
         return None
     ok_rules = None
     for mask, traced in zip(masks, traced_probes):
         h, w = mask.shape
-        transform = from_bounds(_PROBE_MINX, _PROBE_MAXY - h * px,
-                                _PROBE_MINX + w * px, _PROBE_MAXY, w, h)
-        gt = transform.to_gdal()
-        lab = mask.astype(np.int32)
-        got = []
-        for geom, _value in shapes(lab, mask=lab > 0, connectivity=4,
-                                   transform=transform):
-            if geom.get("type") != "Polygon":
-                return None
-            got.append([[(float(x), float(y)) for x, y in ring]
-                        for ring in geom["coordinates"]])
+        gt = north_up_geotransform(_PROBE_MINX, _PROBE_MAXY - h * px,
+                                   _PROBE_MINX + w * px, _PROBE_MAXY, w, h)
+        got = [wkb for _value, wkb in polygonize_label_raster(mask.astype(np.uint8), gt)]
         polygons = traced.polygons()
         if not polygons or len(polygons) != len(got):
             return None
         matching = set()
         for rule in ((True, True), (False, False), (True, False), (False, True)):
             tables = vertex_tables(gt, h, w, rule)
-            if all(_wkb_rings(polygon_wkb(poly, tables, 0, 0)) == ref
+            if all(polygon_wkb(poly, tables, 0, 0) == ref
                    for poly, ref in zip(polygons, got)):
                 matching.add(rule)
         ok_rules = matching if ok_rules is None else ok_rules & matching
@@ -1054,7 +808,7 @@ _PROBE_MINX = -9929363.51742432
 _PROBE_MAXY = 6546923.231844369
 
 
-def _discriminating_pixel(mask: np.ndarray, traced: CropRings, from_bounds) -> float | None:
+def _discriminating_pixel(mask: np.ndarray, traced: CropRings) -> float | None:
 
 
     h, w = mask.shape
@@ -1062,8 +816,8 @@ def _discriminating_pixel(mask: np.ndarray, traced: CropRings, from_bounds) -> f
     cols = np.unique(np.concatenate([c for _r, c in traced.rings]))
     for step in range(400):
         px = 0.1 + 0.00731 * step
-        gt = from_bounds(_PROBE_MINX, _PROBE_MAXY - h * px,
-                         _PROBE_MINX + w * px, _PROBE_MAXY, w, h).to_gdal()
+        gt = north_up_geotransform(_PROBE_MINX, _PROBE_MAXY - h * px,
+                                   _PROBE_MINX + w * px, _PROBE_MAXY, w, h)
         dx = np.count_nonzero(exact_vertex_axis(gt[0], gt[1], cols, True)
                               != exact_vertex_axis(gt[0], gt[1], cols, False))
         dy = np.count_nonzero(exact_vertex_axis(gt[3], gt[5], rows, True)
@@ -1071,17 +825,3 @@ def _discriminating_pixel(mask: np.ndarray, traced: CropRings, from_bounds) -> f
         if dx >= 2 and dy >= 2:
             return px
     return None
-
-
-def _wkb_rings(blob: bytes) -> list:
-
-    n_rings = struct.unpack_from("<I", blob, 5)[0]
-    off = 9
-    rings = []
-    for _ in range(n_rings):
-        count = struct.unpack_from("<I", blob, off)[0]
-        off += 4
-        pts = np.frombuffer(blob, dtype="<f8", count=2 * count, offset=off)
-        off += 16 * count
-        rings.append([(float(pts[i]), float(pts[i + 1])) for i in range(0, 2 * count, 2)])
-    return rings

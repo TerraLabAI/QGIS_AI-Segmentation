@@ -41,6 +41,45 @@ _RETRY_PAUSE_MIN_S = 0.3
 _RETRY_PAUSE_MAX_S = 0.8
 
 
+
+
+
+
+UNAVAILABLE_STATUS = 503
+_UNAVAILABLE_PAUSE_S = (0.75, 1.25)
+
+
+
+CLIENT_ATTEMPT_HEADER = "X-Client-Attempt"
+
+
+def client_attempt_headers(attempt: int, extra_headers: dict | None = None) -> dict:
+
+    return {**(extra_headers or {}), CLIENT_ATTEMPT_HEADER: str(int(attempt))}
+
+
+def unavailable_retry_pause_s(http_status: int | None, retry_after_s: float,
+                              budget_s: float, spent_s: float) -> float | None:
+
+
+
+
+
+
+
+    if http_status != UNAVAILABLE_STATUS:
+        return None
+    import random  # noqa: PLC0415
+
+    pause = random.uniform(  # nosec B311
+        *_td.unavailable_retry_pause_window_s(_UNAVAILABLE_PAUSE_S))
+    pause = max(pause, retry_after_s or 0.0)
+    ceiling = budget_s / 2.0 - spent_s
+    if ceiling <= 0.0:
+        return None
+    return min(pause, ceiling)
+
+
 def _worth_asking_again(answer, http_status: int | None) -> bool:
 
 

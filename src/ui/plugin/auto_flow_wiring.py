@@ -56,6 +56,10 @@ class AutoFlowWiringMixin:
 
 
 
+
+
+
+
         import time
 
         from ...core.activation_manager import get_auth_header, is_plugin_activated
@@ -119,7 +123,7 @@ class AutoFlowWiringMixin:
         read = getattr(self, "_crop_read", None)
         return isinstance(read, dict) and read.get("worker") is not None
 
-    def _signal_gpu_session_end(self, reason: str) -> None:
+    def _signal_cloud_session_end(self, reason: str) -> None:
 
 
 

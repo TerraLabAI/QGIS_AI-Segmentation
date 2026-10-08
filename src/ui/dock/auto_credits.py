@@ -514,9 +514,12 @@ class DockAutoCreditsMixin:
 
 
 
+
+            from ...core.surface_dials import pro_monthly_km2_text
+            pro_km2 = pro_monthly_km2_text()
             body = dial_copy(
                 "km2_block.message",
-                tr("Pro raises the month to 200 km² of Automatic."))
+                tr("Pro raises the month to {km2} km² of Automatic."))
             title = dial_copy(
                 "km2_block.title",
                 tr("This zone is {zone} km². You have {left} km² left in Automatic this "
@@ -538,7 +541,8 @@ class DockAutoCreditsMixin:
                 escape = dial_copy(
                     "km2_block.escape", tr("Or draw a smaller zone."))
             fill = (lambda text: text.replace("{zone}", zone)  # noqa: E731
-                    .replace("{left}", left).replace("{date}", reset_day))
+                    .replace("{left}", left).replace("{date}", reset_day)
+                    .replace("{km2}", pro_km2))
 
 
 

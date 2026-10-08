@@ -4,7 +4,7 @@ description=AI segmentation for QGIS: detect and extract building footprints, tr
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
 supportsQt6=True
-version=3.3.1
+version=3.4.0
 author=Yvann and Lilien from TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
@@ -32,6 +32,15 @@ about=
     • 12 languages: English, French, Portuguese, Spanish, German, Italian, Dutch, Polish, Indonesian, Japanese, Chinese (simplified and traditional)
 
 changelog=
+    3.4.0
+    - Faster sign-in: the browser hands the sign-in back to QGIS on its own
+    - Automatic: a typo in the object you type is corrected before the run
+    - Detect stops on a drawn map such as OpenStreetMap or Carto and explains why, since it needs real imagery
+    - Land cover and Semi-Auto work on every QGIS install, with quicker clicks
+    - The Pro allowance shown in the plugin now follows the current plan, in every language
+    - Exported layers keep their style more reliably
+    - Stability and reliability improvements
+
     3.3.1
     - Automatic: new Land cover mode maps your whole zone into classes, with their areas in hectares, a Minimum area setting and a styled export
     - Examples library: browse examples by category and try one on its own image in one click

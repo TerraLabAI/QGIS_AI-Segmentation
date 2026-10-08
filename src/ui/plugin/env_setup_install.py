@@ -236,6 +236,7 @@ class EnvSetupInstallMixin:
 
         import time as _time
         self._install_t0 = _time.monotonic()
+        self._install_stage_marks = [("packages", self._install_t0)]
         self._install_attempt = _bump_install_attempt()
         try:
             from ...core import telemetry_session_events
@@ -276,6 +277,27 @@ class EnvSetupInstallMixin:
             "tuning.install.signin_reveal_delay_ms", 2000, 500, 10000)
         QTimer.singleShot(reveal_ms, self._refresh_activation_async)
 
+    def _install_stage_props(self, completed: bool = False) -> dict:
+
+
+
+
+
+        try:
+            import time as _time
+            marks = list(getattr(self, "_install_stage_marks", None) or [])
+            if not marks:
+                return {}
+            now = _time.monotonic()
+            if not completed:
+                stage, began = marks[-1]
+                return {"stage": stage, "stage_s": round(max(0.0, now - began), 1)}
+            ends = [began for _name, began in marks[1:]] + [now]
+            return {f"{name}_s": round(max(0.0, end - began), 1)
+                    for (name, began), end in zip(marks, ends)}
+        except Exception:  # noqa: BLE001
+            return {}
+
     def _on_deps_install_progress(self, percent: int, message: str):
         if not self.dock_widget:
             return
@@ -300,6 +322,9 @@ class EnvSetupInstallMixin:
 
             if self._verify_worker is not None and self._verify_worker.isRunning():
                 return
+            import time as _time
+            self._install_stage_marks = list(
+                getattr(self, "_install_stage_marks", None) or []) + [("verify", _time.monotonic())]
             self._verify_worker = VerifyWorker(
                 include_local_model=getattr(
                     self, "_install_includes_local_model", True))
@@ -617,6 +642,7 @@ class EnvSetupInstallMixin:
                     retry_count=getattr(self, "_install_attempt", 0),
                     detail=message,
                     entry=self._install_entry_kind(),
+                    stage_props=self._install_stage_props(),
                 )
             except Exception:
                 pass  # nosec B110
@@ -658,6 +684,7 @@ class EnvSetupInstallMixin:
                         retry_count=getattr(self, "_install_attempt", 0),
                         entry=self._install_entry_kind(),
                         local_model_ready=model_ok,
+                        stage_props=self._install_stage_props(completed=True),
                     )
                     self._install_t0 = 0.0
                 _clear_install_attempts()
@@ -772,6 +799,7 @@ class EnvSetupInstallMixin:
                     retry_count=getattr(self, "_install_attempt", 0),
                     detail=message,
                     entry=self._install_entry_kind(),
+                    stage_props=self._install_stage_props(),
                 )
             except Exception:
                 pass  # nosec B110
@@ -813,7 +841,8 @@ class EnvSetupInstallMixin:
                 t0 = getattr(self, "_install_t0", 0.0)
                 telemetry_session_events.track_install_cancelled(
                     duration_ms=int((_time.monotonic() - t0) * 1000) if t0 else None,
-                    entry=self._install_entry_kind())
+                    entry=self._install_entry_kind(),
+                    stage_props=self._install_stage_props())
             except Exception:
                 pass  # nosec B110
             QgsMessageLog.logMessage(

@@ -30,8 +30,11 @@ def _is_finite_policy_value(value: object) -> TypeGuard[int | float]:
 
 
 
+
+
 _run_policy_lock = threading.Lock()
 _run_policy: dict | None = None
+_run_resolved: dict | None = None
 _scope = threading.local()
 
 
@@ -48,24 +51,41 @@ def _cached_config_policy() -> dict:
     return policy if isinstance(policy, dict) else {}
 
 
+def config_detection_policy() -> dict:
+
+
+
+    return _cached_config_policy()
+
+
+def plan_run_policy(plan: object) -> dict | None:
+
+    run_policy = plan.get("run_policy") if isinstance(plan, dict) else None
+    return run_policy if isinstance(run_policy, dict) and run_policy else None
+
+
 def capture_run_policy(plan: object = None) -> dict:
 
 
 
 
 
-    run_policy = plan.get("run_policy") if isinstance(plan, dict) else None
-    policy = run_policy if isinstance(run_policy, dict) and run_policy else _cached_config_policy()
-    pin_run_policy(policy)
+
+    run_policy = plan_run_policy(plan)
+    policy = run_policy if run_policy is not None else _cached_config_policy()
+    resolved = plan.get("resolved") if isinstance(plan, dict) and run_policy is not None else None
+    pin_run_policy(policy, resolved)
     return policy
 
 
-def pin_run_policy(policy: object) -> None:
+def pin_run_policy(policy: object, resolved: object = None) -> None:
 
 
-    global _run_policy
+    global _run_policy, _run_resolved
     with _run_policy_lock:
         _run_policy = policy if isinstance(policy, dict) and policy else None
+        _run_resolved = (resolved if _run_policy is not None and isinstance(resolved, dict)
+                         else None)
 
 
 def release_run_policy() -> None:
@@ -77,6 +97,23 @@ def pinned_run_policy() -> dict | None:
 
     with _run_policy_lock:
         return _run_policy
+
+
+def run_resolved(key: str) -> object:
+
+
+
+    with _run_policy_lock:
+        resolved = _run_resolved
+    return resolved.get(key) if isinstance(resolved, dict) else None
+
+
+def run_resolved_has(key: str) -> bool:
+
+
+    with _run_policy_lock:
+        resolved = _run_resolved
+    return isinstance(resolved, dict) and key in resolved
 
 
 @contextmanager
@@ -182,6 +219,7 @@ def prompt_policy(policy: dict | None = None) -> dict:
 
 
 
-    policy = get_detection_policy() if policy is None else policy
+
+    policy = _cached_config_policy() if policy is None else policy
     prompt = policy.get("prompt") if isinstance(policy, dict) else None
     return prompt if isinstance(prompt, dict) else {}

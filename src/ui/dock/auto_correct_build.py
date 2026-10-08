@@ -34,7 +34,7 @@ from ...core.review_defaults import (
     AUTO_REVIEW_POINTS_PCT_DEFAULT as _AUTO_REVIEW_POINTS_PCT_DEFAULT,
 )
 from ...core.review_defaults import (
-    AUTO_REVIEW_SIMPLIFY_DEFAULT as _AUTO_REVIEW_SIMPLIFY_DEFAULT,
+    auto_review_simplify_default as _auto_review_simplify_default,
 )
 from ...core.server_dials import dial_copy
 from ..icons import icon_for, pixmap_for
@@ -814,7 +814,7 @@ class DockAutoCorrectBuildMixin:
         self.auto_shape_only_simplify.setDecimals(1)
         self.auto_shape_only_simplify.setSingleStep(0.5)
         self.auto_shape_only_simplify.setRange(0.0, 1000.0)
-        self.auto_shape_only_simplify.setValue(_AUTO_REVIEW_SIMPLIFY_DEFAULT)
+        self.auto_shape_only_simplify.setValue(_auto_review_simplify_default())
         self._shape_only_spin_row(
             _box, tr("Simplify"), tr(
                 "Drop this polygon's points closer than this distance to a "

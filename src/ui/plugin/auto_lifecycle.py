@@ -110,7 +110,9 @@ class AutoLifecycleMixin:
         except (RuntimeError, AttributeError):
             pass  # nosec B110
 
-    def _end_superseded_finalize(self, show_notice: bool = True) -> None:
+    def _end_superseded_finalize(self, show_notice: bool = True,
+                                 send_terminal: bool = True) -> None:
+
 
 
 
@@ -126,23 +128,8 @@ class AutoLifecycleMixin:
         if state.get("superseded"):
             return
         state["superseded"] = True
-
-
-        if getattr(self, "_auto_tel_stop_reason", None) in (None, "completed"):
-            try:
-                from ...core import telemetry_run_events
-                from .auto_client_profile import client_profile_props
-                done = int(state.get("tiles_succeeded", 0) or 0)
-                telemetry_run_events.track_auto_detect_cancelled(
-                    run_id=self._auto_run_id or "",
-                    tiles_done=done,
-                    tiles_total=int((self._auto_run_ctx or {}).get("total", done) or done),
-                    salvaged_to_review=False,
-                    duration_ms=self._auto_duration_ms(),
-                    client_profile=client_profile_props(self),
-                )
-            except Exception:  # noqa: BLE001  # nosec B110
-                pass
+        if send_terminal:
+            self._send_auto_cancelled_terminal(int(state.get("tiles_succeeded", 0) or 0))
         if self.dock_widget:
             try:
                 self.dock_widget.set_auto_finalizing(False)

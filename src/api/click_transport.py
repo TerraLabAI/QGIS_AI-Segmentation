@@ -51,6 +51,7 @@ from ..core.network_busy import network_busy
 from ..core.qt_compat import reply_http_status, resolve_qt_enum
 from ..core.server_dials import dial_in_range
 from .json_request import build_json_request
+from .terralab_client_retry import _HANDOFF_STATUSES, _retry_after_s
 
 
 
@@ -459,7 +460,13 @@ def _post_and_keep_painting_inner(
     apply_redirect_policy,
     cancel_check=None,
     packed: bool = False,
+    extra_headers: dict | None = None,
+    hints: dict | None = None,
 ) -> tuple[bytes, int | None, object] | None:
+
+
+
+
 
 
 
@@ -497,7 +504,9 @@ def _post_and_keep_painting_inner(
         manager = QgsNetworkAccessManager.instance()
         if manager is None:
             return None
-        request = build_json_request(url, auth, wait_ms, packed=packed, redirect_policy=apply_redirect_policy)
+        request = build_json_request(url, auth, wait_ms, packed=packed,
+                                     extra_headers=extra_headers,
+                                     redirect_policy=apply_redirect_policy)
 
         payload = QByteArray(body)
     except Exception:  # noqa: BLE001
@@ -525,14 +534,50 @@ def _post_and_keep_painting_inner(
     held_input = False
     state = {"cancelled": False}
 
+
+
+
+
+    wire = {"tick_at": sent_at, "loop_lag_s": 0.0}
+    if url.lower().startswith("https:"):
+        wire["new_conn"] = False
+
+    def _uploaded(sent_bytes, total_bytes) -> None:
+        try:
+            if 0 < total_bytes <= sent_bytes and "uploaded_at" not in wire:
+                wire["uploaded_at"] = click_clock_now()
+        except Exception:  # noqa: BLE001  # nosec B110
+            pass
+
+    def _first_byte() -> None:
+        wire.setdefault("first_byte_at", click_clock_now())
+
+    def _handshake() -> None:
+        wire["new_conn"] = True
+
+    def _note_watch_tick() -> None:
+
+        now = click_clock_now()
+        late = now - wire["tick_at"] - _CANCEL_POLL_MS / 1000.0
+        wire["loop_lag_s"] = max(wire["loop_lag_s"], late)
+        wire["tick_at"] = now
+
     def _poll_owner() -> None:
         try:
+            _note_watch_tick()
             if (_click_wait_generation() != started_generation
                     or (cancel_check is not None and cancel_check())):
                 state["cancelled"] = True
                 loop.quit()
         except Exception:  # noqa: BLE001  # nosec B110
             pass
+
+    try:
+        reply.uploadProgress.connect(_uploaded)
+        reply.metaDataChanged.connect(_first_byte)
+        reply.encrypted.connect(_handshake)
+    except Exception:  # noqa: BLE001  # nosec B110
+        pass
 
     try:
         reply.finished.connect(loop.quit)
@@ -543,6 +588,7 @@ def _post_and_keep_painting_inner(
         watch.setInterval(_CANCEL_POLL_MS)
         watch.timeout.connect(_poll_owner)
         watch.start()
+        wire["tick_at"] = click_clock_now()
         if not _is_finished(reply):
             held_input = True
             hold.start()
@@ -581,10 +627,19 @@ def _post_and_keep_painting_inner(
 
 
         status = reply_http_status(reply)
-        _end(reply, guard, watch)
+        if hints is not None and status in _HANDOFF_STATUSES:
+            hints["retry_after_s"] = _retry_after_s(reply)
         clock = active_click_clock()
         if clock is not None:
-            clock.note_request(sent_at, click_clock_now(), len(body), len(raw))
+            try:
+
+
+                _note_watch_tick()
+                clock.note_request(sent_at, click_clock_now(), len(body), len(raw),
+                                   wire=wire)
+            except Exception:  # noqa: BLE001  # nosec B110
+                pass
+        _end(reply, guard, watch)
         return raw, status, error
     finally:
         if held_input:

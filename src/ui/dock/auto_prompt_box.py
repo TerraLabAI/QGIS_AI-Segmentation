@@ -150,7 +150,11 @@ class DockAutoPromptBoxMixin:
 
         try:
             from ...core.detection_policy import prompt_suggests_canopy
-            self._auto_prompt_canopy = bool(text) and prompt_suggests_canopy(text)
+            from ...core.detection_policy_core import config_detection_policy
+
+
+            self._auto_prompt_canopy = bool(text) and prompt_suggests_canopy(
+                text, config_detection_policy())
             self._refresh_auto_exemplar_explainer(
                 slot_taken=self._auto_exemplar_line_busy())
         except Exception:  # noqa: BLE001

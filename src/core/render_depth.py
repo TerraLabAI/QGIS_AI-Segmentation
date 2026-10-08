@@ -38,7 +38,8 @@ logger = logging.getLogger(__name__)
 
 
 
-LEVEL_AGREEMENT_MIN: float = 0.27
+
+LEVEL_AGREEMENT_MIN: float = -1.0
 
 
 

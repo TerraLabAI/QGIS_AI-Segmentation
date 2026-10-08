@@ -325,7 +325,7 @@ class ManualWorkflowSessionMixin:
 
 
                 if self._on_export_layer():
-                    self._signal_gpu_session_end("semi_auto_stop")
+                    self._signal_cloud_session_end("semi_auto_stop")
                 return
             try:
                 from ...core import telemetry_session_events
@@ -339,7 +339,7 @@ class ManualWorkflowSessionMixin:
             self._autosave_manual_saved_polygons(include_live=True)
 
         self._stop_manual_session(keep_saves=False)
-        self._signal_gpu_session_end("semi_auto_stop")
+        self._signal_cloud_session_end("semi_auto_stop")
 
     def _stop_manual_session(self, keep_saves: bool) -> None:
 

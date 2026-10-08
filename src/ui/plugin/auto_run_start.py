@@ -28,8 +28,16 @@ def zone_edge_keep_margin_m(prompt: str, merge_separate: bool) -> float:
 
 
 
+
     if not prompt or not merge_separate:
         return 0.0
+    import math
+
+    from ...core.detection_policy_core import run_resolved
+    resolved = run_resolved("zone_edge_margin_m")
+    if (isinstance(resolved, (int, float)) and not isinstance(resolved, bool)
+            and math.isfinite(resolved) and 0.0 < resolved <= 500.0):
+        return float(resolved)
     try:
         from ...core.detection_policy import (
             object_profile,
@@ -336,31 +344,44 @@ class AutoRunStartMixin:
 
 
 
+
         try:
             prompt = self.dock_widget.auto_prompt_input.text().strip()
         except (RuntimeError, AttributeError):
             prompt = ""
-        from ...core.detection_policy_core import capture_run_policy, release_run_policy
+        from ...core.detection_policy_core import (
+            capture_run_policy,
+            plan_run_policy,
+            release_run_policy,
+        )
         from ...core.run_decisions import neutral_run_decisions, parse_run_decisions
         from ...core.served_config import served_config_ready
 
         self._late_plan_clear()
         plan = self._active_run_plan(prompt)
+        if plan is None and prompt:
+
+
+            try:
+                plan = self._active_run_plan(self._resolve_object_token(prompt))
+            except (RuntimeError, AttributeError, TypeError):
+                plan = None
 
 
         self._auto_run_decisions = parse_run_decisions(plan)
-        if served_config_ready():
+        if served_config_ready() and plan_run_policy(plan) is None:
+            QgsMessageLog.logMessage(
+                "Auto detection: run plan settings not in hand; nothing sent",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+        elif served_config_ready():
             capture_run_policy(plan)
             if self._served_policy_preflight():
                 if self._auto_run_decisions is None:
                     self._auto_run_decisions = neutral_run_decisions()
-                    if plan is None:
-                        self._late_plan_begin(prompt)
-                    else:
-                        QgsMessageLog.logMessage(
-                            "Auto detection: run plan carries no decisions; "
-                            "neutral choices", "AI Segmentation",
-                            level=Qgis.MessageLevel.Warning)
+                    QgsMessageLog.logMessage(
+                        "Auto detection: run plan carries no decisions; "
+                        "neutral choices", "AI Segmentation",
+                        level=Qgis.MessageLevel.Warning)
                 return True
             release_run_policy()
         self._refuse_start_without_settings(prompt)
@@ -389,19 +410,25 @@ class AutoRunStartMixin:
 
         from ...core import boundary_snap
         from ...core import detection_policy as dp
-        from ...core.served_config import ServedConfigMissing
+        from ...core.detection_policy_core import pinned_run_policy
+        from ...core.served_config import ServedConfigMissing, missing_run_policy_values
 
+        gaps = missing_run_policy_values(pinned_run_policy())
+        if gaps:
+            shown = ", ".join(gaps[:3]) + (f" and {len(gaps) - 3} more" if len(gaps) > 3 else "")
+            QgsMessageLog.logMessage(
+                f"Auto detection: run policy lacks required values ({shown})",
+                "AI Segmentation", level=Qgis.MessageLevel.Warning)
+            return False
         try:
             dp.merge_scalars()
             dp.map_likeness_min_share()
             for reader in (
-                    dp.max_masks_per_tile, dp.mask_cap_trigger_frac,
+                    dp.max_masks_per_tile,
                     dp.max_tile_coverage, dp.hard_tile_coverage,
-                    dp.hard_cover_shape_escape, dp.compact_min_fill,
-                    dp.tile_span_fraction, dp.min_keep_px,
+                    dp.compact_min_fill,
                     dp.subdiv_max_depth, dp.resplit_time_ratio,
-                    dp.subdivide_overlap_fraction, dp.subdivide_min_parent_px,
-                    dp.min_keep_floor_m2):
+                    dp.subdivide_overlap_fraction, dp.subdivide_min_parent_px):
                 reader()
             for reader in (
                     dp.zone_seed_mupp, dp.object_min_px,
@@ -411,7 +438,6 @@ class AutoRunStartMixin:
                     dp.tile_plan_half_steps, dp.tile_plan_step_ratio,
                     dp.exemplar_context_pad, dp.exemplar_context_pad_px_cap,
                     dp.exemplar_min_paste_scale,
-                    dp.semantic_rescue_coverage_floor,
                     dp.gate_prefilter_band_eps,
                     dp.recall_floor, dp.recall_floor_exemplar_only,
                     boundary_snap.boundary_snap_tolerance_m,
@@ -582,7 +608,6 @@ class AutoRunStartMixin:
 
         if not self._auto_headless_run:
             self._warn_local_raster_quality(layer)
-            self._warn_drawn_map_basemap(layer)
         return layer
 
     def _start_step_sign_in(self) -> object:
@@ -1635,7 +1660,11 @@ class AutoRunStartMixin:
                     merge_mode="separate" if self._auto_merge_separate else "map",
                     merge_mode_source=getattr(self, "_auto_merge_mode_source", "prompt"),
                     tile_props=tile_props,
+                    plan_hold_ms=int(getattr(self, "_auto_plan_hold_ms", 0) or 0),
+                    headless=bool(getattr(self, "_auto_headless_run", False)),
                 )
+
+                self._auto_plan_hold_ms = 0
         except Exception:
             pass  # nosec B110
 

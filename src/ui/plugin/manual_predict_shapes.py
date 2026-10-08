@@ -331,9 +331,11 @@ class ManualShapeMixin:
 
         try:
             from ...core.detection_policy import regularize_settings
+            from ...core.polygon_geometry import RIGHT_ANGLE_FALLBACK_TOL_PX
             from ...core.server_dials import dial_in_range
             fallback_px = dial_in_range(
-                "tuning.manual.right_angle_fallback_tol_px", 2.0, 0.5, 10.0)
+                "tuning.manual.right_angle_fallback_tol_px",
+                RIGHT_ANGLE_FALLBACK_TOL_PX, 0.5, 10.0)
             s = regularize_settings()
             shape_kwargs = {
                 "allow_diagonal": bool(s["allow_diagonal"]),

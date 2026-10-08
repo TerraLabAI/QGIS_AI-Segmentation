@@ -13,7 +13,7 @@ from .detection_policy_core import (
     saturation_policy,
     seed_policy,
 )
-from .served_config import require_served_bool, require_served_int, require_served_number
+from .served_config import require_served_int, require_served_number
 
 
 def resplit_charge_every(policy: dict | None = None) -> int:
@@ -26,22 +26,6 @@ def resplit_charge_every(policy: dict | None = None) -> int:
     if _is_finite_policy_value(val) and val >= 0:
         return int(val)
     return 1
-
-
-def _sat_float(key: str, fallback: float, policy: dict | None) -> float:
-
-    val = saturation_policy(policy).get(key)
-    if _is_finite_policy_value(val):
-        return float(val)
-    return fallback
-
-
-def mask_cap_trigger_frac(fallback: object = None, policy: dict | None = None) -> float:
-
-
-
-    with policy_scope(policy):
-        return require_served_number("detection_policy.seed.saturation.cap_trigger_frac", 0.05, 1.0)
 
 
 def subdiv_max_depth(fallback: object = None, policy: dict | None = None) -> int:
@@ -120,23 +104,6 @@ def hard_tile_coverage(fallback: object = None, policy: dict | None = None) -> f
         return require_served_number("detection_policy.seed.saturation.hard_tile_coverage", 0.0, 1.0)
 
 
-def map_cover_score_floor(fallback: float, policy: dict | None = None) -> float:
-
-
-
-
-
-
-
-
-
-
-
-
-    val = _sat_float("map_cover_score_floor", fallback, policy)
-    return val if 0.0 < val <= 1.0 else fallback
-
-
 def compact_min_fill(fallback: object = None, policy: dict | None = None) -> float:
 
 
@@ -147,17 +114,7 @@ def compact_min_fill(fallback: object = None, policy: dict | None = None) -> flo
         return require_served_number("detection_policy.seed.saturation.compact_min_fill", 0.01, 1.0)
 
 
-def tile_span_fraction(fallback: object = None, policy: dict | None = None) -> float:
-
-
-
-
-
-    with policy_scope(policy):
-        return require_served_number("detection_policy.seed.saturation.tile_span_fraction", 0.01, 1.0)
-
-
-def hard_cover_shape_escape(fallback: object = None, policy: dict | None = None) -> bool:
+def sliver_floor(policy: dict | None = None) -> tuple[float, float]:
 
 
 
@@ -166,29 +123,9 @@ def hard_cover_shape_escape(fallback: object = None, policy: dict | None = None)
 
 
 
-
-
-
-
-
-
-    with policy_scope(policy):
-        return require_served_bool("detection_policy.seed.saturation.hard_cover_shape_escape")
-
-
-def min_keep_px(fallback: object = None, policy: dict | None = None) -> float:
-
-
-
-
-    with policy_scope(policy):
-        return require_served_number("detection_policy.seed.saturation.min_keep_px", 0.0, 64.0)
-
-
-def min_keep_floor_m2(fallback: object = None, policy: dict | None = None) -> float:
-
-
-
-    with policy_scope(policy):
-        return require_served_number(
-            "detection_policy.seed.saturation.min_keep_floor_m2", 0.0, 1_000_000.0)
+    sat = saturation_policy(policy)
+    px = sat.get("min_keep_px")
+    floor_m2 = sat.get("min_keep_floor_m2")
+    px_ok = _is_finite_policy_value(px) and 0.0 <= px <= 64.0
+    floor_ok = _is_finite_policy_value(floor_m2) and 0.0 <= floor_m2 <= 1_000_000.0
+    return (float(px) if px_ok else 1.0, float(floor_m2) if floor_ok else 0.0)

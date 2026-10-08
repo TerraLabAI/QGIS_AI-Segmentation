@@ -20,6 +20,12 @@ from .served_config import (
 )
 
 
+
+_CHAIKIN_POINT_GROWTH = 2.0
+
+_MAX_DEVIATION_FALLBACK_M = 1.0
+
+
 def _review_float(key: str, fallback: float, policy: dict | None) -> float:
 
     val = review_policy(policy).get(key)
@@ -94,7 +100,6 @@ def click_unsure_below(policy: dict | None = None) -> float:
 
 
 def pinhole_fill_m(fallback: float = 0.0, policy: dict | None = None) -> float:
-
 
 
 
@@ -235,25 +240,29 @@ def vertex_budget_settings(policy: dict | None = None) -> dict:
     if (not isinstance(smooth_min, int) or isinstance(smooth_min, bool) or smooth_min < 3):
         smooth_min = max(3, min_v // 2)
     return {
-        "spacing_m": _zero_or_positive(pol.get("spacing_m"), 6.0),
+        "spacing_m": _zero_or_positive(pol.get("spacing_m"), 5.0),
         "min_vertices": int(min_v),
-        "max_deviation_m": _zero_or_positive(pol.get("max_deviation_m"), 1.0),
+        "max_deviation_m": _zero_or_positive(
+            pol.get("max_deviation_m"), _MAX_DEVIATION_FALLBACK_M),
         "max_deviation_fraction": _zero_or_positive(
-            pol.get("max_deviation_fraction"), 0.10),
+            pol.get("max_deviation_fraction"), 0.15),
+
+
 
 
 
 
 
         "smooth_spacing_factor": _zero_or_positive(
-            pol.get("smooth_spacing_factor"), 2.0),
+            pol.get("smooth_spacing_factor"), _CHAIKIN_POINT_GROWTH),
         "smooth_max_deviation_m": _zero_or_positive(
-            pol.get("smooth_max_deviation_m"), 2.0),
+            pol.get("smooth_max_deviation_m"),
+            _CHAIKIN_POINT_GROWTH * _MAX_DEVIATION_FALLBACK_M),
         "smooth_min_vertices": int(smooth_min),
         "dial_max_cap_fraction": _zero_or_positive(
             pol.get("dial_max_cap_fraction"), 0.5),
         "smooth_multiplier_cap": _zero_or_positive(
-            pol.get("smooth_multiplier_cap"), 8.0),
+            pol.get("smooth_multiplier_cap"), 0.0),
     }
 
 
@@ -267,6 +276,12 @@ def prompt_suggests_canopy(prompt: str, policy: dict | None = None) -> bool:
     norm = (prompt or "").strip().lower().replace("_", " ")
     if not norm:
         return False
+    if policy is None:
+        from .detection_policy_core import run_resolved
+
+        resolved = run_resolved("canopy")
+        if isinstance(resolved, bool):
+            return resolved
     try:
         with policy_scope(policy):
             tokens = require_served_list("detection_policy.review.canopy_hint_tokens")
@@ -331,15 +346,6 @@ def semantic_rescue_enabled(policy: dict | None = None) -> bool:
     return semantic_rescue_policy(policy).get("enabled") is True
 
 
-def semantic_rescue_coverage_floor(policy: dict | None = None) -> float:
-
-
-
-    with policy_scope(policy):
-        return require_served_number(
-            "detection_policy.review.semantic_rescue.coverage_floor", 0.0, 1.0)
-
-
 def fp_filter_policy(policy: dict | None = None) -> dict:
 
 
@@ -357,7 +363,16 @@ def fp_rules(shape_class: str, policy: dict | None = None) -> list[dict]:
 
 
 
-    raw = fp_filter_policy(policy).get(shape_class)
+
+
+
+    raw = None
+    if policy is None:
+        from .detection_policy_core import run_resolved
+
+        raw = run_resolved("fp_rules")
+    if not isinstance(raw, list):
+        raw = fp_filter_policy(policy).get(shape_class)
     if not isinstance(raw, list):
         return []
     from .geometry_attrs import FP_ACTIONS, FP_ATTRS, FP_OPS

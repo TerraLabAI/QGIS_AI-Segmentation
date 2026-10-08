@@ -85,14 +85,7 @@ from .auto_worker.gate_scan import (
     AutoGateScanMixin,
 )
 from .auto_worker.mask_geometry import (
-    _COMPACT_MIN_FILL,
-    _HARD_COVER_SHAPE_ESCAPE,
-    _HARD_TILE_COVERAGE,
-    _MASK_CAP_TRIGGER_FRAC,
     _MAX_MASKS_PER_TILE,
-    _MAX_TILE_COVERAGE,
-    _MIN_KEEP_PX,
-    _TILE_SPAN_FRACTION,
     AutoMaskGeometryMixin,
 )
 from .auto_worker.rescan_policy import (
@@ -180,13 +173,6 @@ __all__ = [
     "_STOP_DRAIN_BUDGET_S",
     "_BILLED_DRAIN_STOP_REASONS",
     "_MAX_MASKS_PER_TILE",
-    "_MASK_CAP_TRIGGER_FRAC",
-    "_MAX_TILE_COVERAGE",
-    "_HARD_TILE_COVERAGE",
-    "_HARD_COVER_SHAPE_ESCAPE",
-    "_COMPACT_MIN_FILL",
-    "_TILE_SPAN_FRACTION",
-    "_MIN_KEEP_PX",
     "_UPLOAD_SLOW_S",
     "_UPLOAD_STALL_S",
     "_DEFAULT_POLL_INTERVAL_S",
@@ -707,12 +693,11 @@ class AutoDetectionWorker(
 
 
 
+
         from ..core import detection_policy as _dp
         from ..core.served_config import require_served_int, require_served_number
         self._prefilter = _dp.gate_prefilter_config()
         self._max_masks = _dp.max_masks_per_tile(_MAX_MASKS_PER_TILE)
-        self._mask_cap_trigger = int(
-            _dp.mask_cap_trigger_frac(_MASK_CAP_TRIGGER_FRAC) * self._max_masks)
         self._subdiv_max_depth = require_served_int(
             "detection_policy.seed.saturation.subdiv_max_depth", 0, 8)
         self._resplit_time_ratio = require_served_number(
@@ -723,26 +708,10 @@ class AutoDetectionWorker(
         self._paid_tiles_done = 0
         self._resplit_deadline: float = 0.0
         self._resplit_dropped = 0
-        self._max_tile_coverage = _dp.max_tile_coverage(_MAX_TILE_COVERAGE)
-        self._hard_tile_coverage = _dp.hard_tile_coverage(_HARD_TILE_COVERAGE)
-        self._hard_cover_shape_escape = _dp.hard_cover_shape_escape(
-            _HARD_COVER_SHAPE_ESCAPE)
         self._subdiv_overlap = require_served_number(
             "detection_policy.seed.saturation.subdivide_overlap_fraction", 0.0, 0.49)
         self._subdiv_min_parent_px = require_served_int(
             "detection_policy.seed.saturation.subdivide_min_parent_px", 1, 100_000)
-        self._compact_min_fill = _dp.compact_min_fill(_COMPACT_MIN_FILL)
-        self._tile_span_fraction = _dp.tile_span_fraction(_TILE_SPAN_FRACTION)
-        self._min_keep_px = _dp.min_keep_px(_MIN_KEEP_PX)
-
-
-
-        self._min_keep_floor_m2 = require_served_number(
-            "detection_policy.seed.saturation.min_keep_floor_m2", 0.0, 1_000_000.0)
-
-
-
-        self._map_cover_score_floor = _dp.map_cover_score_floor(0.0)
 
 
 
@@ -752,8 +721,7 @@ class AutoDetectionWorker(
         self._tile_simplify_mult = _dp.tile_simplify_mult(0.0)
 
 
-
-        self._semantic_coverage_floor = _dp.semantic_rescue_coverage_floor()
+        self._min_keep_px, self._min_keep_floor_m2 = _dp.sliver_floor()
 
 
 
@@ -855,6 +823,10 @@ class AutoDetectionWorker(
 
 
         self.tiles_capped_final = 0
+
+
+
+        self.tiles_filters_missing = 0
 
 
 
@@ -1030,6 +1002,12 @@ class AutoDetectionWorker(
 
         self._reply_byte_at: dict[int, float] = {}
         self._answer_times: list[float] = []
+
+
+
+        self._server_total_ms: list[float] = []
+        self._server_queue_ms: list[float] = []
+        self._wire_ms: list[float] = []
         self._dead_link_quiet_s = float(_dial_in_range(
             "detection_policy.network.dead_link_quiet_s", _DEAD_LINK_QUIET_S,
             0.0, 60.0))
@@ -1113,6 +1091,18 @@ class AutoDetectionWorker(
 
 
         self.tiles_failed_server = 0
+
+
+        self.tiles_rejected = 0
+
+
+        self.tiles_skipped_by_reason: dict[str, int] = {}
+        self._tile_last_error: dict[int, str] = {}
+
+
+        self.masks_received = 0
+        self.tiles_answered_empty = 0
+        self.first_answer_mono: float | None = None
         self._completed_idx: set[int] = set()
 
 

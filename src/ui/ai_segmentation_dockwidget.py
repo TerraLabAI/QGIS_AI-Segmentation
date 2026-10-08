@@ -36,6 +36,7 @@ from .dock.manual_credit_gate import DockManualCreditGateMixin
 from .dock.manual_engine import DockManualEngineMixin
 from .dock.manual_local_install import DockManualLocalInstallMixin
 from .dock.manual_notice import DockManualNoticeMixin
+from .dock.pairing_code_entry import DockPairingCodeMixin
 from .dock.pro_ceiling_contact import DockProCeilingContactMixin
 from .dock.pro_nudges import DockProNudgesMixin
 from .dock.qgis_bridge import DockQgisBridgeMixin
@@ -49,6 +50,7 @@ from .dock.widgets import Mode
 class AISegmentationDockWidget(
     DockLazyBuildMixin,
     DockBuildMixin,
+    DockPairingCodeMixin,
     DockAutoBuildMixin,
     DockAutoReviewBuildMixin,
     DockAutoCorrectBuildMixin,
@@ -100,6 +102,8 @@ class AISegmentationDockWidget(
     clear_selection_requested = pyqtSignal()
     pairing_requested = pyqtSignal(str)
     pairing_cancel_requested = pyqtSignal(str)
+
+    pairing_code_entered = pyqtSignal(str)
 
 
     refine_settings_changed = pyqtSignal(int, int, int, bool, bool)

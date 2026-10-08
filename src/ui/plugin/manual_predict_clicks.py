@@ -51,7 +51,7 @@ def _click_was_superseded(err: Exception) -> bool:
 
 
     try:
-        from ...core.cloud_sam_predictor import RefineSupersededError
+        from ...core.cloud_click_predictor import RefineSupersededError
 
         return isinstance(err, RefineSupersededError)
     except Exception:  # noqa: BLE001
@@ -73,7 +73,7 @@ def _click_refusal_answer(err: Exception) -> str:
 
 
     try:
-        from ...core.cloud_sam_predictor import REFUSAL_OTHER, RefineRefusedError
+        from ...core.cloud_click_predictor import REFUSAL_OTHER, RefineRefusedError
 
         if not isinstance(err, RefineRefusedError):
             return ""
@@ -105,7 +105,7 @@ def _click_connectivity_code(err: Exception) -> str:
     code = str(getattr(err, "code", "") or "").strip().upper()
     if code == "TIMEOUT":
         try:
-            from ...core.cloud_sam_predictor import unreached_error
+            from ...core.cloud_click_predictor import unreached_error
 
             return code if unreached_error(err) else ""
         except Exception:  # noqa: BLE001
@@ -125,7 +125,7 @@ def _click_hit_cold_start(err: Exception) -> bool:
 
     try:
         from ...core import cloud_warming_state
-        from ...core.cloud_sam_predictor import WARMING_CODE
+        from ...core.cloud_click_predictor import WARMING_CODE
 
         code = str(getattr(err, "code", "") or "").strip().upper()
         if code == WARMING_CODE:
@@ -666,18 +666,7 @@ class ManualClickMixin:
         import numpy as np
 
         from ...core.click_phase_clock import activate_click_clock, click_clock_now
-
-
-
-
-
-
-        try:
-            from rasterio import transform as rio_transform
-            from rasterio.transform import from_bounds as transform_from_bounds
-        except ImportError:
-            rio_transform = None
-            transform_from_bounds = None
+        from ...core.crop_window import crop_pixel_of_point
 
 
 
@@ -728,42 +717,7 @@ class ManualClickMixin:
         crop_bounds = self._current_crop_info["bounds"]
         img_shape = self._current_crop_info["img_shape"]
         img_height, img_width = img_shape
-
         minx, miny, maxx, maxy = crop_bounds
-
-
-
-        if maxx <= minx or maxy <= miny or img_width <= 0 or img_height <= 0:
-            QgsMessageLog.logMessage(
-                "Crop window has no size - cannot place the click in it",
-                "AI Segmentation", level=Qgis.MessageLevel.Warning)
-            return False
-        img_clip_transform = None
-        if rio_transform is not None:
-
-
-
-
-            try:
-                img_clip_transform = transform_from_bounds(
-                    minx, miny, maxx, maxy, img_width, img_height)
-                rio_transform.rowcol(img_clip_transform, minx, maxy)
-            except Exception:  # noqa: BLE001
-                img_clip_transform = None
-        if img_clip_transform is not None:
-
-            def crop_pixel_of(px, py):
-
-
-
-                row, col = rio_transform.rowcol(img_clip_transform, px, py)
-                return (min(max(int(row), 0), img_height - 1),
-                        min(max(int(col), 0), img_width - 1))
-        else:
-            from ...core.crop_window import crop_pixel_of_point
-
-            def crop_pixel_of(px, py):
-                return crop_pixel_of_point(crop_bounds, img_shape, px, py)
 
 
 
@@ -773,7 +727,7 @@ class ManualClickMixin:
         point_labels_list = []
         for points, label in ((active_pos, 1), (active_neg, 0)):
             for x, y in points:
-                pixel = crop_pixel_of(x, y)
+                pixel = crop_pixel_of_point(crop_bounds, img_shape, x, y)
                 if pixel is None:
                     QgsMessageLog.logMessage(
                         "Crop window has no size - cannot place the click in it",
@@ -870,6 +824,8 @@ class ManualClickMixin:
         self._manual_click_fell_back = False
         click_started_at = _click_clock.monotonic()
         clock = getattr(self, "_click_clock_in_hand", None)
+        if clock is not None and getattr(self, "_last_click_point", None) is not None:
+            clock.note_crop_offset(self._last_click_point, crop_bounds)
 
 
 
@@ -1186,7 +1142,7 @@ class ManualClickMixin:
         try:
             if getattr(self, "_last_click_point", None) is not None:
                 cx, cy = self._last_click_point
-                crow, ccol = crop_pixel_of(cx, cy)
+                crow, ccol = crop_pixel_of_point(crop_bounds, img_shape, cx, cy)
                 click_rc = (int(crow), int(ccol))
         except Exception:  # noqa: BLE001  # nosec B110
             click_rc = None
@@ -1320,12 +1276,15 @@ class ManualClickMixin:
 
 
         self._score_goes_in_click_line = clock is not None
+        self._drawn_outline_size = None
         try:
             self._update_ui_after_prediction()
         finally:
             self._score_goes_in_click_line = False
         if clock is not None:
             clock.drawn_at = click_clock_now()
+            if self._drawn_outline_size is not None:
+                clock.note_drawn_outline(*self._drawn_outline_size)
         self._track_manual_click_answered(predict_ms, clock)
         return True
 
@@ -1520,6 +1479,11 @@ class ManualClickMixin:
 
 
         self._quiet_click_end = reason
+        if reason == QUIET_CLICK_SUPERSEDED:
+
+
+            self._manual_superseded_session = getattr(
+                self, "_manual_superseded_session", 0) + 1
 
     def _take_quiet_click_end(self):
 

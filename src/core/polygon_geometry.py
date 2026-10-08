@@ -25,7 +25,8 @@ from .shape_policy_dials import close_max_area_growth, smooth_area_keep, smooth_
 
 
 
-_RIGHT_ANGLE_FALLBACK_TOL_PX = 1.5
+
+RIGHT_ANGLE_FALLBACK_TOL_PX = 2.0
 
 
 
@@ -47,12 +48,12 @@ def _shape_fallback_dials() -> tuple[float | None, float]:
         values = (
             _served_ortho_angle(read_value),
             float(dial_in_range("tuning.manual.right_angle_fallback_tol_px",
-                                _RIGHT_ANGLE_FALLBACK_TOL_PX, 0.5, 5.0)),
+                                RIGHT_ANGLE_FALLBACK_TOL_PX, 0.5, 5.0)),
         )
         _FALLBACK_CACHE[:] = [token, values]
         return values
     except Exception:  # noqa: BLE001  # nosec B110
-        return None, _RIGHT_ANGLE_FALLBACK_TOL_PX
+        return None, RIGHT_ANGLE_FALLBACK_TOL_PX
 
 
 def _served_ortho_angle(read_value) -> float | None:
@@ -141,7 +142,8 @@ def _keep_largest_part(g: QgsGeometry) -> QgsGeometry | None:
 
 
 
-_CLOSE_MAX_AREA_GROWTH = 1.25
+
+_CLOSE_MAX_AREA_GROWTH = 1.5
 
 
 def _geometry_part_count(geom: QgsGeometry) -> int:

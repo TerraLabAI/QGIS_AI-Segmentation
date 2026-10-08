@@ -5167,8 +5167,8 @@ is blocking the plugin&apos;s local AI environment.</source>
         <translation>2. 傳送給支援團隊</translation>
     </message>
     <message>
-        <source>200 km² of Automatic a month, on zones of any size.</source>
-        <translation>自動模式每月 200 km²，區域大小不限。</translation>
+        <source>{km2} km² of Automatic a month, on zones of any size.</source>
+        <translation>自動模式每月 {km2} km²，區域大小不限。</translation>
     </message>
     <message>
         <source>200 km² of Automatic every month, on zones of any size</source>
@@ -5475,8 +5475,8 @@ is blocking the plugin&apos;s local AI environment.</source>
         <translation>Pro 提供 Semi-Auto 中每月 500 個雲端物件。</translation>
     </message>
     <message>
-        <source>Pro raises the month to 200 km² of Automatic.</source>
-        <translation>Pro 會將每月的自動模式額度提升至 200 km²。</translation>
+        <source>Pro raises the month to {km2} km² of Automatic.</source>
+        <translation>Pro 會將每月的自動模式額度提升至 {km2} km²。</translation>
     </message>
     <message>
         <source>Pro: 500 cloud objects a month in Semi-Auto with Cloud AI, and 200 km² of Automatic. Same AI, same free clicks and corrections, every machine you work on.</source>

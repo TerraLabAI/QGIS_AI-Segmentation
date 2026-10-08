@@ -58,7 +58,10 @@ class AutoSelfExemplarMixin:
 
     def _build_self_exemplar_submission(
         self, tile_idx: int, png_bytes: bytes, boxes: list,
+        tile_transform: dict | None = None,
     ) -> dict:
+
+
 
 
 
@@ -82,6 +85,14 @@ class AutoSelfExemplarMixin:
         run_mask_scale = mask_scale_field(self._mask_scale)
         if run_mask_scale is not None:
             submission["mask_scale"] = run_mask_scale
+        prompt_mode = (self._client_meta or {}).get("prompt_mode")
+        if prompt_mode is not None:
+            submission["prompt_mode"] = prompt_mode
+        bbox_native = (tile_transform or {}).get("bbox_native")
+        if bbox_native is not None:
+            submission["pixel_size_m"] = self._tile_pixel_size_m(bbox_native, png_bytes)
+
+        self._ask_tile_filters(submission)
         return submission
 
     def _self_ex_try_fire(
@@ -104,7 +115,8 @@ class AutoSelfExemplarMixin:
                 f"tile {tile_idx} pass 1 answered ({n_masks} masks), "
                 f"pass 2 skipped: no mask above {settings['min_score']:.2f}")
             return False
-        submission = self._build_self_exemplar_submission(tile_idx, png_bytes, boxes)
+        submission = self._build_self_exemplar_submission(
+            tile_idx, png_bytes, boxes, tile_transform)
         try:
             reply2 = self._client.post_detection_async(submission, self._auth)
         except Exception as exc:  # noqa: BLE001

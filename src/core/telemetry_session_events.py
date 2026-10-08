@@ -14,6 +14,7 @@ from qgis.PyQt.QtCore import QSettings
 from . import telemetry_events as ev
 from .telemetry import (
     drop_queued_events,
+    dropped_event_count,
     is_telemetry_enabled,
     scrub_payload_value,
     track,
@@ -98,7 +99,12 @@ def track_install_completed(duration_ms: int | None = None,
                             python_minor: int | None = None,
                             retry_count: int | None = None,
                             entry: str = "background",
-                            local_model_ready: bool | None = None) -> None:
+                            local_model_ready: bool | None = None,
+                            stage_props: dict | None = None) -> None:
+
+
+
+
 
 
 
@@ -111,6 +117,7 @@ def track_install_completed(duration_ms: int | None = None,
         "retry_count": retry_count,
         "entry": entry,
         "local_model_ready": None if local_model_ready is None else bool(local_model_ready),
+        **(stage_props or {}),
     })
 
 
@@ -118,7 +125,8 @@ def track_install_failed(error_class: str, duration_ms: int | None = None,
                          python_minor: int | None = None,
                          retry_count: int | None = None,
                          detail: str | None = None,
-                         entry: str = "background") -> None:
+                         entry: str = "background",
+                         stage_props: dict | None = None) -> None:
 
 
 
@@ -134,6 +142,7 @@ def track_install_failed(error_class: str, duration_ms: int | None = None,
         "python_minor": python_minor,
         "retry_count": retry_count,
         "entry": entry,
+        **(stage_props or {}),
     }
     if detail:
         props["error_detail"] = scrub_payload_value(detail)[:300]
@@ -141,9 +150,11 @@ def track_install_failed(error_class: str, duration_ms: int | None = None,
 
 
 def track_install_cancelled(duration_ms: int | None = None,
-                            entry: str = "background") -> None:
+                            entry: str = "background",
+                            stage_props: dict | None = None) -> None:
 
-    track(ev.INSTALL_CANCELLED, {"duration_ms": duration_ms, "entry": entry})
+    track(ev.INSTALL_CANCELLED, {"duration_ms": duration_ms, "entry": entry,
+                                 **(stage_props or {})})
 
 
 def track_model_download_completed(model: str, duration_ms: int | None = None) -> None:
@@ -183,31 +194,50 @@ def track_segmentation_run(success: bool, duration_ms: int | None = None) -> Non
 
 
 def track_manual_export_done(
-    polygon_count: int, refine_used: bool, destination: str = "new"
+    polygon_count: int, refine_used: bool, destination: str = "new",
+    timings_ms: dict | None = None,
 ) -> None:
 
 
-    track(ev.MANUAL_EXPORT_DONE, {
+
+
+    props = {
         "polygon_count": polygon_count,
         "refine_used": bool(refine_used),
         "destination": destination,
-    })
+    }
+    for key in ("shape_ms", "write_ms", "layer_ms", "total_ms"):
+        if timings_ms and timings_ms.get(key) is not None:
+            props[key] = max(0, int(timings_ms[key]))
+    track(ev.MANUAL_EXPORT_DONE, props)
 
 
 def track_manual_session_summary(saves: int, undos: int,
                                  duration_ms: int | None = None,
-                                 tab_switches: int = 0) -> None:
+                                 tab_switches: int = 0,
+                                 clicks_superseded: int = 0,
+                                 hover: dict | None = None) -> None:
     from .telemetry_config_props import config_provenance_props
 
 
 
-    track(ev.MANUAL_SESSION_SUMMARY, {
+
+
+
+
+    props = {
         "saves": saves,
         "undos": undos,
         "duration_ms": duration_ms,
         "tab_switches": int(tab_switches),
+        "tel_dropped": dropped_event_count(),
+        "clicks_superseded": int(clicks_superseded),
         **config_provenance_props(),
-    })
+    }
+    for key in ("hover_requests", "hover_busy", "hover_after_p95_ms"):
+        if hover and hover.get(key) is not None:
+            props[key] = int(hover[key])
+    track(ev.MANUAL_SESSION_SUMMARY, props)
 
 
 def track_manual_engine_chosen(engine: str, local_installed: bool = False,
@@ -236,7 +266,11 @@ def track_manual_cloud_consent(accepted: bool) -> None:
 
 
 _CLICK_PHASE_KEYS = ("new_crop", "crop_wait_ms", "encode_ms", "total_ms",
-                     "wire_ms", "server_ms", "round_trips", "sent_kb")
+                     "wire_ms", "server_ms", "round_trips", "sent_kb",
+                     "received_kb", "before_ms", "after_ms", "crop_offset",
+                     "crop_from", "req_sent_ms", "ttfb_ms", "new_conn",
+                     "loop_lag_ms", "mask_parts", "mask_vertices",
+                     "worker_boot_ms", "model_load_ms")
 
 
 def track_manual_click_answered(engine: str, duration_ms: int | None = None,
@@ -265,7 +299,8 @@ def track_manual_click_answered(engine: str, duration_ms: int | None = None,
 
     import random
 
-    if "click_answered" in _sent_this_session:
+    starts_worker = bool(phases) and phases.get("worker_boot_ms") is not None
+    if "click_answered" in _sent_this_session and not starts_worker:
         if random.random() >= 0.1:  # nosec B311
             return
         sample_rate = 10

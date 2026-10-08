@@ -14,7 +14,7 @@ from qgis.core import Qgis, QgsMessageLog
 
 from ...core.i18n import tr
 from ...core.review_defaults import (
-    AUTO_REVIEW_SIMPLIFY_DEFAULT as _AUTO_REVIEW_SIMPLIFY_DEFAULT,
+    auto_review_simplify_default as _auto_review_simplify_default,
 )
 from ...core.server_dials import dial_in_range
 from ...core.shape_policy_dials import align_phase_budget_s
@@ -1147,7 +1147,7 @@ class AutoFinalizeStepsMixin:
 
 
 
-        tol = _AUTO_REVIEW_SIMPLIFY_DEFAULT * pixel_size if pixel_size > 0 else 0.0
+        tol = _auto_review_simplify_default() * pixel_size if pixel_size > 0 else 0.0
         from ...core.layer_conventions import to_multipolygon
         while pending:
             det_idx, geom, score, area = pending.pop()

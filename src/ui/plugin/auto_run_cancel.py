@@ -301,7 +301,36 @@ class AutoRunCancelMixin:
         except Exception:  # noqa: BLE001
             pass  # nosec B110
 
-    def _stop_auto_detection(self) -> None:
+    def _send_auto_cancelled_terminal(self, tiles_done: int) -> None:
+
+
+
+
+
+        if getattr(self, "_auto_tel_stop_reason", None) not in (None, "completed"):
+            return
+        try:
+            from ...core import telemetry_run_events
+            from .auto_client_profile import client_profile_props
+            telemetry_run_events.track_auto_detect_cancelled(
+                run_id=self._auto_run_id or "",
+                tiles_done=tiles_done,
+                tiles_total=int((self._auto_run_ctx or {}).get("total", tiles_done) or tiles_done),
+                salvaged_to_review=False,
+                duration_ms=self._auto_duration_ms(),
+                client_profile=client_profile_props(self),
+            )
+        except Exception:  # noqa: BLE001  # nosec B110
+            pass
+        self._auto_tel_stop_reason = "cancelled"
+
+    def _stop_auto_detection(self, send_terminal: bool = True) -> None:
+
+
+
+
+
+
 
 
 
@@ -336,7 +365,8 @@ class AutoRunCancelMixin:
 
 
 
-            self._end_superseded_finalize()
+
+            self._end_superseded_finalize(send_terminal=send_terminal)
             self._reset_auto_live_pipeline()
             return
 
@@ -382,6 +412,9 @@ class AutoRunCancelMixin:
             except (TypeError, RuntimeError, AttributeError):
                 pass
         self._auto_cancelled_slot = None
+
+        if send_terminal:
+            self._send_auto_cancelled_terminal(int(getattr(worker, "tiles_succeeded", 0) or 0))
         release_worker_ref(worker)
         self._auto_worker = None
         self._drop_auto_tile_bridge()

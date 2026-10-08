@@ -615,8 +615,11 @@ class AutoZoneDrawMixin:
 
 
 
+
+
+
         if self._autosave_pending_auto_review("project_switch") is False:
-            self._stop_auto_detection()
+            self._stop_auto_detection(send_terminal=False)
             if getattr(self, "_lc_result", None) is not None:
                 self._land_cover_fill_layer()
             return
@@ -626,7 +629,7 @@ class AutoZoneDrawMixin:
 
         self._set_review_busy(False)
         self._clear_free_zone_review_outline()
-        self._stop_auto_detection()
+        self._stop_auto_detection(send_terminal=False)
         self._refine_handoff_active = False
 
 

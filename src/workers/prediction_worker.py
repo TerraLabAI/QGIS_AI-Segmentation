@@ -514,11 +514,16 @@ def send_error(error_message):
     send_response("error", {"message": error_message})
 
 
-def send_ready(pid=None):
+def send_ready(pid=None, start=None):
 
 
 
-    send_response("ready", {} if pid is None else {"pid": pid})
+
+
+
+    data = {} if pid is None else {"pid": pid}
+    data.update(start or {})
+    send_response("ready", data)
 
 
 def encode_numpy_array(arr):
@@ -737,6 +742,10 @@ def main():
 
         init_request = json.loads(_safe_readline())
 
+
+        init_read_at = time.time()
+        init_read_pc = time.perf_counter()
+
         if init_request.get("action") != "init":
             send_error("First request must be 'init'")
             sys.exit(1)
@@ -797,7 +806,10 @@ def main():
                     f"{(_time.monotonic() - _t_warm) * 1000:.0f} ms\n")
                 sys.stderr.flush()
 
-        send_ready(os.getpid())
+        send_ready(os.getpid(), {
+            "init_read_at": init_read_at,
+            "load_ms": int(round((time.perf_counter() - init_read_pc) * 1000.0)),
+        })
 
         while True:
             try:

@@ -34,6 +34,17 @@ _account_shape: dict = {"bundles_usage": None}
 
 
 
+RUN_POLICY_TRIM_CAPABILITY = "run_policy_trim"
+
+
+
+
+
+TILE_FILTERS_CAPABILITY = "tile_filters"
+
+
+
+
 
 _charge_retry_gate = threading.Lock()
 
@@ -414,7 +425,8 @@ class TerraLabAccountMixin:
             payload["rewritten_from"] = rewritten_from.strip()
 
 
-        payload["capabilities"] = ["land_cover"]
+
+        payload["capabilities"] = ["land_cover", RUN_POLICY_TRIM_CAPABILITY]
         body = json.dumps(payload).encode("utf-8")
         answer = self._request(
             "POST", "/api/plugin/seg-run-plan", auth=auth, body=body,
@@ -507,6 +519,9 @@ class TerraLabAccountMixin:
 
 
 
+
+
+
         from urllib.parse import quote
 
         if run_id:
@@ -518,7 +533,11 @@ class TerraLabAccountMixin:
         else:
             return {"error": "missing run identifier", "code": "CLIENT_ERROR"}
         if prompt is not None:
-            path += "&prompt={}".format(quote(str(prompt), safe=""))
+            path += "&prompt={}&capabilities={},{}".format(
+                quote(str(prompt), safe=""), RUN_POLICY_TRIM_CAPABILITY,
+                TILE_FILTERS_CAPABILITY)
+        else:
+            path += f"&capabilities={TILE_FILTERS_CAPABILITY}"
         return self._request(
             "GET", path, auth=auth, timeout_ms=_td.api_timeout_ms(_TIMEOUT_API), require_body=True)
 
@@ -555,10 +574,10 @@ class TerraLabAccountMixin:
 
         from urllib.parse import quote
 
-        path = "/api/ai-segmentation/image/{}?type=masks&stream=1".format(
-            quote(str(request_id), safe=""))
+        path = "/api/ai-segmentation/image/{}?type=masks&stream=1&capabilities={}".format(
+            quote(str(request_id), safe=""), TILE_FILTERS_CAPABILITY)
         return self._request(
-            "GET", path, auth=auth, timeout_ms=_td.api_timeout_ms(_TIMEOUT_API), allow_list=True,
+            "GET", path, auth=auth, timeout_ms=_td.restore_masks_timeout_ms(_TIMEOUT_API), allow_list=True,
             require_body=True)
 
     def fetch_run_masks_many(self, auth: dict, request_ids: list,
@@ -568,11 +587,11 @@ class TerraLabAccountMixin:
 
         from urllib.parse import quote
 
-        timeout_ms = _td.api_timeout_ms(_TIMEOUT_API)
+        timeout_ms = _td.restore_masks_timeout_ms(_TIMEOUT_API)
         return self.request_many([
             {"method": "GET",
-             "path": "/api/ai-segmentation/image/{}?type=masks&stream=1".format(
-                 quote(str(rid), safe="")),
+             "path": "/api/ai-segmentation/image/{}?type=masks&stream=1&capabilities={}".format(
+                 quote(str(rid), safe=""), TILE_FILTERS_CAPABILITY),
              "auth": auth, "timeout_ms": timeout_ms,
              "allow_list": True, "require_body": True}
             for rid in request_ids
@@ -595,6 +614,49 @@ class TerraLabAccountMixin:
             f"/api/plugin/pair/poll?code={quote(code, safe='')}",
             timeout_ms=timeout_ms,
             require_body=True,
+        )
+
+    def start_pairing(self, secret_hash: str, loopback_port: int | None,
+                      ttl_s: int) -> dict:
+
+
+
+
+
+
+
+        payload: dict = {"product": "ai-segmentation", "secret_hash": secret_hash,
+                         "ttl": int(ttl_s)}
+        if loopback_port:
+            payload["loopback_port"] = int(loopback_port)
+        return self._request(
+            "POST", "/api/plugin/pair/start",
+            body=json.dumps(payload).encode("utf-8"),
+            timeout_ms=dial_in_range(
+                "tuning.pairing.start_timeout_ms", 10_000, 2000, 30000),
+            wall_clock=True,
+        )
+
+    def claim_pairing(self, code: str, secret: str, grant: str = "",
+                      user_code: str = "") -> dict:
+
+
+
+
+
+
+
+
+        payload = {"code": code, "secret": secret}
+        if grant:
+            payload["grant"] = grant
+        else:
+            payload["user_code"] = user_code
+        return self._request(
+            "POST", "/api/plugin/pair/claim",
+            body=json.dumps(payload).encode("utf-8"),
+            timeout_ms=10_000,
+            wall_clock=True,
         )
 
     def cancel_pairing(self, code: str) -> dict:

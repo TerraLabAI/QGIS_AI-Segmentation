@@ -513,6 +513,8 @@ class ManualWorkflowExportMixin:
                 polygon_count=len(features_to_add),
                 refine_used=refine_used,
                 destination="new",
+                timings_ms={"shape_ms": _ms_shape, "write_ms": _ms_write,
+                            "layer_ms": _ms_layer, "total_ms": _ms_total},
             )
             telemetry_session_events.track_first_generation_milestone(mode="manual")
         except Exception:

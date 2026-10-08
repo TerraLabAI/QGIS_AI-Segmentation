@@ -491,7 +491,6 @@ class AutoRunTerminalMixin:
         try:
             from ...core import telemetry_run_events
             ctx = self._auto_run_ctx or {}
-            total = ctx.get("total", tiles_succeeded)
 
 
 
@@ -504,8 +503,8 @@ class AutoRunTerminalMixin:
 
 
             completed_terminal = self._auto_tel_stop_reason in (None, "completed")
-            from .auto_client_profile import client_profile_props
             if completed_terminal and self._auto_run_network_dead(tiles_succeeded):
+                from .auto_client_profile import client_profile_props
                 telemetry_run_events.track_auto_detect_failed(
                     run_id=self._auto_run_id or "",
                     error_class="NETWORK",
@@ -521,25 +520,7 @@ class AutoRunTerminalMixin:
                     object_class=ctx.get("prompt") or "Example match",
                     had_exemplar=self._auto_exemplar_store.count() > 0,
                 )
-                if completed_terminal:
-                    blob_armed, blob_dropped, tile_m = (
-                        self._auto_blob_guard_stats())
-                    telemetry_run_events.track_auto_detect_completed(
-                        run_id=self._auto_run_id or "",
-                        duration_ms=self._auto_duration_ms(),
-                        tiles_done=tiles_succeeded,
-                        tiles_failed=max(0, total - tiles_succeeded),
-                        instances_found=0,
-                        instances_visible_at_default=0,
-                        zero_at_default=True,
-                        stop_reason="completed",
-                        warming_ms=self._auto_warming_wait_ms(),
-                        merge_mode_final="separate" if self._auto_merge_separate else "map",
-                        blob_armed=blob_armed,
-                        blob_dropped=blob_dropped,
-                        tile_ground_m=tile_m,
-                        client_profile=client_profile_props(self),
-                    )
+                self._send_auto_completed_terminal(tiles_succeeded, 0, 0)
         except Exception:
             pass  # nosec B110
 

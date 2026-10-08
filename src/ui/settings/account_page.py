@@ -212,11 +212,14 @@ class AccountPageMixin:
         upgrade.setAccessibleName(tr("Get Pro"))
         upgrade.clicked.connect(self._on_upgrade_clicked)
 
+
+        from ...core.surface_dials import pro_monthly_km2_text
         detail = " · ".join((
             dial_copy("upsell.bullet_quota_manual",
                       tr("500 cloud objects every month in Semi-Auto")),
             dial_copy("account.upgrade_title",
-                      tr("200 km² of Automatic a month, on zones of any size.")),
+                      tr("{km2} km² of Automatic a month, on zones of any size.")
+                      ).replace("{km2}", pro_monthly_km2_text()),
         ))
         upgrade.setToolTip(detail + "\n" + dial_copy(
             "account.upgrade_tooltip", tr("Opens terra-lab.ai in your browser.")))

@@ -384,11 +384,12 @@ class ManualWiderCropMixin:
 
 
 
+
         from ...core.server_dials import dial_in_range
 
-        if dial_in_range("tuning.click.wider_crop_later", 1, 0, 1) < 1:
+        if dial_in_range("tuning.click.wider_crop_later", 0, 0, 1) < 1:
             return False
-        last = dial_in_range("tuning.click.wider_crop_later_max_click", 12, 0, 50)
+        last = dial_in_range("tuning.click.wider_crop_later_max_click", 0, 0, 50)
         if last < 2:
             return False
         return 2 <= n_points <= int(last)

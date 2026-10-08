@@ -242,6 +242,12 @@ def boundary_snap_offered_for(prompt: str, policy: dict | None = None) -> bool:
     text = normalize_prompt(prompt)
     if not text:
         return False
+    if policy is None:
+        from .detection_policy_core import run_resolved
+
+        resolved = run_resolved("boundary_snap")
+        if isinstance(resolved, bool):
+            return resolved
     try:
         with policy_scope(policy):
             keywords = require_served_list("detection_policy.review.boundary_snap.keywords")

@@ -215,7 +215,7 @@ def build_preview_body(crop_token: str, col: float, row: float,
 
 
 
-    from .cloud_sam_predictor import LOW_RES_NAMED
+    from .cloud_click_predictor import LOW_RES_NAMED
 
     body = {
         "crop": None,
@@ -271,7 +271,7 @@ def frame_stand_in_logits(mask, frame, side: int):
 
     import numpy as np
 
-    from .cloud_sam_predictor import mask_stand_in_logits
+    from .cloud_click_predictor import mask_stand_in_logits
 
     mask = np.asarray(mask, dtype=bool)
     fh, fw = (int(frame[0]), int(frame[1])) if frame is not None else mask.shape
@@ -313,7 +313,7 @@ def read_preview_answer(answer: dict, height: int, width: int, crop_shape=None):
         if (not isinstance(shape, (list, tuple)) or len(shape) != 3
                 or not isinstance(rles, (list, tuple)) or not rles):
             return None
-        from .cloud_sam_predictor import _MAX_MASK_COUNT, _MAX_MASK_SIDE
+        from .cloud_click_predictor import _MAX_MASK_COUNT, _MAX_MASK_SIDE
 
         if (any(isinstance(v, bool) or not isinstance(v, int) for v in shape)
                 or not 0 < shape[0] <= _MAX_MASK_COUNT or len(rles) != shape[0]
@@ -420,7 +420,7 @@ def _preview_logits_row(answer: dict, index: int, mask=None, frame=None):
 
 
     try:
-        from .cloud_sam_predictor import (
+        from .cloud_click_predictor import (
             note_preview_seed,
             unpack_float16_payload,
         )

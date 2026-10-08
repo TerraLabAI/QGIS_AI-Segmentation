@@ -696,6 +696,8 @@ class AutoLandCoverMixin:
         result = getattr(self, "_lc_result", None)
         if not result:
             return None
+        import time as _time
+        started_at = _time.monotonic()
         rows = self._land_cover_legend()
         names = {r["id"]: r["name"] for r in rows}
         hidden = set() if autosave else getattr(self, "_lc_hidden", set())
@@ -745,7 +747,8 @@ class AutoLandCoverMixin:
                 visible_pct_of_found=int(round(100 * len(geoms) / max(1, len(patches)))),
                 final_confidence=0,
                 display_mode="land_cover", refined_in_manual=False,
-                autosave=autosave, land_cover=True)
+                autosave=autosave, land_cover=True,
+                export_ms=int((_time.monotonic() - started_at) * 1000))
         except Exception:  # noqa: BLE001  # nosec B110
             pass
         return layer_name

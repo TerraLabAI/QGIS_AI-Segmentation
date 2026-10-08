@@ -89,10 +89,10 @@ class CorrectAiRouteMixin:
         if predictor is None:
             return False
         try:
+            from ...core.cloud_click_predictor import CloudClickPredictor
             from ...core.cloud_first_predictor import CloudFirstPredictor
-            from ...core.cloud_sam_predictor import CloudSamPredictor
 
-            return isinstance(predictor, (CloudSamPredictor, CloudFirstPredictor))
+            return isinstance(predictor, (CloudClickPredictor, CloudFirstPredictor))
         except Exception:  # noqa: BLE001
             return False
 
@@ -112,7 +112,7 @@ class CorrectAiRouteMixin:
             return True
         try:
             from ...core.activation_manager import get_auth_header
-            from ...core.cloud_sam_predictor import CloudSamPredictor
+            from ...core.cloud_click_predictor import CloudClickPredictor
 
             held = getattr(self, "predictor", None)
             self._local_predictor_held = held
@@ -133,7 +133,7 @@ class CorrectAiRouteMixin:
 
 
             ledger = getattr(self, "_manual_credit_ledger", None)
-            self.predictor = CloudSamPredictor(
+            self.predictor = CloudClickPredictor(
                 auth=get_auth_header(),
                 on_remote_answer=self._note_manual_cloud_answer,
                 session_id=getattr(ledger, "session_id", None),

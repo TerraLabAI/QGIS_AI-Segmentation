@@ -191,10 +191,12 @@ def _click_failure_is_transient(answer: dict) -> bool:
 
 
 
+
+
     code = str(answer.get("code") or "").strip().upper()
     status = answer.get("http_status")
     if isinstance(status, int) and not isinstance(status, bool):
-        return 500 <= status < 600
+        return 500 <= status < 600 and status != 503
     if code in LINK_FAILURE_SHIPPED or code == "SERVER_ERROR":
         return True
     return code == TIMEOUT_CODE and _server_answered_yet()
@@ -246,7 +248,7 @@ def _preview_seed_memory() -> int:
 
 
 
-_STAND_IN_LOGIT = 6.0
+_STAND_IN_LOGIT = 10.0
 
 
 def _stand_in_logit() -> float:
@@ -533,7 +535,7 @@ def _note_service_side(side: int) -> None:
     _service_low_res_side = side
 
 
-class CloudSamPredictor:
+class CloudClickPredictor:
 
 
     def __init__(self, client=None, auth=None, on_remote_answer=None,

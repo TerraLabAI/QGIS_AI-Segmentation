@@ -15,7 +15,7 @@ from ...core.review_defaults import (
     AUTO_REVIEW_POINTS_PCT_DEFAULT as _AUTO_REVIEW_POINTS_PCT_DEFAULT,
 )
 from ...core.review_defaults import (
-    AUTO_REVIEW_SIMPLIFY_DEFAULT as _AUTO_REVIEW_SIMPLIFY_DEFAULT,
+    auto_review_simplify_default as _auto_review_simplify_default,
 )
 from ..icons import icon_for
 from .auto_correct_build import (
@@ -492,7 +492,7 @@ class DockAutoReviewCorrectMixin:
             widgets = self._shape_only_widgets()
         except (RuntimeError, AttributeError):
             return {"points_pct": _AUTO_REVIEW_POINTS_PCT_DEFAULT,
-                    "simplify_px": _AUTO_REVIEW_SIMPLIFY_DEFAULT}
+                    "simplify_px": _auto_review_simplify_default()}
         out: dict = {}
         for key, widget in widgets.items():
             try:

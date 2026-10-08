@@ -271,6 +271,15 @@ def gate_class_for_prompt(
 
 
 
+
+
+
+    if policy is None:
+        from .detection_policy_core import run_resolved
+
+        resolved = run_resolved("gate_class")
+        if isinstance(resolved, str) and resolved.strip():
+            return resolved.strip()
     class_map = gate_policy(policy).get("class_map")
     if isinstance(class_map, list):
         text = normalize_prompt(prompt)

@@ -29,7 +29,7 @@ AUTO_DEFAULT_CONFIDENCE = 0.30
 
 
 
-AUTO_REVIEW_SIMPLIFY_DEFAULT = 0.4
+AUTO_REVIEW_SIMPLIFY_DEFAULT = 0.0
 
 
 
@@ -43,7 +43,7 @@ AUTO_REVIEW_POINTS_PCT_DEFAULT = 100
 
 
 
-AUTO_REVIEW_CLEAN_DEFAULT = 0.5
+AUTO_REVIEW_CLEAN_DEFAULT = 0.0
 
 
 AUTO_REVIEW_SMOOTH_DEFAULT = False
@@ -71,16 +71,7 @@ AUTO_REVIEW_CLOSE_NOTCHES_M_DEFAULT = 0.0
 
 
 
-
-
-
-HOLE_NOISE_CEILING_M = 2.5
-HOLE_NOISE_CEILING_M2 = HOLE_NOISE_CEILING_M * HOLE_NOISE_CEILING_M
-
-
-
-
-
+HOLE_NOISE_FALLBACK_M2 = 4.0
 
 
 
@@ -90,13 +81,7 @@ AUTO_REVIEW_FILL_HOLES_DEFAULT = True
 
 
 
-
-
-
-
-
-
-AUTO_REVIEW_FILL_HOLES_MAX_M2_DEFAULT = 50.0
+AUTO_REVIEW_FILL_HOLES_MAX_M2_DEFAULT = HOLE_NOISE_FALLBACK_M2
 
 
 
@@ -218,15 +203,11 @@ def fill_holes_max_m2_with_floor(class_fills: object, class_ceiling: object) -> 
 
 
 
-MIN_SIZE_NOISE_MASK_PX = 3.0
 
 
 
-
-
-
-
-MIN_SIZE_NOISE_MASK_PX_NO_PROMPT = 5.0
+MIN_SIZE_NOISE_MASK_PX = 1.0
+MIN_SIZE_NOISE_MASK_PX_NO_PROMPT = 1.0
 
 
 def min_size_noise_floor_m2(mask_gsd_m: float, *, no_prompt: bool = False) -> float:
@@ -306,8 +287,6 @@ REFINE_POINTS_PCT_DEFAULT = AUTO_REVIEW_POINTS_PCT_DEFAULT
 
 
 
-
-
 REFINE_CLEAN_DEFAULT = 0.0
 REFINE_EXPAND_DEFAULT = 0
 REFINE_FILL_HOLES_DEFAULT = True
@@ -317,13 +296,28 @@ REFINE_FILL_HOLES_DEFAULT = True
 
 
 
+REFINE_FILL_HOLES_MAX_M2_DEFAULT = HOLE_NOISE_FALLBACK_M2
+
+
+def refine_fill_holes_max_m2_default() -> float:
 
 
 
 
 
 
-REFINE_FILL_HOLES_MAX_M2_DEFAULT = HOLE_NOISE_CEILING_M2
+    try:
+        from .detection_policy_core import config_detection_policy
+        from .detection_policy_review import pinhole_fill_m
+
+        side_m = pinhole_fill_m(0.0, config_detection_policy())
+    except Exception:  # noqa: BLE001
+        side_m = 0.0
+    if math.isfinite(side_m) and side_m > 0:
+        return side_m * side_m
+    return REFINE_FILL_HOLES_MAX_M2_DEFAULT
+
+
 
 
 
@@ -387,20 +381,16 @@ def object_passes_review_gates(score: float, area: float, params: dict) -> bool:
 
 
 
-_ADAPTIVE_MIN_OBJECTS = 30
-
-
-_ADAPTIVE_HIDDEN_TRIGGER = 0.35
 
 
 
-_ADAPTIVE_AREA_RATIO_BAND = (0.35, 2.8)
 
 
-_ADAPTIVE_MIN_ANCHOR = 10
 
-
-_ADAPTIVE_FLOOR = 0.15
+_ADAPTIVE_KEYS = (
+    "min_objects", "hidden_trigger", "area_ratio_lo", "area_ratio_hi",
+    "min_anchor", "floor",
+)
 
 _REVIEW_SLIDER_STEP = 5
 
@@ -408,35 +398,25 @@ _REVIEW_SLIDER_STEP = 5
 _GRID_SNAP_EPSILON = 1e-9
 
 
-def _adaptive_params() -> tuple[int, float, float, float, int, float]:
+def _adaptive_params() -> tuple[int, float, float, float, int, float] | None:
 
 
 
-
-
-    lo, hi = _ADAPTIVE_AREA_RATIO_BAND
-    min_objects, hidden_trigger = _ADAPTIVE_MIN_OBJECTS, _ADAPTIVE_HIDDEN_TRIGGER
-    min_anchor, floor = _ADAPTIVE_MIN_ANCHOR, _ADAPTIVE_FLOOR
     try:
         from .detection_policy import adaptive_confidence_policy
 
         pol = adaptive_confidence_policy()
-
-        def _num(key: str, fb: float) -> float:
+        values = []
+        for key in _ADAPTIVE_KEYS:
             v = pol.get(key)
-            if isinstance(v, (int, float)) and not isinstance(v, bool):
-                return float(v)
-            return fb
-
-        min_objects = int(_num("min_objects", min_objects))
-        hidden_trigger = _num("hidden_trigger", hidden_trigger)
-        lo = _num("area_ratio_lo", lo)
-        hi = _num("area_ratio_hi", hi)
-        min_anchor = int(_num("min_anchor", min_anchor))
-        floor = _num("floor", floor)
+            if (not isinstance(v, (int, float)) or isinstance(v, bool)
+                    or not math.isfinite(v)):
+                return None
+            values.append(float(v))
     except Exception:  # noqa: BLE001  # nosec B110
-        pass
-    return min_objects, hidden_trigger, lo, hi, min_anchor, floor
+        return None
+    min_objects, hidden_trigger, lo, hi, min_anchor, floor = values
+    return int(min_objects), hidden_trigger, lo, hi, int(min_anchor), floor
 
 
 def adaptive_review_confidence(
@@ -455,8 +435,11 @@ def adaptive_review_confidence(
 
 
 
+    params = _adaptive_params()
+    if params is None:
+        return None
     (min_objects, hidden_trigger, ratio_lo, ratio_hi,
-     min_anchor, floor) = _adaptive_params()
+     min_anchor, floor) = params
     n = len(scored)
     if n < min_objects:
         return None

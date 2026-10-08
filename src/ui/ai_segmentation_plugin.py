@@ -24,12 +24,12 @@ from ..core.review_defaults import (
     REFINE_CLEAN_DEFAULT,
     REFINE_EXPAND_DEFAULT,
     REFINE_FILL_HOLES_DEFAULT,
-    REFINE_FILL_HOLES_MAX_M2_DEFAULT,
     REFINE_MIN_SIZE_M2_DEFAULT,
     REFINE_ORTHO_DEFAULT,
     REFINE_POINTS_PCT_DEFAULT,
     REFINE_SIMPLIFY_DEFAULT,
     REFINE_SMOOTH_DEFAULT,
+    refine_fill_holes_max_m2_default,
 )
 from .ai_segmentation_dockwidget import AISegmentationDockWidget
 from .ai_segmentation_maptool import AISegmentationMapTool
@@ -284,7 +284,7 @@ class AISegmentationPlugin(
         self._refine_fill_holes = REFINE_FILL_HOLES_DEFAULT
 
 
-        self._refine_fill_holes_max_m2 = REFINE_FILL_HOLES_MAX_M2_DEFAULT
+        self._refine_fill_holes_max_m2 = refine_fill_holes_max_m2_default()
         self._refine_ortho = REFINE_ORTHO_DEFAULT
         self._refine_min_area = 200
 
@@ -364,6 +364,7 @@ class AISegmentationPlugin(
         self._last_conn_notice_monotonic: float = 0.0
         self._pairing_worker = None
         self._pairing_cancel_task = None
+        self._pairing_v2 = None
 
         self.mask_rubber_band: QgsRubberBand | None = None
 
@@ -791,7 +792,7 @@ class AISegmentationPlugin(
 
 
         try:
-            self._signal_gpu_session_end("unload")
+            self._signal_cloud_session_end("unload")
         except Exception:  # noqa: BLE001
             pass  # nosec B110
 
@@ -986,6 +987,7 @@ class AISegmentationPlugin(
                     (self.dock_widget.settings_clicked, self._on_settings_clicked),
                     (self.dock_widget.pairing_requested, self._on_pairing_requested),
                     (self.dock_widget.pairing_cancel_requested, self._on_cancel_pairing),
+                    (self.dock_widget.pairing_code_entered, self._on_pairing_code_entered),
                     (self.dock_widget.visibilityChanged, self._on_dock_visibility_changed),
                     (self.dock_widget.mode_changed, self._on_mode_changed),
                     (self.dock_widget.auto_detect_requested, self._on_auto_detect_requested),
@@ -1413,8 +1415,10 @@ class AISegmentationPlugin(
 
 
 
+
+
         stopping_worker = self._auto_worker
-        self._stop_auto_detection()
+        self._stop_auto_detection(send_terminal=False)
         if stopping_worker is not None and self._auto_worker is None:
 
 
@@ -1559,6 +1563,7 @@ class AISegmentationPlugin(
         self.dock_widget.settings_clicked.connect(self._on_settings_clicked)
         self.dock_widget.pairing_requested.connect(self._on_pairing_requested)
         self.dock_widget.pairing_cancel_requested.connect(self._on_cancel_pairing)
+        self.dock_widget.pairing_code_entered.connect(self._on_pairing_code_entered)
         self.dock_widget.mode_changed.connect(self._on_mode_changed)
         self.dock_widget.auto_detect_requested.connect(self._on_auto_detect_requested)
         self.dock_widget.auto_library_requested.connect(self._on_auto_library_clicked)

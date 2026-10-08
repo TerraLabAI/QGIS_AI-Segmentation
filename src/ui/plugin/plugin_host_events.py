@@ -96,7 +96,7 @@ class HostEventsMixin:
 
 
             if self.dock_widget.isHidden():
-                self._signal_gpu_session_end("panel_closed")
+                self._signal_cloud_session_end("panel_closed")
             return
 
         self._resume_parked_manual_session()

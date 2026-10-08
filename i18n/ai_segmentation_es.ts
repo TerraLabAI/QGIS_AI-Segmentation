@@ -5226,8 +5226,8 @@ está bloqueando el entorno de IA local del plugin.</translation>
         <translation>2. Enviar a soporte</translation>
     </message>
     <message>
-        <source>200 km² of Automatic a month, on zones of any size.</source>
-        <translation>200 km² de Automático al mes, en zonas de cualquier tamaño.</translation>
+        <source>{km2} km² of Automatic a month, on zones of any size.</source>
+        <translation>{km2} km² de Automático al mes, en zonas de cualquier tamaño.</translation>
     </message>
     <message>
         <source>200 km² of Automatic every month, on zones of any size</source>
@@ -5534,8 +5534,8 @@ está bloqueando el entorno de IA local del plugin.</translation>
         <translation>Pro te da 500 objetos en la nube al mes en Semi-Auto.</translation>
     </message>
     <message>
-        <source>Pro raises the month to 200 km² of Automatic.</source>
-        <translation>Pro eleva el mes a 200 km² de Automático.</translation>
+        <source>Pro raises the month to {km2} km² of Automatic.</source>
+        <translation>Pro eleva el mes a {km2} km² de Automático.</translation>
     </message>
     <message>
         <source>Pro: 500 cloud objects a month in Semi-Auto with Cloud AI, and 200 km² of Automatic. Same AI, same free clicks and corrections, every machine you work on.</source>

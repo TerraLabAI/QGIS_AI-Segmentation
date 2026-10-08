@@ -4985,8 +4985,8 @@ is blocking the plugin&apos;s local AI environment.</source>
         <translation>2. サポートに送信</translation>
     </message>
     <message>
-        <source>200 km² of Automatic a month, on zones of any size.</source>
-        <translation>毎月200km²の自動モード、サイズを問わない範囲で使えます。</translation>
+        <source>{km2} km² of Automatic a month, on zones of any size.</source>
+        <translation>毎月{km2}km²の自動モード、サイズを問わない範囲で使えます。</translation>
     </message>
     <message>
         <source>200 km² of Automatic every month, on zones of any size</source>
@@ -5293,8 +5293,8 @@ is blocking the plugin&apos;s local AI environment.</source>
         <translation>ProならSemi-Autoで毎月500件のクラウドオブジェクトが使えます。</translation>
     </message>
     <message>
-        <source>Pro raises the month to 200 km² of Automatic.</source>
-        <translation>Proなら毎月の自動モードが200km²に増えます。</translation>
+        <source>Pro raises the month to {km2} km² of Automatic.</source>
+        <translation>Proなら毎月の自動モードが{km2}km²に増えます。</translation>
     </message>
     <message>
         <source>Pro: 500 cloud objects a month in Semi-Auto with Cloud AI, and 200 km² of Automatic. Same AI, same free clicks and corrections, every machine you work on.</source>

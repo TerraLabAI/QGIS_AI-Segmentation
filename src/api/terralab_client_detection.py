@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+import time
 
 from qgis.core import Qgis, QgsMessageLog
 
@@ -35,6 +36,7 @@ from .terralab_client_primitives import (
     note_server_contact,
     server_reached_recently,
 )
+from .terralab_client_retry import UNAVAILABLE_STATUS, client_attempt_headers, unavailable_retry_pause_s
 
 
 class TerraLabDetectionMixin:
@@ -105,6 +107,9 @@ class TerraLabDetectionMixin:
 
 
 
+
+
+
         body = json.dumps(payload, allow_nan=False).encode("utf-8")
 
 
@@ -121,6 +126,7 @@ class TerraLabDetectionMixin:
             auth=auth,
             body=body,
             timeout_ms=timeout_ms or self._submit_timeout(),
+            retry_unavailable=True,
         )
 
     def _refine_while_drawing(self, body: bytes, auth: dict,
@@ -143,21 +149,70 @@ class TerraLabDetectionMixin:
 
 
 
+
+
+        started = time.monotonic()
         payload, packed = packed_request_body(body)
+        hints: dict = {}
         answer, http_status, _body_was_json = self._refine_once_while_drawing(
-            payload, packed, auth, cancel_check, timeout_ms)
+            payload, packed, auth, cancel_check, timeout_ms, hints=hints)
         if answer is not None and packed and answer_refused_the_body(http_status):
             _log_warning("A compressed request body was refused; sending "
                          "them plain for the rest of the session")
             note_gzip_request_refused()
-            answer, _, _ = self._refine_once_while_drawing(
-                body, False, auth, cancel_check, timeout_ms)
-        return answer
+            payload, packed = body, False
+            answer, http_status, _ = self._refine_once_while_drawing(
+                payload, packed, auth, cancel_check, timeout_ms, hints=hints)
+        if answer is None:
+            return None
+        return self._refine_again_while_drawing(
+            answer, http_status, hints, started, payload, packed, auth,
+            cancel_check, timeout_ms)
+
+    def _refine_again_while_drawing(
+        self, answer: dict, http_status: int | None, hints: dict, started: float,
+        body: bytes, packed: bool, auth: dict, cancel_check=None,
+        timeout_ms: int | None = None,
+    ) -> dict:
+
+
+
+
+
+        if http_status != UNAVAILABLE_STATUS:
+            return answer
+        try:
+            from .click_transport import ClickPostAbandoned, click_wait_max_ms, wait_until_done
+
+            budget_ms = min(timeout_ms or self._submit_timeout(), click_wait_max_ms())
+            pause = unavailable_retry_pause_s(
+                http_status, hints.get("retry_after_s") or 0.0, budget_ms / 1000.0,
+                time.monotonic() - started)
+            if pause is None:
+                return answer
+            _log_warning("The service was unavailable (HTTP 503); sending "
+                         "the click once more")
+            until = time.monotonic() + pause
+            if not wait_until_done(lambda: time.monotonic() >= until,
+                                   int(pause * 1000) + 1000, cancel_check=cancel_check):
+                return self._refine_abandoned(ClickPostAbandoned(cancelled=True))
+            left_ms = int(budget_ms - (time.monotonic() - started) * 1000.0)
+        except Exception:  # noqa: BLE001
+            return answer
+        if left_ms <= 0:
+            return answer
+        again, _, _ = self._refine_once_while_drawing(
+            body, packed, auth, cancel_check, left_ms, attempt=2)
+        return answer if again is None else again
 
     def _refine_once_while_drawing(
         self, body: bytes, packed: bool, auth: dict, cancel_check=None,
-        timeout_ms: int | None = None,
+        timeout_ms: int | None = None, attempt: int = 1,
+        hints: dict | None = None,
     ) -> tuple[dict | None, int | None, bool]:
+
+
+
 
 
 
@@ -187,7 +242,8 @@ class TerraLabDetectionMixin:
         try:
             taken = post_and_keep_painting(
                 url, body, auth, timeout_ms, _apply_redirect_policy,
-                cancel_check=cancel_check, packed=packed)
+                cancel_check=cancel_check, packed=packed,
+                extra_headers=client_attempt_headers(attempt), hints=hints)
         except ClickPostAbandoned as gone:
             return self._refine_abandoned(gone), None, False
         except Exception:  # noqa: BLE001
@@ -213,8 +269,13 @@ class TerraLabDetectionMixin:
                 lambda: _classify_qt_error(
                     qt_error, "", http_status,
                     service_reachable=server_reached_recently()))
-            return answer, http_status, body_was_json
-        answer, body_was_json = _answer_from_status_and_body(raw_body, http_status)
+        else:
+            answer, body_was_json = _answer_from_status_and_body(raw_body, http_status)
+        if (isinstance(answer, dict) and "error" in answer
+                and http_status is not None and http_status >= 400
+                and "http_status" not in answer):
+            answer = dict(answer)
+            answer["http_status"] = int(http_status)
         return answer, http_status, body_was_json
 
     @staticmethod
@@ -247,6 +308,7 @@ class TerraLabDetectionMixin:
 
 
 
+
         body = json.dumps(payload, allow_nan=False).encode("utf-8")
 
         def _send() -> dict:
@@ -257,6 +319,7 @@ class TerraLabDetectionMixin:
                 body=body,
                 timeout_ms=timeout_ms or self._submit_timeout(),
                 wall_clock=True,
+                retry_unavailable=True,
             )
 
         if cancel_feedback is None:
@@ -285,6 +348,7 @@ class TerraLabDetectionMixin:
 
 
 
+
         if not self.detection_direct:
             QgsMessageLog.logMessage(
                 "Run export summary not sent: this route does not take one",
@@ -294,6 +358,7 @@ class TerraLabDetectionMixin:
         return self._request(
             "POST", self._detection_run_export_url(), auth=auth, body=body,
             timeout_ms=_td.run_export_timeout_ms(_TIMEOUT_RUN_EXPORT),
+            retry_unavailable=True,
         )
 
     def _submit_timeout(self) -> int:
@@ -375,7 +440,33 @@ class TerraLabDetectionMixin:
             auth=auth,
             body=body,
             timeout_ms=self._submit_timeout(),
+            extra_headers=self._predict_attempt_headers(
+                {"run_id": run_id, "tile_index": tile_index}),
         )
+
+    def _predict_attempt_headers(self, submission: dict) -> dict:
+
+
+
+
+
+
+
+        run_id = submission.get("run_id")
+        if run_id != self._predict_sends_run:
+            self._predict_sends_run = run_id
+            self._predict_sends = {}
+        key = (submission.get("tile_index"), submission.get("parent_tile_index"))
+        sends = self._predict_sends.get(key, 0) + 1
+        self._predict_sends[key] = sends
+        return client_attempt_headers(sends)
+
+
+
+
+
+
+
 
 
 
@@ -412,6 +503,7 @@ class TerraLabDetectionMixin:
         "plugin_version", "policy_rev", "prompt_mode", "basemap",
         "zone_geojson", "zone_wkt", "zone_km2", "native_mupp", "zone_keep_margin_m",
         "clean_image", "tiles_total", "self_exemplar_of", "land_cover",
+        "tile_filters", "collect_raw", "run_pixel_size_m",
     )
 
     @classmethod
@@ -516,6 +608,7 @@ class TerraLabDetectionMixin:
                 "auth": auth,
                 "body": body,
                 "timeout_ms": self._submit_timeout(),
+                "extra_headers": self._predict_attempt_headers(s),
             })
         return self.request_many(specs, should_abort=should_abort)
 

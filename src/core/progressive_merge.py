@@ -22,8 +22,9 @@ from typing import Any
 from .server_dials import dial_in_range
 
 
-_WINDOW_FRAC = 0.2
-_WINDOW_MIN_PX = 40
+
+_WINDOW_FRAC = 0.25
+_WINDOW_MIN_PX = 32
 
 
 def _window_half_size(kind: str, h: int, w: int, window_frac, window_min_px) -> int:
@@ -186,7 +187,8 @@ def subtract_click_region(
 
 def _trim_collapse_share() -> float:
 
-    return dial_in_range("tuning.click.trim_collapse_share", 0.2, 0.0, 0.9)
+
+    return dial_in_range("tuning.click.trim_collapse_share", 0.0, 0.0, 0.9)
 
 
 def _keep_click_side(shape: tuple, click_row: int, click_col: int,

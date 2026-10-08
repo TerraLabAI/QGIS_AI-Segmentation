@@ -22,8 +22,8 @@ from ...core.prompt_manager import FrozenCropSession
 
 
 
-_ZOOM_IN_THRESH = 0.85
-_ZOOM_OUT_THRESH = 1.15
+_ZOOM_IN_THRESH = 0.8
+_ZOOM_OUT_THRESH = 1.25
 
 
 class ManualCropsGeometryMixin:

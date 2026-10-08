@@ -185,6 +185,7 @@ class ManualWorkflowStartMixin:
 
 
         try:
+            self.dock_widget.refresh_fill_holes_ceiling()
             self.dock_widget.publish_refine_settings()
         except (RuntimeError, AttributeError):
             pass  # nosec B110

@@ -18,13 +18,13 @@ from ...core.review_defaults import (
     REFINE_CLEAN_DEFAULT,
     REFINE_EXPAND_DEFAULT,
     REFINE_FILL_HOLES_DEFAULT,
-    REFINE_FILL_HOLES_MAX_M2_DEFAULT,
     REFINE_MIN_AREA_DEFAULT,
     REFINE_MIN_SIZE_M2_DEFAULT,
     REFINE_ORTHO_DEFAULT,
     REFINE_POINTS_PCT_DEFAULT,
     REFINE_SIMPLIFY_DEFAULT,
     REFINE_SMOOTH_DEFAULT,
+    refine_fill_holes_max_m2_default,
 )
 from ..canvas_palette import PENDING_FILL, PENDING_STROKE
 
@@ -327,6 +327,10 @@ class ManualMaskMixin:
             if all_geoms:
                 combined = QgsGeometry.unaryUnion(all_geoms)
                 if combined and not combined.isEmpty():
+
+
+                    drawn = combined.constGet()
+                    self._drawn_outline_size = (drawn.partCount(), drawn.nCoordinates())
 
                     self._transform_geometry_to_canvas_crs(combined)
                     self.mask_rubber_band.setToGeometry(combined, None)
@@ -695,7 +699,7 @@ class ManualMaskMixin:
         self._refine_fill_holes = last_polygon.get("refine_fill_holes", REFINE_FILL_HOLES_DEFAULT)
         hole_limit = last_polygon.get("refine_fill_holes_max_m2")
         self._refine_fill_holes_max_m2 = float(
-            REFINE_FILL_HOLES_MAX_M2_DEFAULT if hole_limit is None else hole_limit)
+            refine_fill_holes_max_m2_default() if hole_limit is None else hole_limit)
         self._refine_ortho = last_polygon.get("refine_ortho", REFINE_ORTHO_DEFAULT)
         self._refine_min_area = last_polygon.get(
             "refine_min_area", REFINE_MIN_AREA_DEFAULT)
@@ -769,22 +773,39 @@ class ManualMaskMixin:
 
         try:
             saves = getattr(self, "_manual_saves_session", 0)
+
+
+            take_hover = getattr(self, "_take_hover_session_counts", None)
+            hover = take_hover() if take_hover is not None else None
             if saves >= 1 and not self._refine_handoff_active:
                 import time as _time
 
                 from ...core import telemetry_session_events
                 t0 = getattr(self, "_manual_session_t0", None)
+                undos = getattr(self, "_manual_undos_session", 0)
+                superseded = getattr(self, "_manual_superseded_session", 0)
                 telemetry_session_events.track_manual_session_summary(
                     saves=saves,
-                    undos=getattr(self, "_manual_undos_session", 0),
+                    undos=undos,
                     duration_ms=int((_time.time() - t0) * 1000) if t0 else None,
                     tab_switches=getattr(self, "_manual_tab_switches_session", 0),
+                    clicks_superseded=superseded,
+                    hover=hover,
                 )
+                line = (f"Semi-Auto session: {saves} save(s), {undos} undo(s), "
+                        f"{superseded} click(s) superseded")
+                if hover:
+                    line += (f"; hover {hover['hover_requests']} asked, "
+                             f"{hover['hover_busy']} busy, after p95 "
+                             f"{hover['hover_after_p95_ms']} ms")
+                QgsMessageLog.logMessage(line, "AI Segmentation",
+                                         level=Qgis.MessageLevel.Info)
         except Exception:
             pass  # nosec B110
         self._manual_saves_session = 0
         self._manual_undos_session = 0
         self._manual_tab_switches_session = 0
+        self._manual_superseded_session = 0
         self._manual_session_t0 = None
 
         self._is_refining_saved_object = False
@@ -889,7 +910,7 @@ class ManualMaskMixin:
         self._refine_clean = REFINE_CLEAN_DEFAULT
         self._refine_expand = REFINE_EXPAND_DEFAULT
         self._refine_fill_holes = REFINE_FILL_HOLES_DEFAULT
-        self._refine_fill_holes_max_m2 = REFINE_FILL_HOLES_MAX_M2_DEFAULT
+        self._refine_fill_holes_max_m2 = refine_fill_holes_max_m2_default()
         self._refine_ortho = REFINE_ORTHO_DEFAULT
 
         self._refine_min_area = REFINE_MIN_AREA_DEFAULT

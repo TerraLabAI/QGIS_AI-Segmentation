@@ -39,10 +39,11 @@ _REGULARIZE_DIAGONAL_REDUCTION_MAX = 22.5
 
 _REGULARIZE_FALLBACK_CIRCLES = False
 
+
 _REGULARIZE_FALLBACK_CIRCLE_THRESHOLD = 1.0
 
 
-_REGULARIZE_FALLBACK_MIN_KEEP_IOU = 0.8
+_REGULARIZE_FALLBACK_MIN_KEEP_IOU = 0.5
 
 _REGULARIZE_FALLBACK_RING_MIN_IOU = 0.5
 
@@ -52,17 +53,21 @@ _DESTAIR_FALLBACK_MULT = 2.0
 
 _REGULARIZE_FALLBACK_MULTI_DIRECTION = False
 
-_REGULARIZE_FALLBACK_MULTI_MAX_GROUPS = 2
+
+
+
+
+_REGULARIZE_FALLBACK_MULTI_MAX_GROUPS = 1
 
 _REGULARIZE_MULTI_MAX_GROUPS_MAX = 6
 
-_REGULARIZE_FALLBACK_MULTI_MIN_SEPARATION_DEG = 15.0
-
 _REGULARIZE_MULTI_MIN_SEPARATION_MAX = 45.0
 
-_REGULARIZE_FALLBACK_MULTI_PARALLEL_EPS_DEG = 2.0
+_REGULARIZE_FALLBACK_MULTI_MIN_SEPARATION_DEG = _REGULARIZE_MULTI_MIN_SEPARATION_MAX
 
-_REGULARIZE_FALLBACK_MULTI_MIN_GROUP_WEIGHT = 0.25
+_REGULARIZE_FALLBACK_MULTI_PARALLEL_EPS_DEG = 1.0
+
+_REGULARIZE_FALLBACK_MULTI_MIN_GROUP_WEIGHT = 0.5
 
 
 _REGULARIZE_FALLBACK_TIDY_MIN_EDGE_MULT = 0.0
@@ -493,6 +498,18 @@ def auto_regularize_settings(shape_class: str,
 
 
 
+
+
+
+
+    if policy is None:
+        from .detection_policy_core import run_resolved, run_resolved_has
+
+        if run_resolved_has("auto_regularize"):
+            resolved = run_resolved("auto_regularize")
+            if not isinstance(resolved, dict) or resolved.get("enabled") is not True:
+                return None
+            return _auto_regularize_dials(resolved)
     reg = auto_regularize_policy(policy)
     if reg.get("enabled") is not True:
         return None

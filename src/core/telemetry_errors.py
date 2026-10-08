@@ -164,6 +164,28 @@ def track_plugin_error(
 
 
 
+_once_lock = threading.Lock()
+_once_sent: set[tuple[str, str]] = set()
+
+
+def track_plugin_error_once(stage: str, error_code: str, message: str) -> None:
+
+
+
+
+    try:
+        key = (error_code, active_run_id() or current_session_id())
+        with _once_lock:
+            if key in _once_sent:
+                return
+            _once_sent.add(key)
+        track_plugin_error(stage=stage, error_code=error_code, message=message)
+    except Exception:  # noqa: BLE001  # nosec B110
+        pass
+
+
+
+
 
 
 

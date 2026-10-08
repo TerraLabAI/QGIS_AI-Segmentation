@@ -21,6 +21,7 @@ from qgis.core import (
     QgsField,
     QgsFillSymbol,
     QgsGeometry,
+    QgsMapLayerStyle,
     QgsMessageLog,
     QgsPointXY,
     QgsProject,
@@ -30,6 +31,7 @@ from qgis.core import (
     QgsVectorLayer,
     QgsWkbTypes,
 )
+from qgis.PyQt.QtCore import QCoreApplication, QMetaObject, QObject, pyqtSlot
 from qgis.PyQt.QtGui import QColor
 
 from . import class_symbology
@@ -1224,6 +1226,44 @@ def _reread_file_after_write(layer) -> None:
 _pending_file_writes: dict[str, dict] = {}
 
 
+class _FileConventionsCall(QObject):
+
+
+    def __init__(self, layer, metadata: bool, style: bool) -> None:
+        super().__init__()
+        self.source = str(layer.source())
+        self.name = str(layer.name())
+        self.provider = str(layer.providerType())
+        self.metadata = layer.metadata() if metadata else None
+        snapshot = QgsMapLayerStyle()
+        snapshot.readFromLayer(layer)
+        self.style_xml = snapshot.xmlData()
+        self.want_metadata = metadata
+        self.want_style = style
+
+    @pyqtSlot()
+    def run(self) -> None:
+        layer = None
+        try:
+            layer = QgsVectorLayer(self.source, self.name, self.provider)
+            if not layer.isValid():
+                return
+            if self.metadata is not None:
+                layer.setMetadata(self.metadata)
+            QgsMapLayerStyle(self.style_xml).writeToLayer(layer)
+            _write_conventions_into_the_file(layer, self.want_metadata, self.want_style)
+            _reread_file_after_write(layer)
+        except Exception as error:  # noqa: BLE001
+            _log_convention_failure("queued file provenance/style", error)
+        finally:
+            layer = None
+            _pending_convention_calls.discard(self)
+            self.deleteLater()
+
+
+_pending_convention_calls: set[_FileConventionsCall] = set()
+
+
 def persist_layer_to_file_later(layer, *, metadata: bool = False,
                                 style: bool = False) -> None:
 
@@ -1239,6 +1279,22 @@ def persist_layer_to_file_later(layer, *, metadata: bool = False,
 
 
     if layer is None or not (metadata or style):
+        return
+    if not on_gui_thread(unknown=True):
+        from qgis.PyQt.QtCore import Qt
+
+        from .qt_compat import resolve_qt_enum
+
+        call = _FileConventionsCall(layer, metadata, style)
+        try:
+            call.moveToThread(QCoreApplication.instance().thread())
+            _pending_convention_calls.add(call)
+            queued = resolve_qt_enum(Qt, "ConnectionType", "QueuedConnection")
+            if QMetaObject.invokeMethod(call, "run", queued) is False:
+                raise RuntimeError("Could not queue file conventions on the GUI thread")
+        except (RuntimeError, AttributeError, TypeError) as error:
+            _pending_convention_calls.discard(call)
+            _log_convention_failure("queuing file provenance/style", error)
         return
 
 
@@ -1265,9 +1321,6 @@ def persist_layer_to_file_later(layer, *, metadata: bool = False,
         _write_conventions_into_the_file(layer, want_metadata, want_style)
         _reread_file_after_write(layer)
 
-    if not on_gui_thread(unknown=True):
-        _write()
-        return
     try:
         from .qt_compat import safe_single_shot
 

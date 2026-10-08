@@ -18,6 +18,7 @@ from .telemetry_run_context import (
     review_elapsed_props,
     run_attempt_props,
     run_failure_stage,
+    run_headless_props,
 )
 from .telemetry_run_profile import client_props, review_pass_props
 from .telemetry_session_events import _sent_this_session
@@ -187,7 +188,13 @@ def track_auto_detect_started(run_id: str, tiles: int, zone_km2: float,
                               merge_mode: str = "separate",
                               merge_mode_source: str = "prompt",
                               detail_seeded: int | None = None,
-                              tile_props: dict | None = None) -> None:
+                              tile_props: dict | None = None,
+                              plan_hold_ms: int = 0,
+                              headless: bool = False) -> None:
+
+
+
+
 
 
 
@@ -220,6 +227,7 @@ def track_auto_detect_started(run_id: str, tiles: int, zone_km2: float,
         "is_free_tier": bool(is_free_tier),
         "merge_mode": merge_mode,
         "merge_mode_source": merge_mode_source,
+        "plan_hold_ms": max(0, int(plan_hold_ms or 0)),
     }
     from .telemetry_config_props import config_provenance_props
 
@@ -228,7 +236,7 @@ def track_auto_detect_started(run_id: str, tiles: int, zone_km2: float,
         props["detail_seeded"] = int(detail_seeded)
 
 
-    note_run_started(run_id, tiles)
+    note_run_started(run_id, tiles, headless=headless)
     props.update(run_attempt_props(run_id))
 
 
@@ -242,8 +250,6 @@ def track_auto_detect_started(run_id: str, tiles: int, zone_km2: float,
 def track_auto_detect_completed(run_id: str, duration_ms: int, tiles_done: int,
                                 tiles_failed: int, instances_found: int,
                                 instances_visible_at_default: int, zero_at_default: bool,
-                                p50_tile_ms: int | None = None,
-                                p95_tile_ms: int | None = None,
                                 stop_reason: str = "completed",
                                 warming_ms: int = 0,
                                 merge_mode_final: str = "separate",
@@ -279,8 +285,6 @@ def track_auto_detect_completed(run_id: str, duration_ms: int, tiles_done: int,
         "instances_found": instances_found,
         "instances_visible_at_default": instances_visible_at_default,
         "zero_at_default": bool(zero_at_default),
-        "p50_tile_ms": p50_tile_ms,
-        "p95_tile_ms": p95_tile_ms,
         "stop_reason": stop_reason,
         "warming_ms": warming_ms,
         "merge_mode_final": merge_mode_final,
@@ -290,6 +294,7 @@ def track_auto_detect_completed(run_id: str, duration_ms: int, tiles_done: int,
     }
     props.update(client_props(client_profile))
     props.update(run_attempt_props(run_id))
+    props.update(run_headless_props(run_id))
     note_run_ended(run_id)
     track(ev.AUTO_DETECT_COMPLETED, props)
 
@@ -344,6 +349,7 @@ def track_auto_detect_failed(run_id: str, error_class: str, tiles_done: int,
     }
     props.update(client_props(client_profile))
     props.update(run_attempt_props(run_id))
+    props.update(run_headless_props(run_id))
     note_run_ended(run_id)
     track(ev.AUTO_DETECT_FAILED, props)
 
@@ -376,12 +382,14 @@ def track_auto_detect_cancelled(run_id: str, tiles_done: int, tiles_total: int,
     }
     props.update(client_props(client_profile))
     props.update(run_attempt_props(run_id))
+    props.update(run_headless_props(run_id))
     note_run_ended(run_id)
     track(ev.AUTO_DETECT_CANCELLED, props)
 
 
 def track_credits_exhausted(run_id: str, tiles_done: int, tiles_total: int,
                             is_free_tier: bool) -> None:
+    note_run_ended(run_id)
     track(ev.CREDITS_EXHAUSTED, {
         "run_id": run_id,
         "tiles_done": tiles_done,
@@ -491,7 +499,9 @@ def track_auto_export_done(run_id: str, exported_count: int, visible_pct_of_foun
                            final_confidence: int, display_mode: str,
                            refined_in_manual: bool, autosave: bool = False,
                            pass_profile: dict | None = None,
-                           land_cover: bool = False) -> None:
+                           land_cover: bool = False,
+                           export_ms: int | None = None) -> None:
+
 
 
 
@@ -507,6 +517,8 @@ def track_auto_export_done(run_id: str, exported_count: int, visible_pct_of_foun
         "autosave": bool(autosave),
         "land_cover": bool(land_cover),
     }
+    if export_ms is not None:
+        props["export_ms"] = max(0, int(export_ms))
     props.update(review_pass_props(pass_profile))
     props.update(review_elapsed_props(run_id))
     track(ev.AUTO_EXPORT_DONE, props)

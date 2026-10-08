@@ -55,7 +55,7 @@ def _answer_was_superseded(err: Exception) -> bool:
 
 
     try:
-        from .cloud_sam_predictor import RefineSupersededError
+        from .cloud_click_predictor import RefineSupersededError
 
         return isinstance(err, RefineSupersededError)
     except Exception:  # noqa: BLE001
@@ -64,7 +64,7 @@ def _answer_was_superseded(err: Exception) -> bool:
 
 def _was_unreached(err: Exception) -> bool:
     try:
-        from .cloud_sam_predictor import unreached_error
+        from .cloud_click_predictor import unreached_error
 
         return unreached_error(err)
     except Exception:  # noqa: BLE001
@@ -258,7 +258,7 @@ class CloudFirstPredictor:
                 self.remote_unreached = True
             return self._predict_on_device(err, *args, **kwargs)
         if generation != self._generation:
-            from .cloud_sam_predictor import RefineSupersededError
+            from .cloud_click_predictor import RefineSupersededError
 
             raise RefineSupersededError("The crop changed while its answer was on the way")
 
@@ -346,7 +346,7 @@ class CloudFirstPredictor:
         args, kwargs = self._seed_for(local, args, kwargs)
         answer = local.predict(*args, **kwargs)
         if generation != self._generation:
-            from .cloud_sam_predictor import RefineSupersededError
+            from .cloud_click_predictor import RefineSupersededError
 
             raise RefineSupersededError("The crop changed while its local answer was being computed")
         self.input_size = getattr(local, "input_size", None)

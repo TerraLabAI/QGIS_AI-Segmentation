@@ -76,6 +76,8 @@ class _RunState:
         self.active_run_id = ""
         self.phase = _PHASE_AT_START
         self.run_attempts: OrderedDict[str, str] = OrderedDict()
+
+        self.run_headless: OrderedDict[str, bool] = OrderedDict()
         self.review_opened: OrderedDict[str, float] = OrderedDict()
 
 
@@ -137,6 +139,15 @@ def run_attempt_props(run_id: str = "") -> dict:
     return {"attempt_id": attempt} if attempt else {}
 
 
+def run_headless_props(run_id: str) -> dict:
+
+
+
+    with _state.lock:
+        headless = _state.run_headless.get(str(run_id or ""))
+    return {} if headless is None else {"headless": headless}
+
+
 
 
 
@@ -160,7 +171,8 @@ def run_failure_stage() -> str:
         return _state.phase
 
 
-def note_run_started(run_id: str, tiles: int) -> None:
+def note_run_started(run_id: str, tiles: int, headless: bool = False) -> None:
+
 
     run_id = str(run_id or "")
     if not run_id:
@@ -170,6 +182,7 @@ def note_run_started(run_id: str, tiles: int) -> None:
         _state.phase = _PHASE_AT_START
         _state.marker_doc = None
         _remember(_state.run_attempts, run_id, _state.attempt_id)
+        _remember(_state.run_headless, run_id, bool(headless))
     try:
         if not is_telemetry_enabled():
             return
@@ -184,6 +197,7 @@ def note_run_started(run_id: str, tiles: int) -> None:
 
 
 def note_run_ended(run_id: str) -> None:
+
 
 
 

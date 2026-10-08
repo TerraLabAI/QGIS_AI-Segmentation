@@ -146,6 +146,17 @@ def _open_writer(path: str, table: str, fields: QgsFields, crs,
     return writer
 
 
+def _report_autosave_failure(reason: str) -> None:
+
+
+    try:
+        from .telemetry_errors import track_plugin_error_once
+
+        track_plugin_error_once("export", "autosave_failed", reason)
+    except Exception:  # noqa: BLE001  # nosec B110
+        pass
+
+
 def prepare_autosave(merged_ided: list, crs_authid: str, prompt: str,
                      run_id: str, source_layer=None) -> dict | None:
 
@@ -206,7 +217,8 @@ def prepare_autosave(merged_ided: list, crs_authid: str, prompt: str,
 
             "measurer": make_area_measurer(crs, transform_context=context),
         }
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        _report_autosave_failure(f"prepare: {type(exc).__name__}")
         return None
 
 
@@ -226,7 +238,8 @@ def write_prepared_autosave(job: dict | None) -> dict | None:
             if names is not None:
                 prepared["table"], prepared["layer_name"] = names
             return _write_prepared_autosave(prepared)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        _report_autosave_failure(f"lock: {type(exc).__name__}")
         return None
 
 
@@ -280,6 +293,7 @@ def _write_prepared_autosave(job: dict | None) -> dict | None:
                 QgsMessageLog.logMessage(
                     "Run autosave: could not open a GeoPackage writer",
                     _LOG_TAG, level=Qgis.MessageLevel.Warning)
+                _report_autosave_failure("no writer")
                 return None
 
         from .layer_conventions import repair_polygon, to_multipolygon
@@ -335,6 +349,7 @@ def _write_prepared_autosave(job: dict | None) -> dict | None:
                 f"Run autosave: incomplete backup kept {count} of {len(job['rows'])} "
                 f"object(s) at {gpkg_path} (table {table}). No complete recovery "
                 "pointer was recorded.", _LOG_TAG, level=Qgis.MessageLevel.Warning)
+            _report_autosave_failure("incomplete")
             return None
         return {
             "path": gpkg_path,
@@ -345,13 +360,14 @@ def _write_prepared_autosave(job: dict | None) -> dict | None:
             "count": count,
             "ts": time.time(),
         }
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         try:
             QgsMessageLog.logMessage(
                 "Run autosave: write failed", _LOG_TAG,
                 level=Qgis.MessageLevel.Warning)
         except Exception:  # nosec B110
             pass
+        _report_autosave_failure(f"write: {type(exc).__name__}")
         return None
 
 

@@ -23,17 +23,13 @@ else:
 import numpy as np  # noqa: E402
 
 from .mask_resource_limits import MAX_MASK_SIDE  # noqa: E402
-from .review_defaults import HOLE_NOISE_CEILING_M  # noqa: E402
 
 __all__ = [
     "_MASK_CELL_SLACK",
-    "_PINHOLE_GROUND_M",
     "_RLE_FORMAT",
-    "_TILE_SIMPLIFY_MULT",
     "_apply_rle_pairs_slow",
     "_iter_mask_entries",
     "_iter_masks",
-    "_opt_float",
     "_response_mask_list",
     "_rle_pairs",
     "_vector_step",
@@ -44,10 +40,8 @@ __all__ = [
     "logger",
     "mask_cell_size",
     "mask_scale_field",
-    "parse_semantic_fields",
     "pinhole_fill_limit_px",
     "should_request_semantic",
-    "should_rescue_with_semantic",
     "tile_simplify_tolerance",
 ]
 
@@ -292,18 +286,6 @@ def _vector_step(native_gsd: float, mask_cell: float) -> float:
     return native_gsd
 
 
-
-
-
-_TILE_SIMPLIFY_MULT: float = 0.75
-
-
-
-
-
-_PINHOLE_GROUND_M: float = HOLE_NOISE_CEILING_M
-
-
 def tile_simplify_tolerance(
     native_gsd: float, mask_cell: float = 0.0, mult: float = 0.0
 ) -> float:
@@ -323,7 +305,7 @@ def tile_simplify_tolerance(
     if not math.isfinite(native_gsd) or native_gsd <= 0:
         return 0.0
     if not math.isfinite(mult) or mult <= 0:
-        mult = _TILE_SIMPLIFY_MULT
+        return 0.0
     return mult * _vector_step(native_gsd, mask_cell)
 
 
@@ -346,7 +328,7 @@ def pinhole_fill_limit_px(
     if not math.isfinite(native_gsd) or native_gsd <= 0:
         return 36
     if not math.isfinite(ground_m) or ground_m <= 0:
-        ground_m = _PINHOLE_GROUND_M
+        return 9
     step = _vector_step(native_gsd, mask_cell)
     return max(9, int((ground_m / step) ** 2))
 
@@ -375,62 +357,6 @@ def mask_scale_field(scale: int | None) -> int | None:
 
 
     return 2 if scale == 2 else None
-
-
-def _opt_float(val: object) -> float | None:
-
-
-    if isinstance(val, (int, float)) and not isinstance(val, bool):
-        try:
-            value = float(val)
-        except OverflowError:
-            return None
-        return value if math.isfinite(value) else None
-    return None
-
-
-def parse_semantic_fields(
-    response: dict,
-) -> tuple[str | None, float | None, float | None]:
-
-
-
-
-
-
-
-    rle = response.get("semantic_rle")
-    if not isinstance(rle, str) or not rle.strip():
-        rle = None
-    return (
-        rle,
-        _opt_float(response.get("semantic_coverage")),
-        _opt_float(response.get("presence")),
-    )
-
-
-def should_rescue_with_semantic(
-    instance_count: int,
-    coverage: float | None,
-    has_rle: bool,
-    enabled: bool,
-    coverage_floor: float,
-) -> bool:
-
-
-
-
-
-
-
-
-    if not enabled or instance_count != 0 or not has_rle:
-        return False
-    if not isinstance(coverage, (int, float)) or isinstance(coverage, bool):
-        return False
-    coverage = _opt_float(coverage)
-    floor = _opt_float(coverage_floor)
-    return coverage is not None and floor is not None and coverage >= floor
 
 
 def _response_mask_list(response: dict, strict: bool = False) -> list:
@@ -467,8 +393,9 @@ def _iter_mask_entries(raw_masks: list, score_threshold: float):
 
 
 
+
     for entry in raw_masks:
-        if not isinstance(entry, dict):
+        if not isinstance(entry, dict) or "drop" in entry:
             continue
         raw_score = entry.get("score", 0.0)
         try:

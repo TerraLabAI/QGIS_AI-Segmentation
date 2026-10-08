@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-REGISTRY_VERSION = 72
+REGISTRY_VERSION = 78
 
 
 PLUGIN_FIRST_OPEN = "plugin_first_open"

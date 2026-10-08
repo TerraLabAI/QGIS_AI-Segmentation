@@ -63,10 +63,8 @@ class ManualShapeCacheMixin:
 
 
 
-        from ...core.interactive_polygonize import interactive_polygonize_enabled
-
         return (self._refine_expand, fill_holes, self._refine_min_area,
-                max_hole_px, simplify_tol, interactive_polygonize_enabled(),
+                max_hole_px, simplify_tol,
                 (self._manual_outline_smooth_px(),
                  self._manual_outline_smooth_size_fraction()))
 
@@ -91,8 +89,7 @@ class ManualShapeCacheMixin:
 
 
 
-        from ...core.interactive_polygonize import mask_to_polygons_interactive
-        from ...core.polygon_exporter import apply_mask_refinement
+        from ...core.polygon_exporter import apply_mask_refinement, mask_to_polygons
 
         if mask is None:
             mask = self.current_mask
@@ -145,11 +142,11 @@ class ManualShapeCacheMixin:
                 smooth_mask,
             )
             cleaned = smooth_mask(cleaned, smooth_px, smooth_size_fraction)
-        geometries = mask_to_polygons_interactive(cleaned, info, simplify_tol)
+        geometries = mask_to_polygons(cleaned, info, simplify_tol)
         if smooth_px > 0 and geometries:
             cut = CORNER_CUT_PX * _mask_pixel_units(cleaned, info)
             if cut > 0:
-                geometries = [cut_corners(g, cut) for g in geometries]
+                geometries = cut_corners(geometries, cut)
         if is_active:
 
 

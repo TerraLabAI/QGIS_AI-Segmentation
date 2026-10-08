@@ -543,6 +543,8 @@ def child_environment() -> dict:
     env["PYTHONPATH"] = os.pathsep.join(parts)
     env["PYTHONNOUSERSITE"] = "1"
     env["QT_QPA_PLATFORM"] = "offscreen"
+    from ..core.worker_child_env import WORKER_CHILD_ENV
+    env[WORKER_CHILD_ENV] = "1"
     env.pop("PYTHONSTARTUP", None)
     bytecode_dir = _child_bytecode_dir()
     if bytecode_dir and not env.get("PYTHONPYCACHEPREFIX"):

@@ -664,26 +664,17 @@ class SegmentationManualMixin:
 
     def _crop_pixel_mapper(self, minx, miny, maxx, maxy, img_width, img_height):
 
-        try:
-            from rasterio import transform as rio_transform
-            from rasterio.transform import from_bounds as transform_from_bounds
 
-            clip = transform_from_bounds(minx, miny, maxx, maxy, img_width, img_height)
-            rio_transform.rowcol(clip, minx, maxy)
 
-            def _mapper(point):
-                row, col = rio_transform.rowcol(clip, point.x(), point.y())
-                return [float(col), float(row)]
 
-            return _mapper
-        except Exception:  # noqa: BLE001
-            def _mapper(point):
-                return [
-                    (point.x() - minx) / (maxx - minx) * img_width,
-                    (maxy - point.y()) / (maxy - miny) * img_height,
-                ]
 
-            return _mapper
+
+
+        def _mapper(point):
+            return [float(math.floor((point.x() - minx) * img_width / (maxx - minx))),
+                    float(math.floor((maxy - point.y()) * img_height / (maxy - miny)))]
+
+        return _mapper
 
     def _ensure_session(self, layer_name: str | None = None,
                         discard_unsaved: bool = False):

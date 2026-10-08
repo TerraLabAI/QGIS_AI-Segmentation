@@ -91,7 +91,7 @@ def ground_per_pixel_at_least_native(requested: float, native: float) -> float:
 
 
 
-MAX_CROP_GROUND_WIDTH_M = 2560.0
+MAX_CROP_GROUND_WIDTH_M = 4096.0
 
 
 def ground_per_pixel_within_ceiling(requested: float, ceiling: float) -> float:

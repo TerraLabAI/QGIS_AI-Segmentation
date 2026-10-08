@@ -8,17 +8,21 @@
 
 from __future__ import annotations
 
+import time
+
 from qgis.core import QgsFeedback, QgsNetworkAccessManager
 from qgis.PyQt.QtCore import QByteArray
 from qgis.PyQt.QtNetwork import QNetworkRequest
 
 from ..core import transport_dials as _td
 from ..core.gil_safe_qobject import prime as _gil_safe
+from ..core.gui_thread import on_gui_thread
 from ..core.i18n import tr
 from ..core.streamed_download import sleep_unless_cancelled
 from .json_request import build_json_request
 from .request_compression import answer_refused_the_body, note_gzip_request_refused, packed_request_body
 from .request_feedback import current_request_feedback as _current_feedback
+from .server_timing import note_server_timing
 from .terralab_client_errors import (
     _answer_from_failed_transfer,
     _answer_from_status_and_body,
@@ -47,6 +51,8 @@ from .terralab_client_retry import (
     _retry_after_s,
     _retry_pause_s,
     _worth_asking_again,
+    client_attempt_headers,
+    unavailable_retry_pause_s,
 )
 
 
@@ -149,13 +155,15 @@ class TerraLabTransportMixin:
             )
 
     def _make_qnetwork_request(self, auth: dict | None, timeout_ms: int, path: str,
-                               packed: bool = False) -> QNetworkRequest:
+                               packed: bool = False,
+                               extra_headers: dict | None = None) -> QNetworkRequest:
 
 
 
 
 
-        return build_json_request(self._resolve_url(path), auth, timeout_ms, packed=packed)
+        return build_json_request(self._resolve_url(path), auth, timeout_ms, packed=packed,
+                                  extra_headers=extra_headers)
 
     def _request(
         self,
@@ -169,7 +177,15 @@ class TerraLabTransportMixin:
         wall_clock: bool = False,
         extra_headers: dict | None = None,
         retry_get_failures: bool = True,
+        retry_unavailable: bool = False,
     ) -> dict | list:
+
+
+
+
+
+
+
 
 
 
@@ -219,18 +235,37 @@ class TerraLabTransportMixin:
         payload, packed = body, False
         if _may_pack_body(method, path, body):
             payload, packed = packed_request_body(body)
+        headers = (client_attempt_headers(1, extra_headers) if retry_unavailable
+                   else extra_headers)
+        started = time.monotonic()
         answer, http_status, _body_was_json = self._request_once(
             method, path, auth, payload, packed, timeout_ms, allow_list,
-            require_body, wall_clock, extra_headers)
+            require_body, wall_clock, headers)
         if _request_cancelled():
             return _cancelled_answer()
         if packed and answer_refused_the_body(http_status):
             _log_warning("A compressed request body was refused; sending "
                          "them plain for the rest of the session")
             note_gzip_request_refused()
+            payload, packed = body, False
             answer, http_status, _ = self._request_once(
-                method, path, auth, body, False, timeout_ms, allow_list,
-                require_body, wall_clock, extra_headers)
+                method, path, auth, payload, packed, timeout_ms, allow_list,
+                require_body, wall_clock, headers)
+        if method == "POST" and retry_unavailable and not on_gui_thread():
+            pause = unavailable_retry_pause_s(
+                http_status, self._pending_retry_after_s, timeout_ms / 1000.0,
+                time.monotonic() - started)
+            if pause is not None:
+                _log_warning("The service was unavailable (HTTP 503); sending "
+                             "the request once more")
+                sleep_unless_cancelled(pause, _request_cancelled, slice_s=0.1)
+                if _request_cancelled():
+                    return _cancelled_answer()
+                left_ms = int(timeout_ms - (time.monotonic() - started) * 1000.0)
+                if _valid_request_timeout(left_ms):
+                    answer, http_status, _ = self._request_once(
+                        method, path, auth, payload, packed, left_ms, allow_list,
+                        require_body, wall_clock, client_attempt_headers(2, extra_headers))
         if (method == "GET" and retry_get_failures
                 and _worth_asking_again(answer, http_status)):
 
@@ -361,10 +396,14 @@ class TerraLabTransportMixin:
             if etag:
                 answer = dict(answer)
                 answer["etag"] = etag
+
+
+            answer = note_server_timing(answer, reply)
         return answer, http_status, body_was_json
 
     def _parse_reply(self, reply, require_body: bool = False,
                      allow_list: bool = False) -> dict | list:
+
 
 
 
@@ -402,7 +441,8 @@ class TerraLabTransportMixin:
             if isinstance(answer, dict) and not answer.get("code"):
                 answer = dict(answer)
                 answer["code"] = "SERVER_ERROR"
-        return _note_window_hint(_note_retry_after(answer, reply), reply)
+        return note_server_timing(
+            _note_window_hint(_note_retry_after(answer, reply), reply), reply)
 
     def _parse_reply_once(self, reply, require_body: bool = False,
                           allow_list: bool = False) -> tuple[dict | list, bool]:
@@ -444,6 +484,7 @@ class TerraLabTransportMixin:
 
     def request_many(self, specs: list[dict], should_abort=None,
                      retry_reads: bool = True) -> list[dict]:
+
 
 
 
@@ -521,7 +562,8 @@ class TerraLabTransportMixin:
                 if _may_pack_body(method, spec["path"], body):
                     body, packed = packed_request_body(body)
                 req = self._make_qnetwork_request(
-                    spec.get("auth"), timeout_ms, spec["path"], packed)
+                    spec.get("auth"), timeout_ms, spec["path"], packed,
+                    spec.get("extra_headers"))
                 nam = self._predict_nam_at(slot // _CONNECTIONS_PER_MANAGER)
                 payload = QByteArray(body)
 
@@ -701,7 +743,8 @@ class TerraLabTransportMixin:
         )
         body, packed = packed_request_body(body)
         req = self._make_qnetwork_request(
-            auth, self._submit_timeout(), self._detection_predict_url(), packed
+            auth, self._submit_timeout(), self._detection_predict_url(), packed,
+            self._predict_attempt_headers(submission),
         )
 
 

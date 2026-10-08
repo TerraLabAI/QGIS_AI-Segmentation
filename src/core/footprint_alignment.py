@@ -62,7 +62,8 @@ from .shape_policy_dials import (
 
 
 
-_CONSENSUS_NEIGHBOUR_CAP = 24
+
+_CONSENSUS_NEIGHBOUR_CAP = 32
 
 
 _GRID_MAX_CELLS_PER_RADIUS = 8
@@ -969,7 +970,7 @@ class FootprintAlignSweep:
 
 
 
-_SAVE_NEIGHBOUR_CAP = 24
+_SAVE_NEIGHBOUR_CAP = 32
 
 
 def align_saved_footprint(geom: QgsGeometry, neighbour_geoms: list,

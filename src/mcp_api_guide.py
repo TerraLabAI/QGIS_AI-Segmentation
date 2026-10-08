@@ -31,65 +31,49 @@ def agent_workflow_steps() -> list[dict]:
         {
             "step": 1,
             "call": "get_status",
-            "why": "Pass mode=automatic for cloud readiness without a local model; "
-                   "the default checks the Semi-Auto model and imagery.",
+            "why": "Readiness first; mode=automatic checks the cloud path.",
             "optional": False,
         },
         {
             "step": 2,
             "call": "load_model",
-            "why": "Only when get_status reports MODEL_NOT_LOADED. Takes a "
-                   "while the first time in a session.",
+            "why": "Only when get_status reports MODEL_NOT_LOADED.",
             "optional": True,
         },
         {
             "step": 3,
             "call": "set_mode",
-            "why": "'interactive' to click objects one at a time, 'automatic' "
-                   "to sweep a zone for every instance of a class.",
+            "why": "'interactive' for one object at a time, 'automatic' for a zone.",
             "optional": True,
         },
         {
             "step": 4,
             "call": "detect_points",
-            "why": "Interactive route. Outline one object from a point, and "
-                   "correct its shape with more points.",
+            "why": "Interactive route: outline one object from points.",
             "optional": True,
         },
         {
             "step": 5,
             "call": "list_object_classes",
-            "why": "Before any zone run. The validated words detect_auto "
-                   "accepts as object_class, so pick one instead of guessing. "
-                   "Free and instant.",
+            "why": "The words detect_auto accepts as object_class.",
             "optional": True,
         },
         {
             "step": 6,
             "call": "detect_auto",
-            "why": "Automatic route. Name a class and a zone, get every "
-                   "instance. Pass confidence and refine here rather than "
-                   "adjusting anything afterwards, and wait=False for any "
-                   "zone of size: it answers at once with a run_id. "
-                   "set_auto_zone quotes the surface first, for free.",
+            "why": "Automatic route: a class and a zone.",
             "optional": True,
         },
         {
             "step": 7,
             "call": "auto_detect_status",
-            "why": "Wait for a zone run with wait_s=45: each call returns as "
-                   "soon as the run ends, or after 45 s. Never start a second "
-                   "run instead; a run that looks stuck is usually still "
-                   "working.",
+            "why": "Follow a zone run until it ends.",
             "optional": True,
         },
         {
             "step": 8,
             "call": "review_status",
-            "why": "Only when a person left a finished run open in the panel. "
-                   "A run started from this API saves itself and leaves no "
-                   "review to adjust. review_objects lists the objects with "
-                   "the indexes the corrections take.",
+            "why": "Only for a run a person left open in the panel.",
             "optional": True,
         },
     ]
@@ -191,124 +175,13 @@ def agent_method_notes() -> dict[str, dict]:
     return notes
 
 
-_GUIDE_TEXT = """AI Segmentation, for an agent driving it.
-
-WHAT IT IS
-Two ways to turn imagery into vector polygons.
-Interactive: you give a point, it outlines the object under that point.
-Automatic: you give a zone and a word, it finds every instance in the zone.
-Interactive can run entirely on the user's computer. Automatic never can.
-
-ORDER OF CALLS
-1. get_status(mode="automatic") for cloud runs, get_status() for Semi-Auto.
-   It tells you what is missing and what the user must do about
-   it. Do not guess past it.
-2. For Semi-Auto only, load_model() if the status says the model is not loaded.
-3. Then detect_points() for one object, or detect_auto() for a whole zone.
-   set_auto_zone() first quotes a zone's surface and the allowance left, free.
-4. Start any zone of size with detect_auto(..., wait=False). It answers at once
-   with a run_id. Then call auto_detect_status(run_id=..., wait_s=45) until
-   running and finishing are both False: each call returns the moment the run
-   ends, or after 45 s. A quarter-hour sweep is about twenty calls. Never start
-   a second run because the first looks slow. The first is still going and the
-   second costs again.
-
-INTERACTIVE: POINTS
-Put the first point near the middle of the object, not on its edge.
-If the outline swallows a neighbour, add a negative point on the part you do
-not want and call again. If it stops short, add a positive point on the part it
-missed. Two or three points settle almost every shape. Ten do not fix what two
-could not.
-Each saved object counts against the account when the work runs in the cloud.
-Work done on the user's own computer costs nothing.
-Pass response_format="concise" to get the saved outline's box, area and vertex
-count instead of its full WKT, which runs to kilobytes per object.
-
-AUTOMATIC: THE WORD YOU PASS
-Do not guess the word. Call list_object_classes() first: it returns every
-validated word this plugin knows, with the token to pass, the category it
-belongs to, and a weak flag on the classes that name a kind of cover rather
-than a countable object. describe_object_class("building") answers for one
-word, and corrects a near miss ("buildings" is told to pass "building"). Both
-are free. Pass the token field, never a translated label.
-The word has to name something a person could point at. It works by contrast:
-discrete objects that stand apart from their background. Car, truck, boat,
-ship, aeroplane, train, building, house, storage tank, shipping container,
-tree, swimming pool, tennis court all read well.
-A word that names a machine rather than the shape on the ground reads badly.
-So does a word for a kind of land rather than a thing on it.
-Scene matters as much as the word. The same word can find nothing on a flat,
-edge-to-edge surface and find a hundred objects where the same things sit apart
-on contrasting ground. Before you decide a word is weak, try it once on a scene
-where the objects are clearly separated.
-
-AUTOMATIC: EXAMPLES INSTEAD OF A WORD
-When no word fits, draw the answer instead. Pass exemplars: boxes around one or
-two objects of the kind you want, in the raster layer's CRS, label 1 to find
-more like it and label 0 to exclude. object_class may then be empty, but an
-example-only run needs the policy's minimum positive examples (normally one).
-Examples are the right tool exactly where words are weak: shapes with no common
-name, or a name that means the machine and not the mark it leaves.
-An example run reads the whole zone as one image, so keep the zone modest or
-the example becomes too small to recognise. It also costs far less than a
-tiled run.
-
-HUMAN MAP INPUT
-Use prepare_interactive with interaction="draw_zone", "add_positive" or
-"add_negative" when the person can show the area or object more accurately
-than describe it. It opens existing native controls and starts no inference.
-Wait for the person to finish or cancel the drawing, then read
-get_interactive_state(). Detection returns INPUT_IN_PROGRESS while drawing is
-still zone or example; opening review does not finish a drawing. It returns
-the exact zone and example polygons in the source imagery CRS, with the
-source layer ID. Use that source and those inputs for detection; changing
-imagery changes what an example means. Omitting examples reuses them only
-when both the source and exact zone match; [] explicitly runs without them.
-
-AUTOMATIC: FRAMING
-Frame so the objects sit inside their surroundings with room to spare. Never
-crop tight onto one object's texture: its edges then touch the frame and get
-cut. A wider frame holds more whole objects and more contrast, and finds more.
-When you are placing the zone from a name, geocode the exact feature, not the
-town it is in. A town centre lands on the wrong thing and wastes the run.
-
-AUTOMATIC: DETAIL AGAINST OBJECT SIZE
-Detail is how many tiles the zone is cut into along its longer side.
-Many small objects (trees, cars, animals) want HIGH detail: smaller tiles, so
-each object is big enough in its tile to be seen.
-One large object (a lake, a quarry, a bay) wants LOW detail, 1 or 2, so the
-object is not sliced across tile edges.
-Getting this backwards is the most common reason a run comes back thin.
-
-AUTOMATIC: TOO MANY RESULTS
-A run answers generously and lets you filter afterwards, for free. Pass a
-higher confidence to detect_auto to keep less, or a lower one to keep more.
-Words that name a single landmark (a bridge, a dam, a roundabout) tend to
-return many fragments of the one thing. Keep the largest and drop the rest.
-An object cut across two tiles comes back as two polygons; join them.
-
-REFINING THE SHAPE
-Refine settings clean up outlines after detection: simplify, keep a share of
-the points, expand or contract, fill holes, square the corners, drop pieces
-under a size. Pass them to detect_auto with refine= and they apply to that run.
-Match the setting to the object. Square the corners of buildings; never square
-a tree or a pond. Fill holes on a roof; keep them on a field with a pond in it.
-Simplify a hand-sized outline gently, a field boundary harder.
-
-CORRECTING WHAT CAME BACK
-When a person leaves a finished run open in the panel, this API can adjust it:
-change the confidence, recolour it, drop an object, join several into one, and
-undo any of that. After the person exports, auto_detect_status().last_result
-identifies the saved layer, written count and run with review_exported=True.
-review_objects() lists the objects, a page at a time, with
-the index each correction takes, their score, size and place. A run started from this API saves itself immediately, so
-there is nothing left open to adjust. Decide before the run, not after.
-
-WHAT THIS API WILL NOT DO
-It never installs software and never signs the user in. If get_status says the
-model is missing or the account is not active, tell the user what to click. It
-is their machine and their account.
-"""
+_GUIDE_TEXT = (
+    "AI Segmentation turns imagery into vector polygons: one object from a point,"
+    " or every instance of a class in a zone.\n"
+    "Call the methods in the order agent_workflow_steps() gives, and read"
+    " agent_method_notes() for what each one spends and how long it blocks.\n"
+    "The full guide loads once the plugin has fetched its configuration over the network.\n"
+)
 
 
 

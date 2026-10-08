@@ -43,19 +43,11 @@ from .polygon_geometry import (
     suppress_redundant_hypotheses,
 )
 from .polygon_masks import (
-    _finish_polygon,
-    _geojson_to_geometry,
-    _polygon_from_geojson_rings,
     _repaired_simplification,
-    find_contours,
     mask_to_polygons,
-    mask_to_polygons_fallback,
-    mask_to_polygons_rasterio,
     masks_to_polygons_packed,
-    pixel_to_map_coords,
     polygonal_part_of,
     simplify_and_revalidate,
-    trace_contour,
 )
 from .polygon_refine import (
     _REFINE_MARGIN_PX,
@@ -73,19 +65,11 @@ from .polygon_refine import (
 )
 
 __all__ = [
-    "mask_to_polygons_rasterio",
-    "_finish_polygon",
     "simplify_and_revalidate",
     "_repaired_simplification",
     "masks_to_polygons_packed",
-    "_polygon_from_geojson_rings",
-    "_geojson_to_geometry",
     "mask_to_polygons",
-    "mask_to_polygons_fallback",
     "polygonal_part_of",
-    "find_contours",
-    "trace_contour",
-    "pixel_to_map_coords",
     "apply_mask_refinement",
     "_REFINE_MARGIN_PX",
     "_mask_bounding_window",

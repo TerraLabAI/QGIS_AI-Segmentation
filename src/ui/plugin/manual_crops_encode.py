@@ -116,6 +116,10 @@ class ManualCropsEncodeMixin:
         stage["show_busy"] = True
         stage["quiet"] = False
 
+        clock = (self._pending_manual_click or {}).get("clock")
+        if clock is not None:
+            clock.note_joined_warm()
+
 
         self._encode_cursor_set = True
         self._set_manual_encoding_note(True)

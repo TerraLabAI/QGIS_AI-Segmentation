@@ -417,6 +417,20 @@ def fold_small_patches(labels, min_px: float, max_rounds: int = 8,
     return np.repeat(run_class.astype(np.uint8), run_len).reshape(height, width)
 
 
+def class_patches_wkb(labels, geotransform: tuple) -> list[tuple[int, bytes]]:
+
+
+
+
+
+    import numpy as np
+
+    from .polygon_masks import polygonize_label_raster
+
+    shifted = labels + np.uint8(1)
+    return [(value - 1, wkb) for value, wkb in polygonize_label_raster(shifted, geotransform)]
+
+
 def polygon_parts(geom) -> list:
 
 

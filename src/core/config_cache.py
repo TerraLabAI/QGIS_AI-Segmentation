@@ -33,6 +33,8 @@
 
 
 
+
+
 from __future__ import annotations
 
 import copy
@@ -284,8 +286,94 @@ def _load_parsed() -> tuple[dict, float | None, str | None]:
     return config, fetched_at, etag
 
 
+
+
+
+
+
+
+_RUN_ONLY_TOP_KEYS = ("run_decisions",)
+_RUN_ONLY_POLICY_DROPS = {
+    "seed": ("object_tiers", "exemplar_size_ladder"),
+    "review": ("class_keywords", "category_to_class", "min_size_m2",
+               "adaptive_off_prompts", "land_cover"),
+}
+
+_RUN_ONLY_POLICY_EMPTIED = {
+    ("review", "regularize", "keywords"): list,
+    ("review", "boundary_snap", "keywords"): list,
+    ("review", "fp_filter"): dict,
+    ("gate", "class_map"): list,
+    ("gate", "classes"): dict,
+    ("auto_regularize", "classes"): list,
+}
+
+
+def _with_emptied_table(block: object, path: tuple, kind: type) -> object:
+
+
+    if not isinstance(block, dict) or path[0] not in block:
+        return block
+    if len(path) == 1:
+        return block if block[path[0]] == kind() else {**block, path[0]: kind()}
+    child = _with_emptied_table(block[path[0]], path[1:], kind)
+    return block if child is block[path[0]] else {**block, path[0]: child}
+
+
+def _without_run_tables(config: dict) -> dict:
+
+
+    out = {k: v for k, v in config.items() if k not in _RUN_ONLY_TOP_KEYS}
+    policy = out.get("detection_policy")
+    if not isinstance(policy, dict):
+        return out
+    policy = dict(policy)
+    for section, keys in _RUN_ONLY_POLICY_DROPS.items():
+        block = policy.get(section)
+        if isinstance(block, dict) and any(k in block for k in keys):
+            policy[section] = {k: v for k, v in block.items() if k not in keys}
+    review = policy.get("review")
+    if isinstance(review, dict) and isinstance(review.get("class_settings"), dict):
+        settings = review["class_settings"]
+        if any(k != "default" for k in settings):
+            policy["review"] = dict(review, class_settings={
+                k: v for k, v in settings.items() if k == "default"})
+    for path, kind in _RUN_ONLY_POLICY_EMPTIED.items():
+        policy = _with_emptied_table(policy, path, kind)
+    out["detection_policy"] = policy
+    return out
+
+
+
+
+
+
+_DISK_POLICY_MAX_AGE_DAYS = 30.0
+
+
+def _disk_policy_max_age_s(config: dict) -> float:
+    tuning = config.get("tuning")
+    section = tuning.get("config") if isinstance(tuning, dict) else None
+    days = section.get("disk_policy_max_age_days") if isinstance(section, dict) else None
+    if (not isinstance(days, (int, float)) or isinstance(days, bool)
+            or not math.isfinite(days) or not 1 <= days <= 365):
+        days = _DISK_POLICY_MAX_AGE_DAYS
+    return float(days) * 86400.0
+
+
+def _without_aged_policy(config: dict, fetched_at: float | None) -> dict:
+
+
+    if "detection_policy" not in config and "run_decisions" not in config:
+        return config
+    if fetched_at is not None and time.time() - fetched_at <= _disk_policy_max_age_s(config):
+        return config
+    return {k: v for k, v in config.items() if k not in ("detection_policy", "run_decisions")}
+
+
 def _strip_read_back(config: dict) -> dict:
-    return _without_code_execution_dials(_without_kill_switches(config))
+    return _without_run_tables(
+        _without_code_execution_dials(_without_kill_switches(config)))
 
 
 def load_config() -> tuple[dict, float | None, str | None]:
@@ -301,7 +389,7 @@ def load_config() -> tuple[dict, float | None, str | None]:
     config, fetched_at, etag = _load_parsed()
     if not config:
         return {}, None, None
-    return _strip_read_back(config), fetched_at, etag
+    return _without_aged_policy(_strip_read_back(config), fetched_at), fetched_at, etag
 
 
 def clear_config() -> None:
@@ -316,6 +404,31 @@ def clear_config() -> None:
         _state = _Snapshot({}, None, SOURCE_NONE)
         _override = None
         _override_state["loaded"] = False
+        try:
+            os.unlink(config_cache_path())
+        except Exception:  # noqa: BLE001  # nosec B110
+            pass
+
+
+def forget_account_policy() -> None:
+
+
+
+
+
+
+
+    global _state
+    with _publish_lock:
+        state = _state
+        drop = ("detection_policy",) + _RUN_ONLY_TOP_KEYS
+        if not any(k in state.config for k in drop) and not (
+                isinstance(state.raw, dict) and any(k in state.raw for k in drop)):
+            return
+        config = {k: v for k, v in state.config.items() if k not in drop}
+        raw = ({k: v for k, v in state.raw.items() if k not in drop}
+               if isinstance(state.raw, dict) else None)
+        _state = state._replace(config=config, raw=raw, etag=None, lossless=False)
         try:
             os.unlink(config_cache_path())
         except Exception:  # noqa: BLE001  # nosec B110
@@ -401,7 +514,7 @@ def prime_from_disk() -> bool:
         return False
     try:
         raw, fetched_at, etag = _load_parsed()
-        config = _strip_read_back(raw)
+        config = _without_aged_policy(_strip_read_back(raw), fetched_at)
 
 
         lossless = bool(raw) and config == raw
@@ -468,7 +581,7 @@ def set_config(config: dict, etag: str | None = None) -> None:
     if not isinstance(config, dict) or not config:
         return
     try:
-        owned = copy.deepcopy(config)
+        owned = _without_run_tables(copy.deepcopy(config))
 
 
         payload = json.dumps(owned, allow_nan=False)
@@ -533,7 +646,7 @@ def keep_account_sections(config: dict, holds_key: bool) -> dict:
         if isinstance(cached.get("detection_policy"), dict):
             merged["detection_policy"] = copy.deepcopy(cached["detection_policy"])
         for key, value in cached.items():
-            if key not in merged:
+            if key not in merged and key not in _RUN_ONLY_TOP_KEYS:
                 merged[key] = copy.deepcopy(value)
 
         merged["policy_scope"] = cached.get("policy_scope", "account")

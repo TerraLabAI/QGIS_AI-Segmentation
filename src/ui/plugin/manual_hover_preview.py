@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import re
 import time
+from collections import deque
 
 from qgis.core import QgsGeometry, QgsPointXY, QgsRectangle
 from qgis.PyQt.QtCore import QEvent, QObject, QTimer
@@ -150,6 +151,10 @@ _ROUTE_MEMO_MS = 3000.0
 _REPORTED_MAX = 20
 
 
+
+_DRAW_SAMPLES_KEPT = 512
+
+
 def _reported_max() -> int:
     try:
         from ...core.server_dials import dial_in_range
@@ -247,6 +252,12 @@ class HoverPreviewController:
 
         self._reported: set[str] = set()
         self._torn_down = False
+
+
+
+        self._session_requests = 0
+        self._session_busy = 0
+        self._session_draw_ms: deque = deque(maxlen=_DRAW_SAMPLES_KEPT)
 
 
 
@@ -568,7 +579,7 @@ class HoverPreviewController:
 
                 return True
             bounds, shape = key[1], key[2]
-            if not self._draw_answer_mask(mask, bounds, shape):
+            if not self._draw_timed_answer(mask, bounds, shape):
                 return False
             self._answer = (bounds, shape, asked, mask, score, logits)
         except Exception:  # noqa: BLE001
@@ -805,6 +816,7 @@ class HoverPreviewController:
                                 auth, _answer)
         if call.send():
             self._call = call
+            self._session_requests += 1
 
     def _on_answer(self, serial: int, bounds: tuple, shape: tuple,
                    asked: tuple, answer: dict, token: str | None = None,
@@ -814,7 +826,12 @@ class HoverPreviewController:
             return
         self._call = None
         if not isinstance(answer, dict) or answer.get("error") or answer.get("code"):
-            self._note_failure(str((answer or {}).get("code") or "refused"))
+            code = str((answer or {}).get("code") or "refused")
+            from ...core.hover_preview_client import PREVIEW_BUSY_CODE
+
+            if code == PREVIEW_BUSY_CODE:
+                self._session_busy += 1
+            self._note_failure(code)
             return
 
 
@@ -840,7 +857,7 @@ class HoverPreviewController:
 
 
 
-            if self._draw_answer_mask(mask, bounds, shape):
+            if self._draw_timed_answer(mask, bounds, shape):
                 self._answer = (bounds, shape, asked, mask, score, logits)
 
 
@@ -856,6 +873,30 @@ class HoverPreviewController:
                                       shaped_to_nothing=True)
         except Exception:  # noqa: BLE001
             self._note_failure("draw")
+
+    def _draw_timed_answer(self, mask, bounds: tuple, shape: tuple) -> bool:
+
+
+
+        started = time.perf_counter()
+        try:
+            return self._draw_answer_mask(mask, bounds, shape)
+        finally:
+            self._session_draw_ms.append((time.perf_counter() - started) * 1000.0)
+
+    def take_session_counts(self) -> dict:
+
+
+
+        draws = sorted(self._session_draw_ms)
+        p95 = draws[(95 * len(draws) + 99) // 100 - 1] if draws else None
+        counts = {"hover_requests": self._session_requests,
+                  "hover_busy": self._session_busy,
+                  "hover_after_p95_ms": None if p95 is None else int(round(p95))}
+        self._session_requests = 0
+        self._session_busy = 0
+        self._session_draw_ms.clear()
+        return counts
 
     def _draw_answer_mask(self, mask, bounds: tuple, shape: tuple) -> bool:
 
@@ -1330,6 +1371,17 @@ class ManualHoverPreviewMixin:
 
             self._hover_click_shape = getattr(controller, "_hover_mask_memo", None)
         return answer
+
+    def _take_hover_session_counts(self) -> dict | None:
+
+
+        controller = getattr(self, "_hover_preview", None)
+        if controller is None:
+            return None
+        try:
+            return controller.take_session_counts()
+        except Exception:  # noqa: BLE001
+            return None
 
     def _reshape_hover_preview(self) -> None:
 

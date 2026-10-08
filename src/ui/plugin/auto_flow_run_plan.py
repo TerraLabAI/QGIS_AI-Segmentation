@@ -17,6 +17,11 @@ from .shared import clip_served_hint
 _DETECT_PLAN_WAIT_MS = 3000
 
 
+
+
+_DETECT_PLAN_HOLD_CAP_S = 15.0
+
+
 def _run_plan_request_identity(prompt, zone_area_m2, native_mupp,
                                exemplar_size_m, rewritten_from):
 
@@ -419,6 +424,10 @@ class AutoFlowRunPlanMixin:
 
 
         resumed = bool(getattr(self, "_auto_plan_detect_resumed", False))
+        if not resumed:
+
+
+            self._auto_plan_hold_ms = 0
         wait = getattr(self, "_auto_plan_detect_wait", None)
         if wait is not None and not resumed:
             if self._detect_plan_wait_matches_box(wait):
@@ -456,21 +465,13 @@ class AutoFlowRunPlanMixin:
             return False
         generation = int(getattr(self, "_auto_plan_detect_generation", 0)) + 1
         self._auto_plan_detect_generation = generation
+        import time as _time
         self._auto_plan_detect_wait = {
-            "generation": generation, "box": prompt, "token": token}
+            "generation": generation, "box": prompt, "token": token,
+            "t0": _time.monotonic()}
         dock = self.dock_widget
         try:
-            from ...core.qt_compat import safe_single_shot
-            try:
-                from ...core.server_dials import dial_in_range
-                plan_wait_ms = dial_in_range(
-                    "tuning.auto.detect_plan_wait_ms", _DETECT_PLAN_WAIT_MS, 500, 10000)
-            except Exception:  # noqa: BLE001
-                plan_wait_ms = _DETECT_PLAN_WAIT_MS
-            safe_single_shot(
-                plan_wait_ms, dock,
-                lambda g=generation: self._resume_detect_after_plan(
-                    "", generation=g))
+            self._arm_detect_plan_watchdog(generation)
             dock._set_prompt_info(dock._prompt_lookup_note(), tip=True)
             dock._set_prompt_lookup_busy(True)
         except (RuntimeError, AttributeError, ImportError):
@@ -478,6 +479,21 @@ class AutoFlowRunPlanMixin:
             self._drop_detect_plan_wait()
             return False
         return True
+
+    def _arm_detect_plan_watchdog(self, generation: int) -> None:
+
+
+        from ...core.qt_compat import safe_single_shot
+        try:
+            from ...core.server_dials import dial_in_range
+            plan_wait_ms = dial_in_range(
+                "tuning.auto.detect_plan_wait_ms", _DETECT_PLAN_WAIT_MS, 500, 10000)
+        except Exception:  # noqa: BLE001
+            plan_wait_ms = _DETECT_PLAN_WAIT_MS
+        safe_single_shot(
+            plan_wait_ms, self.dock_widget,
+            lambda g=generation: self._resume_detect_after_plan(
+                "", generation=g))
 
     def _detect_plan_wait_matches_box(self, wait: dict) -> bool:
 
@@ -515,9 +531,21 @@ class AutoFlowRunPlanMixin:
         wait = getattr(self, "_auto_plan_detect_wait", None)
         if not isinstance(wait, dict):
             return
+        import time as _time
+        held_s = max(0.0, _time.monotonic() - float(wait.get("t0") or 0.0))
         if generation:
             if generation != wait.get("generation"):
                 return
+
+
+            if (held_s < _DETECT_PLAN_HOLD_CAP_S
+                    and self._run_plan_fetch_in_flight(wait.get("token") or "")
+                    and self._detect_plan_wait_matches_box(wait)):
+                try:
+                    self._arm_detect_plan_watchdog(generation)
+                    return
+                except (RuntimeError, AttributeError, ImportError):
+                    pass
         elif (prompt or "").strip().lower() != (wait.get("token") or "").lower():
             return
         matches = self._detect_plan_wait_matches_box(wait)
@@ -526,6 +554,7 @@ class AutoFlowRunPlanMixin:
             return
         if self._auto_worker is not None or self._auto_review is not None:
             return
+        self._auto_plan_hold_ms = int(round(held_s * 1000))
         self._auto_plan_detect_resumed = True
         try:
             self._on_auto_detect_requested()

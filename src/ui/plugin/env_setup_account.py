@@ -433,6 +433,12 @@ class EnvSetupAccountMixin:
 
         self._end_manual_credit_session()
 
+
+        try:
+            from ...core.config_cache import forget_account_policy
+            forget_account_policy()
+        except Exception:  # noqa: BLE001  # nosec B110
+            pass
         self._refresh_config_for_account_change()
 
 

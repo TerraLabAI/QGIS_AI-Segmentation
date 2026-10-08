@@ -33,6 +33,7 @@ from ...core.review_defaults import (
     REFINE_SIMPLIFY_DEFAULT,
     REFINE_SMOOTH_DEFAULT,
     REFINE_SMOOTH_ITERATIONS,
+    refine_fill_holes_max_m2_default,
 )
 from .fold_row import FoldRow
 from .font_scale import fit_spin_width, scale_px_length, scale_qss_font_px
@@ -42,6 +43,7 @@ from .refine_persistence import (
     refine_setting_name_for,
     refine_start_values,
     remember_refine_settings,
+    remembered_refine_settings,
 )
 from .styles import (
     _CARD_MARGINS,
@@ -268,7 +270,7 @@ class DockRefineMixin:
         self.fill_holes_max_spinbox = QDoubleSpinBox()
         self.fill_holes_max_spinbox.setRange(0.0, 1_000_000.0)
         self.fill_holes_max_spinbox.setDecimals(1)
-        self.fill_holes_max_spinbox.setValue(REFINE_FILL_HOLES_MAX_M2_DEFAULT)
+        self.fill_holes_max_spinbox.setValue(refine_fill_holes_max_m2_default())
         self.fill_holes_max_spinbox.setSuffix(" m²")
         self.fill_holes_max_spinbox.setSpecialValueText(tr("No limit"))
         self.fill_holes_max_spinbox.setToolTip(fill_max_label.toolTip())
@@ -532,7 +534,7 @@ class DockRefineMixin:
             "right_angles": bool(REFINE_ORTHO_DEFAULT),
             "round_corners": REFINE_SMOOTH_DEFAULT > 0,
             "fill_holes": bool(REFINE_FILL_HOLES_DEFAULT),
-            "fill_holes_max_m2": float(REFINE_FILL_HOLES_MAX_M2_DEFAULT),
+            "fill_holes_max_m2": float(refine_fill_holes_max_m2_default()),
             "points_pct": int(REFINE_POINTS_PCT_DEFAULT),
             "simplify_px": float(REFINE_SIMPLIFY_DEFAULT),
             "clean_px": float(REFINE_CLEAN_DEFAULT),
@@ -554,6 +556,26 @@ class DockRefineMixin:
             safe_single_shot(0, self, self._sync_refine_right_angle_controls)
         else:
             self._sync_refine_right_angle_controls()
+
+    def refresh_fill_holes_ceiling(self) -> None:
+
+
+
+        spin = getattr(self, "fill_holes_max_spinbox", None)
+        if spin is None:
+            return
+        try:
+            if "fill_holes_max_m2" in remembered_refine_settings():
+                return
+            if spin.value() != REFINE_FILL_HOLES_MAX_M2_DEFAULT:
+                return
+            spin.blockSignals(True)
+            try:
+                spin.setValue(refine_fill_holes_max_m2_default())
+            finally:
+                spin.blockSignals(False)
+        except RuntimeError:
+            pass  # nosec B110
 
     def publish_refine_settings(self) -> None:
 
@@ -927,7 +949,7 @@ class DockRefineMixin:
     def _emit_refine_default_values(self) -> None:
 
         self.size_filter_changed.emit(float(REFINE_MIN_SIZE_M2_DEFAULT), 0.0)
-        self.fill_holes_size_changed.emit(float(REFINE_FILL_HOLES_MAX_M2_DEFAULT))
+        self.fill_holes_size_changed.emit(float(refine_fill_holes_max_m2_default()))
         self.clean_edges_changed.emit(float(REFINE_CLEAN_DEFAULT))
         self.outline_budget_changed.emit(
             float(REFINE_SIMPLIFY_DEFAULT), int(REFINE_POINTS_PCT_DEFAULT))

@@ -122,6 +122,8 @@ class AutoReviewOpenMixin:
                 result["status"] = "credits_exhausted"
                 result["credits_remaining"] = prior.get("credits_remaining", 0)
             self._last_auto_result = result
+            self._send_auto_completed_terminal(
+                tiles_succeeded, len(self._auto_objects or visible), len(visible))
             QgsMessageLog.logMessage(
                 f"Auto detection: exported {len(visible)} polygon(s)",
                 "AI Segmentation", level=Qgis.MessageLevel.Info,
@@ -206,33 +208,12 @@ class AutoReviewOpenMixin:
         if self.dock_widget is not None:
             self.dock_widget._auto_review_reveal_clicks = 0
 
-
+        instances_found = len(self._auto_objects)
+        visible_n = len(visible)
+        self._send_auto_completed_terminal(tiles_succeeded, instances_found, visible_n)
         try:
             from ...core import telemetry_run_events
-            ctx = self._auto_run_ctx or {}
-            total = ctx.get("total", tiles_succeeded)
-            instances_found = len(self._auto_objects)
-            visible_n = len(visible)
             start_pct = int(round((self._auto_confidence or 0.0) * 100))
-            if self._auto_tel_stop_reason in (None, "completed"):
-                from .auto_client_profile import client_profile_props
-                blob_armed, blob_dropped, tile_m = self._auto_blob_guard_stats()
-                telemetry_run_events.track_auto_detect_completed(
-                    run_id=self._auto_run_id or "",
-                    duration_ms=self._auto_duration_ms(),
-                    tiles_done=tiles_succeeded,
-                    tiles_failed=max(0, total - tiles_succeeded),
-                    instances_found=instances_found,
-                    instances_visible_at_default=visible_n,
-                    zero_at_default=visible_n == 0,
-                    stop_reason="completed",
-                    warming_ms=self._auto_warming_wait_ms(),
-                    merge_mode_final="separate" if self._auto_merge_separate else "map",
-                    blob_armed=blob_armed,
-                    blob_dropped=blob_dropped,
-                    tile_ground_m=tile_m,
-                    client_profile=client_profile_props(self),
-                )
             telemetry_run_events.track_review_opened(
                 run_id=self._auto_run_id or "",
                 instances_found=instances_found,
@@ -258,6 +239,37 @@ class AutoReviewOpenMixin:
             "AI Segmentation", level=Qgis.MessageLevel.Info,
         )
         self._note_review_open_on_timeline()
+
+    def _send_auto_completed_terminal(self, tiles_succeeded: int, instances_found: int,
+                                      visible_at_default: int) -> None:
+
+
+
+        if self._auto_tel_stop_reason not in (None, "completed"):
+            return
+        try:
+            from ...core import telemetry_run_events
+            from .auto_client_profile import client_profile_props
+            total = (self._auto_run_ctx or {}).get("total", tiles_succeeded)
+            blob_armed, blob_dropped, tile_m = self._auto_blob_guard_stats()
+            telemetry_run_events.track_auto_detect_completed(
+                run_id=self._auto_run_id or "",
+                duration_ms=self._auto_duration_ms(),
+                tiles_done=tiles_succeeded,
+                tiles_failed=max(0, total - tiles_succeeded),
+                instances_found=instances_found,
+                instances_visible_at_default=visible_at_default,
+                zero_at_default=visible_at_default == 0,
+                stop_reason="completed",
+                warming_ms=self._auto_warming_wait_ms(),
+                merge_mode_final="separate" if self._auto_merge_separate else "map",
+                blob_armed=blob_armed,
+                blob_dropped=blob_dropped,
+                tile_ground_m=tile_m,
+                client_profile=client_profile_props(self),
+            )
+        except Exception:  # noqa: BLE001
+            pass  # nosec B110
 
     def _note_review_open_on_timeline(self) -> None:
 
