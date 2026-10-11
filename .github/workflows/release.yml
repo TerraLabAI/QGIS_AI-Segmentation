@@ -122,7 +122,7 @@ jobs:
           done
           for e in *.md; do
             case "$e" in
-              README.md|CHANGELOG.md|LICENSE.md|MCP.md|'*.md') ;;
+              README.md|CHANGELOG.md|LICENSE.md|MCP.md|TRADEMARKS.md|'*.md') ;;
               *) echo "FAIL: $e is not part of a plugin payload"; fail=1 ;;
             esac
           done
