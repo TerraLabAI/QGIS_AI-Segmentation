@@ -51,7 +51,7 @@ PRODUCTS = {
         "label": "AI Edit",
         "authcfg": "AIEdit/authcfg_id",
         "plain": "AIEdit/activation_key",
-        "sealed": "",
+        "sealed": "AIEdit/activation_key_dpapi",
     },
 }
 _HELD_KEY = "TerraLab/sibling_sign_in/{}"

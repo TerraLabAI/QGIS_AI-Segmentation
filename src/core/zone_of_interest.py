@@ -392,6 +392,11 @@ def write_zone(geometry: QgsGeometry, crs: QgsCoordinateReferenceSystem,
         held = read_zone(proj)
         label = held.label if (held is not None and _same_shape(held, geometry, crs)) else ""
     layer = zone_layer(proj)
+    if layer is not None and not _is_memory_layer(layer):
+
+
+        _detach_zone_layer(layer)
+        layer = None
     if layer is not None and layer.crs() != crs:
 
 
@@ -448,11 +453,33 @@ def clear_zone(project: Any = None) -> bool:
         pass  # nosec B110
     if layer is None:
         return False
+    if not _is_memory_layer(layer):
+
+
+        _detach_zone_layer(layer)
+        return True
     try:
         proj.removeMapLayer(layer.id())
     except Exception:  # noqa: BLE001
         return False
     return True
+
+
+def _is_memory_layer(layer: QgsVectorLayer) -> bool:
+    try:
+        provider = layer.dataProvider()
+        return provider is not None and provider.name() == "memory"
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _detach_zone_layer(layer: QgsVectorLayer) -> None:
+
+    for key in (ZONE_PROPERTY, ZONE_PROPERTY + "/approximate", ZONE_SHAPES_PROPERTY):
+        try:
+            layer.removeCustomProperty(key)
+        except Exception:  # noqa: BLE001
+            pass  # nosec B110
 
 
 def style_zone_layer(layer: QgsVectorLayer) -> None:

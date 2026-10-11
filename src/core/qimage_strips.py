@@ -151,6 +151,31 @@ def pixmap_from_bounded_bytes(data: bytes, max_pixels: int):
     return pixmap_from_image(reader.read())
 
 
+def image_from_bounded_bytes(data: bytes, max_side: int):
+
+
+
+
+    from qgis.PyQt.QtCore import QBuffer, QByteArray, QIODevice
+    from qgis.PyQt.QtGui import QImage, QImageReader
+
+    if not data:
+        return None
+    buffer = QBuffer()
+    buffer.setData(QByteArray(data))
+    buffer.open(QIODevice.OpenModeFlag.ReadOnly)
+    reader = QImageReader(buffer)
+    size = reader.size()
+    if size.isValid():
+        if size.width() > max_side or size.height() > max_side:
+            return None
+        image = reader.read()
+    else:
+        image = QImage()
+        image.loadFromData(data)
+    return None if image.isNull() else image
+
+
 def icon_from_file(path: str):
 
     from qgis.PyQt.QtGui import QIcon

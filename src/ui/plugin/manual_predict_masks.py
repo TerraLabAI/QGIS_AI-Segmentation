@@ -777,6 +777,8 @@ class ManualMaskMixin:
 
             take_hover = getattr(self, "_take_hover_session_counts", None)
             hover = take_hover() if take_hover is not None else None
+            from ...core.click_crop_encoding import take_crop_upload_tally
+            crop_uploads = take_crop_upload_tally()
             if saves >= 1 and not self._refine_handoff_active:
                 import time as _time
 
@@ -791,6 +793,7 @@ class ManualMaskMixin:
                     tab_switches=getattr(self, "_manual_tab_switches_session", 0),
                     clicks_superseded=superseded,
                     hover=hover,
+                    crop_uploads=crop_uploads,
                 )
                 line = (f"Semi-Auto session: {saves} save(s), {undos} undo(s), "
                         f"{superseded} click(s) superseded")

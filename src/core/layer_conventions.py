@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from qgis.core import (
@@ -26,6 +27,7 @@ from qgis.core import (
     QgsPointXY,
     QgsProject,
     QgsRendererCategory,
+    QgsSettings,
     QgsSingleSymbolRenderer,
     QgsVectorFileWriter,
     QgsVectorLayer,
@@ -1186,9 +1188,32 @@ def _write_conventions_into_the_file(layer, metadata: bool, style: bool) -> None
             _log_convention_failure("saving the metadata into the file", err)
     if style:
         try:
-            layer.saveStyleToDatabase(layer.name(), "AI Segmentation", True, "")
+            with _overwrite_style_without_prompt():
+                layer.saveStyleToDatabase(layer.name(), "AI Segmentation", True, "")
         except Exception as err:  # noqa: BLE001
             _log_convention_failure("saving the style into the file", err)
+
+
+_OVERWRITE_STYLE_KEY = "qgis/overwriteStyle"
+
+
+@contextlib.contextmanager
+def _overwrite_style_without_prompt():
+
+
+
+
+    settings = QgsSettings()
+    had_value = settings.contains(_OVERWRITE_STYLE_KEY)
+    previous = settings.value(_OVERWRITE_STYLE_KEY)
+    settings.setValue(_OVERWRITE_STYLE_KEY, True)
+    try:
+        yield
+    finally:
+        if had_value:
+            settings.setValue(_OVERWRITE_STYLE_KEY, previous)
+        else:
+            settings.remove(_OVERWRITE_STYLE_KEY)
 
 
 def _reread_file_after_write(layer) -> None:

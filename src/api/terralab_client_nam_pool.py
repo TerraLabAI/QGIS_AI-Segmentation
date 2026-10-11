@@ -384,6 +384,13 @@ class TerraLabManagerPoolMixin:
                 return
 
 
+
+            approved = config.sslCertificate()
+            presented = reply.sslConfiguration().peerCertificate()
+            if approved.isNull() or presented.isNull() or approved.digest() != presented.digest():
+                return
+
+
             if all(err.error() in allowed for err in errors):
                 reply.ignoreSslErrors(errors)
         except Exception:  # noqa: BLE001

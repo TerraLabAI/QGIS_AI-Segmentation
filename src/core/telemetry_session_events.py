@@ -216,7 +216,8 @@ def track_manual_session_summary(saves: int, undos: int,
                                  duration_ms: int | None = None,
                                  tab_switches: int = 0,
                                  clicks_superseded: int = 0,
-                                 hover: dict | None = None) -> None:
+                                 hover: dict | None = None,
+                                 crop_uploads: dict | None = None) -> None:
     from .telemetry_config_props import config_provenance_props
 
 
@@ -237,6 +238,10 @@ def track_manual_session_summary(saves: int, undos: int,
     for key in ("hover_requests", "hover_busy", "hover_after_p95_ms"):
         if hover and hover.get(key) is not None:
             props[key] = int(hover[key])
+
+    for key in ("crop_uploads", "crop_upload_kb", "crop_upload_ms"):
+        if crop_uploads and crop_uploads.get(key) is not None:
+            props[key] = int(crop_uploads[key])
     track(ev.MANUAL_SESSION_SUMMARY, props)
 
 

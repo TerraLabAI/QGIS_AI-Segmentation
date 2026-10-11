@@ -1,17 +1,17 @@
 [general]
 name=AI Segmentation by TerraLab
-description=AI segmentation for QGIS: detect and extract building footprints, trees, vegetation or any object from your raster, then refine & export as vector polygons
+description=AI segmentation in QGIS 3.22 to 4. Draw a zone, name an object and get every building footprint, tree or solar panel as vector polygons, or click one object for its outline. No GPU. Free tier, no card.
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
 supportsQt6=True
-version=3.5.0
-author=Yvann and Lilien from TerraLab
+version=3.5.1
+author=TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
 
 
 about=
-    Draw a zone on your imagery, type what you want ("buildings", "trees", "solar panels") and get every match back as vector polygons. Or click one object and get its outline. It replaces tracing by hand.
+    AI Segmentation by TerraLab uses its own detection models, tuned for aerial and satellite imagery. Draw a zone on your imagery, type what you want ("buildings", "trees", "solar panels") and get every match back as vector polygons. Or click one object and get its outline. It replaces tracing by hand.
 
     • Automatic: every building, tree or other object inside the zone you draw, in one run, with a live preview. It runs on TerraLab servers, so no graphics card is needed
 
@@ -31,7 +31,17 @@ about=
 
     • 12 languages: English, French, Portuguese, Spanish, German, Italian, Dutch, Polish, Indonesian, Japanese, Chinese (simplified and traditional)
 
+    By TerraLab, terra-lab.ai
+
 changelog=
+    3.5.1
+    - Signing in on Windows also picks up an activation key already saved by AI Edit
+    - A saved certificate exception now only covers the certificate you approved
+    - An oversized tile from an online basemap is skipped safely instead of slowing QGIS down
+    - A file layer used as the zone is never emptied
+    - Saving an export's style again no longer asks to overwrite it on QGIS 3.22
+    - Stability and reliability improvements
+
     3.5.0
     - Works with AI Agent: objects found by an AI Agent run now wait in the review step, so you can check them before they are saved
     - An image with no position on the map, such as a photo or a scan, now points you to the Georeferencer
@@ -260,11 +270,11 @@ changelog=
 
 tracker=https://github.com/TerraLabAI/QGIS_AI-Segmentation/issues
 repository=https://github.com/TerraLabAI/QGIS_AI-Segmentation
-homepage=https://terra-lab.ai/ai-segmentation
+homepage=https://terra-lab.ai/ai-segmentation?utm_source=plugins.qgis.org&utm_medium=referral
 
 hasProcessingProvider=yes
 
-tags=segmentation, segment anything, instance segmentation, image segmentation, ai, artificial intelligence, machine learning, deep learning, neural network, computer vision, object detection, feature extraction, classification, building detection, raster, satellite, satellite imagery, satellite images, remote sensing, remote-sensing, aerial, orthophoto, ortofoto, drone, uav, sentinel, sentinel-2, landsat, geotiff, multispectral, buildings, vegetation, vectorization, vector, vetor, vector layer, polygon, polygons, digitizing, gpkg, geopackage, georeferencing, georreferenciamento, urban planning, agriculture, forestry, ia
+tags=segmentation, instance segmentation, image segmentation, ai, artificial intelligence, machine learning, deep learning, neural network, computer vision, object detection, feature extraction, classification, building detection, raster, satellite, satellite imagery, satellite images, remote sensing, remote-sensing, aerial, orthophoto, ortofoto, drone, uav, sentinel, sentinel-2, landsat, geotiff, multispectral, buildings, vegetation, vectorization, vector, vetor, vector layer, polygon, polygons, digitizing, gpkg, geopackage, georeferencing, georreferenciamento, urban planning, agriculture, forestry, ia
 
 category=Raster
 icon=resources/icons/icon.png

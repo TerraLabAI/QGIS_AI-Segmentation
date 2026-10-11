@@ -50,6 +50,8 @@ _DEEPEST_ZOOM = 22
 _MIN_AGREEMENT = 0.8
 _GRID = 8
 
+_MAX_TILE_SIDE = 1024
+
 _MIN_TEXTURE = 8.0
 
 _PROBE_BUDGET_S = 6.0
@@ -472,12 +474,15 @@ def _grey(payload):
         return None
     from qgis.PyQt.QtGui import QImage
 
-    image = QImage()
-    if not image.loadFromData(payload):
+    from .qimage_strips import image_from_bounded_bytes, qimage_array_in_strips
+
+
+
+    image = image_from_bounded_bytes(payload, _MAX_TILE_SIDE)
+    if image is None:
         return None
     if image.width() < _GRID or image.height() < _GRID:
         return None
-    from .qimage_strips import qimage_array_in_strips
 
 
     grey = qimage_array_in_strips(image, QImage.Format.Format_Grayscale8, 1)

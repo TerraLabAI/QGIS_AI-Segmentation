@@ -231,6 +231,10 @@ _PROFILE_SAVE_EVERY = 10
 _uploads = {"since_save": 0}
 
 
+
+_session_uploads = {"n": 0, "bytes": 0, "s": 0.0}
+
+
 def flush_crop_profile() -> None:
 
 
@@ -239,6 +243,28 @@ def flush_crop_profile() -> None:
 
     _uploads["since_save"] = 0
     _save_crop_profile()
+
+
+def take_crop_upload_tally() -> dict | None:
+
+
+
+
+
+
+
+    try:
+        with _link_lock:
+            n, sent, spent = (_session_uploads["n"], _session_uploads["bytes"],
+                              _session_uploads["s"])
+            _session_uploads.update(n=0, bytes=0, s=0.0)
+        if n <= 0:
+            return None
+        return {"crop_uploads": int(n),
+                "crop_upload_kb": int(round(sent / 1024.0)),
+                "crop_upload_ms": int(round(spent * 1000.0))}
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _save_crop_profile() -> None:
@@ -366,6 +392,12 @@ def note_crop_upload(sent_bytes: int, elapsed_s: float) -> None:
 
     global _link_kbytes_s
     try:
+        if (math.isfinite(sent_bytes) and math.isfinite(elapsed_s)
+                and sent_bytes > 0 and elapsed_s > 0):
+            with _link_lock:
+                _session_uploads["n"] += 1
+                _session_uploads["bytes"] += int(sent_bytes)
+                _session_uploads["s"] += float(elapsed_s)
         if (not math.isfinite(sent_bytes) or not math.isfinite(elapsed_s)
                 or sent_bytes < _uplink_min_sample_bytes() or elapsed_s <= 0):
             return

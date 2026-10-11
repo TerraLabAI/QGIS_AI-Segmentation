@@ -1257,7 +1257,7 @@ def _paste_tiles(request: XyzCropRequest, payloads):
 
     from qgis.PyQt.QtGui import QImage
 
-    from .qimage_strips import qimage_array_in_strips
+    from .qimage_strips import image_from_bounded_bytes, qimage_array_in_strips
 
     left, top, right, bottom = request.tile_range
     tile_px = request.tile_px
@@ -1265,8 +1265,10 @@ def _paste_tiles(request: XyzCropRequest, payloads):
     rows = bottom - top + 1
     mosaic = np.zeros((rows * tile_px, columns * tile_px, 3), dtype=np.uint8)
     for index, payload in enumerate(payloads):
-        tile = QImage()
-        if not payload or not tile.loadFromData(payload):
+
+
+        tile = image_from_bounded_bytes(payload, tile_px)
+        if tile is None:
             return None
         if tile.width() != tile_px or tile.height() != tile_px:
             return None
