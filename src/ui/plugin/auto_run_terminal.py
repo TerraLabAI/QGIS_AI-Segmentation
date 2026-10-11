@@ -20,6 +20,7 @@ class AutoRunTerminalMixin:
 
         from ...core import run_timeline
         run_timeline.mark("all_finished_slot")
+        self._take_agent_review_route()
         self._set_zone_badge_enabled(True)
         if self.dock_widget:
             try:
@@ -85,6 +86,20 @@ class AutoRunTerminalMixin:
             pass
         self._finalize_auto_results(tiles_succeeded)
 
+    def _take_agent_review_route(self) -> None:
+
+
+
+
+
+
+
+        if getattr(self, "_auto_agent_keep_review", False):
+            self._auto_agent_keep_review = False
+            if self._auto_headless_run:
+                self._auto_headless_run = False
+                self._auto_agent_run_kept = True
+
     def _finalize_auto_results(self, tiles_succeeded: int) -> None:
 
 
@@ -95,6 +110,9 @@ class AutoRunTerminalMixin:
 
 
 
+
+
+        self._take_agent_review_route()
 
 
         self._stop_auto_stall_watchdog()
@@ -540,7 +558,10 @@ class AutoRunTerminalMixin:
 
 
 
-        healthy_zero = tiles_succeeded > 0 and not self._auto_headless_run
+
+
+        healthy_zero = (tiles_succeeded > 0 and not self._auto_headless_run
+                        and not getattr(self, "_auto_agent_run_kept", False))
         healthy_zero = healthy_zero and not self._auto_run_network_dead(tiles_succeeded)
         healthy_zero = healthy_zero and self.dock_widget is not None
         if healthy_zero:

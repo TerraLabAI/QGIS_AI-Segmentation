@@ -367,9 +367,13 @@ class AutoLandCoverMixin:
         task.failed.connect(
             lambda _code, msg, g=gen: self._on_land_cover_failed(msg) if g == self._lc_gen else None)
         self._lc_task = task
+
+
+        self._lc_building = True
         QgsApplication.taskManager().addTask(task)
 
     def _on_land_cover_failed(self, message: str) -> None:
+        self._lc_building = False
         QgsMessageLog.logMessage(
             f"Land cover: building the map failed ({str(message)[:120]})",
             "AI Segmentation", level=Qgis.MessageLevel.Warning)
@@ -439,6 +443,7 @@ class AutoLandCoverMixin:
         self._lc_task.taskTerminated.connect(_release_once)
 
     def _on_land_cover_partition(self, result: dict, first: bool) -> None:
+        self._lc_building = False
         self._lc_result = result
         self._land_cover_fill_layer()
         if first:
@@ -604,9 +609,12 @@ class AutoLandCoverMixin:
             self._lc_result = None
             self._land_cover_show_error()
             return
+        prior_result = self._last_auto_result
         self._last_auto_result = {
             "status": "completed", "instances": len(self._lc_result.get("patches", [])),
-            "tiles_processed": getattr(self, "_lc_tiles_succeeded", 0), "layer_name": None}
+            "tiles_processed": getattr(self, "_lc_tiles_succeeded", 0), "layer_name": None,
+            "review_open": True, "output_kind": "land_cover"}
+        self._keep_quota_fact(prior_result)
         try:
             from ...core import telemetry_run_events
             from .auto_client_profile import client_profile_props
@@ -755,6 +763,7 @@ class AutoLandCoverMixin:
 
     def _on_land_cover_export(self) -> None:
 
+        self._auto_save_error = None
         layer_name = self._land_cover_write_layer()
         if not layer_name:
             try:
@@ -768,6 +777,10 @@ class AutoLandCoverMixin:
             return
         count = int(getattr(self, "_auto_export_feature_count", 0) or 0)
         recap_id = getattr(self, "_auto_export_layer_id", "")
+        prior = getattr(self, "_last_auto_result", None)
+        if isinstance(prior, dict) and prior.get("review_open"):
+            prior.update({"layer_name": layer_name, "layer_id": recap_id or None,
+                          "review_open": False, "review_exported": True})
         self._land_cover_teardown()
         self._reset_auto_for_new_run()
         try:

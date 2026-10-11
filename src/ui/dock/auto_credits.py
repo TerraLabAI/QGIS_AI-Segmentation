@@ -114,9 +114,13 @@ class DockAutoCreditsMixin:
         self.set_auto_envelopes(env._replace(
             objects_used=used, objects_remaining=left))
 
-    def note_cloud_objects_exhausted(self) -> None:
+    def note_cloud_objects_exhausted(self, computer_cap_text: str | None = None) -> None:
 
 
+
+
+
+        self._computer_cap_text = computer_cap_text
         env = getattr(self, "_quota_envelopes", None)
         if env is None:
             return

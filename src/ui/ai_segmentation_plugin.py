@@ -574,6 +574,8 @@ class AISegmentationPlugin(
 
         self._auto_headless_run: bool = False
 
+        self._auto_agent_keep_review: bool = False
+
 
 
         self._auto_review_preset_overrides: dict | None = None

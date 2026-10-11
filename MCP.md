@@ -140,6 +140,14 @@ its objects a page at a time (`offset`, `limit`, `sort_by`), with the index
 `review_remove_object` and `review_merge_objects` take, plus each object's
 score, area, centroid and box.
 
+`detect_auto(..., wait=False, keep_review=True)` ends the run on that same
+review instead of saving it, so the person refines it in the panel.
+`review_status()` says what is open (`kind` "objects" or "land_cover"),
+`review_set({...})` moves any review control (confidence, sizes, every shape
+key, `display_mode`, or `min_patch_m2` on land cover) with the panel following,
+and `review_save()` saves it as the panel's own save button does. All three are
+free. `auto_detect_status()` carries `review_open` while nothing is saved.
+
 The same handle is available the long way round, if you prefer it:
 
     import qgis.utils

@@ -124,6 +124,11 @@ class AutoRunStartMixin:
         run_timeline.mark("start_body")
 
 
+        if not self._auto_headless_run:
+            self._auto_review_preset_overrides = None
+        self._auto_agent_run_kept = False
+
+
 
 
 

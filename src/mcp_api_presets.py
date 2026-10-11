@@ -214,6 +214,15 @@ class SegmentationPresetsMixin:
         if not wanted:
             return {"_error": "token must be a non-empty string naming an object class."}
 
+
+        from .ui.dock.auto_target_mode import LAND_COVER_WORD, land_cover_request
+        if land_cover_request(wanted):
+            return {"token": LAND_COVER_WORD, "label": "Land cover", "kind": "land_cover",
+                    "weak": False, "source": "built_in",
+                    "hint": (f"Pass '{LAND_COVER_WORD}' as object_class to detect_auto(): the zone "
+                             "comes back as one layer of land cover classes, a class per patch. "
+                             "Land use runs the same land cover mode.")}
+
         cats, top_ids, source = _catalogue_with_source()
         match: tuple[dict, dict] | None = None
         known: list[str] = []

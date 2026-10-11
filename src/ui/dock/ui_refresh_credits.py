@@ -169,6 +169,16 @@ class DockCreditsDisplayMixin:
 
             wall.button.setText(keep_working_cta())
 
+        cap_text = getattr(self, "_computer_cap_text", None)
+        if cap_text:
+
+
+            title.setText(cap_text)
+            reset_line = getattr(self, "_auto_upsell_reset", None)
+            if reset_line is not None:
+                reset_line.setVisible(False)
+            return
+
 
 
         env = getattr(self, "_quota_envelopes", None)

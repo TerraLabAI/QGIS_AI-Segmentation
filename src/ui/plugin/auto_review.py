@@ -836,6 +836,7 @@ class AutoReviewMixin:
                     "instances": int(getattr(self, "_auto_export_feature_count", 0) or 0),
                     "output_kind": "vector",
                     "review_exported": True,
+                    "review_open": False,
                 })
                 self._last_auto_result = result
 
@@ -971,6 +972,13 @@ class AutoReviewMixin:
     def _on_auto_export_clicked(self) -> None:
 
 
+        self._run_auto_export_click("panel")
+
+    def _run_auto_export_click(self, origin: str) -> None:
+
+
+
+        self._auto_save_error = None
 
 
         if self._auto_review_export_busy():
@@ -986,7 +994,7 @@ class AutoReviewMixin:
         except (RuntimeError, AttributeError):
             pass
         try:
-            started = self._start_auto_review_export_async(include_hidden)
+            started = self._start_auto_review_export_async(include_hidden, origin)
         except Exception:
 
             try:
@@ -1008,9 +1016,9 @@ class AutoReviewMixin:
                 self.dock_widget.set_auto_export_saving(False)
             except (RuntimeError, AttributeError):
                 pass
-        self._finish_auto_export_click(exported)
+        self._finish_auto_export_click(exported, origin=origin)
 
-    def _finish_auto_export_click(self, exported) -> None:
+    def _finish_auto_export_click(self, exported, origin: str = "panel") -> None:
 
 
 
@@ -1050,6 +1058,17 @@ class AutoReviewMixin:
                 detail = tr("QGIS could not write the output file. Check free "
                             "disk space and write access to the output folder, "
                             "then try Export again. Your review is still available.")
+            if origin == "agent":
+
+
+                self._auto_save_error = detail
+                try:
+                    self.iface.messageBar().pushWarning(
+                        "AI Segmentation", "{} {}".format(
+                            tr("Could not save your detections to a file."), detail))
+                except (RuntimeError, AttributeError):  # nosec B110
+                    pass
+                return
             show_error_report(
                 self.iface.mainWindow(),
                 tr("Export Failed"),

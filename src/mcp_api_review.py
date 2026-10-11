@@ -17,11 +17,20 @@ from .mcp_api_guard import gui_thread_only
 _DISPLAY_MODES = ("normal", "outline", "confidence", "random")
 
 _NO_OPEN_REVIEW = (
-    "No open detection review. A run started through this API saves itself and "
+    "No open detection review. A blocking run through this API saves itself and "
     "leaves nothing to review, so pass confidence= and refine= to detect_auto "
-    "instead. This call works on a run a person started in the panel and has "
-    "not exported yet."
+    "instead. This call works on a run a person started in the panel, or a "
+    "detect_auto(wait=False, keep_review=True), that has not been saved yet."
 )
+
+
+
+_REVIEW_SET_REFINE_ARGS = {
+    "simplify_px": "simplify_px", "clean_px": "trim_spikes_px",
+    "smooth": "round_corners", "ortho": "right_angles", "expand_px": "expand_px",
+    "fill_holes": "fill_holes", "fill_holes_max_m2": "fill_holes_max_m2",
+    "snap_boundaries": "shared_borders", "points_pct": "points_pct",
+}
 
 
 
@@ -67,8 +76,251 @@ def _review_crs_facts(plugin) -> tuple[str, bool]:
         return authid, False
 
 
+def _land_cover_swept(plugin) -> bool:
+
+
+    if getattr(plugin, "_lc_result", None) is not None:
+        return True
+    return (getattr(plugin, "_lc_store", None) is not None
+            and getattr(plugin, "_lc_mosaic", None) is None)
+
+
+def _review_set_refine_arg(canonical):
+
+    return _REVIEW_SET_REFINE_ARGS.get(canonical) if canonical else None
+
+
 class SegmentationReviewMixin:
 
+
+    def _review_kind(self) -> str | None:
+
+        plugin = self._plugin
+        if getattr(plugin, "_auto_review", None) is not None:
+            return "objects"
+
+
+
+        if _land_cover_swept(plugin):
+            return "land_cover"
+        return None
+
+    def _land_cover_sweeping(self) -> dict | None:
+
+        if getattr(self._plugin, "_lc_mosaic", None) is not None:
+            return {"_error": ("The land cover sweep is still running; its review opens "
+                               "when it ends (auto_detect_status)."), "sweeping": True}
+        return None
+
+    def _land_cover_review_status(self) -> dict:
+        plugin = self._plugin
+        result = getattr(plugin, "_lc_result", None) or {}
+        return {
+            "open": True,
+            "kind": "land_cover",
+            "patches": len(result.get("patches") or []),
+            "min_patch_m2": float(getattr(plugin, "_lc_min_patch", 0.0) or 0.0),
+
+
+            "applying": bool(getattr(plugin, "_lc_building", False)
+                             or getattr(plugin, "_lc_result", None) is None),
+            **({"save_error": plugin._auto_save_error}
+               if getattr(plugin, "_auto_save_error", None) else {}),
+        }
+
+    @gui_thread_only
+    def review_set(self, settings: dict) -> dict:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        if not isinstance(settings, dict) or not settings:
+            return {"_error": "settings must be a non-empty dict of review settings."}
+        sweeping = self._land_cover_sweeping()
+        if sweeping:
+            return sweeping
+        kind = self._review_kind()
+        if kind is None:
+            return {"_error": _NO_OPEN_REVIEW}
+        plugin = self._plugin
+        wanted = dict(settings)
+        applied: list[str] = []
+        if kind == "land_cover":
+            if getattr(plugin, "_lc_result", None) is None:
+                return {"_error": ("The land cover map has not landed yet (still building, or "
+                                   "its build failed and the panel offers a retry); "
+                                   "min_patch_m2 applies once the review is on screen."),
+                        "applying": True, "kind": kind}
+            unknown = sorted(k for k in wanted if k != "min_patch_m2")
+            if unknown:
+                return {"_error": ("A land cover result takes min_patch_m2 only; "
+                                   f"not {', '.join(unknown)}.")}
+            from .mcp_api_refine import _refine_number
+            try:
+                value = float(_refine_number("min_patch_m2", wanted["min_patch_m2"]))
+            except (TypeError, ValueError, OverflowError):
+                return {"_error": "min_patch_m2 must be a finite number of square metres."}
+            dock = getattr(plugin, "dock_widget", None)
+            spin = getattr(dock, "_lc_patch_spin", None) if dock is not None else None
+
+
+            low, high, decimals = 0.0, 100000.0, 0
+            if spin is not None:
+                try:
+                    low, high, decimals = float(spin.minimum()), float(spin.maximum()), int(spin.decimals())
+                except (RuntimeError, AttributeError, TypeError, ValueError):
+                    pass
+            value = round(value, decimals)
+            if not low <= value <= high:
+                return {"_error": f"min_patch_m2 must be between {low:g} and {high:g}."}
+            if spin is not None:
+                self._write_review_widget(spin, value)
+            try:
+                plugin._on_land_cover_min_patch(value)
+            except (RuntimeError, AttributeError) as err:
+                return {"_error": f"Could not set the smallest patch: {err}"}
+            out = self._land_cover_review_status()
+            out["applied"] = ["min_patch_m2"]
+            return out
+
+        mode = wanted.pop("display_mode", None)
+        confidence = wanted.pop("confidence", None)
+        from .mcp_api import coerce_bool_param
+        from .mcp_api_refine import _REFINE_BOOL_KEYS, _REFINE_KEY_ALIASES, _refine_number
+        refine_args: dict = {}
+        canonical_values: dict = {}
+        for key, value in wanted.items():
+            canonical = _REFINE_KEY_ALIASES.get(str(key))
+            arg = "min_size_m2" if canonical == "min_size_m2" else (
+                "max_size_m2" if canonical == "max_size_m2" else _review_set_refine_arg(canonical))
+            if arg is None:
+                from .mcp_api import not_found_error
+                return not_found_error("review setting", str(key), sorted(
+                    set(_REFINE_KEY_ALIASES) | {"confidence", "display_mode"}))
+            if canonical in (*_REFINE_BOOL_KEYS, "shared_borders"):
+                value, bool_err = coerce_bool_param(str(key), value)
+                if bool_err:
+                    return bool_err
+            else:
+                try:
+                    value = _refine_number(canonical, value)
+                except (TypeError, ValueError, OverflowError) as err:
+                    return {"_error": f"Invalid {key}: {err}"}
+            refine_args[arg] = value
+            canonical_values[canonical] = value
+
+
+        if confidence is not None:
+            _conf, conf_err = self._confidence_in_range(confidence)
+            if conf_err:
+                return conf_err
+        if mode is not None and (not isinstance(mode, str)
+                                 or mode.strip().lower() not in _DISPLAY_MODES):
+            from .mcp_api import not_found_error
+            return not_found_error("display mode", str(mode), list(_DISPLAY_MODES))
+        if canonical_values:
+            refused = self._review_refine_validation_error(
+                {("shared_borders" if k == "snap_boundaries" else k): v
+                 for k, v in canonical_values.items()})
+            if refused:
+                return refused
+        busy = self._review_mutation_error()
+        if busy:
+            return busy
+        if confidence is not None:
+            res = self.review_filter(confidence=confidence)
+            if "_error" in res:
+                return res
+            applied.append("confidence")
+        if refine_args:
+            res = self.apply_refine(**refine_args)
+            if isinstance(res, dict) and "_error" in res:
+                return res
+            applied += sorted(refine_args)
+        if mode is not None:
+            res = self.set_display_mode(mode)
+            if "_error" in res:
+                return res
+            applied.append("display_mode")
+        out = self.review_status()
+        out["applied"] = applied
+        return out
+
+    @gui_thread_only
+    def review_save(self) -> dict:
+
+
+
+
+
+
+
+
+        sweeping = self._land_cover_sweeping()
+        if sweeping:
+            return sweeping
+        kind = self._review_kind()
+        if kind is None:
+            return {"_error": _NO_OPEN_REVIEW}
+        plugin = self._plugin
+        if kind == "land_cover" and (getattr(plugin, "_lc_building", False)
+                                     or getattr(plugin, "_lc_result", None) is None):
+            return {"_error": ("The land cover map is still being rebuilt for the last "
+                               "setting; review_status says applying False once it is done."),
+                    "applying": True, "kind": kind}
+        try:
+            if kind == "land_cover":
+                plugin._auto_save_error = None
+                plugin._on_land_cover_export()
+            else:
+                busy = self._review_mutation_error()
+                if busy:
+                    return busy
+
+
+                if int(self._count_review_kept().get("kept_instances") or 0) == 0:
+                    return {"_error": ("Nothing is visible to save; lower the confidence or "
+                                       "widen the size range with review_set."),
+                            "kept_instances": 0, "kind": kind}
+                plugin._auto_save_error = None
+                plugin._run_auto_export_click("agent")
+                failed = getattr(plugin, "_auto_save_error", None)
+                if failed:
+                    return {"_error": f"The review could not be saved: {failed}",
+                            "save_error": failed, "kind": kind}
+        except Exception as err:  # noqa: BLE001
+            return {"_error": f"Saving the review failed: {err}"}
+        if self._review_kind() is not None:
+            if kind == "objects" and getattr(plugin, "_auto_export_job", None) is not None:
+                return {"saving": True, "kind": kind}
+            plugin._auto_save_error = "The layer could not be written; the review is still open on the panel."
+            return {"_error": plugin._auto_save_error, "save_error": plugin._auto_save_error,
+                    "kind": kind}
+        last = getattr(plugin, "_last_auto_result", None) or {}
+        if not last.get("layer_name"):
+            return {"saving": True, "kind": kind}
+        return {"saved": True, "kind": kind, "layer_name": last.get("layer_name"),
+                "layer_id": last.get("layer_id"),
+                "instances": _saved_count(last.get("layer_id"), last.get("instances"))}
 
     def _review_mutation_error(self) -> dict | None:
 
@@ -100,10 +352,12 @@ class SegmentationReviewMixin:
 
 
         plugin = self._plugin
+        if self._review_kind() == "land_cover":
+            return self._land_cover_review_status()
         if getattr(plugin, "_auto_review", None) is None:
             return {"open": False, "_error": _NO_OPEN_REVIEW}
 
-        out: dict = {"open": True}
+        out: dict = {"open": True, "kind": "objects"}
         out.update(self._count_review_kept())
         try:
             removed = plugin._review_removed_fids()
@@ -114,6 +368,8 @@ class SegmentationReviewMixin:
         out["display_mode"] = str(getattr(plugin, "_auto_display_mode", "") or "")
         journal = getattr(plugin, "_auto_correct_journal", None)
         out["corrections"] = int(getattr(journal, "count", 0) or 0)
+        if getattr(plugin, "_auto_save_error", None):
+            out["save_error"] = plugin._auto_save_error
         return out
 
     @gui_thread_only
@@ -588,3 +844,18 @@ class SegmentationReviewMixin:
                 valid_range=(0, len(objects) - 1),
             )
         return idx, None
+
+
+def _saved_count(layer_id, fallback):
+
+
+    try:
+        from qgis.core import QgsProject
+        layer = QgsProject.instance().mapLayer(str(layer_id or ""))
+        if layer is not None and hasattr(layer, "featureCount"):
+            count = int(layer.featureCount())
+            if count >= 0:
+                return count
+    except Exception:  # noqa: BLE001
+        return fallback
+    return fallback

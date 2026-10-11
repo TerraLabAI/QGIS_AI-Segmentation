@@ -157,12 +157,17 @@ class AutoReviewOpenMixin:
         except (RuntimeError, AttributeError):
             pass
 
+
+        prior_result = self._last_auto_result
         self._last_auto_result = {
             "status": "completed",
             "instances": len(visible),
             "tiles_processed": tiles_succeeded,
             "layer_name": None,
+
+            "review_open": True,
         }
+        self._keep_quota_fact(prior_result)
 
 
 
@@ -399,3 +404,12 @@ class AutoReviewOpenMixin:
                 export_path="review_open", confidence_applied=default_confidence)
         except Exception:  # noqa: BLE001
             pass  # nosec B110
+
+    def _keep_quota_fact(self, prior) -> None:
+
+
+        result = self._last_auto_result
+        if (isinstance(prior, dict) and prior.get("status") == "credits_exhausted"
+                and isinstance(result, dict)):
+            result["status"] = "credits_exhausted"
+            result["credits_remaining"] = prior.get("credits_remaining", 0)

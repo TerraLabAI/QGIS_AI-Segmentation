@@ -66,6 +66,18 @@ def is_land_cover_word(text) -> bool:
     return str(text or "").strip().lower() in LAND_COVER_WORDS
 
 
+
+
+LAND_USE_WORDS = ("land use", "landuse", "land-use", "occupation du sol",
+                  "usage du sol", "utilisation du sol", "occupation des sols")
+
+
+def land_cover_request(text) -> bool:
+
+    word = " ".join(str(text or "").replace("_", " ").split()).lower()
+    return word in LAND_COVER_WORDS or word in LAND_USE_WORDS
+
+
 def _legend_colors(legend: list) -> list[str]:
     colors = [e.get("color") for e in legend or () if isinstance(e, dict) and e.get("color")]
     if len(colors) >= 2:

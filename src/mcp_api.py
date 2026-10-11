@@ -51,7 +51,9 @@ AISEG_REGISTER_URL = "https://terra-lab.ai/ai-segmentation?utm_source=qgis&utm_m
 
 
 
-API_VERSION = 5
+
+
+API_VERSION = 6
 
 PUBLIC_METHODS = [
     "apply_refine",
@@ -73,6 +75,8 @@ PUBLIC_METHODS = [
     "review_clear_corrections",
     "review_filter",
     "review_merge_objects",
+    "review_save",
+    "review_set",
     "review_objects",
     "review_remove_object",
     "review_status",

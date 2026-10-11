@@ -550,6 +550,8 @@ class AutoTileSubmitMixin:
                 "envelope": str(response.get("envelope") or ""),
                 "used": response.get("used"),
                 "limit": response.get("limit"),
+                "free_device_reason": str(
+                    (response.get("free_device") or {}).get("reason") or ""),
             }
         except (TypeError, ValueError, AttributeError):
             self._quota_refusal = None

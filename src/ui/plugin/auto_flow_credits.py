@@ -269,6 +269,15 @@ class AutoFlowCreditsMixin:
 
 
         reset_date = usage.get("reset_date") or usage.get("period_end") or ""
+        from ...core.free_device_cap import computer_cap_message, is_computer_cap
+        if not is_computer_cap(usage):
+            self.dock_widget._computer_cap_text = None
+        elif not getattr(self.dock_widget, "_computer_cap_text", None):
+            self.dock_widget._computer_cap_text = computer_cap_message()
+        if is_computer_cap(usage):
+
+
+            reset_date = ""
         self.dock_widget.set_auto_credits(credits, reset_date,
                                           is_subscriber=not is_free,
                                           total=total)

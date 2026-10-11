@@ -307,6 +307,17 @@ class DockAutoRunBlockMixin:
 
         reset_day = getattr(self, "_auto_reset_display", "")
         subscriber = bool(getattr(self, "_auto_is_subscriber", False))
+        cap_text = getattr(self, "_computer_cap_text", None)
+        if cap_text and not subscriber:
+
+
+            card.set_tint("premium")
+            card.set_ghost_button(False)
+            card.route_cta(self._on_run_block_pro_clicked)
+            card.set_text(cap_text, None, keep_working_cta())
+            card.set_pro_offer("plugin_run_block")
+            self._track_pro_nudge_view("credit_block")
+            return False
 
 
         title = dial_copy(

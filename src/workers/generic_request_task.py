@@ -97,6 +97,8 @@ class GenericRequestTask(QgsTask):
             return False
 
         if "error" in result:
+
+            self.failure_payload = result
             self._failure = (
                 str(result.get("error", "Unknown error")),
                 str(result.get("code", "")),

@@ -42,6 +42,13 @@ class AutoRunPreflightMixin:
         except (RuntimeError, AttributeError):
             crs_valid = False
         if not crs_valid:
+
+
+
+
+            if self._raster_has_no_ground_position(layer):
+                self._auto_raster_guard_reason = "raster_not_georeferenced"
+                return self._auto_no_position_message()
             self._auto_raster_guard_reason = "raster_no_crs"
             return tr(
                 "This layer has no valid coordinate reference system. "
@@ -86,15 +93,7 @@ class AutoRunPreflightMixin:
                 georef = True
             if not georef:
                 self._auto_raster_guard_reason = "raster_not_georeferenced"
-
-
-
-
-                return tr(
-                    "This image has no position on the map, so Automatic "
-                    "cannot place what it finds. Give it one with the QGIS "
-                    "Georeferencer, or use Semi-Auto mode on it as is."
-                )
+                return self._auto_no_position_message()
             if self._raster_is_rotated(layer):
                 self._auto_raster_guard_reason = "raster_rotated"
 
@@ -538,6 +537,45 @@ class AutoRunPreflightMixin:
                         "Overviews) to make detection much faster.")))
         except Exception:  # noqa: BLE001  # nosec B110
             pass
+
+    @staticmethod
+    def _auto_no_position_message() -> str:
+
+
+
+
+        return tr(
+            "This image has no position on the map, so Automatic "
+            "cannot place what it finds. Give it one with the QGIS "
+            "Georeferencer, or use Semi-Auto mode on it as is."
+        )
+
+    @staticmethod
+    def _raster_has_no_ground_position(layer) -> bool:
+
+
+
+
+        try:
+            source = layer.source()
+        except (RuntimeError, AttributeError):
+            return False
+        if not source:
+            return False
+        low = source.lower()
+        if low.startswith("/vsi") or "://" in low:
+            return False
+        try:
+            from ...core.raster_dataset_cache import acquire_gdal_dataset
+            ds = acquire_gdal_dataset(source)
+            if ds is None:
+                return False
+            try:
+                return ds.GetGeoTransform(can_return_null=True) is None
+            except TypeError:
+                return tuple(ds.GetGeoTransform() or ()) == (0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+        except Exception:  # noqa: BLE001
+            return False
 
     @staticmethod
     def _raster_is_rotated(layer) -> bool:

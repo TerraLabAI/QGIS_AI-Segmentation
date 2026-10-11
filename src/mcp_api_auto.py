@@ -183,7 +183,16 @@ class SegmentationAutoMixin:
         should_cancel: Callable[[], bool] | None = None,
         instance_colors: bool = False,
         wait: bool = True,
+        keep_review: bool = False,
     ) -> dict:
+
+
+
+
+
+
+
+
 
 
 
@@ -337,6 +346,8 @@ class SegmentationAutoMixin:
             return {"_error": "layer_name must be a string or None."}
         if not isinstance(wait, bool):
             return {"_error": "wait must be True or False."}
+        if not isinstance(keep_review, bool):
+            return {"_error": "keep_review must be True or False."}
         if zone_wkt and zone_wkt.strip():
             _geom, zone_err = zone_geometry_from_wkt(zone_wkt)
             if zone_err:
@@ -352,6 +363,12 @@ class SegmentationAutoMixin:
             }
 
         from .core.detect_gate import can_detect
+
+
+
+        from .ui.dock.auto_target_mode import LAND_COVER_WORD, land_cover_request
+        if object_class and land_cover_request(object_class):
+            object_class = LAND_COVER_WORD
 
         if exemplars is None:
             exemplars = self._retained_auto_exemplars(zone_wkt, layer_name)
@@ -479,6 +496,11 @@ class SegmentationAutoMixin:
                 kwargs["wait"] = False
             else:
                 dropped.append("wait")
+        if keep_review:
+            if not wait and "keep_review" in accepted and "wait" in accepted:
+                kwargs["keep_review"] = True
+            else:
+                dropped.append("keep_review")
 
 
 
@@ -542,6 +564,10 @@ class SegmentationAutoMixin:
                 f"wait_s={_STATUS_WAIT_RECOMMENDED_S}) until running and "
                 f"finishing are both False{calls}. Never start it again "
                 "meanwhile: a second run is billed again.")
+            if result.get("keep_review"):
+                result["hint"] += (
+                    " The run then stays on the panel's review step, unsaved: "
+                    "review_status(), review_set() and review_save() work on it.")
         elif str(result.get("_error") or "").startswith("Detection timed out"):
             result["hint"] = (
                 "A blocking call gives up at its timeout and stops the run, "
@@ -549,6 +575,7 @@ class SegmentationAutoMixin:
                 "call detect_auto(..., wait=False) and wait with "
                 f"auto_detect_status(wait_s={_STATUS_WAIT_RECOMMENDED_S}).")
         return result
+
 
 
 
@@ -944,6 +971,9 @@ class SegmentationAutoMixin:
 
 
 
+
+
+
         wait, wait_err = _status_wait_seconds(wait_s)
         if wait_err:
             return wait_err
@@ -1001,10 +1031,18 @@ class SegmentationAutoMixin:
             "progress": _auto_progress_snapshot(dock) if running else None,
             "run_id": current_id if in_flight else (
                 last.get("run_id") if isinstance(last, dict) else None),
-            "finishing": bool(
-                in_flight and not running and last is None
-                and getattr(plugin, "_auto_finalize_state", None) is not None),
+
+
+            "finishing": bool(in_flight and not running and last is None),
+
+
+            "review_open": self._review_kind() is not None,
         }
+
+        if getattr(plugin, "_auto_save_error", None):
+            out["save_error"] = plugin._auto_save_error
+        if isinstance(last, dict) and "review_open" in last:
+            last["review_open"] = out["review_open"] and not last.get("review_exported")
         if in_flight:
             eta = _auto_eta_seconds(plugin, dock, out["progress"])
             if eta is not None:
@@ -1032,6 +1070,13 @@ class SegmentationAutoMixin:
         except (RuntimeError, AttributeError):
             pass
         if getattr(plugin, "_auto_start_in_progress", False):
+            return True
+
+
+        if (getattr(plugin, "_lc_building", False)
+                and getattr(plugin, "_lc_result", None) is None
+                and getattr(plugin, "_lc_mosaic", None) is None
+                and getattr(plugin, "_lc_store", None) is not None):
             return True
         return (getattr(plugin, "_auto_finalize_state", None) is not None
                 and getattr(plugin, "_last_auto_result", None) is None)

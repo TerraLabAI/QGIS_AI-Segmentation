@@ -199,7 +199,7 @@ class ManualObjectBillingMixin:
         except Exception:  # noqa: BLE001  # nosec B110
             pass
 
-    def _say_manual_credits_exhausted(self) -> None:
+    def _say_manual_credits_exhausted(self, text: str | None = None) -> None:
 
 
 
@@ -218,9 +218,9 @@ class ManualObjectBillingMixin:
                 "tuning.credits.exhausted_notice_duration_s", 8, 1, 30)
             self.iface.messageBar().pushMessage(
                 "AI Segmentation",
-                tr("You saved your cloud objects for this month. Switch "
-                   "to your own computer to keep working free, or upgrade "
-                   "from the panel."),
+                text or tr("You saved your cloud objects for this month. "
+                           "Switch to your own computer to keep working "
+                           "free, or upgrade from the panel."),
                 level=Qgis.MessageLevel.Warning,
                 duration=notice_duration_s,
             )
@@ -522,8 +522,12 @@ class ManualObjectBillingMixin:
                     pass
                 self._end_cloud_click_session()
             return
+        from ...core.free_device_cap import computer_cap_message, is_computer_cap
+        cap_text = (computer_cap_message(message)
+                    if is_computer_cap(getattr(task, "failure_payload", None))
+                    else None)
         try:
-            self.dock_widget.note_cloud_objects_exhausted()
+            self.dock_widget.note_cloud_objects_exhausted(cap_text)
             import time as _time
             self._envelopes_applied_at = _time.monotonic()
         except (RuntimeError, AttributeError):
@@ -547,7 +551,7 @@ class ManualObjectBillingMixin:
         except Exception:  # noqa: BLE001  # nosec B110
             pass
         self._end_manual_credit_session()
-        self._say_manual_credits_exhausted()
+        self._say_manual_credits_exhausted(cap_text)
         try:
             self._refresh_auto_credits()
         except (RuntimeError, AttributeError):

@@ -38,7 +38,7 @@ class AutoExportOffloadMixin:
 
         return getattr(self, "_auto_export_job", None) is not None
 
-    def _start_auto_review_export_async(self, include_hidden: bool) -> bool:
+    def _start_auto_review_export_async(self, include_hidden: bool, origin: str = "panel") -> bool:
 
 
 
@@ -53,6 +53,8 @@ class AutoExportOffloadMixin:
         if collected is None:
             self._set_auto_export_saving_state(False)
             return True
+
+        collected["origin"] = origin
         review = collected["review"]
         export = self._prepare_auto_export(
             collected["refined"], review["crs"], review["source_layer_name"],
@@ -197,8 +199,11 @@ class AutoExportOffloadMixin:
         if not report:
             return
         try:
-            self._finish_auto_export_click(exported)
+            self._finish_auto_export_click(exported, origin=collected.get("origin", "panel"))
         except Exception:  # noqa: BLE001
+            if collected.get("origin") == "agent":
+                self._auto_save_error = tr("Something went wrong saving your detections. Please try again.")
+                return
             try:
                 from ..error_report_dialog import show_error_report
                 show_error_report(

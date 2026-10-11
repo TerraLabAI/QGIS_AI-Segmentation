@@ -293,7 +293,12 @@ class DockManualCreditGateMixin:
             self._refresh_manual_credit_contact_lane(subscriber)
             self._refresh_manual_credit_custom_needs(subscriber)
             env = getattr(self, "_quota_envelopes", None)
-            if env is not None and env.objects_cap:
+            cap_text = getattr(self, "_computer_cap_text", None)
+            if cap_text:
+
+
+                self.manual_credit_title.setText(cap_text)
+            elif env is not None and env.objects_cap:
 
 
 
@@ -310,7 +315,8 @@ class DockManualCreditGateMixin:
                     dial_copy(
                         "manual_gate.title_exhausted_free",
                         tr("Your free cloud detections are used up")))
-            self.manual_credit_reset.setText(self._manual_credit_reset_text())
+            self.manual_credit_reset.setText(
+                "" if cap_text else self._manual_credit_reset_text())
             self.manual_credit_reset.setVisible(
                 bool(self.manual_credit_reset.text()))
 

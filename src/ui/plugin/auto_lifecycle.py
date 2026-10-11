@@ -793,6 +793,7 @@ class AutoLifecycleMixin:
 
         was_headless = self._auto_headless_run
         self._auto_headless_run = False
+        self._auto_agent_keep_review = False
         self._auto_review_preset_overrides = None
 
 
@@ -875,6 +876,12 @@ class AutoLifecycleMixin:
         zone_too_large = self._quota_refusal_is_zone_size(refusal)
         banner = self._quota_stop_banner(
             zone_too_large, tiles_succeeded, tiles_total)
+        from ...core.free_device_cap import computer_cap_message, is_computer_cap
+        if is_computer_cap(refusal):
+
+
+            zone_too_large = False
+            banner = computer_cap_message(refusal.get("message", ""))
 
 
         if refusal.get("message"):

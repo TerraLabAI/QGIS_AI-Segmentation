@@ -257,7 +257,13 @@ class AutoRunHeadlessMixin:
         should_cancel: Callable[[], bool] | None = None,
         instance_colors: bool = False,
         wait: bool = True,
+        keep_review: bool = False,
     ) -> dict:
+
+
+
+
+
 
 
 
@@ -332,10 +338,18 @@ class AutoRunHeadlessMixin:
                 ),
                 "busy": True,
             }
-        if getattr(self, "_auto_review", None) is not None:
+
+
+
+        if (getattr(self, "_auto_review", None) is not None
+                or getattr(self, "_lc_result", None) is not None
+                or (getattr(self, "_lc_store", None) is not None
+                    and getattr(self, "_lc_mosaic", None) is None)):
             return {
-                "_error": "Export or exit the current detection review before starting another run.",
+                "_error": ("A detection review is open in the panel and unsaved. A new run "
+                           "starts once it is saved (review_save, or the panel's own save)."),
                 "busy": True,
+                "code": "REVIEW_OPEN",
             }
 
 
@@ -684,6 +698,9 @@ class AutoRunHeadlessMixin:
             self._auto_headless_run = True
 
 
+            self._auto_agent_keep_review = bool(keep_review) and not wait
+
+
             self._headless_error = None
             self._headless_error_code = None
             worker_before = self._auto_worker
@@ -723,6 +740,8 @@ class AutoRunHeadlessMixin:
                 return {
                     "started": True,
                     "running": True,
+                    **({"keep_review": True}
+                       if getattr(self, "_auto_agent_keep_review", False) else {}),
                     "object_class": object_class,
                     **({"prompt_rewritten": prompt_rewritten}
                        if prompt_rewritten else {}),
