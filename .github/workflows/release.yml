@@ -196,12 +196,12 @@ jobs:
           path: checker.log
 
   package:
-    name: build and attach the ZIP
+    name: build and check the ZIP
     needs: [gate, qgis-import, qt6]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -258,22 +258,3 @@ jobs:
           test "$first" = "${PLUGIN_NAME}/" || {
             echo "FAIL: first entry is '$first', expected '${PLUGIN_NAME}/'"; exit 1; }
           unzip -l ${PLUGIN_NAME}.zip | head -20
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.PLUGIN_NAME }}-zip
-          path: ${{ env.PLUGIN_NAME }}.zip
-          retention-days: 30
-
-      - name: Attach to the release
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          TAG="${GITHUB_REF#refs/tags/}"
-          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes ""
-          fi
-          gh release upload "$TAG" "${PLUGIN_NAME}.zip" \
-            --repo "$GITHUB_REPOSITORY" --clobber
