@@ -216,7 +216,7 @@ jobs:
           cd "build/${PLUGIN_NAME}"
           for e in .[!.]* *.md scripts tests docs plans; do
             case "$e" in
-              .gitattributes|README.md|CHANGELOG.md|LICENSE.md|MCP.md|'.[!.]*'|'*.md') continue ;;
+              .gitattributes|README.md|CHANGELOG.md|LICENSE.md|MCP.md|TRADEMARKS.md|'.[!.]*'|'*.md') continue ;;
             esac
             if [ -e "$e" ]; then
               echo "FAIL: $e survived export-ignore, fix .gitattributes"; exit 1
