@@ -413,7 +413,6 @@ class AutoRunHandoffMixin:
             density_probe=density_probe,
 
             self_exemplar=getattr(self, "_auto_self_exemplar", None),
-            land_cover=getattr(self, "_auto_land_cover", None) is not None,
         )
 
     def _wind_down_unstarted_auto_worker(self, worker) -> None:

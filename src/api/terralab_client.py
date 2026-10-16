@@ -26,7 +26,6 @@ from .terralab_client_errors import (
     _named_error_text,
     _unreadable_answer,
 )
-from .terralab_client_my_classes import TerraLabMyClassesMixin
 from .terralab_client_nam_pool import (
     _CONNECTIONS_PER_MANAGER,
     TerraLabManagerPoolMixin,
@@ -167,7 +166,6 @@ class TerraLabClient(
     TerraLabTransportMixin,
     TerraLabDetectionMixin,
     TerraLabAccountMixin,
-    TerraLabMyClassesMixin,
 ):
 
 

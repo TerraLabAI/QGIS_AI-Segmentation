@@ -44,9 +44,7 @@ from .plugin.auto_flow import AutoFlowMixin
 from .plugin.auto_grid_fill import AutoGridFillMixin
 from .plugin.auto_grid_reach import AutoGridReachMixin
 from .plugin.auto_imagery_guard import AutoImageryGuardMixin
-from .plugin.auto_land_cover import AutoLandCoverMixin
 from .plugin.auto_lifecycle import AutoLifecycleMixin
-from .plugin.auto_my_classes import AutoMyClassesMixin
 from .plugin.auto_object_build import AutoObjectBuildMixin
 from .plugin.auto_results import AutoResultsMixin
 from .plugin.auto_review import AutoReviewMixin
@@ -99,8 +97,6 @@ from .plugin.shared import (
 
 class AISegmentationPlugin(
     AutoFlowMixin,
-    AutoLandCoverMixin,
-    AutoMyClassesMixin,
     AutoCreditsWatchMixin,
     AutoDetailWindowMixin,
     AutoGridFillMixin,
@@ -707,16 +703,6 @@ class AISegmentationPlugin(
 
         self._prime_config_from_disk_async()
 
-
-        try:
-            import threading
-
-            from ..core.land_cover import sweep_stale_grid_files
-            threading.Thread(target=sweep_stale_grid_files, daemon=True,
-                             name="aiseg-lc-grid-sweep").start()
-        except Exception:  # noqa: BLE001  # nosec B110
-            pass
-
     def unload(self):
 
 
@@ -1003,7 +989,6 @@ class AISegmentationPlugin(
                     (self.dock_widget.auto_detail_changed, self._on_auto_detail_changed),
                     (self.dock_widget.auto_advanced_toggled, self._on_auto_advanced_toggled),
                     (self.dock_widget.auto_prompt_committed, self._reseed_auto_detail_for_object),
-                    (self.dock_widget.auto_prompt_committed, self._land_cover_prefetch_legend),
                     (self.dock_widget.auto_refine_changed, self._on_auto_refine_changed_debounced),
                     (self.dock_widget.auto_export_requested, self._on_auto_export_clicked),
                     (self.dock_widget.auto_retry_requested, self._on_auto_retry_guarded),
@@ -1581,7 +1566,6 @@ class AISegmentationPlugin(
         self.dock_widget.auto_detail_changed.connect(self._on_auto_detail_changed)
         self.dock_widget.auto_advanced_toggled.connect(self._on_auto_advanced_toggled)
         self.dock_widget.auto_prompt_committed.connect(self._reseed_auto_detail_for_object)
-        self.dock_widget.auto_prompt_committed.connect(self._land_cover_prefetch_legend)
 
         self.dock_widget.auto_refine_changed.connect(self._on_auto_refine_changed_debounced)
         self.dock_widget.auto_export_requested.connect(self._on_auto_export_clicked)

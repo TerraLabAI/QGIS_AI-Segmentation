@@ -95,17 +95,6 @@ class AutoZoneDrawMixin:
 
         pending_run_ctx = self._auto_run_ctx
         self._stop_auto_detection()
-
-
-        self._lc_gen = getattr(self, "_lc_gen", 0) + 1
-        task = getattr(self, "_lc_task", None)
-        self._lc_task = None
-        if task is not None:
-            try:
-                task.cancel()
-            except RuntimeError:
-                pass
-        self._land_cover_autosave_pending("unload")
         if self._zone_selection_tool is not None:
 
 
@@ -571,8 +560,6 @@ class AutoZoneDrawMixin:
 
 
 
-        if self._land_cover_autosave_pending("zone_clear") is False:
-            return
         self._store_auto_zone(None)
         self._auto_zone_polygon = None
 
@@ -620,8 +607,6 @@ class AutoZoneDrawMixin:
 
         if self._autosave_pending_auto_review("project_switch") is False:
             self._stop_auto_detection(send_terminal=False)
-            if getattr(self, "_lc_result", None) is not None:
-                self._land_cover_fill_layer()
             return
         self._auto_review = None
         _release_run_policy()

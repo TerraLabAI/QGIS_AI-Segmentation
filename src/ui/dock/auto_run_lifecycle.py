@@ -133,7 +133,7 @@ class DockAutoRunLifecycleMixin:
 
         self.auto_settings_box.setVisible(False)
         self.auto_detail_row.setVisible(
-            self._auto_zone_is_set and not self._lc_setup_active() if not (active or hold) else False)
+            self._auto_zone_is_set if not (active or hold) else False)
         if active or hold:
             self.auto_credit_cost_label.setVisible(False)
         else:
@@ -163,8 +163,7 @@ class DockAutoRunLifecycleMixin:
             self.auto_exemplar_panel.setVisible(False)
         else:
             self.auto_exemplar_panel.setVisible(
-                self._EXEMPLARS_ENABLED and self.auto_steps.currentIndex() == 2 and not self._auto_review_active
-                and not self._lc_setup_active())
+                self._EXEMPLARS_ENABLED and self.auto_steps.currentIndex() == 2 and not self._auto_review_active)
         self._update_auto_detect_enabled()
         if active:
 

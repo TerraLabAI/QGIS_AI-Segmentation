@@ -76,15 +76,6 @@ def _review_crs_facts(plugin) -> tuple[str, bool]:
         return authid, False
 
 
-def _land_cover_swept(plugin) -> bool:
-
-
-    if getattr(plugin, "_lc_result", None) is not None:
-        return True
-    return (getattr(plugin, "_lc_store", None) is not None
-            and getattr(plugin, "_lc_mosaic", None) is None)
-
-
 def _review_set_refine_arg(canonical):
 
     return _REVIEW_SET_REFINE_ARGS.get(canonical) if canonical else None
@@ -95,38 +86,9 @@ class SegmentationReviewMixin:
 
     def _review_kind(self) -> str | None:
 
-        plugin = self._plugin
-        if getattr(plugin, "_auto_review", None) is not None:
+        if getattr(self._plugin, "_auto_review", None) is not None:
             return "objects"
-
-
-
-        if _land_cover_swept(plugin):
-            return "land_cover"
         return None
-
-    def _land_cover_sweeping(self) -> dict | None:
-
-        if getattr(self._plugin, "_lc_mosaic", None) is not None:
-            return {"_error": ("The land cover sweep is still running; its review opens "
-                               "when it ends (auto_detect_status)."), "sweeping": True}
-        return None
-
-    def _land_cover_review_status(self) -> dict:
-        plugin = self._plugin
-        result = getattr(plugin, "_lc_result", None) or {}
-        return {
-            "open": True,
-            "kind": "land_cover",
-            "patches": len(result.get("patches") or []),
-            "min_patch_m2": float(getattr(plugin, "_lc_min_patch", 0.0) or 0.0),
-
-
-            "applying": bool(getattr(plugin, "_lc_building", False)
-                             or getattr(plugin, "_lc_result", None) is None),
-            **({"save_error": plugin._auto_save_error}
-               if getattr(plugin, "_auto_save_error", None) else {}),
-        }
 
     @gui_thread_only
     def review_set(self, settings: dict) -> dict:
@@ -152,56 +114,12 @@ class SegmentationReviewMixin:
 
 
 
-
         if not isinstance(settings, dict) or not settings:
             return {"_error": "settings must be a non-empty dict of review settings."}
-        sweeping = self._land_cover_sweeping()
-        if sweeping:
-            return sweeping
-        kind = self._review_kind()
-        if kind is None:
+        if self._review_kind() is None:
             return {"_error": _NO_OPEN_REVIEW}
-        plugin = self._plugin
         wanted = dict(settings)
         applied: list[str] = []
-        if kind == "land_cover":
-            if getattr(plugin, "_lc_result", None) is None:
-                return {"_error": ("The land cover map has not landed yet (still building, or "
-                                   "its build failed and the panel offers a retry); "
-                                   "min_patch_m2 applies once the review is on screen."),
-                        "applying": True, "kind": kind}
-            unknown = sorted(k for k in wanted if k != "min_patch_m2")
-            if unknown:
-                return {"_error": ("A land cover result takes min_patch_m2 only; "
-                                   f"not {', '.join(unknown)}.")}
-            from .mcp_api_refine import _refine_number
-            try:
-                value = float(_refine_number("min_patch_m2", wanted["min_patch_m2"]))
-            except (TypeError, ValueError, OverflowError):
-                return {"_error": "min_patch_m2 must be a finite number of square metres."}
-            dock = getattr(plugin, "dock_widget", None)
-            spin = getattr(dock, "_lc_patch_spin", None) if dock is not None else None
-
-
-            low, high, decimals = 0.0, 100000.0, 0
-            if spin is not None:
-                try:
-                    low, high, decimals = float(spin.minimum()), float(spin.maximum()), int(spin.decimals())
-                except (RuntimeError, AttributeError, TypeError, ValueError):
-                    pass
-            value = round(value, decimals)
-            if not low <= value <= high:
-                return {"_error": f"min_patch_m2 must be between {low:g} and {high:g}."}
-            if spin is not None:
-                self._write_review_widget(spin, value)
-            try:
-                plugin._on_land_cover_min_patch(value)
-            except (RuntimeError, AttributeError) as err:
-                return {"_error": f"Could not set the smallest patch: {err}"}
-            out = self._land_cover_review_status()
-            out["applied"] = ["min_patch_m2"]
-            return out
-
         mode = wanted.pop("display_mode", None)
         confidence = wanted.pop("confidence", None)
         from .mcp_api import coerce_bool_param
@@ -275,42 +193,30 @@ class SegmentationReviewMixin:
 
 
 
-        sweeping = self._land_cover_sweeping()
-        if sweeping:
-            return sweeping
         kind = self._review_kind()
         if kind is None:
             return {"_error": _NO_OPEN_REVIEW}
         plugin = self._plugin
-        if kind == "land_cover" and (getattr(plugin, "_lc_building", False)
-                                     or getattr(plugin, "_lc_result", None) is None):
-            return {"_error": ("The land cover map is still being rebuilt for the last "
-                               "setting; review_status says applying False once it is done."),
-                    "applying": True, "kind": kind}
         try:
-            if kind == "land_cover":
-                plugin._auto_save_error = None
-                plugin._on_land_cover_export()
-            else:
-                busy = self._review_mutation_error()
-                if busy:
-                    return busy
+            busy = self._review_mutation_error()
+            if busy:
+                return busy
 
 
-                if int(self._count_review_kept().get("kept_instances") or 0) == 0:
-                    return {"_error": ("Nothing is visible to save; lower the confidence or "
-                                       "widen the size range with review_set."),
-                            "kept_instances": 0, "kind": kind}
-                plugin._auto_save_error = None
-                plugin._run_auto_export_click("agent")
-                failed = getattr(plugin, "_auto_save_error", None)
-                if failed:
-                    return {"_error": f"The review could not be saved: {failed}",
-                            "save_error": failed, "kind": kind}
+            if int(self._count_review_kept().get("kept_instances") or 0) == 0:
+                return {"_error": ("Nothing is visible to save; lower the confidence or "
+                                   "widen the size range with review_set."),
+                        "kept_instances": 0, "kind": kind}
+            plugin._auto_save_error = None
+            plugin._run_auto_export_click("agent")
+            failed = getattr(plugin, "_auto_save_error", None)
+            if failed:
+                return {"_error": f"The review could not be saved: {failed}",
+                        "save_error": failed, "kind": kind}
         except Exception as err:  # noqa: BLE001
             return {"_error": f"Saving the review failed: {err}"}
         if self._review_kind() is not None:
-            if kind == "objects" and getattr(plugin, "_auto_export_job", None) is not None:
+            if getattr(plugin, "_auto_export_job", None) is not None:
                 return {"saving": True, "kind": kind}
             plugin._auto_save_error = "The layer could not be written; the review is still open on the panel."
             return {"_error": plugin._auto_save_error, "save_error": plugin._auto_save_error,
@@ -352,8 +258,6 @@ class SegmentationReviewMixin:
 
 
         plugin = self._plugin
-        if self._review_kind() == "land_cover":
-            return self._land_cover_review_status()
         if getattr(plugin, "_auto_review", None) is None:
             return {"open": False, "_error": _NO_OPEN_REVIEW}
 

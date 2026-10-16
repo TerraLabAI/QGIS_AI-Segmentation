@@ -271,27 +271,6 @@ class AutoRunTerminalMixin:
 
 
 
-        if getattr(self, "_lc_mosaic", None) is not None:
-            if not self._auto_headless_run:
-                self._land_cover_finalize(tiles_succeeded)
-                return
-
-
-            try:
-                self._land_cover_finalize(tiles_succeeded, headless=True)
-            finally:
-                self._auto_headless_run = False
-                self._auto_review_preset_overrides = None
-                if getattr(self, "_lc_result", None) is None:
-                    try:
-                        from ...core.detection_policy_core import release_run_policy
-                        release_run_policy()
-                    except Exception:  # noqa: BLE001  # nosec B110
-                        pass
-            return
-
-
-
 
         if self._auto_headless_run:
             try:

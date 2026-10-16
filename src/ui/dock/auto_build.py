@@ -642,8 +642,6 @@ class DockAutoBuildMixin:
         _prompt_card_layout = QVBoxLayout(self.auto_prompt_card)
         _prompt_card_layout.setContentsMargins(*_CARD_MARGINS)
         _prompt_card_layout.setSpacing(6)
-
-        self._build_auto_target_selector(_prompt_card_layout)
         self._auto_prompt_header = QLabel(tr("Describe what to detect"))
 
 
@@ -715,7 +713,6 @@ class DockAutoBuildMixin:
         _chip_row.addStretch(1)
         _composer_col.addLayout(_chip_row)
         _prompt_card_layout.addWidget(self.auto_prompt_composer)
-        self._build_auto_land_cover_pane(_prompt_card_layout)
 
 
 
@@ -743,9 +740,6 @@ class DockAutoBuildMixin:
         self._set_prompt_info()
 
         _s3_layout.addWidget(self.auto_prompt_card)
-
-        from qgis.PyQt.QtCore import QTimer
-        QTimer.singleShot(0, self.restore_auto_target_mode)
 
     def _build_auto_example_card(self, _s3_layout) -> None:
 

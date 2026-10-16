@@ -427,34 +427,12 @@ class DockAutoCreditsMixin:
 
             from .ui_refresh import format_km2_surface
             if btn is not None:
-
-                if self._lc_setup_active():
-                    btn.setText(tr("Map land cover ({n} km²)").format(
-                        n=format_km2_surface(km2)))
-                else:
-                    btn.setText(tr("Detect objects ({n} km²)").format(
-                        n=format_km2_surface(km2)))
+                btn.setText(tr("Detect objects ({n} km²)").format(
+                    n=format_km2_surface(km2)))
                 btn.setToolTip(self._auto_cost_row_text(km2))
         except (RuntimeError, AttributeError):
 
             pass
-
-    def set_auto_land_cover_ready(self, ready: bool, legend: list | None = None) -> None:
-
-
-
-
-
-        self._auto_land_cover_ready = bool(ready)
-        if ready:
-            self.set_auto_land_cover_legend(legend or [])
-        self._apply_auto_target_look()
-        if ready and self.__dict__.get("_prompt_info_kind") == "boost":
-            try:
-                self._set_prompt_info(None)
-            except (RuntimeError, AttributeError):
-                pass
-        self._refresh_auto_cost_label()
 
     def set_auto_own_pace(self, seconds_per_tile: float | None) -> None:
 

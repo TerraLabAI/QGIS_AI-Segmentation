@@ -57,9 +57,6 @@ class AutoLifecycleMixin:
 
 
 
-
-        if self._land_cover_autosave_pending(exit_path) is False:
-            return False
         try:
 
 
@@ -155,8 +152,6 @@ class AutoLifecycleMixin:
 
 
 
-        if self._land_cover_autosave_pending(exit_path) is False:
-            return False
         self._forget_auto_last_run_km2()
         self._end_superseded_finalize(show_notice=exit_path != "unload")
 
@@ -186,7 +181,6 @@ class AutoLifecycleMixin:
             except Exception:  # noqa: BLE001  # nosec B110
                 pass
         self._autosave_pending_auto_review(exit_path)
-        self._land_cover_teardown()
         self._auto_review = None
 
 
@@ -1291,9 +1285,6 @@ class AutoLifecycleMixin:
         scores: list | None = None,
         confidence_applied: float | None = None,
         det_ids: list | None = None,
-        row_classes: list | None = None,
-        class_colors: list | None = None,
-        land_cover: dict | None = None,
     ) -> dict | None:
 
 
@@ -1336,9 +1327,7 @@ class AutoLifecycleMixin:
         try:
             job = prepare_run_export_job(
                 deduped_geoms, crs, prompt_label, scores=scores,
-                det_ids=det_ids, source_layer=source_layer,
-                row_classes=row_classes, class_colors=class_colors,
-                land_cover=land_cover)
+                det_ids=det_ids, source_layer=source_layer)
         except Exception:  # noqa: BLE001
             self._auto_export_failure = "file_refused"
             return None
@@ -1417,13 +1406,9 @@ class AutoLifecycleMixin:
 
 
         object_class = job.get("object_class") or ""
-        if job.get("class_colors"):
-            from ...core.layer_conventions import make_legend_categorized_renderer
-            class_renderer = make_legend_categorized_renderer(job["class_colors"])
-        else:
-            class_renderer = (
-                make_class_categorized_renderer(result_layer)
-                if not object_class else None)
+        class_renderer = (
+            make_class_categorized_renderer(result_layer)
+            if not object_class else None)
         if class_renderer is not None:
             result_layer.setRenderer(class_renderer)
         else:

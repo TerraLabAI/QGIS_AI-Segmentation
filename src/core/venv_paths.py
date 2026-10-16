@@ -321,7 +321,7 @@ def _ensure_venv_packages_available_locked():
     _repair_poisoned_environment()
 
     if not venv_exists():
-        _log("Venv does not exist, cannot load packages", Qgis.MessageLevel.Warning)
+        _log("Venv does not exist, cannot load packages", Qgis.MessageLevel.Info)
         return False
 
     site_packages = get_venv_site_packages()

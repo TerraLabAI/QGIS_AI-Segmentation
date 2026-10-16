@@ -26,6 +26,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import secrets
 import sys
 
 from qgis.core import Qgis, QgsApplication, QgsMessageLog, QgsSettings, QgsTask
@@ -196,13 +197,24 @@ def _enum(owner, group: str, name: str):
     return getattr(getattr(owner, group, owner), name)
 
 
+def _own_cache_entry(url: str) -> str:
+
+
+
+
+
+
+
+    return f"{url}{'&' if '?' in url else '?'}_={secrets.token_hex(6)}"
+
+
 def _call(method: str, url: str, product: str, key: str, device_hash: str, body: dict | None = None):
 
     from qgis.core import QgsNetworkAccessManager
     from qgis.PyQt.QtCore import QByteArray, QUrl
     from qgis.PyQt.QtNetwork import QNetworkRequest
 
-    request = QNetworkRequest(QUrl(url))
+    request = QNetworkRequest(QUrl(_own_cache_entry(url)))
     request.setRawHeader(b"Authorization", f"Bearer {key}".encode("ascii"))
     request.setRawHeader(b"X-Product-ID", product.encode("ascii"))
     if device_hash:

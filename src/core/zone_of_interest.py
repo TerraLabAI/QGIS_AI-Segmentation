@@ -601,6 +601,28 @@ def zone_sources(project: Any = None, limit: int = 30) -> list[ZoneSource]:
     return out[:limit]
 
 
+def has_zone_sources(project: Any = None) -> bool:
+
+
+
+
+
+
+
+
+
+    proj = _project(project)
+    held = read_zone(proj)
+    if held is not None:
+        return True
+    for layer in proj.mapLayers().values():
+        if (isinstance(layer, QgsVectorLayer) and layer.isValid()
+                and layer.geometryType() == polygon_geometry_type()
+                and layer.featureCount() != 0):
+            return True
+    return False
+
+
 
 
 

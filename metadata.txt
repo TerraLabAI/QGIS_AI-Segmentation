@@ -4,7 +4,7 @@ description=AI segmentation in QGIS 3.22 to 4. Draw a zone, name an object and g
 qgisMinimumVersion=3.22
 qgisMaximumVersion=4.99
 supportsQt6=True
-version=3.5.1
+version=3.6.0
 author=TerraLab
 email=yvann.barbot@terra-lab.ai
 license=GPLv2
@@ -34,6 +34,10 @@ about=
     By TerraLab, terra-lab.ai
 
 changelog=
+    3.6.0
+    - Land cover mapping has moved to AI Agent, which maps land cover anywhere in the world. AI Segmentation now focuses on finding objects
+    - Stability and reliability improvements
+
     3.5.1
     - Signing in on Windows also picks up an activation key already saved by AI Edit
     - A saved certificate exception now only covers the certificate you approved
@@ -274,7 +278,7 @@ homepage=https://terra-lab.ai/ai-segmentation?utm_source=plugins.qgis.org&utm_me
 
 hasProcessingProvider=yes
 
-tags=segmentation, instance segmentation, image segmentation, ai, artificial intelligence, machine learning, deep learning, neural network, computer vision, object detection, feature extraction, classification, building detection, raster, satellite, satellite imagery, satellite images, remote sensing, remote-sensing, aerial, orthophoto, ortofoto, drone, uav, sentinel, sentinel-2, landsat, geotiff, multispectral, buildings, vegetation, vectorization, vector, vetor, vector layer, polygon, polygons, digitizing, gpkg, geopackage, georeferencing, georreferenciamento, urban planning, agriculture, forestry, ia
+tags=segmentation, instance segmentation, image segmentation, ai, artificial intelligence, machine learning, deep learning, neural network, computer vision, object detection, feature extraction, classification, building detection, raster, satellite, satellite imagery, satellite images, remote sensing, remote-sensing, aerial, orthophoto, ortofoto, drone, uav, sentinel, sentinel-2, landsat, geotiff, multispectral, buildings, vegetation, vectorization, vector, vetor, vector layer, polygon, polygons, digitizing, gpkg, geopackage, georeferencing, georreferenciamento, urban planning, agriculture, forestry, ia, building footprints, building footprint, building extraction, footprint extraction, geoai, tree detection, solar panels, roof detection, automatic digitizing
 
 category=Raster
 icon=resources/icons/icon.png

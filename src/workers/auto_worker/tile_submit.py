@@ -449,8 +449,7 @@ class AutoTileSubmitMixin:
             "max_masks": self._max_masks,
             "threshold": self._detection_threshold,
             "mask_threshold": None,
-            "exemplars": (None if getattr(self, "_land_cover", False)
-                          else self._tile_exemplars.get(tile_idx) or None),
+            "exemplars": self._tile_exemplars.get(tile_idx) or None,
 
 
 
@@ -461,13 +460,9 @@ class AutoTileSubmitMixin:
         if self._return_semantic:
             submission["return_semantic"] = True
 
-        if getattr(self, "_land_cover", False):
-            submission["land_cover"] = True
-        else:
 
 
-
-            self._ask_tile_filters(submission)
+        self._ask_tile_filters(submission)
 
 
 

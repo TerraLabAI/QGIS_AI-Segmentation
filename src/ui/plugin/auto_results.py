@@ -522,8 +522,6 @@ class AutoResultsMixin:
 
 
         self._note_auto_progress()
-        if self._land_cover_take_tile(tagged_detections):
-            return
         stitcher = self._auto_stitcher
         if stitcher is None or not tagged_detections:
             return

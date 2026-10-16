@@ -991,7 +991,7 @@ def extract_crop_from_raster(raster_path, center_x, center_y, crop_size=1024,
             QgsMessageLog.logMessage(
                 f"rasterio is not available ({str(err)}), "
                 f"reading the crop through GDAL instead...",
-                "AI Segmentation", level=Qgis.MessageLevel.Warning
+                "AI Segmentation", level=Qgis.MessageLevel.Info
             )
             return _read_crop_with_gdal(
                 raster_path, center_x, center_y, crop_size,

@@ -86,7 +86,6 @@ class AutoFlowRunPlanMixin:
 
         self._auto_run_plan = None
         self._auto_attribute_filters = []
-        self._sync_land_cover_ready()
         if not self.dock_widget:
             self._cancel_task("_auto_run_plan_task")
             return
@@ -299,7 +298,6 @@ class AutoFlowRunPlanMixin:
         if rewritten_from:
             self._auto_run_plan["rewritten_from"] = rewritten_from
         self._reseed_auto_detail_from_plan(prompt, plan)
-        self._sync_land_cover_ready()
 
 
 

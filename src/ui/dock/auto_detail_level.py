@@ -283,8 +283,7 @@ class DockAutoDetailLevelMixin:
 
     def set_auto_detail_visible(self, visible: bool) -> None:
 
-
-        self.auto_detail_row.setVisible(visible and not self._lc_setup_active())
+        self.auto_detail_row.setVisible(visible)
 
     def set_auto_detail_gsd_warning(
         self, coarse: bool, can_improve: bool | None = None,

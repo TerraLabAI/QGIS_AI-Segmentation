@@ -341,10 +341,7 @@ class AutoRunHeadlessMixin:
 
 
 
-        if (getattr(self, "_auto_review", None) is not None
-                or getattr(self, "_lc_result", None) is not None
-                or (getattr(self, "_lc_store", None) is not None
-                    and getattr(self, "_lc_mosaic", None) is None)):
+        if getattr(self, "_auto_review", None) is not None:
             return {
                 "_error": ("A detection review is open in the panel and unsaved. A new run "
                            "starts once it is saved (review_save, or the panel's own save)."),

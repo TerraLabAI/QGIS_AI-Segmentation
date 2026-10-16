@@ -499,7 +499,6 @@ def track_auto_export_done(run_id: str, exported_count: int, visible_pct_of_foun
                            final_confidence: int, display_mode: str,
                            refined_in_manual: bool, autosave: bool = False,
                            pass_profile: dict | None = None,
-                           land_cover: bool = False,
                            export_ms: int | None = None) -> None:
 
 
@@ -515,64 +514,12 @@ def track_auto_export_done(run_id: str, exported_count: int, visible_pct_of_foun
         "display_mode": display_mode,
         "refined_in_manual": bool(refined_in_manual),
         "autosave": bool(autosave),
-        "land_cover": bool(land_cover),
     }
     if export_ms is not None:
         props["export_ms"] = max(0, int(export_ms))
     props.update(review_pass_props(pass_profile))
     props.update(review_elapsed_props(run_id))
     track(ev.AUTO_EXPORT_DONE, props)
-
-
-def land_cover_zone_bucket(km2: float) -> str:
-
-    if km2 < 0.1:
-        return "<0.1"
-    if km2 < 1:
-        return "0.1-1"
-    if km2 < 10:
-        return "1-10"
-    return ">=10"
-
-
-def track_land_cover_shown(run_id: str, class_count: int, zone_km2: float) -> None:
-    track(ev.AUTO_LAND_COVER_SHOWN, {
-        "run_id": run_id, "class_count": int(class_count),
-        "zone_km2_bucket": land_cover_zone_bucket(float(zone_km2 or 0.0))})
-
-
-def track_auto_target_switched(to: str, source: str) -> None:
-
-
-    track(ev.AUTO_TARGET_SWITCHED, {"to": str(to), "source": str(source)})
-
-
-def track_my_classes(outcome: str, run_id: str, class_count: int, billed_km2: float,
-                     replayed: bool = False, stage: str = "", error_code: str = "",
-                     refunded: bool = False) -> None:
-
-    props = {"run_id": run_id, "class_count": int(class_count),
-             "billed_km2": round(float(billed_km2 or 0.0), 4)}
-    if outcome == "started":
-        track(ev.AUTO_MY_CLASSES_STARTED, props)
-    elif outcome == "succeeded":
-        track(ev.AUTO_MY_CLASSES_SUCCEEDED, dict(props, replayed=bool(replayed)))
-    else:
-        track(ev.AUTO_MY_CLASSES_FAILED, dict(
-            props, stage=str(stage or "request"), error_code=str(error_code or "UNKNOWN")[:64],
-            refunded=bool(refunded)))
-
-
-def track_land_cover_table_copied(run_id: str, class_count: int) -> None:
-    track(ev.AUTO_LAND_COVER_TABLE_COPIED, {
-        "run_id": run_id, "class_count": int(class_count)})
-
-
-def track_land_cover_min_patch_changed(run_id: str, min_patch_m2: float,
-                                       from_default: bool) -> None:
-    track(ev.AUTO_LAND_COVER_MIN_PATCH_CHANGED, {
-        "run_id": run_id, "min_patch_m2": float(min_patch_m2),
-        "from_default": bool(from_default)})
 
 
 def track_review_abandoned(run_id: str, instances_at_exit: int, refined: bool,

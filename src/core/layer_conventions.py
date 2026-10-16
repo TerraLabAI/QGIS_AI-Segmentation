@@ -800,30 +800,6 @@ def make_class_categorized_renderer(
     return QgsCategorizedSymbolRenderer(field, categories)
 
 
-def make_legend_categorized_renderer(
-    class_colors: list, field: str = "class",
-) -> QgsCategorizedSymbolRenderer | None:
-
-
-    categories = []
-    for value, hex_color in class_colors:
-
-
-        color = QColor(str(hex_color))
-        outline = color.darker(125)
-        symbol = QgsFillSymbol.createSimple({
-            "color": f"{color.red()},{color.green()},{color.blue()},225",
-            "style": "solid",
-            "outline_color": f"{outline.red()},{outline.green()},{outline.blue()},255",
-            "outline_width": "0.1",
-            "outline_style": "solid",
-        })
-        categories.append(QgsRendererCategory(str(value), symbol, str(value)))
-    if not categories:
-        return None
-    return QgsCategorizedSymbolRenderer(field, categories)
-
-
 def make_review_renderer() -> QgsSingleSymbolRenderer:
 
 

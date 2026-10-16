@@ -329,7 +329,6 @@ class AutoDetectionWorker(
         transform_context=None,
         density_probe: dict | None = None,
         self_exemplar: dict | None = None,
-        land_cover: bool = False,
         parent=None,
     ):
 
@@ -588,13 +587,6 @@ class AutoDetectionWorker(
 
 
         self._return_semantic = bool(return_semantic)
-
-
-        self._land_cover = bool(land_cover)
-        if self._land_cover:
-
-
-            self._exemplar_stamps_in = []
 
 
 

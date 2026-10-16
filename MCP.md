@@ -142,9 +142,9 @@ score, area, centroid and box.
 
 `detect_auto(..., wait=False, keep_review=True)` ends the run on that same
 review instead of saving it, so the person refines it in the panel.
-`review_status()` says what is open (`kind` "objects" or "land_cover"),
+`review_status()` says what is open (`kind` "objects"),
 `review_set({...})` moves any review control (confidence, sizes, every shape
-key, `display_mode`, or `min_patch_m2` on land cover) with the panel following,
+key, `display_mode`) with the panel following,
 and `review_save()` saves it as the panel's own save button does. All three are
 free. `auto_detect_status()` carries `review_open` while nothing is saved.
 

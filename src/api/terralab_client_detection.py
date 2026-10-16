@@ -496,13 +496,11 @@ class TerraLabDetectionMixin:
 
 
 
-
-
     _PREDICT_EXTRA_FIELDS = (
         "return_semantic", "charge_tiles", "mask_scale",
         "plugin_version", "policy_rev", "prompt_mode", "basemap",
         "zone_geojson", "zone_wkt", "zone_km2", "native_mupp", "zone_keep_margin_m",
-        "clean_image", "tiles_total", "self_exemplar_of", "land_cover",
+        "clean_image", "tiles_total", "self_exemplar_of",
         "tile_filters", "collect_raw", "run_pixel_size_m",
     )
 

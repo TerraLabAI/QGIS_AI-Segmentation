@@ -362,14 +362,10 @@ class TerraLabAccountMixin:
 
     def get_segment_catalog(self, timeout_ms: int | None = None) -> dict:
 
-
-
-
-
         if timeout_ms is None:
             timeout_ms = _td.interactive_timeout_ms(_TIMEOUT_INTERACTIVE)
         return self._request(
-            "GET", "/api/ai-segmentation/presets?capabilities=land_cover",
+            "GET", "/api/ai-segmentation/presets",
             timeout_ms=timeout_ms, require_body=True)
 
     def translate_prompt(self, text: str, auth: dict | None = None) -> dict:
@@ -425,8 +421,7 @@ class TerraLabAccountMixin:
             payload["rewritten_from"] = rewritten_from.strip()
 
 
-
-        payload["capabilities"] = ["land_cover", RUN_POLICY_TRIM_CAPABILITY]
+        payload["capabilities"] = [RUN_POLICY_TRIM_CAPABILITY]
         body = json.dumps(payload).encode("utf-8")
         answer = self._request(
             "POST", "/api/plugin/seg-run-plan", auth=auth, body=body,

@@ -66,7 +66,7 @@ BRIDGE_SHAPE = frozenset({
 })
 
 PRICING_URL = "https://terra-lab.ai/pricing?utm_source=qgis&utm_medium=agent&utm_campaign=bridge"
-DOCS_URL = "https://terra-lab.ai/docs/agents?utm_source=qgis&utm_medium=agent&utm_campaign=bridge"
+DOCS_URL = "https://terra-lab.ai/blog/qgis-mcp?utm_source=qgis&utm_medium=agent&utm_campaign=bridge"
 
 
 def _pricing_url() -> str:

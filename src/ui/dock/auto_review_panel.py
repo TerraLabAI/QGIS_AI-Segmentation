@@ -107,9 +107,6 @@ class DockAutoReviewPanelMixin:
         if active and not bool(getattr(self, "_auto_review_active", False)):
             self._remember_pre_review_visibility()
         self._auto_review_active = active
-        if not active:
-
-            self.show_land_cover_result(False)
 
 
 
@@ -189,14 +186,13 @@ class DockAutoReviewPanelMixin:
         except (RuntimeError, AttributeError):
             pass
         self.auto_detect_row.setVisible(not active)
-        self.auto_exemplar_panel.setVisible(not active and not self._lc_setup_active())
+        self.auto_exemplar_panel.setVisible(not active)
 
 
 
 
         self.auto_detail_row.setVisible(
-            not active and self._pre_review_visible("auto_detail_row")
-            and not self._lc_setup_active())
+            not active and self._pre_review_visible("auto_detail_row"))
 
 
         self.auto_settings_box.setVisible(False)

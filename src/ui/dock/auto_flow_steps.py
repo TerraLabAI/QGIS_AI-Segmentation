@@ -137,11 +137,6 @@ class DockAutoFlowStepsMixin:
         self.auto_prompt_input.blockSignals(False)
 
 
-        self._auto_objects_text = ""
-        self._auto_land_cover_ready = False
-        self.set_auto_target_mode("objects", "restore")
-
-
 
 
         self._last_committed_prompt = None
@@ -220,8 +215,6 @@ class DockAutoFlowStepsMixin:
 
         self.auto_exemplar_panel.setVisible(
             self._EXEMPLARS_ENABLED and index == 2 and not self._auto_run_active and not self._auto_review_active
-
-            and not self._lc_setup_active()
         )
 
         self.refresh_auto_shortcut_arming()

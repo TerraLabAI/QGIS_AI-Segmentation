@@ -134,30 +134,12 @@ class AutoRunStartMixin:
 
 
 
-
-
-        try:
-            dock = self.dock_widget
-            if dock is not None and dock.auto_target_mode() == "land_cover":
-                from ..dock.auto_target_mode import LAND_COVER_WORD, LAND_COVER_WORDS
-                if dock.auto_prompt_input.text().strip().lower() not in LAND_COVER_WORDS:
-                    dock.auto_prompt_input.blockSignals(True)
-                    dock.auto_prompt_input.setText(LAND_COVER_WORD)
-                    dock.auto_prompt_input.blockSignals(False)
-        except (RuntimeError, AttributeError):  # nosec B110
-            pass
-
-        if not self._auto_headless_run and self._my_classes_wanted():
-            self._start_my_classes_run()
-            return
         visible_extent_for = self._start_step_panel_and_deps()
         if visible_extent_for is None:
             return
         if not self._start_step_worker_not_busy():
             return
         if not self._start_step_served_settings():
-            return
-        if not self._start_step_land_cover_plan():
             return
         if self._start_step_release_ui_tools() is False:
             return
@@ -198,8 +180,7 @@ class AutoRunStartMixin:
             layer, grid, geo_bbox, pixel_w, pixel_h, tiles, visible_extent_for, run_timeline)
         prompt = self._start_step_read_prompt()
 
-
-        if not has_exemplars and self._land_cover_plan_for(prompt) is None:
+        if not has_exemplars:
             tiles = self._zone_edge_grid_tiles(layer, tiles, geo_transform)
         exemplar_payload = self._start_step_example_boxes(
             layer, geo_bbox, pixel_w, pixel_h, has_exemplars)
@@ -230,15 +211,6 @@ class AutoRunStartMixin:
             layer, prompt, tiles, geo_transform, crs_authid, exemplar_payload)
         detection_threshold, return_semantic, client_meta, density_probe = (
             self._start_step_launch_dials(layer, prompt, tiles, has_exemplars))
-
-
-        land_cover = self._land_cover_plan_for(prompt)
-        if self._land_cover_begin_run(land_cover, tiles, geo_transform) is False:
-            return
-        if land_cover is not None:
-            return_semantic = False
-            density_probe = None
-            self._auto_self_exemplar = None
         run_timeline.mark("launch")
 
         from ...core import detection_policy
@@ -268,11 +240,11 @@ class AutoRunStartMixin:
 
 
             detection_threshold=detection_threshold,
-            exemplar_stamps=None if land_cover is not None else exemplar_stamps,
+            exemplar_stamps=exemplar_stamps,
 
 
             merge_scalars=self._auto_merge_scalars,
-            subdivide_budget=0 if land_cover is not None else self._auto_subdivide_budget(
+            subdivide_budget=self._auto_subdivide_budget(
                 len(tiles), bool(exemplar_stamps)),
 
 
@@ -284,7 +256,7 @@ class AutoRunStartMixin:
             return_semantic=return_semantic,
 
 
-            gate_config=None if land_cover is not None else self._auto_gate_config(
+            gate_config=self._auto_gate_config(
                 prompt, bool(exemplar_stamps), len(tiles)),
             client_meta=client_meta,
             density_probe=density_probe,

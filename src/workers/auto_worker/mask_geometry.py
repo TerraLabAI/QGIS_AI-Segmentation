@@ -103,7 +103,6 @@ class AutoMaskGeometryMixin:
 
         self._note_flowing()
 
-        land_cover = bool(getattr(self, "_land_cover", False))
 
 
         verdict = read_tile_filters(response)
@@ -118,7 +117,7 @@ class AutoMaskGeometryMixin:
             self.tiles_answered_empty += 1
         if self.first_answer_mono is None:
             self.first_answer_mono = time.monotonic()
-        if not verdict.filtered and not land_cover:
+        if not verdict.filtered:
             self.tiles_filters_missing += 1
         if verdict.filtered:
             self._fold_tile_verdict(verdict)
@@ -137,8 +136,7 @@ class AutoMaskGeometryMixin:
 
 
         resplit = False
-
-        if not land_cover and tile_saturated(verdict, decoded_count, self._max_masks):
+        if tile_saturated(verdict, decoded_count, self._max_masks):
             self._hit_mask_cap = True
             self.tiles_mask_capped += 1
 
@@ -184,8 +182,6 @@ class AutoMaskGeometryMixin:
 
         from ...core.mask_crops import iter_detection_crops
 
-        if getattr(self, "_land_cover", False):
-            return self._land_cover_tile_payload(job)
 
 
 
@@ -203,34 +199,6 @@ class AutoMaskGeometryMixin:
         with self._stat_lock:
             self.phase_convert_s += time.monotonic() - convert_t0
         return out
-
-    def _land_cover_tile_payload(self, job: dict) -> list:
-
-
-
-
-
-        from ...core.land_cover import (
-            decode_tile_labels,
-            normalize_legend,
-            response_mask_classes,
-        )
-
-        response = job["response"]
-        if not any(c is not None for c in response_mask_classes(response)):
-            return []
-        tile_idx = job["tile_idx"]
-        rect = self._tiles[tile_idx] if 0 <= tile_idx < len(self._tiles) else None
-        if rect is None:
-            return []
-        _x, _y, w, h = rect
-        labels = decode_tile_labels(response, int(w), int(h))
-        return [{
-            "land_cover_rect": tuple(int(v) for v in rect),
-            "labels": labels,
-            "class_legend": normalize_legend(response.get("class_legend")),
-            "preview": _land_cover_preview(labels, job["transform"]),
-        }]
 
     def _settle_converted(self, ok: bool, job: dict, payload) -> bool:
 
@@ -765,20 +733,3 @@ class AutoMaskGeometryMixin:
             return nx0 <= cx <= nx1 and ny0 <= cy <= ny1
         except Exception:  # noqa: BLE001
             return False
-
-
-def _land_cover_preview(labels, tile_transform: dict, step: int = 4) -> list:
-
-
-
-    try:
-        from ...core.land_cover import class_patches_wkb
-
-        minx, maxx, miny, maxy = tile_transform["bbox"]
-        h, w = labels.shape
-        px_w = (maxx - minx) / max(1, w) * step
-        px_h = (maxy - miny) / max(1, h) * step
-        return class_patches_wkb(labels[::step, ::step],
-                                 (minx, px_w, 0.0, maxy, 0.0, -px_h))
-    except Exception:  # noqa: BLE001
-        return []

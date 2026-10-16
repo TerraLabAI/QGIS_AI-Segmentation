@@ -406,12 +406,6 @@ class DockAutoRunStatusMixin:
             coverage_txt = self._auto_surface_done_text(current, total)
             tile_tooltip = tr("{current} of {total} tiles").format(
                 current=current, total=total)
-            if self.__dict__.get("_auto_land_cover_run"):
-
-
-
-                coverage_txt = tr("Mapping land cover")
-                found = 0
             if found > 0:
                 count_txt = self._auto_found_so_far_text(found)
                 tooltip = f"{coverage_txt} · {tile_tooltip}"
@@ -752,10 +746,7 @@ class DockAutoRunStatusMixin:
 
                 parts = []
                 phase, done, of = self._auto_progress_phase_pair(current, total)
-                if phase == "grid" and of and self.__dict__.get("_auto_land_cover_run"):
-                    parts.append(tr("{current} of {total} tiles").format(
-                        current=done, total=of))
-                elif (phase == "grid" and of
+                if (phase == "grid" and of
                         and getattr(self, "_auto_found_count", 0) > 0):
                     parts.append(self._auto_surface_done_text(done, of))
                 left = self._auto_time_left_text()
@@ -823,10 +814,6 @@ class DockAutoRunStatusMixin:
 
 
 
-        if (self.__dict__.get("_auto_land_cover_run")
-                and getattr(self, "_auto_queue_position", 0) == -1):
-
-            return tr("First run of the day: the model takes a few seconds to start.")
         if getattr(self, "_auto_wait_phase", "") == "imagery":
             if elapsed < 22:
                 return tr("Loading the imagery...")

@@ -14,8 +14,6 @@ from .dock.auto_correct_build import DockAutoCorrectBuildMixin
 from .dock.auto_credits import DockAutoCreditsMixin
 from .dock.auto_detail_level import DockAutoDetailLevelMixin
 from .dock.auto_flow_steps import DockAutoFlowStepsMixin
-from .dock.auto_land_cover_card import DockLandCoverCardMixin
-from .dock.auto_my_classes import DockMyClassesMixin
 from .dock.auto_prompt_box import DockAutoPromptBoxMixin
 from .dock.auto_prompt_gate import DockAutoPromptGateMixin
 from .dock.auto_prompt_suggest import DockAutoPromptSuggestMixin
@@ -25,7 +23,6 @@ from .dock.auto_review_panel import DockAutoReviewPanelMixin
 from .dock.auto_run_block import DockAutoRunBlockMixin
 from .dock.auto_run_lifecycle import DockAutoRunLifecycleMixin
 from .dock.auto_run_status import DockAutoRunStatusMixin
-from .dock.auto_target_mode import DockAutoTargetModeMixin
 from .dock.auto_zone_reuse import DockAutoZoneReuseMixin
 from .dock.build import DockBuildMixin
 from .dock.dock_sizing import dock_minimum_height
@@ -77,9 +74,6 @@ class AISegmentationDockWidget(
     DockAutoZoneReuseMixin,
     DockExemplarUpsellMixin,
     DockAutoReviewPanelMixin,
-    DockLandCoverCardMixin,
-    DockMyClassesMixin,
-    DockAutoTargetModeMixin,
     DockAutoReviewCorrectMixin,
     DockInstallLockMixin,
     DockStateMixin,

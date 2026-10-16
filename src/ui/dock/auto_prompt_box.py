@@ -52,16 +52,6 @@ class DockAutoPromptBoxMixin:
 
     def set_prompt_text(self, text: str, source: str = "library") -> None:
 
-
-
-
-        from .auto_target_mode import LAND_COVER_WORDS
-        if (text or "").strip().lower() in LAND_COVER_WORDS:
-            self.set_auto_target_mode("land_cover", source)
-            return
-        if self.auto_target_mode() == "land_cover":
-            self._auto_objects_text = ""
-            self.set_auto_target_mode("objects", source)
         self._prompt_from_library = True
         self.auto_prompt_input.setText(text or "")
         self.auto_prompt_input.setFocus()
@@ -133,12 +123,6 @@ class DockAutoPromptBoxMixin:
 
 
         text = self.auto_prompt_input.text().strip()
-
-
-        from .auto_target_mode import LAND_COVER_WORDS
-        if text.lower() in LAND_COVER_WORDS and self.auto_target_mode() != "land_cover":
-            self.set_auto_target_mode("land_cover", "typed")
-            return
         if text and not force and not self._prompt_plausibly_complete(text):
             self._advise_on_uncommitted_prompt(text)
             return
@@ -159,7 +143,7 @@ class DockAutoPromptBoxMixin:
                 slot_taken=self._auto_exemplar_line_busy())
         except Exception:  # noqa: BLE001
             pass  # nosec B110
-        if text and not self._lc_setup_active():
+        if text:
 
 
 
@@ -473,8 +457,7 @@ class DockAutoPromptBoxMixin:
 
 
         text = (hint or "").strip()
-        if not text or self._lc_setup_active():
-
+        if not text:
             return False
         if getattr(self, "_prompt_info_kind", None) not in (None, "tip"):
             return False

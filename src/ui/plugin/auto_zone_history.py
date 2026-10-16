@@ -144,8 +144,6 @@ class AutoZoneHistoryMixin:
         dock = self.dock_widget
         if dock is None:
             return False
-        if self._land_cover_autosave_pending("new_run") is False:
-            return False
         from ..ai_segmentation_dockwidget import Mode
         if dock._mode != Mode.AUTOMATIC:
             try:

@@ -364,12 +364,6 @@ class SegmentationAutoMixin:
 
         from .core.detect_gate import can_detect
 
-
-
-        from .ui.dock.auto_target_mode import LAND_COVER_WORD, land_cover_request
-        if object_class and land_cover_request(object_class):
-            object_class = LAND_COVER_WORD
-
         if exemplars is None:
             exemplars = self._retained_auto_exemplars(zone_wkt, layer_name)
         has_text = bool(object_class and object_class.strip())
@@ -1032,7 +1026,6 @@ class SegmentationAutoMixin:
             "run_id": current_id if in_flight else (
                 last.get("run_id") if isinstance(last, dict) else None),
 
-
             "finishing": bool(in_flight and not running and last is None),
 
 
@@ -1070,13 +1063,6 @@ class SegmentationAutoMixin:
         except (RuntimeError, AttributeError):
             pass
         if getattr(plugin, "_auto_start_in_progress", False):
-            return True
-
-
-        if (getattr(plugin, "_lc_building", False)
-                and getattr(plugin, "_lc_result", None) is None
-                and getattr(plugin, "_lc_mosaic", None) is None
-                and getattr(plugin, "_lc_store", None) is not None):
             return True
         return (getattr(plugin, "_auto_finalize_state", None) is not None
                 and getattr(plugin, "_last_auto_result", None) is None)

@@ -50,16 +50,7 @@ class AutoRunSummaryCard(QWidget):
         self._summary_word.setTextFormat(Qt.TextFormat.PlainText)
         self._summary_word.setWordWrap(True)
         self._summary_word.setVisible(False)
-
-        from .auto_target_mode import LandCoverGlyph
-        _word_row = QHBoxLayout()
-        _word_row.setContentsMargins(0, 0, 0, 0)
-        _word_row.setSpacing(8)
-        self._summary_glyph = LandCoverGlyph(18)
-        self._summary_glyph.setVisible(False)
-        _word_row.addWidget(self._summary_glyph, 0, Qt.AlignmentFlag.AlignVCenter)
-        _word_row.addWidget(self._summary_word, 1)
-        _col.addLayout(_word_row)
+        _col.addWidget(self._summary_word)
 
 
 
@@ -85,11 +76,6 @@ class AutoRunSummaryCard(QWidget):
                 old.setParent(None)
                 old.deleteLater()
         word = (word or "").strip()
-        from .auto_target_mode import LAND_COVER_WORDS
-        land = word.lower() in LAND_COVER_WORDS
-        if land:
-            word = tr("Land cover")
-        self._summary_glyph.setVisible(land)
         self._summary_word.setText(word)
         self._summary_word.setVisible(bool(word))
         for i, chip in enumerate(chips):

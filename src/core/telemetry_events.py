@@ -155,20 +155,6 @@ LIBRARY_EXAMPLE_PICKED = "library_example_picked"
 LIBRARY_EXAMPLE_TRIED = "library_example_tried"
 
 
-
-AUTO_LAND_COVER_SHOWN = "auto_land_cover_shown"
-
-AUTO_LAND_COVER_TABLE_COPIED = "auto_land_cover_table_copied"
-
-AUTO_LAND_COVER_MIN_PATCH_CHANGED = "auto_land_cover_min_patch_changed"
-
-AUTO_TARGET_SWITCHED = "auto_target_switched"
-
-AUTO_MY_CLASSES_STARTED = "auto_my_classes_started"
-AUTO_MY_CLASSES_SUCCEEDED = "auto_my_classes_succeeded"
-AUTO_MY_CLASSES_FAILED = "auto_my_classes_failed"
-
-
 PLUGIN_ERROR = "plugin_error"
 
 
@@ -204,9 +190,6 @@ NO_CONSENT_EVENTS = frozenset({
 
 
 ALL_EVENTS = frozenset({
-    AUTO_LAND_COVER_SHOWN, AUTO_LAND_COVER_TABLE_COPIED,
-    AUTO_LAND_COVER_MIN_PATCH_CHANGED, AUTO_TARGET_SWITCHED,
-    AUTO_MY_CLASSES_STARTED, AUTO_MY_CLASSES_SUCCEEDED, AUTO_MY_CLASSES_FAILED,
     PLUGIN_FIRST_OPEN,
     PLUGIN_OPENED,
     PLUGIN_ACTIVATED,
@@ -408,14 +391,6 @@ REQUIRED_PROPS: dict[str, tuple[str, ...]] = {
     HISTORY_RERUN: ("kind",),
     LIBRARY_EXAMPLE_PICKED: ("preset_id",),
     LIBRARY_EXAMPLE_TRIED: ("preset_id", "outcome"),
-
-    AUTO_LAND_COVER_SHOWN: ("run_id",),
-    AUTO_LAND_COVER_TABLE_COPIED: ("run_id",),
-    AUTO_LAND_COVER_MIN_PATCH_CHANGED: ("run_id",),
-    AUTO_TARGET_SWITCHED: ("to", "source"),
-    AUTO_MY_CLASSES_STARTED: ("run_id", "class_count", "billed_km2"),
-    AUTO_MY_CLASSES_SUCCEEDED: ("run_id", "class_count", "billed_km2", "replayed"),
-    AUTO_MY_CLASSES_FAILED: ("run_id", "class_count", "billed_km2", "stage", "error_code", "refunded"),
 
 
 

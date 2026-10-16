@@ -492,26 +492,7 @@ class _PresetDetailDialog(PresetRasterTryMixin, _DetailDialogBase):
                 tr("Downloadable photo: {source}").format(source=attribution[:160]))
             self._image_caption.setVisible(True)
 
-    def _is_land_cover(self) -> bool:
-        from ...dock.auto_target_mode import is_land_cover_word
-        return is_land_cover_word(self._preset.get("prompt", ""))
-
     def _build_info(self) -> None:
-        if self._is_land_cover():
-
-
-            from ...dock.auto_target_mode import LandCoverClassChips, last_land_cover_legend
-            line = QLabel(tr("One layer, 6 classes, no gaps."))
-            line.setWordWrap(True)
-            line.setStyleSheet(_SECTION_NOTE_QSS)
-            self._info_col.addWidget(line)
-            legend = last_land_cover_legend()
-            if legend:
-                chips = LandCoverClassChips()
-                chips.set_items([(e.get("name") or "", e.get("color") or "#808080")
-                                 for e in legend])
-                self._info_col.addWidget(chips)
-            return
         self._info_col.addWidget(
             self._build_prompt_block(self._preset.get("prompt", "")))
         if self._preset.get("weak"):
@@ -540,8 +521,7 @@ class _PresetDetailDialog(PresetRasterTryMixin, _DetailDialogBase):
         self.try_btn.clicked.connect(self._on_try_raster)
         self.try_btn.setVisible(bool(self._raster_url))
         row.addWidget(self.try_btn, 1)
-        use = self._wide_primary(
-            tr("Use Land cover") if self._is_land_cover() else tr("Use this prompt"))
+        use = self._wide_primary(tr("Use this prompt"))
         use.setDefault(True)
         use.clicked.connect(self._on_use)
         row.addWidget(use, 1)
